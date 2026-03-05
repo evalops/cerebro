@@ -409,6 +409,14 @@ func TestListFindings_SeverityFilter(t *testing.T) {
 	}
 }
 
+func TestExportFindings_InvalidFormat(t *testing.T) {
+	s := newTestServer(t)
+	w := do(t, s, "GET", "/api/v1/findings/export?format=xml", nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 // --- Compliance exports ---
 
 func TestComplianceExportAuditPackage_ReturnsZip(t *testing.T) {
@@ -517,6 +525,80 @@ func TestCompliancePreAuditToExport_Smoke(t *testing.T) {
 	}
 }
 
+func TestComplianceReportAndExport_IgnoreResolvedFindings(t *testing.T) {
+	s := newTestServer(t)
+	s.app.Findings.Upsert(context.Background(), policy.Finding{
+		ID:         "f-resolved-1",
+		PolicyID:   "aws-iam-root-no-access-keys",
+		PolicyName: "Root access key found",
+		ResourceID: "aws-account-111",
+		Severity:   "critical",
+	})
+	if !s.app.Findings.Resolve("f-resolved-1") {
+		t.Fatal("expected finding resolve to succeed")
+	}
+
+	preAudit := do(t, s, "GET", "/api/v1/compliance/frameworks/cis-aws-1.5/pre-audit", nil)
+	if preAudit.Code != http.StatusOK {
+		t.Fatalf("pre-audit expected 200, got %d: %s", preAudit.Code, preAudit.Body.String())
+	}
+	preAuditBody := decodeJSON(t, preAudit)
+	if preAuditBody["estimated_outcome"] != "PASS" {
+		t.Fatalf("expected PASS outcome, got %v", preAuditBody["estimated_outcome"])
+	}
+	summary, ok := preAuditBody["summary"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected summary map, got %T", preAuditBody["summary"])
+	}
+	if failing, ok := summary["failing"].(float64); !ok || failing != 0 {
+		t.Fatalf("expected failing=0, got %v", summary["failing"])
+	}
+
+	report := do(t, s, "GET", "/api/v1/compliance/frameworks/cis-aws-1.5/report", nil)
+	if report.Code != http.StatusOK {
+		t.Fatalf("report expected 200, got %d: %s", report.Code, report.Body.String())
+	}
+	reportBody := decodeJSON(t, report)
+	if got, ok := reportBody["total_findings"].(float64); !ok || got != 0 {
+		t.Fatalf("expected total_findings=0, got %v", reportBody["total_findings"])
+	}
+
+	export := do(t, s, "GET", "/api/v1/compliance/frameworks/cis-aws-1.5/export", nil)
+	if export.Code != http.StatusOK {
+		t.Fatalf("export expected 200, got %d: %s", export.Code, export.Body.String())
+	}
+
+	body := export.Body.Bytes()
+	zr, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		t.Fatalf("invalid zip payload: %v", err)
+	}
+
+	entries := map[string]*zip.File{}
+	for _, file := range zr.File {
+		entries[file.Name] = file
+	}
+	summaryFile, ok := entries["summary.json"]
+	if !ok {
+		t.Fatalf("missing summary.json entry")
+	}
+	summaryRC, err := summaryFile.Open()
+	if err != nil {
+		t.Fatalf("open summary entry: %v", err)
+	}
+	defer summaryRC.Close()
+
+	var exportSummary struct {
+		FailingControls int `json:"failing_controls"`
+	}
+	if err := json.NewDecoder(summaryRC).Decode(&exportSummary); err != nil {
+		t.Fatalf("decode summary: %v", err)
+	}
+	if exportSummary.FailingControls != 0 {
+		t.Fatalf("expected no failing controls, got %+v", exportSummary)
+	}
+}
+
 func TestSyncScanFindingsPreAuditExport_Smoke(t *testing.T) {
 	s := newTestServer(t)
 	s.app.Providers.Register(&staticProvider{name: "github", provider: providers.ProviderTypeSaaS})
@@ -581,6 +663,14 @@ func TestSyncScanFindingsPreAuditExport_Smoke(t *testing.T) {
 		if !entries[required] {
 			t.Fatalf("missing export entry %q", required)
 		}
+	}
+}
+
+func TestGenerateAuditRecommendations_ZeroTotal(t *testing.T) {
+	s := newTestServer(t)
+	recs := s.generateAuditRecommendations(1, 0, 0)
+	if len(recs) == 0 {
+		t.Fatal("expected recommendations")
 	}
 }
 
