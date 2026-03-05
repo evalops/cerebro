@@ -6,6 +6,8 @@ Cerebro is configured entirely through environment variables, following the 12-f
 
 ## Environment Variables
 
+For the complete, source-of-truth env var list generated directly from code, see [`docs/CONFIG_ENV_VARS.md`](./CONFIG_ENV_VARS.md).
+
 ### Core Configuration
 
 | Variable | Description | Default | Required |

@@ -57,6 +57,12 @@ make openapi-check
 
 # Auto-add placeholder path/method entries for new routes
 make openapi-sync
+
+# Regenerate env-var docs from LoadConfig()
+make config-docs
+
+# Verify generated env-var docs are committed (drift check)
+make config-docs-check
 ```
 
 ### Building
