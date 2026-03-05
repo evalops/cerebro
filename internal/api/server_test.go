@@ -879,6 +879,14 @@ func TestGetProvider_OracleIDCSVisibleByDefault(t *testing.T) {
 	}
 }
 
+func TestConfigureProvider_NotFound(t *testing.T) {
+	s := newTestServer(t)
+	w := do(t, s, "POST", "/api/v1/providers/missing/configure", map[string]interface{}{"token": "x"})
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+}
+
 // --- RBAC ---
 
 func TestListRoles(t *testing.T) {
