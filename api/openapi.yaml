@@ -58,6 +58,8 @@ tags:
   description: Runtime detection and response endpoints
 - name: RBAC
   description: Role-based access control and tenancy endpoints
+- name: ThreatIntel
+  description: Threat intelligence feed management and indicator lookups
 paths:
   /health:
     get:
@@ -1795,13 +1797,35 @@ paths:
   /api/v1/providers/{name}/test:
     post:
       tags:
-      - Undocumented
-      summary: POST endpoint (placeholder)
-      description: Auto-generated placeholder to keep OpenAPI route coverage in sync
-        with server routes.
+      - Admin
+      summary: Test provider connectivity
+      description: Run a provider-specific connectivity/authentication test.
+      parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Provider name
+      - name: include_incomplete
+        in: query
+        required: false
+        schema:
+          type: boolean
+        description: Include providers marked as incomplete
       responses:
         '200':
-          description: OK
+          description: Provider test result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderTestResponse'
+        '404':
+          description: Provider not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/rbac/permissions:
     get:
       tags:
@@ -2062,33 +2086,49 @@ paths:
   /api/v1/reports/compliance/{framework}:
     get:
       tags:
-      - Undocumented
-      summary: GET endpoint (placeholder)
-      description: Auto-generated placeholder to keep OpenAPI route coverage in sync
-        with server routes.
+      - Compliance
+      summary: Framework compliance report
+      description: Generate a findings-based compliance report for a framework label.
+      parameters:
+      - name: framework
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Framework identifier or label
       responses:
         '200':
-          description: OK
+          description: Framework compliance report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FrameworkComplianceReportResponse'
   /api/v1/reports/executive-summary:
     get:
       tags:
-      - Undocumented
-      summary: GET endpoint (placeholder)
-      description: Auto-generated placeholder to keep OpenAPI route coverage in sync
-        with server routes.
+      - Compliance
+      summary: Executive summary
+      description: Return a high-level risk and findings summary for executive reporting.
       responses:
         '200':
-          description: OK
+          description: Executive summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutiveSummaryResponse'
   /api/v1/reports/risk-summary:
     get:
       tags:
-      - Undocumented
-      summary: GET endpoint (placeholder)
-      description: Auto-generated placeholder to keep OpenAPI route coverage in sync
-        with server routes.
+      - Compliance
+      summary: Risk category summary
+      description: Return open findings aggregated by risk category and severity.
       responses:
         '200':
-          description: OK
+          description: Risk summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RiskSummaryResponse'
   /api/v1/runtime/detections:
     get:
       tags:
@@ -2228,53 +2268,131 @@ paths:
   /api/v1/scan/coverage:
     get:
       tags:
-      - Undocumented
-      summary: GET endpoint (placeholder)
-      description: Auto-generated placeholder to keep OpenAPI route coverage in sync
-        with server routes.
+      - Admin
+      summary: Policy coverage report
+      description: Report policy coverage against currently available source tables.
       responses:
         '200':
-          description: OK
+          description: Policy coverage report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScanCoverageResponse'
+        '503':
+          description: Snowflake unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Failed to compute coverage report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/scan/watermarks:
     get:
       tags:
-      - Undocumented
-      summary: GET endpoint (placeholder)
-      description: Auto-generated placeholder to keep OpenAPI route coverage in sync
-        with server routes.
+      - Admin
+      summary: Scan watermark stats
+      description: Return incremental-scan watermark statistics.
       responses:
         '200':
-          description: OK
+          description: Scan watermark stats
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScanWatermarkStatsResponse'
+        '503':
+          description: Scan watermark store unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/scheduler/jobs/{name}/disable:
     post:
       tags:
-      - Undocumented
-      summary: POST endpoint (placeholder)
-      description: Auto-generated placeholder to keep OpenAPI route coverage in sync
-        with server routes.
+      - Admin
+      summary: Disable scheduler job
+      description: Trigger a scheduler job control action by name.
+      parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Scheduler job name
       responses:
         '200':
-          description: OK
+          description: Scheduler action accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerJobActionResponse'
   /api/v1/scheduler/jobs/{name}/enable:
     post:
       tags:
-      - Undocumented
-      summary: POST endpoint (placeholder)
-      description: Auto-generated placeholder to keep OpenAPI route coverage in sync
-        with server routes.
+      - Admin
+      summary: Enable scheduler job
+      description: Trigger a scheduler job control action by name.
+      parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Scheduler job name
       responses:
         '200':
-          description: OK
+          description: Scheduler action accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerJobActionResponse'
   /api/v1/scheduler/jobs/{name}/run:
     post:
       tags:
-      - Undocumented
-      summary: POST endpoint (placeholder)
-      description: Auto-generated placeholder to keep OpenAPI route coverage in sync
-        with server routes.
+      - Admin
+      summary: Run scheduler job now
+      description: Trigger a scheduler job control action by name.
+      parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Scheduler job name
       responses:
-        '200':
-          description: OK
+        '202':
+          description: Scheduler action accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchedulerJobActionResponse'
+        '404':
+          description: Scheduler job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Scheduler job already running
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Failed to trigger scheduler job
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Scheduler is not running
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/slack/commands:
     post:
       tags:
@@ -2288,73 +2406,179 @@ paths:
   /api/v1/telemetry/ingest:
     post:
       tags:
-      - Undocumented
-      summary: POST endpoint (placeholder)
-      description: Auto-generated placeholder to keep OpenAPI route coverage in sync
-        with server routes.
+      - Runtime
+      summary: Ingest telemetry batch
+      description: Ingest a telemetry batch and process each runtime event through
+        detection/response.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelemetryIngestRequest'
       responses:
         '200':
-          description: OK
+          description: Telemetry batch processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelemetryIngestResponse'
+        '400':
+          description: Invalid telemetry payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/threatintel/feeds:
     get:
       tags:
-      - Undocumented
-      summary: GET endpoint (placeholder)
-      description: Auto-generated placeholder to keep OpenAPI route coverage in sync
-        with server routes.
+      - ThreatIntel
+      summary: List threat intel feeds
+      description: List configured threat-intel feeds and latest sync metadata.
       responses:
         '200':
-          description: OK
+          description: Threat intel feeds
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ThreatIntelFeed'
+        '503':
+          description: Threat intel service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/threatintel/feeds/{id}/sync:
     post:
       tags:
-      - Undocumented
-      summary: POST endpoint (placeholder)
-      description: Auto-generated placeholder to keep OpenAPI route coverage in sync
-        with server routes.
+      - ThreatIntel
+      summary: Sync threat intel feed
+      description: Trigger an immediate synchronization for a feed.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Feed identifier
       responses:
         '200':
-          description: OK
+          description: Feed synchronized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '400':
+          description: Invalid feed ID or sync failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Threat intel service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/threatintel/lookup/cve/{cve}:
     get:
       tags:
-      - Undocumented
-      summary: GET endpoint (placeholder)
-      description: Auto-generated placeholder to keep OpenAPI route coverage in sync
-        with server routes.
+      - ThreatIntel
+      summary: Lookup CVE indicator
+      description: Lookup a CVE and whether it is marked as known exploited.
+      parameters:
+      - name: cve
+        in: path
+        required: true
+        schema:
+          type: string
+        description: CVE identifier
       responses:
         '200':
-          description: OK
+          description: CVE lookup result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThreatIntelLookupCVEResponse'
+        '503':
+          description: Threat intel service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/threatintel/lookup/domain/{domain}:
     get:
       tags:
-      - Undocumented
-      summary: GET endpoint (placeholder)
-      description: Auto-generated placeholder to keep OpenAPI route coverage in sync
-        with server routes.
+      - ThreatIntel
+      summary: Lookup domain indicator
+      description: Lookup a domain in threat-intel indicators.
+      parameters:
+      - name: domain
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Domain name
       responses:
         '200':
-          description: OK
+          description: Domain lookup result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThreatIntelLookupDomainResponse'
+        '503':
+          description: Threat intel service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/threatintel/lookup/ip/{ip}:
     get:
       tags:
-      - Undocumented
-      summary: GET endpoint (placeholder)
-      description: Auto-generated placeholder to keep OpenAPI route coverage in sync
-        with server routes.
+      - ThreatIntel
+      summary: Lookup IP indicator
+      description: Lookup an IP address in threat-intel indicators.
+      parameters:
+      - name: ip
+        in: path
+        required: true
+        schema:
+          type: string
+        description: IP address
       responses:
         '200':
-          description: OK
+          description: IP lookup result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThreatIntelLookupIPResponse'
+        '503':
+          description: Threat intel service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/threatintel/stats:
     get:
       tags:
-      - Undocumented
-      summary: GET endpoint (placeholder)
-      description: Auto-generated placeholder to keep OpenAPI route coverage in sync
-        with server routes.
+      - ThreatIntel
+      summary: Threat intel stats
+      description: Return current threat-intel indicator and feed statistics.
       responses:
         '200':
-          description: OK
+          description: Threat intel stats
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThreatIntelStatsResponse'
+        '503':
+          description: Threat intel service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/tickets:
     get:
       tags:
@@ -3044,6 +3268,8 @@ components:
           type: string
         details:
           type: object
+      required:
+      - error
     FindingAssignRequest:
       type: object
       required:
@@ -3085,6 +3311,8 @@ components:
           type: string
         assignee:
           type: string
+      required:
+      - status
     GraphStatsResponse:
       type: object
       properties:
@@ -3223,3 +3451,401 @@ components:
     RBACTenant:
       type: object
       additionalProperties: true
+    StatusResponse:
+      type: object
+      required:
+      - status
+      properties:
+        status:
+          type: string
+    ProviderTestResponse:
+      type: object
+      required:
+      - status
+      properties:
+        status:
+          type: string
+          enum:
+          - success
+          - failed
+        error:
+          type: string
+    SeverityBreakdown:
+      type: object
+      required:
+      - critical
+      - high
+      - medium
+      - low
+      properties:
+        critical:
+          type: integer
+        high:
+          type: integer
+        medium:
+          type: integer
+        low:
+          type: integer
+    ExecutiveSummaryResponse:
+      type: object
+      required:
+      - total_findings
+      - open_findings
+      - resolved_findings
+      - suppressed_findings
+      - risk_score
+      - by_severity
+      - top_risks
+      properties:
+        total_findings:
+          type: integer
+        open_findings:
+          type: integer
+        resolved_findings:
+          type: integer
+        suppressed_findings:
+          type: integer
+        risk_score:
+          type: integer
+        by_severity:
+          $ref: '#/components/schemas/SeverityBreakdown'
+        top_risks:
+          type: array
+          items:
+            type: string
+    RiskSummaryItem:
+      type: object
+      required:
+      - category
+      - count
+      - critical
+      - high
+      - medium
+      - low
+      properties:
+        category:
+          type: string
+        count:
+          type: integer
+        critical:
+          type: integer
+        high:
+          type: integer
+        medium:
+          type: integer
+        low:
+          type: integer
+    RiskSummaryResponse:
+      type: object
+      required:
+      - risks
+      - count
+      properties:
+        risks:
+          type: array
+          items:
+            $ref: '#/components/schemas/RiskSummaryItem'
+        count:
+          type: integer
+    FrameworkComplianceControlStatus:
+      type: object
+      required:
+      - control_id
+      - status
+      - findings
+      properties:
+        control_id:
+          type: string
+        control_name:
+          type: string
+        status:
+          type: string
+        findings:
+          type: integer
+        max_severity:
+          type: string
+        policy_ids:
+          type: array
+          items:
+            type: string
+    FrameworkComplianceReportResponse:
+      type: object
+      required:
+      - framework
+      - total_controls
+      - assessed_controls
+      - passing_controls
+      - failing_controls
+      - not_assessed_controls
+      - coverage_percent
+      - compliance_percent
+      - control_status
+      - findings_by_control
+      properties:
+        framework:
+          type: string
+        total_controls:
+          type: integer
+        assessed_controls:
+          type: integer
+        passing_controls:
+          type: integer
+        failing_controls:
+          type: integer
+        not_assessed_controls:
+          type: integer
+        coverage_percent:
+          type: number
+        compliance_percent:
+          type: number
+        control_status:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/FrameworkComplianceControlStatus'
+        findings_by_control:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+    PolicyCoverageGap:
+      type: object
+      required:
+      - policy_id
+      - policy_name
+      - resource
+      - missing_tables
+      properties:
+        policy_id:
+          type: string
+        policy_name:
+          type: string
+        resource:
+          type: string
+        missing_tables:
+          type: array
+          items:
+            type: string
+    ScanCoverageResponse:
+      type: object
+      required:
+      - total_policies
+      - covered_policies
+      - uncovered_policies
+      - unknown_resource_policies
+      - coverage_percent
+      - known_coverage_percent
+      - available_tables
+      - gaps
+      - missing_tables
+      - missing_by_provider
+      properties:
+        total_policies:
+          type: integer
+        covered_policies:
+          type: integer
+        uncovered_policies:
+          type: integer
+        unknown_resource_policies:
+          type: integer
+        coverage_percent:
+          type: number
+        known_coverage_percent:
+          type: number
+        available_tables:
+          type: integer
+        gaps:
+          type: array
+          items:
+            $ref: '#/components/schemas/PolicyCoverageGap'
+        missing_tables:
+          type: object
+          additionalProperties:
+            type: integer
+        missing_by_provider:
+          type: object
+          additionalProperties:
+            type: integer
+    ScanWatermarkStatsResponse:
+      type: object
+      required:
+      - tables_with_watermarks
+      - total_rows_scanned
+      - table_stats
+      properties:
+        tables_with_watermarks:
+          type: integer
+        total_rows_scanned:
+          type: integer
+        oldest_watermark:
+          type: string
+          format: date-time
+        newest_watermark:
+          type: string
+          format: date-time
+        table_stats:
+          type: object
+          additionalProperties:
+            type: integer
+    SchedulerJobActionResponse:
+      type: object
+      required:
+      - status
+      properties:
+        status:
+          type: string
+    TelemetryIngestRequest:
+      type: object
+      required:
+      - events
+      properties:
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeEventIngestRequest'
+        node:
+          type: string
+        cluster:
+          type: string
+        agent_version:
+          type: string
+    TelemetryIngestResponse:
+      type: object
+      required:
+      - processed
+      - findings
+      properties:
+        processed:
+          type: integer
+        findings:
+          type: integer
+    ThreatIntelFeed:
+      type: object
+      required:
+      - id
+      - name
+      - description
+      - type
+      - url
+      - format
+      - enabled
+      - last_sync
+      - indicator_count
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        type:
+          type: string
+        url:
+          type: string
+        format:
+          type: string
+        enabled:
+          type: boolean
+        last_sync:
+          type: string
+          format: date-time
+        indicator_count:
+          type: integer
+    ThreatIndicator:
+      type: object
+      required:
+      - id
+      - type
+      - value
+      - source
+      - severity
+      - confidence
+      - first_seen
+      - last_seen
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        value:
+          type: string
+        source:
+          type: string
+        severity:
+          type: string
+        confidence:
+          type: integer
+        first_seen:
+          type: string
+          format: date-time
+        last_seen:
+          type: string
+          format: date-time
+        description:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+    ThreatIntelStatsResponse:
+      type: object
+      required:
+      - total_indicators
+      - by_type
+      - feeds_count
+      - last_updated
+      properties:
+        total_indicators:
+          type: integer
+        by_type:
+          type: object
+          additionalProperties:
+            type: integer
+        feeds_count:
+          type: integer
+        last_updated:
+          type: string
+          format: date-time
+    ThreatIntelLookupIPResponse:
+      type: object
+      required:
+      - found
+      - ip
+      properties:
+        found:
+          type: boolean
+        ip:
+          type: string
+        indicator:
+          $ref: '#/components/schemas/ThreatIndicator'
+    ThreatIntelLookupDomainResponse:
+      type: object
+      required:
+      - found
+      - domain
+      properties:
+        found:
+          type: boolean
+        domain:
+          type: string
+        indicator:
+          $ref: '#/components/schemas/ThreatIndicator'
+    ThreatIntelLookupCVEResponse:
+      type: object
+      required:
+      - found
+      - cve
+      - is_kev
+      properties:
+        found:
+          type: boolean
+        cve:
+          type: string
+        is_kev:
+          type: boolean
+        indicator:
+          $ref: '#/components/schemas/ThreatIndicator'
