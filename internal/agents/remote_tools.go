@@ -233,6 +233,13 @@ func (p *RemoteToolProvider) invoke(ctx context.Context, toolName string, args j
 	return string(msg.Data), nil
 }
 
+func (p *RemoteToolProvider) CallTool(ctx context.Context, toolName string, args json.RawMessage, timeout time.Duration) (string, error) {
+	if timeout <= 0 {
+		timeout = p.config.RequestTimeout
+	}
+	return p.invoke(ctx, strings.TrimSpace(toolName), args, timeout)
+}
+
 func (c RemoteToolProviderConfig) withDefaults() RemoteToolProviderConfig {
 	cfg := c
 	if len(cfg.URLs) == 0 {

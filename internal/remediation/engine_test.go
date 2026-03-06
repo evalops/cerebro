@@ -328,6 +328,7 @@ func TestTriggerType(t *testing.T) {
 	triggers := []TriggerType{
 		TriggerFindingCreated,
 		TriggerFindingOpen,
+		TriggerSignalCreated,
 		TriggerSchedule,
 		TriggerManual,
 	}
@@ -347,11 +348,40 @@ func TestActionType(t *testing.T) {
 		ActionResolveFinding,
 		ActionRunWebhook,
 		ActionTagResource,
+		ActionUpdateCRMField,
+		ActionTriggerWorkflow,
+		ActionCreateReview,
+		ActionEscalateToOwner,
+		ActionPauseSubscription,
+		ActionSendCustomerComm,
 	}
 
 	for _, a := range actions {
 		if a == "" {
 			t.Error("action type should not be empty")
 		}
+	}
+}
+
+func TestEngine_EvaluateSignalRuleWithConditions(t *testing.T) {
+	engine := NewEngine(testLogger())
+
+	event := Event{
+		Type:       TriggerSignalCreated,
+		Severity:   "critical",
+		PolicyID:   "hubspot-stale-deal",
+		Domain:     "customer_health",
+		SignalType: "business",
+		Data: map[string]any{
+			"domain": "customer_health",
+		},
+	}
+
+	executions, err := engine.Evaluate(context.Background(), event)
+	if err != nil {
+		t.Fatalf("evaluate failed: %v", err)
+	}
+	if len(executions) == 0 {
+		t.Fatal("expected signal executions for customer health critical signal")
 	}
 }

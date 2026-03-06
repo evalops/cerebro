@@ -219,6 +219,9 @@ func (a *App) initAgents() {
 		} else {
 			agentTools = agents.MergeTools(agentTools, remoteTools)
 			a.RemoteTools = remoteProvider
+			if a.RemediationExecutor != nil {
+				a.RemediationExecutor.SetRemoteCaller(remoteProvider)
+			}
 			a.Logger.Info("registered remote tools for agents", "count", len(remoteTools))
 		}
 	}

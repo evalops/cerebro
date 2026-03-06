@@ -153,7 +153,10 @@ func (a *App) initLineage() {
 
 func (a *App) initRemediation() {
 	a.Remediation = remediation.NewEngine(a.Logger)
-	a.RemediationExecutor = remediation.NewExecutor(a.Remediation, a.Ticketing, a.Notifications, a.Findings)
+	a.RemediationExecutor = remediation.NewExecutor(a.Remediation, a.Ticketing, a.Notifications, a.Findings, a.Webhooks)
+	if a.RemoteTools != nil {
+		a.RemediationExecutor.SetRemoteCaller(a.RemoteTools)
+	}
 	a.Logger.Info("remediation engine initialized", "rules", len(a.Remediation.ListRules()))
 }
 
