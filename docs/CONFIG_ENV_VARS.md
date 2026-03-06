@@ -2,10 +2,16 @@
 
 Generated from `internal/app/app.go` (`LoadConfig`) via `go run ./scripts/generate_config_docs/main.go`.
 
-Total variables: **220**
+Total variables: **235**
 
 | Variable | Reader(s) | Default(s) | Config Field(s) |
 |---|---|---|---|
+| `AGENT_REMOTE_TOOLS_DISCOVER_TIMEOUT` | `getEnvDuration` | `5 * time.Second` | `AgentRemoteToolsDiscoverTimeout` |
+| `AGENT_REMOTE_TOOLS_ENABLED` | `getEnvBool` | `false` | `AgentRemoteToolsEnabled` |
+| `AGENT_REMOTE_TOOLS_MANIFEST_SUBJECT` | `getEnv` | `"ensemble.tools.manifest"` | `AgentRemoteToolsManifestSubject` |
+| `AGENT_REMOTE_TOOLS_MAX_TOOLS` | `getEnvInt` | `200` | `AgentRemoteToolsMaxTools` |
+| `AGENT_REMOTE_TOOLS_REQUEST_PREFIX` | `getEnv` | `"ensemble.tools.request"` | `AgentRemoteToolsRequestPrefix` |
+| `AGENT_REMOTE_TOOLS_REQUEST_TIMEOUT` | `getEnvDuration` | `30 * time.Second` | `AgentRemoteToolsRequestTimeout` |
 | `ANTHROPIC_API_KEY` | `getEnv` | `""` | `AnthropicAPIKey` |
 | `API_AUTH_ENABLED` | `getEnvBool` | `len(apiKeys) > 0` | `-` |
 | `API_CORS_ALLOWED_ORIGINS` | `getEnv` | `""` | `CORSAllowedOrigins` |
@@ -74,6 +80,7 @@ Total variables: **220**
 | `JIRA_BASE_URL` | `getEnv` | `""` | `JiraBaseURL` |
 | `JIRA_EMAIL` | `getEnv` | `""` | `JiraEmail` |
 | `JIRA_PROJECT` | `getEnv` | `"SEC"` | `JiraProject` |
+| `JOB_IDEMPOTENCY_TABLE_NAME` | `getEnv` | `""` | `JobIdempotencyTableName` |
 | `JOB_MAX_ATTEMPTS` | `getEnvInt` | `3` | `JobMaxAttempts` |
 | `JOB_POLL_WAIT` | `getEnvDuration` | `10 * time.Second` | `JobPollWait` |
 | `JOB_QUEUE_URL` | `getEnv` | `""` | `JobQueueURL` |
@@ -91,6 +98,13 @@ Total variables: **220**
 | `LINEAR_API_KEY` | `getEnv` | `""` | `LinearAPIKey` |
 | `LINEAR_TEAM_ID` | `getEnv` | `""` | `LinearTeamID` |
 | `LOG_LEVEL` | `getEnv` | `"info"` | `LogLevel` |
+| `NATS_CONSUMER_ACK_WAIT` | `getEnvDuration` | `30 * time.Second` | `NATSConsumerAckWait` |
+| `NATS_CONSUMER_BATCH_SIZE` | `getEnvInt` | `50` | `NATSConsumerBatchSize` |
+| `NATS_CONSUMER_DURABLE` | `getEnv` | `"cerebro_graph_builder"` | `NATSConsumerDurable` |
+| `NATS_CONSUMER_ENABLED` | `getEnvBool` | `false` | `NATSConsumerEnabled` |
+| `NATS_CONSUMER_FETCH_TIMEOUT` | `getEnvDuration` | `2 * time.Second` | `NATSConsumerFetchTimeout` |
+| `NATS_CONSUMER_STREAM` | `getEnv` | `"ENSEMBLE_TAP"` | `NATSConsumerStream` |
+| `NATS_CONSUMER_SUBJECTS` | `getEnv` | `"ensemble.tap.>"` | `NATSConsumerSubjects` |
 | `NATS_JETSTREAM_AUTH_MODE` | `getEnv` | `"none"` | `NATSJetStreamAuthMode` |
 | `NATS_JETSTREAM_CONNECT_TIMEOUT` | `getEnvDuration` | `5 * time.Second` | `NATSJetStreamConnectTimeout` |
 | `NATS_JETSTREAM_ENABLED` | `getEnvBool` | `false` | `NATSJetStreamEnabled` |
@@ -150,6 +164,7 @@ Total variables: **220**
 | `RAMP_TOKEN_URL` | `getEnv` | `"https://api.ramp.com/developer/v1/token"` | `RampTokenURL` |
 | `RATE_LIMIT_ENABLED` | `getEnvBool` | `false` | `RateLimitEnabled` |
 | `RATE_LIMIT_REQUESTS` | `getEnvInt` | `1000` | `RateLimitRequests` |
+| `RATE_LIMIT_TRUSTED_PROXIES` | `getEnv` | `""` | `RateLimitTrustedProxies` |
 | `RATE_LIMIT_WINDOW` | `getEnvDuration` | `time.Hour` | `RateLimitWindow` |
 | `RBAC_STATE_FILE` | `getEnv` | `""` | `RBACStateFile` |
 | `RIPPLING_API_TOKEN` | `getEnv` | `""` | `RipplingAPIToken` |

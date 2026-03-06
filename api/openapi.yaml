@@ -285,6 +285,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/FindingsStats'
+  /api/v1/signals/dashboard:
+    get:
+      tags:
+      - Findings
+      summary: Get signals dashboard
+      description: Return summary counts, aggregate stats, and recent signal findings for dashboard views.
+      responses:
+        '200':
+          description: Signals dashboard payload
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  summary:
+                    type: object
+                    properties:
+                      total_signals:
+                        type: integer
+                      open_signals:
+                        type: integer
+                      snoozed_signals:
+                        type: integer
+                  stats:
+                    type: object
+                    additionalProperties: true
+                  recent_signals:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Finding'
+                  count:
+                    type: integer
   /api/v1/findings/{id}:
     get:
       tags:
@@ -1308,6 +1340,110 @@ paths:
         schema:
           type: string
         description: Access review ID
+  /api/v1/entities/{id}/cohort:
+    get:
+      tags:
+      - Graph
+      summary: Get entity cohort
+      description: Return peer-cohort membership details for a specific entity.
+      responses:
+        '200':
+          description: Cohort details
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '404':
+          description: Cohort not found
+          content: *id001
+        '503':
+          description: Graph unavailable
+          content: *id001
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Entity identifier
+  /api/v1/entities/{id}/outlier-score:
+    get:
+      tags:
+      - Graph
+      summary: Get entity outlier score
+      description: Return outlier scoring and explanatory factors for a specific entity.
+      responses:
+        '200':
+          description: Outlier score
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '404':
+          description: Outlier score not found
+          content: *id001
+        '503':
+          description: Graph unavailable
+          content: *id001
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Entity identifier
+  /api/v1/impact-analysis:
+    post:
+      tags:
+      - Graph
+      summary: Run impact analysis
+      description: Analyze cascading impact paths from a starting node under a selected business scenario.
+      responses:
+        '200':
+          description: Impact analysis result
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid request
+          content: *id001
+        '503':
+          description: Graph unavailable
+          content: *id001
+      parameters:
+      - name: max_depth
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 6
+        description: Override traversal depth for this request.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - start_node
+              - scenario
+              properties:
+                start_node:
+                  type: string
+                  description: Starting node ID for traversal.
+                scenario:
+                  type: string
+                  enum:
+                  - churn_cascade
+                  - revenue_impact
+                  - incident_blast_radius
+                max_depth:
+                  type: integer
+                  default: 6
   /api/v1/graph/attack-paths:
     get:
       tags:
