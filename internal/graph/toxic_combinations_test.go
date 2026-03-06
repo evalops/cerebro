@@ -1023,3 +1023,38 @@ func TestToxicCombination_BusinessFinancialGuardrail(t *testing.T) {
 		t.Fatal("expected financial guardrail toxic combination")
 	}
 }
+
+func TestToxicCombination_BusinessFinancialGuardrail_MultiHopTraversal(t *testing.T) {
+	engine := NewToxicCombinationEngine()
+	g := New()
+
+	g.AddNode(&Node{ID: "customer-1", Kind: NodeKindCustomer, Name: "Acme"})
+	g.AddNode(&Node{ID: "sub-1", Kind: NodeKindSubscription, Name: "Acme Subscription"})
+	g.AddNode(&Node{
+		ID:   "invoice-1",
+		Kind: NodeKindInvoice,
+		Name: "Acme Invoice",
+		Properties: map[string]any{
+			"refund_amount":              9000,
+			"approval_recorded":          false,
+			"chargeback_count":           1,
+			"days_since_last_chargeback": 30,
+		},
+	})
+
+	// customer -> subscription -> invoice (2-hop chain)
+	g.AddEdge(&Edge{ID: "c-s", Source: "customer-1", Target: "sub-1", Kind: EdgeKindSubscribedTo, Effect: EdgeEffectAllow})
+	g.AddEdge(&Edge{ID: "s-i", Source: "sub-1", Target: "invoice-1", Kind: EdgeKindBilledBy, Effect: EdgeEffectAllow})
+
+	results := engine.Analyze(g)
+	found := false
+	for _, tc := range results {
+		if strings.HasPrefix(tc.ID, "TC-BIZ-005-customer-1") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected financial guardrail toxic combination through multi-hop traversal")
+	}
+}

@@ -82,6 +82,12 @@ func (a *App) handleTapCloudEvent(_ context.Context, evt events.CloudEvent) erro
 
 	kind := mapBusinessEntityKind(entityType)
 	nodeID := fmt.Sprintf("%s:%s:%s", system, entityType, entityID)
+	existingProperties := map[string]any{}
+	if a.SecurityGraph != nil {
+		if existingNode, ok := a.SecurityGraph.GetNode(nodeID); ok && existingNode != nil && existingNode.Properties != nil {
+			existingProperties = existingNode.Properties
+		}
+	}
 
 	properties := map[string]any{
 		"source_system": system,
@@ -97,7 +103,7 @@ func (a *App) handleTapCloudEvent(_ context.Context, evt events.CloudEvent) erro
 		properties[k] = v
 	}
 	properties["changes"] = changes
-	for k, v := range deriveComputedFields(system, entityType, snapshot, changes, evt.Time) {
+	for k, v := range deriveComputedFields(system, entityType, snapshot, changes, existingProperties, evt.Time) {
 		properties[k] = v
 	}
 	if action == "deleted" {
@@ -233,7 +239,7 @@ func inferBusinessEdgeKind(entityType, targetType string) graph.EdgeKind {
 	}
 }
 
-func deriveComputedFields(system, entityType string, snapshot map[string]any, changes map[string]any, eventTime time.Time) map[string]any {
+func deriveComputedFields(system, entityType string, snapshot map[string]any, changes map[string]any, existingProperties map[string]any, eventTime time.Time) map[string]any {
 	out := make(map[string]any)
 	now := eventTime
 	if now.IsZero() {
@@ -256,11 +262,15 @@ func deriveComputedFields(system, entityType string, snapshot map[string]any, ch
 			if ts, ok := parseTimeValue(firstPresent(snapshot, "LastModifiedDate", "last_modified_date")); ok {
 				out["days_since_last_modified"] = int(now.Sub(ts).Hours() / 24)
 			}
-			if _, ok := snapshot["close_date_push_count"]; !ok {
-				// Infer at least one close-date push when a close date change event is present.
-				if _, ok := changes["CloseDate"]; ok {
-					out["close_date_push_count"] = 1
-				}
+			count := toInt(firstPresent(existingProperties, "close_date_push_count"))
+			if snapshotCount := toInt(firstPresent(snapshot, "close_date_push_count")); snapshotCount > count {
+				count = snapshotCount
+			}
+			if changeIncludesFieldUpdate(changes, "CloseDate") {
+				count++
+			}
+			if count > 0 {
+				out["close_date_push_count"] = count
 			}
 		}
 	case "stripe":
@@ -292,6 +302,27 @@ func firstPresent(snapshot map[string]any, keys ...string) any {
 		}
 	}
 	return nil
+}
+
+func changeIncludesFieldUpdate(changes map[string]any, field string) bool {
+	raw, ok := changes[field]
+	if !ok {
+		return false
+	}
+	// If the producer includes old/new details, only count actual value changes.
+	if m, ok := raw.(map[string]any); ok {
+		if oldValue, okOld := m["old"]; okOld {
+			if newValue, okNew := m["new"]; okNew {
+				return anyToString(oldValue) != anyToString(newValue)
+			}
+		}
+		if fromValue, okFrom := m["from"]; okFrom {
+			if toValue, okTo := m["to"]; okTo {
+				return anyToString(fromValue) != anyToString(toValue)
+			}
+		}
+	}
+	return true
 }
 
 func nestedValue(m map[string]any, path string) (any, bool) {

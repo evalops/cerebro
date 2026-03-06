@@ -5,6 +5,8 @@ import (
 	"strings"
 )
 
+const businessNeighborTraversalDepth = 2
+
 func (e *ToxicCombinationEngine) ruleChurnCompoundSignal() *ToxicCombinationRule {
 	return &ToxicCombinationRule{
 		ID:          "TC-BIZ-001",
@@ -23,7 +25,7 @@ func (e *ToxicCombinationEngine) ruleChurnCompoundSignal() *ToxicCombinationRule
 			championDeparted := readBool(node.Properties, "champion_departed")
 
 			affected := []string{node.ID}
-			for _, neighbor := range businessNeighbors(g, node.ID) {
+			for _, neighbor := range businessNeighbors(g, node.ID, businessNeighborTraversalDepth) {
 				affected = append(affected, neighbor.ID)
 				switch neighbor.Kind {
 				case NodeKindTicket:
@@ -99,7 +101,7 @@ func (e *ToxicCombinationEngine) ruleRevenueAtRisk() *ToxicCombinationRule {
 			usageDeclining := readBool(node.Properties, "usage_declining", "usage_downtrend")
 			affected := []string{node.ID}
 
-			for _, neighbor := range businessNeighbors(g, node.ID) {
+			for _, neighbor := range businessNeighbors(g, node.ID, businessNeighborTraversalDepth) {
 				affected = append(affected, neighbor.ID)
 				switch neighbor.Kind {
 				case NodeKindTicket:
@@ -155,7 +157,7 @@ func (e *ToxicCombinationEngine) ruleSecurityMeetsBusiness() *ToxicCombinationRu
 			renewalDays := readInt(node.Properties, "days_until_renewal")
 			affected := []string{node.ID}
 
-			for _, neighbor := range businessNeighbors(g, node.ID) {
+			for _, neighbor := range businessNeighbors(g, node.ID, businessNeighborTraversalDepth) {
 				affected = append(affected, neighbor.ID)
 				if neighbor.IsResource() && (neighbor.Risk == RiskCritical || neighbor.Risk == RiskHigh) {
 					hasCriticalSecurity = true
@@ -218,7 +220,7 @@ func (e *ToxicCombinationEngine) ruleOperationalBlastRadius() *ToxicCombinationR
 			affectedCustomers := 0
 			combinedARR := 0.0
 			affected := []string{node.ID}
-			for _, neighbor := range businessNeighbors(g, node.ID) {
+			for _, neighbor := range businessNeighbors(g, node.ID, businessNeighborTraversalDepth) {
 				affected = append(affected, neighbor.ID)
 				if neighbor.Kind == NodeKindCustomer || neighbor.Kind == NodeKindCompany {
 					affectedCustomers++
@@ -275,7 +277,7 @@ func (e *ToxicCombinationEngine) ruleFinancialGuardrail() *ToxicCombinationRule 
 			hasChargeback := readInt(node.Properties, "chargeback_count") > 0 || readInt(node.Properties, "days_since_last_chargeback") <= 90
 			affected := []string{node.ID}
 
-			for _, neighbor := range businessNeighbors(g, node.ID) {
+			for _, neighbor := range businessNeighbors(g, node.ID, businessNeighborTraversalDepth) {
 				affected = append(affected, neighbor.ID)
 				if amount := readFloat(neighbor.Properties, "refund_amount", "refund_total"); amount > refundAmount {
 					refundAmount = amount
@@ -313,26 +315,48 @@ func (e *ToxicCombinationEngine) ruleFinancialGuardrail() *ToxicCombinationRule 
 	}
 }
 
-func businessNeighbors(g *Graph, nodeID string) []*Node {
+func businessNeighbors(g *Graph, nodeID string, maxDepth int) []*Node {
+	if maxDepth <= 0 {
+		return nil
+	}
+
+	type visit struct {
+		id    string
+		depth int
+	}
 	seen := map[string]bool{nodeID: true}
 	neighbors := make([]*Node, 0)
+	queue := []visit{{id: nodeID, depth: 0}}
 
-	for _, edge := range g.GetOutEdges(nodeID) {
-		node, ok := g.GetNode(edge.Target)
-		if !ok || seen[node.ID] {
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		if current.depth >= maxDepth {
 			continue
 		}
-		seen[node.ID] = true
-		neighbors = append(neighbors, node)
-	}
-	for _, edge := range g.GetInEdges(nodeID) {
-		node, ok := g.GetNode(edge.Source)
-		if !ok || seen[node.ID] {
-			continue
+
+		nextIDs := make([]string, 0)
+		for _, edge := range g.GetOutEdges(current.id) {
+			nextIDs = append(nextIDs, edge.Target)
 		}
-		seen[node.ID] = true
-		neighbors = append(neighbors, node)
+		for _, edge := range g.GetInEdges(current.id) {
+			nextIDs = append(nextIDs, edge.Source)
+		}
+
+		for _, adjacentID := range nextIDs {
+			if seen[adjacentID] {
+				continue
+			}
+			node, ok := g.GetNode(adjacentID)
+			if !ok {
+				continue
+			}
+			seen[adjacentID] = true
+			neighbors = append(neighbors, node)
+			queue = append(queue, visit{id: adjacentID, depth: current.depth + 1})
+		}
 	}
+
 	return neighbors
 }
 
