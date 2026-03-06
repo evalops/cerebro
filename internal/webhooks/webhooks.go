@@ -380,7 +380,9 @@ func isValidEventType(e EventType) bool {
 		EventAttackPathFound, EventTicketCreated, EventGraphRebuilt,
 		EventThreatIntelSynced, EventRuntimeIngested, EventRbacUserCreated,
 		EventRbacRoleAssigned, EventRbacTenantCreated, EventWebhookCreated,
-		EventRemediationRule:
+		EventRemediationRule, EventSignalCreated, EventSignalResolved, EventSignalEscalated,
+		EventRiskScoreChanged, EventToxicCombinationDetected, EventToxicCombinationResolved,
+		EventApprovalRequested, EventCohortOutlierDetected, EventComplianceScoreChanged:
 		return true
 	default:
 		return false

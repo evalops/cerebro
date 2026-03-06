@@ -47,6 +47,7 @@ import (
 	"github.com/writer/cerebro/internal/auth"
 	"github.com/writer/cerebro/internal/cache"
 	"github.com/writer/cerebro/internal/compliance"
+	"github.com/writer/cerebro/internal/events"
 	"github.com/writer/cerebro/internal/findings"
 	"github.com/writer/cerebro/internal/graph"
 	"github.com/writer/cerebro/internal/health"
@@ -91,6 +92,7 @@ type App struct {
 	AttackPath    *attackpath.Graph
 	Providers     *providers.Registry
 	Webhooks      *webhooks.Service
+	TapConsumer   *events.Consumer
 	Notifications *notifications.Manager
 	Scheduler     *scheduler.Scheduler
 
@@ -416,6 +418,15 @@ type Config struct {
 	NATSJetStreamTLSServerName         string
 	NATSJetStreamTLSInsecure           bool
 
+	// NATS JetStream consumer for ensemble-tap ingestion
+	NATSConsumerEnabled      bool
+	NATSConsumerStream       string
+	NATSConsumerSubjects     []string
+	NATSConsumerDurable      string
+	NATSConsumerBatchSize    int
+	NATSConsumerAckWait      time.Duration
+	NATSConsumerFetchTimeout time.Duration
+
 	// Notifications
 	SlackWebhookURL    string
 	SlackSigningSecret string
@@ -442,14 +453,14 @@ type Config struct {
 	FindingAttestationAttestReobserved bool
 
 	// Distributed jobs
-	JobQueueURL              string
-	JobTableName             string
-	JobRegion                string
-	JobWorkerConcurrency     int
-	JobVisibilityTimeout     time.Duration
-	JobPollWait              time.Duration
-	JobMaxAttempts           int
-	JobIdempotencyTableName  string
+	JobQueueURL             string
+	JobTableName            string
+	JobRegion               string
+	JobWorkerConcurrency    int
+	JobVisibilityTimeout    time.Duration
+	JobPollWait             time.Duration
+	JobMaxAttempts          int
+	JobIdempotencyTableName string
 
 	// Rate Limiting
 	RateLimitEnabled        bool
@@ -652,6 +663,13 @@ func LoadConfig() *Config {
 		NATSJetStreamTLSKeyFile:            getEnv("NATS_JETSTREAM_TLS_KEY_FILE", ""),
 		NATSJetStreamTLSServerName:         getEnv("NATS_JETSTREAM_TLS_SERVER_NAME", ""),
 		NATSJetStreamTLSInsecure:           getEnvBool("NATS_JETSTREAM_TLS_INSECURE_SKIP_VERIFY", false),
+		NATSConsumerEnabled:                getEnvBool("NATS_CONSUMER_ENABLED", false),
+		NATSConsumerStream:                 getEnv("NATS_CONSUMER_STREAM", "ENSEMBLE_TAP"),
+		NATSConsumerSubjects:               splitCSV(getEnv("NATS_CONSUMER_SUBJECTS", "ensemble.tap.>")),
+		NATSConsumerDurable:                getEnv("NATS_CONSUMER_DURABLE", "cerebro_graph_builder"),
+		NATSConsumerBatchSize:              getEnvInt("NATS_CONSUMER_BATCH_SIZE", 50),
+		NATSConsumerAckWait:                getEnvDuration("NATS_CONSUMER_ACK_WAIT", 30*time.Second),
+		NATSConsumerFetchTimeout:           getEnvDuration("NATS_CONSUMER_FETCH_TIMEOUT", 2*time.Second),
 		SlackWebhookURL:                    getEnv("SLACK_WEBHOOK_URL", ""),
 		SlackSigningSecret:                 getEnv("SLACK_SIGNING_SECRET", ""),
 		PagerDutyKey:                       getEnv("PAGERDUTY_ROUTING_KEY", ""),
@@ -772,6 +790,7 @@ func New(ctx context.Context) (*App, error) {
 
 	// Phase 4: depends on AvailableTables being populated
 	app.initSecurityGraph(ctx)
+	app.initTapGraphConsumer(ctx)
 	if err := app.validatePolicyCoverage(ctx); err != nil {
 		logger.Warn("policy coverage validation failed", "error", err)
 		if os.Getenv("CI") != "" {

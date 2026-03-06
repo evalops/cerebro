@@ -41,6 +41,8 @@ services:
     environment:
       TAP_NATS_URL: nats://nats:4222
       TAP_CLICKHOUSE_ADDR: clickhouse:9000
+    ports:
+      - "8081:8080"
     depends_on:
       - nats
       - clickhouse
@@ -66,6 +68,8 @@ services:
       NATS_URL: nats://nats:4222
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/ensemble?sslmode=disable
       REDIS_URL: redis://redis:6379
+    ports:
+      - "3999:3999"
     depends_on:
       - nats
       - postgres

@@ -208,6 +208,12 @@ func (a *App) Close() error {
 		}
 	}
 
+	if a.TapConsumer != nil {
+		if err := a.TapConsumer.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("tap consumer: %w", err))
+		}
+	}
+
 	// Close findings store if it implements io.Closer (e.g., SQLiteStore)
 	if closer, ok := a.Findings.(interface{ Close() error }); ok {
 		if err := closer.Close(); err != nil {
