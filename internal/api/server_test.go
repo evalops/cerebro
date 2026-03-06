@@ -490,6 +490,75 @@ func TestListFindings_SeverityFilter(t *testing.T) {
 	}
 }
 
+func TestListFindings_SignalTypeAndDomainFilter(t *testing.T) {
+	s := newTestServer(t)
+	s.app.Findings.Upsert(context.Background(), policy.Finding{
+		ID: "f-1", PolicyID: "p1", Severity: "high",
+	})
+	s.app.Findings.Upsert(context.Background(), policy.Finding{
+		ID: "f-2", PolicyID: "stripe-large-refund", Severity: "high",
+	})
+
+	if err := s.app.Findings.Update("f-1", func(f *findings.Finding) error {
+		f.SignalType = findings.SignalTypeBusiness
+		f.Domain = findings.DomainPipeline
+		return nil
+	}); err != nil {
+		t.Fatalf("update f-1: %v", err)
+	}
+
+	w := do(t, s, "GET", "/api/v1/findings/?signal_type=business&domain=pipeline", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	body := decodeJSON(t, w)
+	if body["count"].(float64) != 1 {
+		t.Fatalf("expected 1 filtered finding, got %v", body["count"])
+	}
+}
+
+func TestSignalsDashboard(t *testing.T) {
+	s := newTestServer(t)
+	s.app.Findings.Upsert(context.Background(), policy.Finding{
+		ID: "f-1", PolicyID: "hubspot-stale-deal", Severity: "high",
+	})
+	s.app.Findings.Upsert(context.Background(), policy.Finding{
+		ID: "f-2", PolicyID: "stripe-large-refund", Severity: "critical",
+	})
+
+	if err := s.app.Findings.Update("f-1", func(f *findings.Finding) error {
+		f.SignalType = findings.SignalTypeBusiness
+		f.Domain = findings.DomainPipeline
+		return nil
+	}); err != nil {
+		t.Fatalf("update f-1: %v", err)
+	}
+	if err := s.app.Findings.Update("f-2", func(f *findings.Finding) error {
+		f.SignalType = findings.SignalTypeCompliance
+		f.Domain = findings.DomainFinancial
+		f.Status = "SNOOZED"
+		return nil
+	}); err != nil {
+		t.Fatalf("update f-2: %v", err)
+	}
+
+	w := do(t, s, "GET", "/api/v1/signals/dashboard", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	body := decodeJSON(t, w)
+	summary, ok := body["summary"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("missing summary payload: %#v", body)
+	}
+	if summary["total_signals"].(float64) != 2 {
+		t.Fatalf("expected total_signals=2, got %v", summary["total_signals"])
+	}
+	if summary["snoozed_signals"].(float64) != 1 {
+		t.Fatalf("expected snoozed_signals=1, got %v", summary["snoozed_signals"])
+	}
+}
+
 func TestExportFindings_InvalidFormat(t *testing.T) {
 	s := newTestServer(t)
 	w := do(t, s, "GET", "/api/v1/findings/export?format=xml", nil)

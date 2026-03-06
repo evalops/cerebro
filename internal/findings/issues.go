@@ -3,6 +3,7 @@ package findings
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -101,6 +102,7 @@ func (m *IssueManager) Resolve(issueID, resolution string) error {
 		f.Status = "RESOLVED"
 		f.Resolution = resolution
 		f.ResolvedAt = &now
+		f.SnoozedUntil = nil
 		f.StatusChangedAt = &now
 		f.UpdatedAt = now
 		return nil
@@ -124,6 +126,7 @@ func (m *IssueManager) Reopen(issueID string) error {
 		f.Status = "OPEN"
 		f.Resolution = ""
 		f.ResolvedAt = nil
+		f.SnoozedUntil = nil
 		f.StatusChangedAt = &now
 		f.UpdatedAt = now
 		return nil
@@ -134,6 +137,61 @@ func (m *IssueManager) Reopen(issueID string) error {
 func (m *IssueManager) SetInProgress(issueID string) error {
 	return m.updateIssue(issueID, func(f *Finding, now time.Time) error {
 		f.Status = "IN_PROGRESS"
+		f.StatusChangedAt = &now
+		f.UpdatedAt = now
+		return nil
+	})
+}
+
+// AutoResolve resolves an issue when its underlying condition clears.
+func (m *IssueManager) AutoResolve(issueID, resolution string) error {
+	if strings.TrimSpace(resolution) == "" {
+		resolution = "condition cleared automatically"
+	}
+	return m.updateIssue(issueID, func(f *Finding, now time.Time) error {
+		f.Status = "RESOLVED"
+		f.Resolution = resolution
+		f.ResolvedAt = &now
+		f.SnoozedUntil = nil
+		f.StatusChangedAt = &now
+		f.UpdatedAt = now
+		return nil
+	})
+}
+
+// Snooze suppresses an issue until a specific duration elapses.
+func (m *IssueManager) Snooze(issueID string, duration time.Duration) error {
+	if duration <= 0 {
+		return errors.New("snooze duration must be > 0")
+	}
+	return m.updateIssue(issueID, func(f *Finding, now time.Time) error {
+		until := now.Add(duration)
+		f.Status = "SNOOZED"
+		f.SnoozedUntil = &until
+		f.StatusChangedAt = &now
+		f.UpdatedAt = now
+		return nil
+	})
+}
+
+// Escalate increases issue severity by one level and tracks escalation count.
+func (m *IssueManager) Escalate(issueID string, reason string) error {
+	return m.updateIssue(issueID, func(f *Finding, now time.Time) error {
+		switch strings.ToLower(strings.TrimSpace(f.Severity)) {
+		case "low":
+			f.Severity = "medium"
+		case "medium":
+			f.Severity = "high"
+		case "high":
+			f.Severity = "critical"
+		}
+		f.EscalationCount++
+		if strings.TrimSpace(reason) != "" {
+			if f.Notes != "" {
+				f.Notes += "\n---\n"
+			}
+			f.Notes += "Escalated: " + strings.TrimSpace(reason)
+		}
 		f.StatusChangedAt = &now
 		f.UpdatedAt = now
 		return nil

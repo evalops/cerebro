@@ -168,9 +168,16 @@ func (s *SnowflakeStore) Upsert(ctx context.Context, pf policy.Finding) *Finding
 		if len(pf.MitreAttack) > 0 {
 			existing.MitreAttack = pf.MitreAttack
 		}
-		if previousStatus == "RESOLVED" {
+		if existing.SignalType == "" {
+			existing.SignalType = SignalTypeSecurity
+		}
+		if existing.Domain == "" {
+			existing.Domain = inferDomain(existing.PolicyID, existing.ResourceType)
+		}
+		if previousStatus == "RESOLVED" || previousStatus == "SNOOZED" {
 			existing.Status = "OPEN"
 			existing.ResolvedAt = nil
+			existing.SnoozedUntil = nil
 			existing.StatusChangedAt = &now
 		}
 		EnrichFinding(existing)
@@ -212,6 +219,8 @@ func (s *SnowflakeStore) Upsert(ctx context.Context, pf policy.Finding) *Finding
 		PolicyName:         pf.PolicyName,
 		Title:              pf.Title,
 		Severity:           pf.Severity,
+		SignalType:         SignalTypeSecurity,
+		Domain:             inferDomain(pf.PolicyID, resourceType),
 		Status:             "OPEN",
 		ResourceID:         resourceID,
 		ResourceName:       resourceName,
@@ -279,6 +288,12 @@ func (s *SnowflakeStore) List(filter FindingFilter) []*Finding {
 		if filter.PolicyID != "" && f.PolicyID != filter.PolicyID {
 			continue
 		}
+		if filter.SignalType != "" && !strings.EqualFold(f.SignalType, filter.SignalType) {
+			continue
+		}
+		if filter.Domain != "" && !strings.EqualFold(f.Domain, filter.Domain) {
+			continue
+		}
 		result = append(result, f)
 	}
 
@@ -314,6 +329,12 @@ func (s *SnowflakeStore) Count(filter FindingFilter) int {
 		if filter.PolicyID != "" && f.PolicyID != filter.PolicyID {
 			continue
 		}
+		if filter.SignalType != "" && !strings.EqualFold(f.SignalType, filter.SignalType) {
+			continue
+		}
+		if filter.Domain != "" && !strings.EqualFold(f.Domain, filter.Domain) {
+			continue
+		}
 		count++
 	}
 	return count
@@ -330,6 +351,7 @@ func (s *SnowflakeStore) Resolve(id string) bool {
 	now := time.Now()
 	f.Status = "RESOLVED"
 	f.ResolvedAt = &now
+	f.SnoozedUntil = nil
 	f.StatusChangedAt = &now
 	f.UpdatedAt = now
 	s.dirty[id] = true
@@ -346,6 +368,7 @@ func (s *SnowflakeStore) Suppress(id string) bool {
 	}
 	now := time.Now()
 	f.Status = "SUPPRESSED"
+	f.SnoozedUntil = nil
 	f.StatusChangedAt = &now
 	f.UpdatedAt = now
 	s.dirty[id] = true
@@ -357,9 +380,11 @@ func (s *SnowflakeStore) Stats() Stats {
 	defer s.mu.RUnlock()
 
 	stats := Stats{
-		BySeverity: make(map[string]int),
-		ByStatus:   make(map[string]int),
-		ByPolicy:   make(map[string]int),
+		BySeverity:   make(map[string]int),
+		ByStatus:     make(map[string]int),
+		ByPolicy:     make(map[string]int),
+		BySignalType: make(map[string]int),
+		ByDomain:     make(map[string]int),
 	}
 
 	for _, f := range s.cache {
@@ -367,6 +392,16 @@ func (s *SnowflakeStore) Stats() Stats {
 		stats.BySeverity[f.Severity]++
 		stats.ByStatus[normalizeStatus(f.Status)]++
 		stats.ByPolicy[f.PolicyID]++
+		signalType := strings.ToLower(strings.TrimSpace(f.SignalType))
+		if signalType == "" {
+			signalType = SignalTypeSecurity
+		}
+		stats.BySignalType[signalType]++
+		domain := strings.ToLower(strings.TrimSpace(f.Domain))
+		if domain == "" {
+			domain = DomainInfra
+		}
+		stats.ByDomain[domain]++
 	}
 
 	return stats

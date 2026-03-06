@@ -89,6 +89,7 @@ func (s *Server) setupRoutes() {
 			r.Post("/{id}/notes", s.addFindingNote)
 			r.Post("/{id}/tickets", s.linkFindingTicket)
 		})
+		r.Get("/signals/dashboard", s.signalsDashboard)
 
 		// Business entity analytics endpoints
 		r.Route("/entities", func(r chi.Router) {

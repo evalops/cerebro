@@ -20,11 +20,13 @@ func (s *Server) listFindings(w http.ResponseWriter, r *http.Request) {
 	pagination := ParsePagination(r, 100, 1000)
 
 	filter := findings.FindingFilter{
-		Severity: r.URL.Query().Get("severity"),
-		Status:   r.URL.Query().Get("status"),
-		PolicyID: r.URL.Query().Get("policy_id"),
-		Limit:    pagination.Limit,
-		Offset:   pagination.Offset,
+		Severity:   r.URL.Query().Get("severity"),
+		Status:     r.URL.Query().Get("status"),
+		PolicyID:   r.URL.Query().Get("policy_id"),
+		SignalType: r.URL.Query().Get("signal_type"),
+		Domain:     r.URL.Query().Get("domain"),
+		Limit:      pagination.Limit,
+		Offset:     pagination.Offset,
 	}
 
 	total := s.app.Findings.Count(filter)
@@ -41,6 +43,24 @@ func (s *Server) listFindings(w http.ResponseWriter, r *http.Request) {
 func (s *Server) findingsStats(w http.ResponseWriter, r *http.Request) {
 	stats := s.app.Findings.Stats()
 	s.json(w, http.StatusOK, stats)
+}
+
+func (s *Server) signalsDashboard(w http.ResponseWriter, r *http.Request) {
+	stats := s.app.Findings.Stats()
+	open := s.app.Findings.Count(findings.FindingFilter{Status: "OPEN"})
+	snoozed := s.app.Findings.Count(findings.FindingFilter{Status: "SNOOZED"})
+	recent := s.app.Findings.List(findings.FindingFilter{Limit: 25})
+
+	s.json(w, http.StatusOK, map[string]interface{}{
+		"summary": map[string]interface{}{
+			"total_signals":   stats.Total,
+			"open_signals":    open,
+			"snoozed_signals": snoozed,
+		},
+		"stats":          stats,
+		"recent_signals": recent,
+		"count":          len(recent),
+	})
 }
 
 func (s *Server) getFinding(w http.ResponseWriter, r *http.Request) {
@@ -112,9 +132,11 @@ func (s *Server) suppressFinding(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) exportFindings(w http.ResponseWriter, r *http.Request) {
 	filter := findings.FindingFilter{
-		Severity: r.URL.Query().Get("severity"),
-		Status:   r.URL.Query().Get("status"),
-		PolicyID: r.URL.Query().Get("policy_id"),
+		Severity:   r.URL.Query().Get("severity"),
+		Status:     r.URL.Query().Get("status"),
+		PolicyID:   r.URL.Query().Get("policy_id"),
+		SignalType: r.URL.Query().Get("signal_type"),
+		Domain:     r.URL.Query().Get("domain"),
 	}
 	list := s.app.Findings.List(filter)
 

@@ -173,6 +173,8 @@ func (s *SQLiteStore) Upsert(ctx context.Context, pf policy.Finding) *Finding {
 			PolicyName:         pf.PolicyName,
 			Title:              pf.Title,
 			Severity:           pf.Severity,
+			SignalType:         SignalTypeSecurity,
+			Domain:             inferDomain(pf.PolicyID, resourceType),
 			Status:             "OPEN",
 			ResourceID:         resourceID,
 			ResourceName:       resourceName,
@@ -285,10 +287,17 @@ func (s *SQLiteStore) Upsert(ctx context.Context, pf policy.Finding) *Finding {
 	if len(pf.MitreAttack) > 0 {
 		existing.MitreAttack = pf.MitreAttack
 	}
+	if existing.SignalType == "" {
+		existing.SignalType = SignalTypeSecurity
+	}
+	if existing.Domain == "" {
+		existing.Domain = inferDomain(existing.PolicyID, existing.ResourceType)
+	}
 
-	if previousStatus == "RESOLVED" {
+	if previousStatus == "RESOLVED" || previousStatus == "SNOOZED" {
 		existing.Status = "OPEN"
 		existing.ResolvedAt = nil
+		existing.SnoozedUntil = nil
 		existing.StatusChangedAt = &now
 	}
 
@@ -479,13 +488,16 @@ func (s *SQLiteStore) List(filter FindingFilter) []*Finding {
 
 	query += " ORDER BY first_seen DESC"
 
-	if filter.Limit > 0 {
-		query += " LIMIT ?"
-		args = append(args, filter.Limit)
-	}
-	if filter.Offset > 0 {
-		query += " OFFSET ?"
-		args = append(args, filter.Offset)
+	applyDBPagination := strings.TrimSpace(filter.SignalType) == "" && strings.TrimSpace(filter.Domain) == ""
+	if applyDBPagination {
+		if filter.Limit > 0 {
+			query += " LIMIT ?"
+			args = append(args, filter.Limit)
+		}
+		if filter.Offset > 0 {
+			query += " OFFSET ?"
+			args = append(args, filter.Offset)
+		}
 	}
 
 	rows, err := s.db.QueryContext(context.Background(), query, args...)
@@ -516,13 +528,36 @@ func (s *SQLiteStore) List(filter FindingFilter) []*Finding {
 		}
 		f.Status = normalizeStatus(f.Status)
 		EnrichFinding(&f)
+		if filter.SignalType != "" && !strings.EqualFold(f.SignalType, filter.SignalType) {
+			continue
+		}
+		if filter.Domain != "" && !strings.EqualFold(f.Domain, filter.Domain) {
+			continue
+		}
 		result = append(result, &f)
+	}
+
+	if !applyDBPagination && (filter.Offset > 0 || filter.Limit > 0) {
+		if filter.Offset >= len(result) {
+			return []*Finding{}
+		}
+		end := len(result)
+		if filter.Limit > 0 && filter.Offset+filter.Limit < end {
+			end = filter.Offset + filter.Limit
+		}
+		result = result[filter.Offset:end]
 	}
 
 	return result
 }
 
 func (s *SQLiteStore) Count(filter FindingFilter) int {
+	if strings.TrimSpace(filter.SignalType) != "" || strings.TrimSpace(filter.Domain) != "" {
+		filter.Limit = 0
+		filter.Offset = 0
+		return len(s.List(filter))
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -580,48 +615,45 @@ func (s *SQLiteStore) Stats() Stats {
 	defer s.mu.RUnlock()
 
 	stats := Stats{
-		BySeverity: make(map[string]int),
-		ByStatus:   make(map[string]int),
-		ByPolicy:   make(map[string]int),
+		BySeverity:   make(map[string]int),
+		ByStatus:     make(map[string]int),
+		ByPolicy:     make(map[string]int),
+		BySignalType: make(map[string]int),
+		ByDomain:     make(map[string]int),
 	}
 
-	// Total
-	_ = s.db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM findings").Scan(&stats.Total)
-
-	// By Severity
-	rows, _ := s.db.QueryContext(context.Background(), "SELECT severity, COUNT(*) FROM findings GROUP BY severity")
-	if rows != nil {
-		for rows.Next() {
-			var k string
-			var v int
-			_ = rows.Scan(&k, &v)
-			stats.BySeverity[k] = v
-		}
-		_ = rows.Close()
+	rows, _ := s.db.QueryContext(context.Background(), "SELECT severity, UPPER(status), policy_id, metadata FROM findings")
+	if rows == nil {
+		return stats
 	}
+	defer func() { _ = rows.Close() }()
 
-	// By Status
-	rows, _ = s.db.QueryContext(context.Background(), "SELECT UPPER(status), COUNT(*) FROM findings GROUP BY UPPER(status)")
-	if rows != nil {
-		for rows.Next() {
-			var k string
-			var v int
-			_ = rows.Scan(&k, &v)
-			stats.ByStatus[k] = v
+	for rows.Next() {
+		var severity string
+		var status string
+		var policyID string
+		var metadataData []byte
+		if err := rows.Scan(&severity, &status, &policyID, &metadataData); err != nil {
+			continue
 		}
-		_ = rows.Close()
-	}
 
-	// By Policy
-	rows, _ = s.db.QueryContext(context.Background(), "SELECT policy_id, COUNT(*) FROM findings GROUP BY policy_id")
-	if rows != nil {
-		for rows.Next() {
-			var k string
-			var v int
-			_ = rows.Scan(&k, &v)
-			stats.ByPolicy[k] = v
+		stats.Total++
+		stats.BySeverity[severity]++
+		stats.ByStatus[status]++
+		stats.ByPolicy[policyID]++
+
+		var f Finding
+		applyFindingMetadata(&f, metadataData)
+		signalType := strings.ToLower(strings.TrimSpace(f.SignalType))
+		if signalType == "" {
+			signalType = SignalTypeSecurity
 		}
-		_ = rows.Close()
+		stats.BySignalType[signalType]++
+		domain := strings.ToLower(strings.TrimSpace(f.Domain))
+		if domain == "" {
+			domain = DomainInfra
+		}
+		stats.ByDomain[domain]++
 	}
 
 	return stats

@@ -164,3 +164,46 @@ func TestIssueManager_SnowflakeStoreMarksDirtyOnUpdate(t *testing.T) {
 		t.Fatalf("assignee = %q, want carol", f.AssigneeName)
 	}
 }
+
+func TestIssueManager_SnoozeEscalateAndAutoResolve(t *testing.T) {
+	store := NewStore()
+	store.Upsert(context.Background(), policy.Finding{
+		ID:       "f-1",
+		PolicyID: "p-1",
+		Severity: "low",
+	})
+
+	mgr := NewIssueManager(store)
+	if err := mgr.Snooze("f-1", 30*time.Minute); err != nil {
+		t.Fatalf("snooze: %v", err)
+	}
+	if err := mgr.Escalate("f-1", "compound signals detected"); err != nil {
+		t.Fatalf("escalate: %v", err)
+	}
+	if err := mgr.AutoResolve("f-1", "condition cleared"); err != nil {
+		t.Fatalf("auto resolve: %v", err)
+	}
+
+	f, ok := store.Get("f-1")
+	if !ok {
+		t.Fatal("expected finding")
+	}
+	if f.Status != "RESOLVED" {
+		t.Fatalf("status = %q, want RESOLVED", f.Status)
+	}
+	if f.Severity != "medium" {
+		t.Fatalf("severity = %q, want medium", f.Severity)
+	}
+	if f.EscalationCount != 1 {
+		t.Fatalf("escalation_count = %d, want 1", f.EscalationCount)
+	}
+	if f.ResolvedAt == nil {
+		t.Fatal("expected resolved_at to be set")
+	}
+	if f.SnoozedUntil != nil {
+		t.Fatalf("snoozed_until = %v, want nil after auto-resolve", f.SnoozedUntil)
+	}
+	if !strings.Contains(f.Notes, "Escalated: compound signals detected") {
+		t.Fatalf("expected escalation note, got %q", f.Notes)
+	}
+}
