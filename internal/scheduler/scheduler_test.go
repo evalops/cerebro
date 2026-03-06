@@ -416,3 +416,96 @@ func TestScheduler_GracefulShutdown(t *testing.T) {
 		t.Error("job should have completed before Stop returned")
 	}
 }
+
+func TestScheduler_RunDueJobs_NoopWhenStopped(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	s := NewScheduler(logger)
+
+	var called atomic.Int32
+	s.AddJob("due", time.Hour, func(ctx context.Context) error {
+		called.Add(1)
+		return nil
+	})
+
+	s.mu.Lock()
+	s.jobs["due"].NextRun = time.Now().Add(-time.Second)
+	s.mu.Unlock()
+
+	// Scheduler is not running, so due jobs must not execute.
+	s.runDueJobs()
+	s.wg.Wait()
+
+	if called.Load() != 0 {
+		t.Fatalf("expected no job execution while stopped, got %d", called.Load())
+	}
+}
+
+func TestScheduler_RunDueJobs_ExecutesDueJobs(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	s := NewScheduler(logger)
+
+	done := make(chan struct{}, 1)
+	s.AddJob("due", time.Hour, func(ctx context.Context) error {
+		select {
+		case done <- struct{}{}:
+		default:
+		}
+		return nil
+	})
+
+	s.mu.Lock()
+	s.running = true
+	s.ctx = context.Background()
+	s.jobs["due"].NextRun = time.Now().Add(-time.Second)
+	s.mu.Unlock()
+
+	s.runDueJobs()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("expected due job to execute")
+	}
+
+	s.wg.Wait()
+
+	job, ok := s.GetJob("due")
+	if !ok {
+		t.Fatal("expected due job to remain registered")
+	}
+	if job.LastRun.IsZero() {
+		t.Fatal("expected LastRun to be updated")
+	}
+	if job.Running {
+		t.Fatal("expected job to be marked not running after completion")
+	}
+}
+
+func TestScheduler_RunDueJobs_RemovedJobNotExecuted(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	s := NewScheduler(logger)
+
+	var called atomic.Int32
+	s.AddJob("remove-me", time.Hour, func(ctx context.Context) error {
+		called.Add(1)
+		return nil
+	})
+
+	s.mu.Lock()
+	s.running = true
+	s.ctx = context.Background()
+	job := s.jobs["remove-me"]
+	job.NextRun = time.Now().Add(-time.Second)
+	job.removeRequested = true
+	s.mu.Unlock()
+
+	s.runDueJobs()
+	s.wg.Wait()
+
+	if called.Load() != 0 {
+		t.Fatalf("expected removed job to skip execution, got %d", called.Load())
+	}
+	if _, ok := s.GetJob("remove-me"); ok {
+		t.Fatal("expected removed job to be deleted")
+	}
+}
