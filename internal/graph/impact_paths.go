@@ -141,17 +141,17 @@ func (a *ImpactPathAnalyzer) allowedEdge(scenario ImpactScenario, edgeKind EdgeK
 	switch scenario {
 	case ImpactScenarioChurnCascade:
 		switch edgeKind {
-		case EdgeKindRefers, EdgeKindManagedBy, EdgeKindWorksAt, EdgeKindAssignedTo, EdgeKindOwns:
+		case EdgeKindRefers, EdgeKindManagedBy, EdgeKindWorksAt, EdgeKindAssignedTo, EdgeKindOwns, EdgeKindOriginatedFrom:
 			return true
 		}
 	case ImpactScenarioRevenueImpact:
 		switch edgeKind {
-		case EdgeKindBilledBy, EdgeKindSubscribedTo, EdgeKindOwns, EdgeKindRenews, EdgeKindAssignedTo:
+		case EdgeKindBilledBy, EdgeKindSubscribedTo, EdgeKindOwns, EdgeKindRenews, EdgeKindAssignedTo, EdgeKindOriginatedFrom:
 			return true
 		}
 	case ImpactScenarioIncidentBlast:
 		switch edgeKind {
-		case EdgeKindConnectsTo, EdgeKindOwns, EdgeKindDeployedFrom, EdgeKindSubscribedTo, EdgeKindWorksAt:
+		case EdgeKindConnectsTo, EdgeKindOwns, EdgeKindDeployedFrom, EdgeKindSubscribedTo, EdgeKindWorksAt, EdgeKindProvisionedAs:
 			return true
 		}
 	default:

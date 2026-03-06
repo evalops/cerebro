@@ -44,3 +44,12 @@ func TestEdgeIsCrossSystem(t *testing.T) {
 		t.Fatal("expected edge without cross_system flag to not be cross-system")
 	}
 }
+
+func TestBusinessLineageEdgeKinds(t *testing.T) {
+	if EdgeKindOriginatedFrom != "originated_from" {
+		t.Fatalf("unexpected originated_from edge kind value: %s", EdgeKindOriginatedFrom)
+	}
+	if EdgeKindProvisionedAs != "provisioned_as" {
+		t.Fatalf("unexpected provisioned_as edge kind value: %s", EdgeKindProvisionedAs)
+	}
+}
