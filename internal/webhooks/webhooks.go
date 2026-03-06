@@ -135,6 +135,16 @@ const (
 	EventRbacTenantCreated EventType = "rbac.tenant.created"
 	EventWebhookCreated    EventType = "webhook.created"
 	EventRemediationRule   EventType = "remediation.rule.created"
+	EventSignalCreated     EventType = "signal.created"
+	EventSignalResolved    EventType = "signal.resolved"
+	EventSignalEscalated   EventType = "signal.escalated"
+
+	EventRiskScoreChanged         EventType = "risk_score.changed"
+	EventToxicCombinationDetected EventType = "toxic_combination.detected"
+	EventToxicCombinationResolved EventType = "toxic_combination.resolved"
+	EventApprovalRequested        EventType = "approval.requested"
+	EventCohortOutlierDetected    EventType = "cohort.outlier_detected"
+	EventComplianceScoreChanged   EventType = "compliance.score_changed"
 )
 
 var defaultEventTypes = []EventType{
@@ -155,6 +165,15 @@ var defaultEventTypes = []EventType{
 	EventRbacTenantCreated,
 	EventWebhookCreated,
 	EventRemediationRule,
+	EventSignalCreated,
+	EventSignalResolved,
+	EventSignalEscalated,
+	EventRiskScoreChanged,
+	EventToxicCombinationDetected,
+	EventToxicCombinationResolved,
+	EventApprovalRequested,
+	EventCohortOutlierDetected,
+	EventComplianceScoreChanged,
 }
 
 // DefaultEventTypes returns the list of webhook event types registered by default.
