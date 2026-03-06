@@ -282,3 +282,99 @@ func BenchmarkRiskEngine_Analyze(b *testing.B) {
 		engine.Analyze()
 	}
 }
+
+func TestRiskEngine_ScoreEntity_BusinessSignals(t *testing.T) {
+	g := New()
+	g.AddNode(&Node{
+		ID:   "cust-1",
+		Kind: NodeKindCustomer,
+		Name: "Acme",
+		Properties: map[string]any{
+			"open_p1_tickets":      2,
+			"failed_payment_count": 1,
+		},
+	})
+	g.AddNode(&Node{
+		ID:   "deal-1",
+		Kind: NodeKindDeal,
+		Name: "Enterprise Renewal",
+		Properties: map[string]any{
+			"amount":                   250000,
+			"days_since_last_activity": 35,
+		},
+	})
+	g.AddEdge(&Edge{ID: "cust-deal", Source: "cust-1", Target: "deal-1", Kind: EdgeKindOwns, Effect: EdgeEffectAllow})
+
+	engine := NewRiskEngine(g)
+	entity := engine.ScoreEntity("cust-1")
+	if entity == nil {
+		t.Fatal("expected entity score")
+	}
+	if entity.Score <= 0 {
+		t.Fatalf("expected positive entity score, got %.2f", entity.Score)
+	}
+	if len(entity.Factors) == 0 {
+		t.Fatal("expected entity risk factors")
+	}
+}
+
+func TestRiskEngine_ProfileInfluencesCompositeScore(t *testing.T) {
+	g := New()
+	g.AddNode(&Node{
+		ID:   "cust-1",
+		Kind: NodeKindCustomer,
+		Name: "Acme",
+		Properties: map[string]any{
+			"failed_payment_count":      2,
+			"open_p1_tickets":           3,
+			"days_since_last_activity":  40,
+			"investigation_frequency":   4,
+			"critical_finding_count":    0,
+			"high_finding_count":        0,
+			"deploy_frequency_drop_pct": 0,
+		},
+	})
+
+	engine := NewRiskEngine(g)
+	defaultScore := engine.Analyze().RiskScore
+
+	if err := engine.SetRiskProfile("revenue-heavy"); err != nil {
+		t.Fatalf("set profile: %v", err)
+	}
+	revenueScore := engine.Analyze().RiskScore
+
+	if err := engine.SetRiskProfile("security-heavy"); err != nil {
+		t.Fatalf("set profile: %v", err)
+	}
+	securityScore := engine.Analyze().RiskScore
+
+	if revenueScore <= securityScore {
+		t.Fatalf("expected revenue-heavy score > security-heavy score (got %.2f vs %.2f, default %.2f)", revenueScore, securityScore, defaultScore)
+	}
+}
+
+func TestRiskEngine_RiskScoreChangeEvents(t *testing.T) {
+	g := New()
+	customer := &Node{
+		ID:   "cust-1",
+		Kind: NodeKindCustomer,
+		Name: "Acme",
+		Properties: map[string]any{
+			"open_p1_tickets":      1,
+			"failed_payment_count": 0,
+		},
+	}
+	g.AddNode(customer)
+
+	engine := NewRiskEngine(g)
+	_ = engine.Analyze()
+
+	customer.Properties["open_p1_tickets"] = 8
+	customer.Properties["failed_payment_count"] = 6
+	customer.Properties["investigation_frequency"] = 10
+
+	events := engine.Analyze().RiskScoreChanges
+	if len(events) == 0 {
+		t.Fatal("expected threshold crossing events")
+	}
+}

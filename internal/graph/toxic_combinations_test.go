@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -914,4 +915,111 @@ func TestToxicCombination_MultiCloudRuleCount(t *testing.T) {
 
 	t.Logf("Rule counts - AWS: %d, GCP: %d, Azure: %d, K8s: %d, CI/CD: %d",
 		awsCount, gcpCount, azureCount, k8sCount, cicdCount)
+}
+
+func TestToxicCombination_BusinessChurnCompoundSignal(t *testing.T) {
+	engine := NewToxicCombinationEngine()
+	g := New()
+
+	g.AddNode(&Node{
+		ID:   "customer-1",
+		Kind: NodeKindCustomer,
+		Name: "Acme",
+	})
+	g.AddNode(&Node{
+		ID:   "ticket-1",
+		Kind: NodeKindTicket,
+		Name: "P1 Incident A",
+		Properties: map[string]any{
+			"priority": "p1",
+			"status":   "open",
+		},
+	})
+	g.AddNode(&Node{
+		ID:   "ticket-2",
+		Kind: NodeKindTicket,
+		Name: "P1 Incident B",
+		Properties: map[string]any{
+			"priority": "critical",
+			"status":   "open",
+		},
+	})
+	g.AddNode(&Node{
+		ID:   "sub-1",
+		Kind: NodeKindSubscription,
+		Name: "Enterprise Subscription",
+		Properties: map[string]any{
+			"failed_payment_count": 1,
+		},
+	})
+	g.AddNode(&Node{
+		ID:   "opp-1",
+		Kind: NodeKindOpportunity,
+		Name: "Renewal",
+		Properties: map[string]any{
+			"days_until_renewal": 20,
+		},
+	})
+	g.AddNode(&Node{
+		ID:   "contact-1",
+		Kind: NodeKindContact,
+		Name: "Champion",
+		Properties: map[string]any{
+			"champion_departed": true,
+		},
+	})
+
+	g.AddEdge(&Edge{ID: "c-t1", Source: "customer-1", Target: "ticket-1", Kind: EdgeKindOwns, Effect: EdgeEffectAllow})
+	g.AddEdge(&Edge{ID: "c-t2", Source: "customer-1", Target: "ticket-2", Kind: EdgeKindOwns, Effect: EdgeEffectAllow})
+	g.AddEdge(&Edge{ID: "c-s1", Source: "customer-1", Target: "sub-1", Kind: EdgeKindSubscribedTo, Effect: EdgeEffectAllow})
+	g.AddEdge(&Edge{ID: "c-o1", Source: "customer-1", Target: "opp-1", Kind: EdgeKindRenews, Effect: EdgeEffectAllow})
+	g.AddEdge(&Edge{ID: "c-x1", Source: "customer-1", Target: "contact-1", Kind: EdgeKindWorksAt, Effect: EdgeEffectAllow})
+
+	results := engine.Analyze(g)
+	found := false
+	for _, tc := range results {
+		if strings.HasPrefix(tc.ID, "TC-BIZ-001-") {
+			found = true
+			if tc.Severity != SeverityCritical {
+				t.Fatalf("expected critical severity, got %s", tc.Severity)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected churn compound signal toxic combination")
+	}
+}
+
+func TestToxicCombination_BusinessFinancialGuardrail(t *testing.T) {
+	engine := NewToxicCombinationEngine()
+	g := New()
+
+	g.AddNode(&Node{
+		ID:   "invoice-1",
+		Kind: NodeKindInvoice,
+		Name: "Refund Event",
+		Properties: map[string]any{
+			"refund_amount":              7000,
+			"approval_recorded":          false,
+			"days_since_last_chargeback": 40,
+			"chargeback_count":           1,
+			"failed_payment_count":       0,
+		},
+	})
+
+	results := engine.Analyze(g)
+	found := false
+	for _, tc := range results {
+		if strings.HasPrefix(tc.ID, "TC-BIZ-005-") {
+			found = true
+			if tc.Severity != SeverityHigh {
+				t.Fatalf("expected high severity, got %s", tc.Severity)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected financial guardrail toxic combination")
+	}
 }

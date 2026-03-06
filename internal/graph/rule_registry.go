@@ -300,6 +300,8 @@ var ExpectedRules = []string{
 	"TC-K8S-001", "TC-K8S-002", "TC-K8S-003", "TC-K8S-004",
 	// CI/CD rules
 	"TC-CICD-001", "TC-CICD-002",
+	// Business rules
+	"TC-BIZ-001", "TC-BIZ-002", "TC-BIZ-003", "TC-BIZ-004", "TC-BIZ-005",
 }
 
 // VerifyExpectedRules checks that all expected rules are registered

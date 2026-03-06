@@ -233,6 +233,47 @@ func RegisterAllRules() {
 			MITREIDs: []string{"T1525"},
 			Enabled:  true,
 		})
+
+		// Cross-system business rules
+		reg.MustRegister(engine.ruleChurnCompoundSignal(), RuleMetadata{
+			ID:       "TC-BIZ-001",
+			Name:     "Churn Compound Signal",
+			Category: RuleCategoryCore,
+			MITREIDs: []string{"T1199"},
+			Enabled:  true,
+		})
+
+		reg.MustRegister(engine.ruleRevenueAtRisk(), RuleMetadata{
+			ID:       "TC-BIZ-002",
+			Name:     "Revenue-at-Risk",
+			Category: RuleCategoryCore,
+			MITREIDs: []string{"T1566"},
+			Enabled:  true,
+		})
+
+		reg.MustRegister(engine.ruleSecurityMeetsBusiness(), RuleMetadata{
+			ID:       "TC-BIZ-003",
+			Name:     "Security-Meets-Business",
+			Category: RuleCategoryCore,
+			MITREIDs: []string{"T1190"},
+			Enabled:  true,
+		})
+
+		reg.MustRegister(engine.ruleOperationalBlastRadius(), RuleMetadata{
+			ID:       "TC-BIZ-004",
+			Name:     "Operational Blast Radius",
+			Category: RuleCategoryCore,
+			MITREIDs: []string{"T1499"},
+			Enabled:  true,
+		})
+
+		reg.MustRegister(engine.ruleFinancialGuardrail(), RuleMetadata{
+			ID:       "TC-BIZ-005",
+			Name:     "Financial Guardrail",
+			Category: RuleCategoryCore,
+			MITREIDs: []string{"T1657"},
+			Enabled:  true,
+		})
 	})
 }
 

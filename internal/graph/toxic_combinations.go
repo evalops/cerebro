@@ -257,6 +257,14 @@ func (i toxicCombinationNodeIndex) candidatesForRule(ruleID string) []*Node {
 		return i.byKind[NodeKindServiceAccount]
 	case "TC-CICD-001", "TC-CICD-002":
 		return i.byKindProvider[NodeKindRole]["aws"]
+	case "TC-BIZ-001", "TC-BIZ-003":
+		return appendNodeSlices(i.byKind[NodeKindCustomer], i.byKind[NodeKindCompany])
+	case "TC-BIZ-002":
+		return appendNodeSlices(i.byKind[NodeKindDeal], i.byKind[NodeKindOpportunity])
+	case "TC-BIZ-004":
+		return appendNodeSlices(i.byKind[NodeKindApplication], i.byKind[NodeKindInstance], i.byKind[NodeKindFunction])
+	case "TC-BIZ-005":
+		return appendNodeSlices(i.byKind[NodeKindInvoice], i.byKind[NodeKindSubscription], i.byKind[NodeKindCustomer])
 	default:
 		return i.all
 	}
@@ -309,6 +317,12 @@ func (e *ToxicCombinationEngine) registerDefaultRules() {
 		// CI/CD supply chain rules
 		e.ruleGitHubActionsOIDCOverprivileged(),
 		e.ruleEKSNodeRoleECRPush(),
+		// Business + cross-system rules
+		e.ruleChurnCompoundSignal(),
+		e.ruleRevenueAtRisk(),
+		e.ruleSecurityMeetsBusiness(),
+		e.ruleOperationalBlastRadius(),
+		e.ruleFinancialGuardrail(),
 	}
 }
 
