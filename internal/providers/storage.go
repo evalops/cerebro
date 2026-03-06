@@ -296,10 +296,6 @@ func formatProviderIDValue(value interface{}) string {
 	}
 }
 
-func insertProviderRows(ctx context.Context, sf providerSnowflakeClient, table string, rows []map[string]interface{}) error {
-	return tableops.InsertVariantRowsBatch(ctx, sf, table, rows, nil, providerInsertBatchSize)
-}
-
 func mergeProviderRows(ctx context.Context, sf providerSnowflakeClient, table string, rows []map[string]interface{}) error {
 	return tableops.MergeVariantRowsBatch(ctx, sf, table, rows, nil, providerInsertBatchSize)
 }

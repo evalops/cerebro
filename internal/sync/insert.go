@@ -9,10 +9,6 @@ import (
 
 const insertBatchSize = tableops.DefaultInsertBatchSize
 
-func insertRowsBatch(ctx context.Context, sf *snowflake.Client, table string, rows []map[string]interface{}) error {
-	return tableops.InsertVariantRowsBatch(ctx, sf, table, rows, nil, insertBatchSize)
-}
-
 func mergeRowsBatch(ctx context.Context, sf *snowflake.Client, table string, rows []map[string]interface{}) error {
 	return tableops.MergeVariantRowsBatch(ctx, sf, table, rows, nil, insertBatchSize)
 }

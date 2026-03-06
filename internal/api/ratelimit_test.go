@@ -393,7 +393,7 @@ func TestGetClientKey_NoTrustedProxies(t *testing.T) {
 				req.RemoteAddr = tt.addr
 			}
 
-			got := getClientKey(req)
+			got := getClientKeyTrusted(req, nil)
 			if got != tt.expected {
 				t.Errorf("expected %q, got %q", tt.expected, got)
 			}

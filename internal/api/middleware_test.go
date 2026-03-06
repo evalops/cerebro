@@ -71,7 +71,10 @@ func TestExtractAPIKey(t *testing.T) {
 			r := httptest.NewRequest("GET", "/api/v1/test", nil)
 			tt.setup(r)
 
-			key := extractAPIKey(r)
+			key, err := extractAPIKeyStrict(r)
+			if err != nil {
+				key = ""
+			}
 			if key != tt.expected {
 				t.Errorf("expected '%s', got '%s'", tt.expected, key)
 			}

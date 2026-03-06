@@ -215,10 +215,6 @@ func retryAfterSeconds(reset time.Time) int64 {
 // getClientKey extracts the rate limit key from the request.
 // Kept for backward compatibility; uses no trusted-proxy list so it always
 // falls back to RemoteAddr (safe default).
-func getClientKey(r *http.Request) string {
-	return getClientKeyTrusted(r, nil)
-}
-
 // getClientKeyTrusted returns the rate-limit key, honouring forwarded headers
 // only when the direct peer (RemoteAddr) is within a trusted CIDR.
 func getClientKeyTrusted(r *http.Request, trustedNets []*net.IPNet) string {
