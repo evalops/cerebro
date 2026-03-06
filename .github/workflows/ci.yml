@@ -13,7 +13,7 @@ concurrency:
 jobs:
   test-shards:
     name: Test shard ${{ matrix.shard_index }}
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     strategy:
       fail-fast: false
       matrix:
@@ -78,7 +78,7 @@ jobs:
 
   test:
     name: test
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     needs: [test-shards]
     if: ${{ always() }}
     steps:
@@ -91,7 +91,7 @@ jobs:
 
   coverage-threshold:
     name: coverage-threshold
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     needs: [test-shards]
     if: ${{ always() }}
     steps:
@@ -174,7 +174,7 @@ jobs:
 
   vendor-check:
     name: vendor-check
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
 
@@ -193,7 +193,7 @@ jobs:
 
   openapi-route-parity:
     name: openapi-route-parity
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
 
@@ -228,7 +228,7 @@ jobs:
 
   config-docs-drift:
     name: config-docs-drift
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
 
@@ -245,7 +245,7 @@ jobs:
 
   api-auth-smoke:
     name: api-auth-smoke
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
 
@@ -354,7 +354,7 @@ jobs:
           done
   api-auth-rbac-smoke:
     name: api-auth-rbac-smoke
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
 
@@ -445,7 +445,7 @@ jobs:
 
   scan-smoke-local:
     name: scan-smoke-local
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
 
@@ -499,7 +499,7 @@ jobs:
           PY
 
   lint:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -517,7 +517,7 @@ jobs:
 
   gosec-shards:
     name: gosec shard ${{ matrix.shard_index }}
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -558,7 +558,7 @@ jobs:
 
   gosec:
     name: gosec
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     needs: [gosec-shards]
     if: ${{ always() }}
     steps:
@@ -570,7 +570,7 @@ jobs:
           fi
 
   govulncheck:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -595,7 +595,7 @@ jobs:
           $(go env GOPATH)/bin/govulncheck -mode binary /tmp/policy-enhancer
 
   trivy:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
 
@@ -616,7 +616,7 @@ jobs:
             cerebro:ci
 
   policy-validate:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
 
@@ -633,7 +633,7 @@ jobs:
 
   runtime-image-build:
     name: runtime-image-build
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
 
@@ -645,8 +645,8 @@ jobs:
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Setup Blacksmith Builder
+        uses: useblacksmith/setup-docker-builder@v1
 
       - name: Build and validate amd64 runtime image
         shell: bash
