@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Ensure GOPATH/bin is in PATH
+export PATH="${GOPATH:-$HOME/go}/bin:$PATH"
+
 # Run goimports on staged .go files (excluding vendor)
 STAGED=$(git diff --cached --name-only --diff-filter=ACM -- '*.go' | grep -v '^vendor/' || true)
 if [ -z "$STAGED" ]; then
