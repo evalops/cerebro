@@ -219,7 +219,7 @@ func renderMarkdown(docs map[string]*envDoc) string {
 	var b strings.Builder
 	b.WriteString("# Generated Config Environment Variables\n\n")
 	b.WriteString("Generated from `internal/app/app.go` (`LoadConfig`) via `go run ./scripts/generate_config_docs/main.go`.\n\n")
-	b.WriteString(fmt.Sprintf("Total variables: **%d**\n\n", len(names)))
+	fmt.Fprintf(&b, "Total variables: **%d**\n\n", len(names))
 	b.WriteString("| Variable | Reader(s) | Default(s) | Config Field(s) |\n")
 	b.WriteString("|---|---|---|---|\n")
 
