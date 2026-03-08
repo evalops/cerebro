@@ -2,6 +2,7 @@ package ticketing
 
 import (
 	"context"
+	"fmt"
 	"time"
 )
 
@@ -91,11 +92,18 @@ func (s *Service) GetProvider(name string) (Provider, bool) {
 }
 
 func (s *Service) Primary() Provider {
+	if s == nil || s.primary == "" || len(s.providers) == 0 {
+		return nil
+	}
 	return s.providers[s.primary]
 }
 
 func (s *Service) CreateTicket(ctx context.Context, ticket *Ticket) (*Ticket, error) {
-	return s.Primary().CreateTicket(ctx, ticket)
+	primary := s.Primary()
+	if primary == nil {
+		return nil, fmt.Errorf("ticketing provider not configured")
+	}
+	return primary.CreateTicket(ctx, ticket)
 }
 
 func (s *Service) CreateTicketFromFinding(ctx context.Context, findingID, title, description, priority string) (*Ticket, error) {
