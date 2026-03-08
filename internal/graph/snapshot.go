@@ -28,7 +28,7 @@ func CreateSnapshot(g *Graph) *Snapshot {
 
 	nodes := make([]*Node, 0, len(g.nodes))
 	for _, n := range g.nodes {
-		nodes = append(nodes, n)
+		nodes = append(nodes, cloneNode(n))
 	}
 
 	edgeCount := 0
@@ -37,7 +37,9 @@ func CreateSnapshot(g *Graph) *Snapshot {
 	}
 	edges := make([]*Edge, 0, edgeCount)
 	for _, edgeList := range g.outEdges {
-		edges = append(edges, edgeList...)
+		for _, edge := range edgeList {
+			edges = append(edges, cloneEdge(edge))
+		}
 	}
 
 	return &Snapshot{
@@ -243,4 +245,63 @@ func ImportJSON(r io.Reader) (*Graph, error) {
 		return nil, err
 	}
 	return RestoreFromSnapshot(&snapshot), nil
+}
+
+func cloneNode(node *Node) *Node {
+	if node == nil {
+		return nil
+	}
+	cloned := *node
+	cloned.Properties = cloneAnyMap(node.Properties)
+	cloned.Tags = cloneStringMap(node.Tags)
+	cloned.Findings = append([]string(nil), node.Findings...)
+	return &cloned
+}
+
+func cloneEdge(edge *Edge) *Edge {
+	if edge == nil {
+		return nil
+	}
+	cloned := *edge
+	cloned.Properties = cloneAnyMap(edge.Properties)
+	return &cloned
+}
+
+func cloneAnyMap(values map[string]any) map[string]any {
+	if values == nil {
+		return nil
+	}
+	cloned := make(map[string]any, len(values))
+	for key, value := range values {
+		cloned[key] = cloneAny(value)
+	}
+	return cloned
+}
+
+func cloneStringMap(values map[string]string) map[string]string {
+	if values == nil {
+		return nil
+	}
+	cloned := make(map[string]string, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func cloneAny(value any) any {
+	switch v := value.(type) {
+	case map[string]any:
+		return cloneAnyMap(v)
+	case []any:
+		cloned := make([]any, len(v))
+		for i := range v {
+			cloned[i] = cloneAny(v[i])
+		}
+		return cloned
+	case []string:
+		return append([]string(nil), v...)
+	default:
+		return value
+	}
 }

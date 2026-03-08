@@ -88,6 +88,93 @@ func (g *Graph) AddEdgesBatch(edges []*Edge) {
 	g.indexBuilt = false
 }
 
+// RemoveNode removes a node and all edges touching it.
+func (g *Graph) RemoveNode(id string) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if _, ok := g.nodes[id]; !ok {
+		return false
+	}
+
+	delete(g.nodes, id)
+	g.removeEdgesByNodeLocked(id)
+	g.indexBuilt = false
+	return true
+}
+
+// RemoveEdge removes all edges matching source, target, and kind.
+func (g *Graph) RemoveEdge(source, target string, kind EdgeKind) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	matches := func(edge *Edge) bool {
+		return edge.Source == source && edge.Target == target && edge.Kind == kind
+	}
+
+	removed := false
+	if edges, ok := g.outEdges[source]; ok {
+		pruned, changed := pruneEdges(edges, matches)
+		if changed {
+			removed = true
+			if len(pruned) == 0 {
+				delete(g.outEdges, source)
+			} else {
+				g.outEdges[source] = pruned
+			}
+		}
+	}
+	if edges, ok := g.inEdges[target]; ok {
+		pruned, changed := pruneEdges(edges, matches)
+		if changed {
+			removed = true
+			if len(pruned) == 0 {
+				delete(g.inEdges, target)
+			} else {
+				g.inEdges[target] = pruned
+			}
+		}
+	}
+
+	if removed {
+		g.indexBuilt = false
+	}
+	return removed
+}
+
+// RemoveEdgesByNode removes all edges connected to nodeID.
+func (g *Graph) RemoveEdgesByNode(nodeID string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if g.removeEdgesByNodeLocked(nodeID) {
+		g.indexBuilt = false
+	}
+}
+
+// SetNodeProperty sets or updates a single property on a node.
+func (g *Graph) SetNodeProperty(id string, key string, value any) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	node, ok := g.nodes[id]
+	if !ok {
+		return false
+	}
+
+	if node.Properties == nil {
+		node.Properties = make(map[string]any)
+	}
+	node.Properties[key] = value
+	g.indexBuilt = false
+	return true
+}
+
+// Clone returns a deep copy of the graph via snapshot/restore.
+func (g *Graph) Clone() *Graph {
+	return RestoreFromSnapshot(CreateSnapshot(g))
+}
+
 // GetNode retrieves a node by ID
 func (g *Graph) GetNode(id string) (*Node, bool) {
 	g.mu.RLock()
@@ -503,4 +590,70 @@ func (g *Graph) GetResourceNodesByARNPrefix(prefix string) []*Node {
 		return nil
 	}
 	return g.indexByARNPrefix[prefix]
+}
+
+func (g *Graph) removeEdgesByNodeLocked(nodeID string) bool {
+	removed := false
+
+	if _, ok := g.outEdges[nodeID]; ok {
+		delete(g.outEdges, nodeID)
+		removed = true
+	}
+	if _, ok := g.inEdges[nodeID]; ok {
+		delete(g.inEdges, nodeID)
+		removed = true
+	}
+
+	for source, edges := range g.outEdges {
+		pruned, changed := pruneEdges(edges, func(edge *Edge) bool {
+			return edge.Target == nodeID
+		})
+		if !changed {
+			continue
+		}
+		removed = true
+		if len(pruned) == 0 {
+			delete(g.outEdges, source)
+		} else {
+			g.outEdges[source] = pruned
+		}
+	}
+
+	for target, edges := range g.inEdges {
+		pruned, changed := pruneEdges(edges, func(edge *Edge) bool {
+			return edge.Source == nodeID
+		})
+		if !changed {
+			continue
+		}
+		removed = true
+		if len(pruned) == 0 {
+			delete(g.inEdges, target)
+		} else {
+			g.inEdges[target] = pruned
+		}
+	}
+
+	return removed
+}
+
+func pruneEdges(edges []*Edge, remove func(edge *Edge) bool) ([]*Edge, bool) {
+	if len(edges) == 0 {
+		return edges, false
+	}
+
+	kept := make([]*Edge, 0, len(edges))
+	removed := false
+	for _, edge := range edges {
+		if remove(edge) {
+			removed = true
+			continue
+		}
+		kept = append(kept, edge)
+	}
+
+	if !removed {
+		return edges, false
+	}
+	return kept, true
 }
