@@ -483,6 +483,51 @@ func TestCreateAndGetPolicy(t *testing.T) {
 	}
 }
 
+func TestPolicyUpdateAndDelete(t *testing.T) {
+	s := newTestServer(t)
+	create := do(t, s, "POST", "/api/v1/policies/", policy.Policy{
+		ID:         "policy-update",
+		Name:       "Original",
+		Effect:     "forbid",
+		Resource:   "aws::s3::bucket",
+		Conditions: []string{"public == true"},
+		Severity:   "high",
+	})
+	if create.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", create.Code, create.Body.String())
+	}
+
+	update := do(t, s, "PUT", "/api/v1/policies/policy-update", policy.Policy{
+		Name:       "Updated",
+		Effect:     "forbid",
+		Resource:   "aws::s3::bucket",
+		Conditions: []string{"public == false"},
+		Severity:   "critical",
+	})
+	if update.Code != http.StatusOK {
+		t.Fatalf("expected 200 on update, got %d: %s", update.Code, update.Body.String())
+	}
+
+	get := do(t, s, "GET", "/api/v1/policies/policy-update", nil)
+	if get.Code != http.StatusOK {
+		t.Fatalf("expected 200 on get, got %d", get.Code)
+	}
+	body := decodeJSON(t, get)
+	if body["name"] != "Updated" {
+		t.Fatalf("expected updated name, got %v", body["name"])
+	}
+
+	del := do(t, s, "DELETE", "/api/v1/policies/policy-update", nil)
+	if del.Code != http.StatusNoContent {
+		t.Fatalf("expected 204 on delete, got %d: %s", del.Code, del.Body.String())
+	}
+
+	missing := do(t, s, "GET", "/api/v1/policies/policy-update", nil)
+	if missing.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 after delete, got %d", missing.Code)
+	}
+}
+
 func TestGetPolicy_NotFound(t *testing.T) {
 	s := newTestServer(t)
 	w := do(t, s, "GET", "/api/v1/policies/nonexistent", nil)
@@ -502,6 +547,34 @@ func TestListFindings_Empty(t *testing.T) {
 	body := decodeJSON(t, w)
 	if body["count"].(float64) != 0 {
 		t.Fatalf("expected 0, got %v", body["count"])
+	}
+}
+
+func TestDeleteFinding_SoftDelete(t *testing.T) {
+	s := newTestServer(t)
+	s.app.Findings.Upsert(context.Background(), policy.Finding{
+		ID:           "finding-delete",
+		PolicyID:     "policy-1",
+		PolicyName:   "Policy 1",
+		Description:  "test finding",
+		Severity:     "high",
+		Resource:     map[string]interface{}{"_cq_id": "res-1"},
+		ResourceID:   "res-1",
+		ResourceType: "aws::s3::bucket",
+	})
+
+	w := do(t, s, "DELETE", "/api/v1/findings/finding-delete", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	get := do(t, s, "GET", "/api/v1/findings/finding-delete", nil)
+	if get.Code != http.StatusOK {
+		t.Fatalf("expected 200 when retrieving soft-deleted finding, got %d", get.Code)
+	}
+	body := decodeJSON(t, get)
+	if body["status"] != "DELETED" {
+		t.Fatalf("expected finding status DELETED, got %v", body["status"])
 	}
 }
 
@@ -1123,6 +1196,65 @@ func TestRemediationRuleCRUD(t *testing.T) {
 	w := do(t, s, "GET", "/api/v1/remediation/rules", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestRemediationRuleUpdateAndDelete(t *testing.T) {
+	s := newTestServer(t)
+
+	create := do(t, s, "POST", "/api/v1/remediation/rules", map[string]interface{}{
+		"id":          "rule-update",
+		"name":        "Original Rule",
+		"description": "original description",
+		"enabled":     true,
+		"trigger": map[string]interface{}{
+			"type":     "finding.created",
+			"severity": "high",
+		},
+		"actions": []map[string]interface{}{
+			{"type": "create_ticket", "config": map[string]string{"priority": "high"}},
+		},
+	})
+	if create.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", create.Code, create.Body.String())
+	}
+
+	update := do(t, s, "PUT", "/api/v1/remediation/rules/rule-update", map[string]interface{}{
+		"name":        "Updated Rule",
+		"description": "updated description",
+		"enabled":     false,
+		"trigger": map[string]interface{}{
+			"type":     "finding.created",
+			"severity": "critical",
+		},
+		"actions": []map[string]interface{}{
+			{"type": "notify_slack", "config": map[string]string{"channel": "#security"}},
+		},
+	})
+	if update.Code != http.StatusOK {
+		t.Fatalf("expected 200 on update, got %d: %s", update.Code, update.Body.String())
+	}
+
+	get := do(t, s, "GET", "/api/v1/remediation/rules/rule-update", nil)
+	if get.Code != http.StatusOK {
+		t.Fatalf("expected 200 on get, got %d", get.Code)
+	}
+	body := decodeJSON(t, get)
+	if body["name"] != "Updated Rule" {
+		t.Fatalf("expected updated name, got %v", body["name"])
+	}
+	if body["enabled"] != false {
+		t.Fatalf("expected updated enabled=false, got %v", body["enabled"])
+	}
+
+	del := do(t, s, "DELETE", "/api/v1/remediation/rules/rule-update", nil)
+	if del.Code != http.StatusNoContent {
+		t.Fatalf("expected 204 on delete, got %d: %s", del.Code, del.Body.String())
+	}
+
+	missing := do(t, s, "GET", "/api/v1/remediation/rules/rule-update", nil)
+	if missing.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 after delete, got %d", missing.Code)
 	}
 }
 

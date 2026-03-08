@@ -319,6 +319,40 @@ func (e *Engine) AddRule(rule Rule) error {
 	return nil
 }
 
+// UpdateRule updates an existing rule by ID.
+func (e *Engine) UpdateRule(id string, rule Rule) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	for i := range e.rules {
+		if e.rules[i].ID == id {
+			createdAt := e.rules[i].CreatedAt
+			rule.ID = id
+			if createdAt.IsZero() {
+				createdAt = time.Now().UTC()
+			}
+			rule.CreatedAt = createdAt
+			e.rules[i] = rule
+			return nil
+		}
+	}
+	return fmt.Errorf("rule not found: %s", id)
+}
+
+// DeleteRule removes a rule by ID.
+func (e *Engine) DeleteRule(id string) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	for i := range e.rules {
+		if e.rules[i].ID == id {
+			e.rules = append(e.rules[:i], e.rules[i+1:]...)
+			return nil
+		}
+	}
+	return fmt.Errorf("rule not found: %s", id)
+}
+
 // GetRule gets a rule by ID
 func (e *Engine) GetRule(id string) (*Rule, bool) {
 	e.mu.RLock()

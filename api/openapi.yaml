@@ -1,8 +1,7 @@
 openapi: 3.0.3
 info:
   title: Cerebro API
-  description: 'Cerebro is a cloud security posture management (CSPM) platform that
-    provides:
+  description: 'Cerebro is a cloud security posture management (CSPM) platform that provides:
 
     - Policy-based security scanning across AWS, GCP, Azure, and Kubernetes
 
@@ -14,7 +13,7 @@ info:
 
     - Agent-based investigation
 
-    '
+'
   version: 2.0.0
   contact:
     name: Security Team
@@ -22,47 +21,47 @@ info:
     name: Apache-2.0
     url: https://www.apache.org/licenses/LICENSE-2.0.html
 servers:
-- url: http://localhost:8080
-  description: Local development
-- url: https://api.example.com
-  description: Production (replace with your deployment URL)
+  - url: http://localhost:8080
+    description: Local development
+  - url: https://api.example.com
+    description: Production (replace with your deployment URL)
 security:
-- ApiKeyAuth: []
-- BearerAuth: []
+  - ApiKeyAuth: []
+  - BearerAuth: []
 tags:
-- name: Health
-  description: Health and readiness endpoints
-- name: Assets
-  description: Cloud asset inventory
-- name: Policies
-  description: Security policy management
-- name: Findings
-  description: Security findings and violations
-- name: Compliance
-  description: Compliance frameworks and reporting
-- name: Identity
-  description: Identity governance and access reviews
-- name: Agents
-  description: AI-powered investigation agents
-- name: Tickets
-  description: Ticketing integration (Jira, Linear)
-- name: Webhooks
-  description: Webhook management
-- name: Admin
-  description: Administrative endpoints
-- name: Graph
-  description: Security graph and risk intelligence endpoints
-- name: Runtime
-  description: Runtime detection and response endpoints
-- name: RBAC
-  description: Role-based access control and tenancy endpoints
-- name: ThreatIntel
-  description: Threat intelligence feed management and indicator lookups
+  - name: Health
+    description: Health and readiness endpoints
+  - name: Assets
+    description: Cloud asset inventory
+  - name: Policies
+    description: Security policy management
+  - name: Findings
+    description: Security findings and violations
+  - name: Compliance
+    description: Compliance frameworks and reporting
+  - name: Identity
+    description: Identity governance and access reviews
+  - name: Agents
+    description: AI-powered investigation agents
+  - name: Tickets
+    description: Ticketing integration (Jira, Linear)
+  - name: Webhooks
+    description: Webhook management
+  - name: Admin
+    description: Administrative endpoints
+  - name: Graph
+    description: Security graph and risk intelligence endpoints
+  - name: Runtime
+    description: Runtime detection and response endpoints
+  - name: RBAC
+    description: Role-based access control and tenancy endpoints
+  - name: ThreatIntel
+    description: Threat intelligence feed management and indicator lookups
 paths:
   /health:
     get:
       tags:
-      - Health
+        - Health
       summary: Health check
       security: []
       responses:
@@ -75,7 +74,7 @@ paths:
   /ready:
     get:
       tags:
-      - Health
+        - Health
       summary: Readiness check
       security: []
       responses:
@@ -88,7 +87,7 @@ paths:
   /metrics:
     get:
       tags:
-      - Health
+        - Health
       summary: Prometheus metrics
       security: []
       responses:
@@ -101,7 +100,7 @@ paths:
   /api/v1/tables:
     get:
       tags:
-      - Assets
+        - Assets
       summary: List available tables
       responses:
         '200':
@@ -113,7 +112,7 @@ paths:
   /api/v1/query:
     post:
       tags:
-      - Assets
+        - Assets
       summary: Execute SQL query
       requestBody:
         required: true
@@ -131,17 +130,17 @@ paths:
   /api/v1/assets/{table}:
     get:
       tags:
-      - Assets
+        - Assets
       summary: List assets from a table
       parameters:
-      - name: table
-        in: path
-        required: true
-        schema:
-          type: string
-        example: aws_s3_buckets
-      - $ref: '#/components/parameters/Limit'
-      - $ref: '#/components/parameters/Offset'
+        - name: table
+          in: path
+          required: true
+          schema:
+            type: string
+          example: aws_s3_buckets
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
       responses:
         '200':
           description: List of assets
@@ -152,19 +151,19 @@ paths:
   /api/v1/assets/{table}/{id}:
     get:
       tags:
-      - Assets
+        - Assets
       summary: Get a specific asset
       parameters:
-      - name: table
-        in: path
-        required: true
-        schema:
-          type: string
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: table
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
         '200':
           description: Asset details
@@ -175,7 +174,7 @@ paths:
   /api/v1/policies:
     get:
       tags:
-      - Policies
+        - Policies
       summary: List all policies
       responses:
         '200':
@@ -186,7 +185,7 @@ paths:
                 $ref: '#/components/schemas/PoliciesResponse'
     post:
       tags:
-      - Policies
+        - Policies
       summary: Create a new policy
       requestBody:
         required: true
@@ -204,14 +203,14 @@ paths:
   /api/v1/policies/{id}:
     get:
       tags:
-      - Policies
+        - Policies
       summary: Get a specific policy
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
         '200':
           description: Policy details
@@ -219,10 +218,28 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Policy'
+    delete:
+      tags:
+        - Undocumented
+      summary: DELETE endpoint (placeholder)
+      description: Auto-generated placeholder to keep OpenAPI route coverage in sync with server routes.
+      x-cerebro-generated: "true"
+      responses:
+        "200":
+          description: OK
+    put:
+      tags:
+        - Undocumented
+      summary: PUT endpoint (placeholder)
+      description: Auto-generated placeholder to keep OpenAPI route coverage in sync with server routes.
+      x-cerebro-generated: "true"
+      responses:
+        "200":
+          description: OK
   /api/v1/policies/evaluate:
     post:
       tags:
-      - Policies
+        - Policies
       summary: Evaluate policies against an asset
       requestBody:
         required: true
@@ -240,32 +257,32 @@ paths:
   /api/v1/findings:
     get:
       tags:
-      - Findings
+        - Findings
       summary: List findings
       parameters:
-      - name: severity
-        in: query
-        schema:
-          type: string
-          enum:
-          - critical
-          - high
-          - medium
-          - low
-      - name: status
-        in: query
-        schema:
-          type: string
-          enum:
-          - open
-          - resolved
-          - suppressed
-      - name: policy_id
-        in: query
-        schema:
-          type: string
-      - $ref: '#/components/parameters/Limit'
-      - $ref: '#/components/parameters/Offset'
+        - name: severity
+          in: query
+          schema:
+            type: string
+            enum:
+              - critical
+              - high
+              - medium
+              - low
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum:
+              - open
+              - resolved
+              - suppressed
+        - name: policy_id
+          in: query
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
       responses:
         '200':
           description: List of findings
@@ -276,7 +293,7 @@ paths:
   /api/v1/findings/stats:
     get:
       tags:
-      - Findings
+        - Findings
       summary: Get findings statistics
       responses:
         '200':
@@ -288,7 +305,7 @@ paths:
   /api/v1/signals/dashboard:
     get:
       tags:
-      - Findings
+        - Findings
       summary: Get signals dashboard
       description: Return summary counts, aggregate stats, and recent signal findings for dashboard views.
       responses:
@@ -320,14 +337,14 @@ paths:
   /api/v1/findings/{id}:
     get:
       tags:
-      - Findings
+        - Findings
       summary: Get a specific finding
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
         '200':
           description: Finding details
@@ -335,10 +352,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Finding'
+    delete:
+      tags:
+        - Undocumented
+      summary: DELETE endpoint (placeholder)
+      description: Auto-generated placeholder to keep OpenAPI route coverage in sync with server routes.
+      x-cerebro-generated: "true"
+      responses:
+        "200":
+          description: OK
   /api/v1/findings/scan:
     post:
       tags:
-      - Findings
+        - Findings
       summary: Trigger a security scan
       requestBody:
         content:
@@ -360,14 +386,14 @@ paths:
   /api/v1/findings/{id}/resolve:
     post:
       tags:
-      - Findings
+        - Findings
       summary: Resolve a finding
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       requestBody:
         content:
           application/json:
@@ -382,14 +408,14 @@ paths:
   /api/v1/findings/{id}/suppress:
     post:
       tags:
-      - Findings
+        - Findings
       summary: Suppress a finding
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       requestBody:
         content:
           application/json:
@@ -407,7 +433,7 @@ paths:
   /api/v1/compliance/frameworks:
     get:
       tags:
-      - Compliance
+        - Compliance
       summary: List compliance frameworks
       responses:
         '200':
@@ -419,15 +445,15 @@ paths:
   /api/v1/compliance/frameworks/{id}:
     get:
       tags:
-      - Compliance
+        - Compliance
       summary: Get a compliance framework
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        example: soc2-type2
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          example: soc2-type2
       responses:
         '200':
           description: Framework details
@@ -438,14 +464,14 @@ paths:
   /api/v1/compliance/frameworks/{id}/report:
     get:
       tags:
-      - Compliance
+        - Compliance
       summary: Generate compliance report
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
         '200':
           description: Compliance report
@@ -456,14 +482,14 @@ paths:
   /api/v1/compliance/frameworks/{id}/pre-audit:
     get:
       tags:
-      - Compliance
+        - Compliance
       summary: Pre-audit health check
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
         '200':
           description: Pre-audit assessment
@@ -474,14 +500,14 @@ paths:
   /api/v1/compliance/frameworks/{id}/export:
     get:
       tags:
-      - Compliance
+        - Compliance
       summary: Export audit package
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
         '200':
           description: Audit package data
@@ -492,7 +518,7 @@ paths:
   /api/v1/identity/stale-access:
     get:
       tags:
-      - Identity
+        - Identity
       summary: Detect stale access
       responses:
         '200':
@@ -504,7 +530,7 @@ paths:
   /api/v1/identity/report:
     get:
       tags:
-      - Identity
+        - Identity
       summary: Generate identity report
       responses:
         '200':
@@ -516,7 +542,7 @@ paths:
   /api/v1/identity/reviews:
     get:
       tags:
-      - Identity
+        - Identity
       summary: List access reviews
       responses:
         '200':
@@ -527,7 +553,7 @@ paths:
                 $ref: '#/components/schemas/ReviewsResponse'
     post:
       tags:
-      - Identity
+        - Identity
       summary: Create access review
       requestBody:
         required: true
@@ -545,7 +571,7 @@ paths:
   /api/v1/agents:
     get:
       tags:
-      - Agents
+        - Agents
       summary: List available agents
       responses:
         '200':
@@ -557,7 +583,7 @@ paths:
   /api/v1/agents/sessions:
     post:
       tags:
-      - Agents
+        - Agents
       summary: Create agent session
       requestBody:
         required: true
@@ -575,14 +601,14 @@ paths:
   /api/v1/agents/sessions/{id}/messages:
     get:
       tags:
-      - Agents
+        - Agents
       summary: Get session messages
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
         '200':
           description: Session messages
@@ -592,14 +618,14 @@ paths:
                 $ref: '#/components/schemas/MessagesResponse'
     post:
       tags:
-      - Agents
+        - Agents
       summary: Send message to agent
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -607,7 +633,7 @@ paths:
             schema:
               type: object
               required:
-              - content
+                - content
               properties:
                 content:
                   type: string
@@ -621,7 +647,7 @@ paths:
   /api/v1/webhooks:
     get:
       tags:
-      - Webhooks
+        - Webhooks
       summary: List webhooks
       responses:
         '200':
@@ -632,7 +658,7 @@ paths:
                 $ref: '#/components/schemas/WebhooksResponse'
     post:
       tags:
-      - Webhooks
+        - Webhooks
       summary: Create webhook
       requestBody:
         required: true
@@ -650,14 +676,14 @@ paths:
   /api/v1/webhooks/{id}:
     get:
       tags:
-      - Webhooks
+        - Webhooks
       summary: Get webhook
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
         '200':
           description: Webhook details
@@ -667,21 +693,21 @@ paths:
                 $ref: '#/components/schemas/Webhook'
     delete:
       tags:
-      - Webhooks
+        - Webhooks
       summary: Delete webhook
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
         '204':
           description: Webhook deleted
   /api/v1/admin/health:
     get:
       tags:
-      - Admin
+        - Admin
       summary: System health dashboard
       responses:
         '200':
@@ -693,7 +719,7 @@ paths:
   /api/v1/admin/sync/status:
     get:
       tags:
-      - Admin
+        - Admin
       summary: Data sync status
       responses:
         '200':
@@ -705,7 +731,7 @@ paths:
   /api/v1/scheduler/status:
     get:
       tags:
-      - Admin
+        - Admin
       summary: Scheduler status
       responses:
         '200':
@@ -717,7 +743,7 @@ paths:
   /api/v1/scheduler/jobs:
     get:
       tags:
-      - Admin
+        - Admin
       summary: List scheduled jobs
       responses:
         '200':
@@ -729,16 +755,16 @@ paths:
   /api/v1/agents/sessions/{id}:
     get:
       tags:
-      - Agents
+        - Agents
       summary: Get agent session
       description: Return a specific agent session, including message and status metadata.
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Agent session ID
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Agent session ID
       responses:
         '200':
           description: Agent session
@@ -755,16 +781,16 @@ paths:
   /api/v1/agents/sessions/{id}/approve:
     post:
       tags:
-      - Agents
+        - Agents
       summary: Approve or deny pending tool call
       description: Approve or deny a pending tool call for an agent session.
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Agent session ID
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Agent session ID
       requestBody:
         required: false
         content:
@@ -799,16 +825,16 @@ paths:
   /api/v1/agents/{id}:
     get:
       tags:
-      - Agents
+        - Agents
       summary: Get agent metadata
       description: Return metadata for a registered investigation agent.
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Agent ID
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Agent ID
       responses:
         '200':
           description: Agent metadata
@@ -826,7 +852,7 @@ paths:
   /api/v1/attack-paths:
     get:
       tags:
-      - Graph
+        - Graph
       summary: List attack paths
       description: Enumerate modeled attack paths and aggregate counts.
       responses:
@@ -840,7 +866,7 @@ paths:
   /api/v1/attack-paths/analyze:
     post:
       tags:
-      - Graph
+        - Graph
       summary: Analyze attack paths
       description: Run an attack-path analysis against optional high-value targets.
       requestBody:
@@ -866,7 +892,7 @@ paths:
   /api/v1/attack-paths/graph:
     get:
       tags:
-      - Graph
+        - Graph
       summary: Get attack graph nodes
       description: Return the current attack graph node inventory.
       responses:
@@ -880,7 +906,7 @@ paths:
   /api/v1/attack-paths/graph/edges:
     post:
       tags:
-      - Graph
+        - Graph
       summary: Add attack graph edge
       description: Add a directed edge between attack graph nodes.
       requestBody:
@@ -907,7 +933,7 @@ paths:
   /api/v1/attack-paths/graph/nodes:
     post:
       tags:
-      - Graph
+        - Graph
       summary: Add attack graph node
       description: Add a node to the in-memory attack graph.
       requestBody:
@@ -934,28 +960,28 @@ paths:
   /api/v1/attack-paths/{id}:
     get:
       tags:
-      - Graph
+        - Graph
       summary: Get attack path by ID
       description: Return a specific computed attack path.
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Attack path ID
-      - name: max_depth
-        in: query
-        required: false
-        schema:
-          type: integer
-        description: Optional maximum traversal depth
-      - name: targets
-        in: query
-        required: false
-        schema:
-          type: string
-        description: Comma-separated list of target node IDs
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Attack path ID
+        - name: max_depth
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Optional maximum traversal depth
+        - name: targets
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Comma-separated list of target node IDs
       responses:
         '200':
           description: Attack path details
@@ -973,28 +999,28 @@ paths:
   /api/v1/audit:
     get:
       tags:
-      - Admin
+        - Admin
       summary: List audit logs
       description: Query persisted audit entries, optionally filtered by resource.
       parameters:
-      - name: resource_type
-        in: query
-        required: false
-        schema:
-          type: string
-        description: Filter by resource type
-      - name: resource_id
-        in: query
-        required: false
-        schema:
-          type: string
-        description: Filter by resource ID
-      - name: limit
-        in: query
-        required: false
-        schema:
-          type: integer
-        description: Maximum number of log entries to return
+        - name: resource_type
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by resource type
+        - name: resource_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by resource ID
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Maximum number of log entries to return
       responses:
         '200':
           description: Audit log entries
@@ -1012,7 +1038,7 @@ paths:
   /api/v1/findings/export:
     get:
       tags:
-      - Findings
+        - Findings
       summary: Export findings
       description: Export findings in CSV or JSON format with optional filters.
       responses:
@@ -1035,48 +1061,48 @@ paths:
                 type: object
                 additionalProperties: true
       parameters:
-      - name: severity
-        in: query
-        required: false
-        schema:
-          type: string
-        description: Filter by severity
-      - name: status
-        in: query
-        required: false
-        schema:
-          type: string
-        description: Filter by status
-      - name: policy_id
-        in: query
-        required: false
-        schema:
-          type: string
-        description: Filter by policy ID
-      - name: format
-        in: query
-        required: false
-        schema:
-          type: string
-          default: csv
-          enum:
-          - csv
-          - json
-        description: Export format
-      - name: pretty
-        in: query
-        required: false
-        schema:
-          type: string
-          default: 'false'
-          enum:
-          - 'true'
-          - 'false'
-        description: Pretty-print JSON output
+        - name: severity
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by severity
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by status
+        - name: policy_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by policy ID
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            default: csv
+            enum:
+              - csv
+              - json
+          description: Export format
+        - name: pretty
+          in: query
+          required: false
+          schema:
+            type: string
+            default: 'false'
+            enum:
+              - 'true'
+              - 'false'
+          description: Pretty-print JSON output
   /api/v1/findings/{id}/assign:
     put:
       tags:
-      - Findings
+        - Findings
       summary: Assign finding
       description: Assign a finding to an owner.
       responses:
@@ -1093,12 +1119,12 @@ paths:
           description: Finding not found
           content: *id001
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Finding ID
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Finding ID
       requestBody:
         required: true
         content:
@@ -1108,7 +1134,7 @@ paths:
   /api/v1/findings/{id}/due:
     put:
       tags:
-      - Findings
+        - Findings
       summary: Set finding due date
       description: Set due date metadata for a finding.
       responses:
@@ -1125,12 +1151,12 @@ paths:
           description: Finding not found
           content: *id001
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Finding ID
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Finding ID
       requestBody:
         required: true
         content:
@@ -1140,7 +1166,7 @@ paths:
   /api/v1/findings/{id}/notes:
     post:
       tags:
-      - Findings
+        - Findings
       summary: Add finding note
       description: Append an analyst note to a finding.
       responses:
@@ -1157,12 +1183,12 @@ paths:
           description: Finding not found
           content: *id001
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Finding ID
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Finding ID
       requestBody:
         required: true
         content:
@@ -1172,7 +1198,7 @@ paths:
   /api/v1/findings/{id}/tickets:
     post:
       tags:
-      - Findings
+        - Findings
       summary: Link ticket
       description: Attach a ticket reference to a finding.
       responses:
@@ -1189,12 +1215,12 @@ paths:
           description: Finding not found
           content: *id001
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Finding ID
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Finding ID
       requestBody:
         required: true
         content:
@@ -1204,7 +1230,7 @@ paths:
   /api/v1/graph/access-reviews:
     get:
       tags:
-      - Graph
+        - Graph
       summary: List graph access reviews
       description: List graph-based access reviews.
       responses:
@@ -1223,7 +1249,7 @@ paths:
                 additionalProperties: true
     post:
       tags:
-      - Graph
+        - Graph
       summary: Create graph access review
       description: Create a graph-based access review run.
       responses:
@@ -1249,7 +1275,7 @@ paths:
   /api/v1/graph/access-reviews/{id}:
     get:
       tags:
-      - Graph
+        - Graph
       summary: Get graph access review
       description: Get a graph-based access review by ID.
       responses:
@@ -1266,16 +1292,16 @@ paths:
           description: Graph unavailable
           content: *id001
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Access review ID
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Access review ID
   /api/v1/graph/access-reviews/{id}/items/{itemId}/decide:
     post:
       tags:
-      - Graph
+        - Graph
       summary: Record graph access-review decision
       description: Record a decision for a graph access-review item.
       responses:
@@ -1295,18 +1321,18 @@ paths:
           description: Graph unavailable
           content: *id001
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Access review ID
-      - name: itemId
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Review item ID
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Access review ID
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Review item ID
       requestBody:
         required: true
         content:
@@ -1317,7 +1343,7 @@ paths:
   /api/v1/graph/access-reviews/{id}/start:
     post:
       tags:
-      - Graph
+        - Graph
       summary: Start graph access review
       description: Start executing a pending graph access review.
       responses:
@@ -1334,16 +1360,16 @@ paths:
           description: Graph unavailable
           content: *id001
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Access review ID
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Access review ID
   /api/v1/entities/{id}/cohort:
     get:
       tags:
-      - Graph
+        - Graph
       summary: Get entity cohort
       description: Return peer-cohort membership details for a specific entity.
       responses:
@@ -1361,16 +1387,16 @@ paths:
           description: Graph unavailable
           content: *id001
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Entity identifier
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Entity identifier
   /api/v1/entities/{id}/outlier-score:
     get:
       tags:
-      - Graph
+        - Graph
       summary: Get entity outlier score
       description: Return outlier scoring and explanatory factors for a specific entity.
       responses:
@@ -1388,16 +1414,16 @@ paths:
           description: Graph unavailable
           content: *id001
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Entity identifier
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Entity identifier
   /api/v1/impact-analysis:
     post:
       tags:
-      - Graph
+        - Graph
       summary: Run impact analysis
       description: Analyze cascading impact paths from a starting node under a selected business scenario.
       responses:
@@ -1415,13 +1441,13 @@ paths:
           description: Graph unavailable
           content: *id001
       parameters:
-      - name: max_depth
-        in: query
-        required: false
-        schema:
-          type: integer
-          default: 6
-        description: Override traversal depth for this request.
+        - name: max_depth
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 6
+          description: Override traversal depth for this request.
       requestBody:
         required: true
         content:
@@ -1429,8 +1455,8 @@ paths:
             schema:
               type: object
               required:
-              - start_node
-              - scenario
+                - start_node
+                - scenario
               properties:
                 start_node:
                   type: string
@@ -1438,16 +1464,16 @@ paths:
                 scenario:
                   type: string
                   enum:
-                  - churn_cascade
-                  - revenue_impact
-                  - incident_blast_radius
+                    - churn_cascade
+                    - revenue_impact
+                    - incident_blast_radius
                 max_depth:
                   type: integer
                   default: 6
   /api/v1/graph/attack-paths:
     get:
       tags:
-      - Graph
+        - Graph
       summary: List scored attack paths
       description: Simulate attack paths and return scored results.
       responses:
@@ -1461,31 +1487,31 @@ paths:
           description: Graph unavailable
           content: *id001
       parameters:
-      - name: max_depth
-        in: query
-        required: false
-        schema:
-          type: integer
-          default: 6
-        description: Traversal depth (1-10)
-      - name: threshold
-        in: query
-        required: false
-        schema:
-          type: number
-          default: 0
-        description: Minimum path score
-      - name: limit
-        in: query
-        required: false
-        schema:
-          type: integer
-          default: 50
-        description: Maximum result size
+        - name: max_depth
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 6
+          description: Traversal depth (1-10)
+        - name: threshold
+          in: query
+          required: false
+          schema:
+            type: number
+            default: 0
+          description: Minimum path score
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+          description: Maximum result size
   /api/v1/graph/attack-paths/{id}/simulate-fix:
     get:
       tags:
-      - Graph
+        - Graph
       summary: Simulate attack path fix
       description: Simulate remediation impact for a target node.
       responses:
@@ -1502,16 +1528,16 @@ paths:
           description: Graph unavailable
           content: *id001
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Node identifier
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Node identifier
   /api/v1/graph/blast-radius/{principalId}:
     get:
       tags:
-      - Graph
+        - Graph
       summary: Calculate blast radius
       description: Return reachable resources from a principal.
       responses:
@@ -1528,23 +1554,23 @@ paths:
           description: Graph unavailable
           content: *id001
       parameters:
-      - name: principalId
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Principal identifier
-      - name: max_depth
-        in: query
-        required: false
-        schema:
-          type: integer
-          default: 3
-        description: Traversal depth (1-10)
+        - name: principalId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Principal identifier
+        - name: max_depth
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 3
+          description: Traversal depth (1-10)
   /api/v1/graph/cascading-blast-radius/{principalId}:
     get:
       tags:
-      - Graph
+        - Graph
       summary: Calculate cascading blast radius
       description: Return transitive blast radius analysis.
       responses:
@@ -1561,23 +1587,23 @@ paths:
           description: Graph unavailable
           content: *id001
       parameters:
-      - name: principalId
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Principal identifier
-      - name: max_depth
-        in: query
-        required: false
-        schema:
-          type: integer
-          default: 6
-        description: Traversal depth (1-10)
+        - name: principalId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Principal identifier
+        - name: max_depth
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 6
+          description: Traversal depth (1-10)
   /api/v1/graph/chokepoints:
     get:
       tags:
-      - Graph
+        - Graph
       summary: List chokepoints
       description: Return highest-value chokepoints across simulated attack paths.
       responses:
@@ -1591,17 +1617,17 @@ paths:
           description: Graph unavailable
           content: *id001
       parameters:
-      - name: limit
-        in: query
-        required: false
-        schema:
-          type: integer
-          default: 20
-        description: Maximum result size
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+          description: Maximum result size
   /api/v1/graph/compare-permissions:
     get:
       tags:
-      - Graph
+        - Graph
       summary: Compare permissions
       description: Compare effective permissions between two principals.
       responses:
@@ -1618,22 +1644,22 @@ paths:
           description: Graph unavailable
           content: *id001
       parameters:
-      - name: principal1
-        in: query
-        required: false
-        schema:
-          type: string
-        description: First principal identifier
-      - name: principal2
-        in: query
-        required: false
-        schema:
-          type: string
-        description: Second principal identifier
+        - name: principal1
+          in: query
+          required: false
+          schema:
+            type: string
+          description: First principal identifier
+        - name: principal2
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Second principal identifier
   /api/v1/graph/effective-permissions/{principalId}:
     get:
       tags:
-      - Graph
+        - Graph
       summary: Get effective permissions
       description: Resolve effective permissions for a principal.
       responses:
@@ -1650,16 +1676,16 @@ paths:
           description: Graph unavailable
           content: *id001
       parameters:
-      - name: principalId
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Principal identifier
+        - name: principalId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Principal identifier
   /api/v1/graph/peer-groups:
     get:
       tags:
-      - Graph
+        - Graph
       summary: Analyze peer groups
       description: Compute peer groups and privilege creep outliers.
       responses:
@@ -1673,24 +1699,24 @@ paths:
           description: Graph unavailable
           content: *id001
       parameters:
-      - name: min_similarity
-        in: query
-        required: false
-        schema:
-          type: number
-          default: 0.7
-        description: Minimum similarity threshold
-      - name: min_group_size
-        in: query
-        required: false
-        schema:
-          type: integer
-          default: 2
-        description: Minimum peer-group size
+        - name: min_similarity
+          in: query
+          required: false
+          schema:
+            type: number
+            default: 0.7
+          description: Minimum similarity threshold
+        - name: min_group_size
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 2
+          description: Minimum peer-group size
   /api/v1/graph/privilege-escalation/{principalId}:
     get:
       tags:
-      - Graph
+        - Graph
       summary: Detect privilege escalation
       description: Detect privilege escalation risks for a principal.
       responses:
@@ -1707,16 +1733,16 @@ paths:
           description: Graph unavailable
           content: *id001
       parameters:
-      - name: principalId
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Principal identifier
+        - name: principalId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Principal identifier
   /api/v1/graph/rebuild:
     post:
       tags:
-      - Graph
+        - Graph
       summary: Rebuild graph
       description: Trigger a full security graph rebuild.
       responses:
@@ -1735,7 +1761,7 @@ paths:
   /api/v1/graph/reverse-access/{resourceId}:
     get:
       tags:
-      - Graph
+        - Graph
       summary: Get reverse access
       description: Return principals that can reach a resource.
       responses:
@@ -1752,23 +1778,23 @@ paths:
           description: Graph unavailable
           content: *id001
       parameters:
-      - name: resourceId
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Resource identifier
-      - name: max_depth
-        in: query
-        required: false
-        schema:
-          type: integer
-          default: 3
-        description: Traversal depth (1-10)
+        - name: resourceId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Resource identifier
+        - name: max_depth
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 3
+          description: Traversal depth (1-10)
   /api/v1/graph/risk-report:
     get:
       tags:
-      - Graph
+        - Graph
       summary: Get risk report
       description: Run graph risk analysis across the current graph snapshot.
       responses:
@@ -1784,7 +1810,7 @@ paths:
   /api/v1/graph/stats:
     get:
       tags:
-      - Graph
+        - Graph
       summary: Get graph statistics
       description: Return graph build metadata and cardinality.
       responses:
@@ -1800,7 +1826,7 @@ paths:
   /api/v1/graph/toxic-combinations:
     get:
       tags:
-      - Graph
+        - Graph
       summary: List toxic combinations
       description: List toxic risk combinations detected in the graph.
       responses:
@@ -1814,23 +1840,23 @@ paths:
           description: Graph unavailable
           content: *id001
       parameters:
-      - name: severity
-        in: query
-        required: false
-        schema:
-          type: string
-        description: Filter by severity
-      - name: limit
-        in: query
-        required: false
-        schema:
-          type: integer
-          default: 50
-        description: Maximum result size
+        - name: severity
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by severity
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+          description: Maximum result size
   /api/v1/graph/visualize/attack-path/{id}:
     get:
       tags:
-      - Graph
+        - Graph
       summary: Visualize attack path
       description: Render graph visualization payload for an attack path.
       responses:
@@ -1844,16 +1870,16 @@ paths:
           description: Graph unavailable
           content: *id001
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Attack path ID
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Attack path ID
   /api/v1/graph/visualize/blast-radius/{principalId}:
     get:
       tags:
-      - Graph
+        - Graph
       summary: Visualize blast radius
       description: Render graph visualization payload for blast radius.
       responses:
@@ -1867,16 +1893,16 @@ paths:
           description: Graph unavailable
           content: *id001
       parameters:
-      - name: principalId
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Principal identifier
+        - name: principalId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Principal identifier
   /api/v1/graph/visualize/report:
     get:
       tags:
-      - Graph
+        - Graph
       summary: Visualize graph report
       description: Render aggregate graph visualization report payload.
       responses:
@@ -1892,7 +1918,7 @@ paths:
   /api/v1/graph/visualize/toxic-combination/{id}:
     get:
       tags:
-      - Graph
+        - Graph
       summary: Visualize toxic combination
       description: Render graph visualization payload for a toxic combination.
       responses:
@@ -1906,25 +1932,25 @@ paths:
           description: Graph unavailable
           content: *id001
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Toxic combination ID
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Toxic combination ID
   /api/v1/identity/reviews/{id}:
     get:
       tags:
-      - Identity
+        - Identity
       summary: Get access review
       description: Return an identity access review by ID.
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Access review ID
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Access review ID
       responses:
         '200':
           description: Access review
@@ -1941,16 +1967,16 @@ paths:
   /api/v1/identity/reviews/{id}/items:
     get:
       tags:
-      - Identity
+        - Identity
       summary: List review items
       description: List all review items for an identity access review.
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Access review ID
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Access review ID
       responses:
         '200':
           description: Review item list
@@ -1967,16 +1993,16 @@ paths:
                 $ref: '#/components/schemas/Error'
     post:
       tags:
-      - Identity
+        - Identity
       summary: Add review item
       description: Add a principal/resource decision item to an access review.
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Access review ID
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Access review ID
       requestBody:
         required: true
         content:
@@ -2007,22 +2033,22 @@ paths:
   /api/v1/identity/reviews/{id}/items/{itemId}/decide:
     post:
       tags:
-      - Identity
+        - Identity
       summary: Record review decision
       description: Record an approve/revoke decision for a review item.
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Access review ID
-      - name: itemId
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Review item ID
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Access review ID
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Review item ID
       requestBody:
         required: true
         content:
@@ -2052,16 +2078,16 @@ paths:
   /api/v1/identity/reviews/{id}/start:
     post:
       tags:
-      - Identity
+        - Identity
       summary: Start access review
       description: Transition an access review to active state.
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Access review ID
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Access review ID
       responses:
         '200':
           description: Review started
@@ -2078,7 +2104,7 @@ paths:
   /api/v1/incidents:
     post:
       tags:
-      - Runtime
+        - Runtime
       summary: Create incident
       description: Create an incident record and generate an initial response playbook.
       requestBody:
@@ -2111,7 +2137,7 @@ paths:
   /api/v1/incidents/playbooks:
     get:
       tags:
-      - Runtime
+        - Runtime
       summary: List incident playbooks
       description: List available incident response playbooks.
       responses:
@@ -2125,16 +2151,16 @@ paths:
   /api/v1/incidents/playbooks/{id}:
     get:
       tags:
-      - Runtime
+        - Runtime
       summary: Get incident playbook
       description: Return a specific incident response playbook.
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Playbook ID
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Playbook ID
       responses:
         '200':
           description: Playbook details
@@ -2152,16 +2178,16 @@ paths:
   /api/v1/lineage/by-commit/{sha}:
     get:
       tags:
-      - Graph
+        - Graph
       summary: List lineage by commit
       description: Return lineage records linked to a commit SHA.
       parameters:
-      - name: sha
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Commit SHA
+        - name: sha
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Commit SHA
       responses:
         '200':
           description: Lineage records
@@ -2181,16 +2207,16 @@ paths:
   /api/v1/lineage/by-image/{digest}:
     get:
       tags:
-      - Graph
+        - Graph
       summary: List lineage by image digest
       description: Return lineage records linked to a container image digest.
       parameters:
-      - name: digest
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Container image digest
+        - name: digest
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Container image digest
       responses:
         '200':
           description: Lineage records
@@ -2210,16 +2236,16 @@ paths:
   /api/v1/lineage/drift/{assetId}:
     post:
       tags:
-      - Graph
+        - Graph
       summary: Detect lineage drift
       description: Compare current asset state against IaC state to detect drift.
       parameters:
-      - name: assetId
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Asset ID
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Asset ID
       requestBody:
         required: true
         content:
@@ -2249,16 +2275,16 @@ paths:
   /api/v1/lineage/{assetId}:
     get:
       tags:
-      - Graph
+        - Graph
       summary: Get lineage for asset
       description: Return the lineage graph for a specific asset.
       parameters:
-      - name: assetId
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Asset ID
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Asset ID
       responses:
         '200':
           description: Asset lineage
@@ -2282,7 +2308,7 @@ paths:
   /api/v1/notifications:
     get:
       tags:
-      - Admin
+        - Admin
       summary: List notification channels
       description: List configured notifier integrations and their metadata.
       responses:
@@ -2296,7 +2322,7 @@ paths:
   /api/v1/notifications/digest:
     get:
       tags:
-      - Admin
+        - Admin
       summary: Generate daily notification digest
       description: Return the notification digest payload used by Slack integration.
       responses:
@@ -2310,7 +2336,7 @@ paths:
   /api/v1/notifications/test:
     post:
       tags:
-      - Admin
+        - Admin
       summary: Send test notification
       description: Send a test notification through configured channels.
       requestBody:
@@ -2329,16 +2355,16 @@ paths:
   /api/v1/providers:
     get:
       tags:
-      - Admin
+        - Admin
       summary: List providers
       description: List configured providers and sync maturity metadata.
       parameters:
-      - name: include_incomplete
-        in: query
-        required: false
-        schema:
-          type: boolean
-        description: Include providers marked as incomplete
+        - name: include_incomplete
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Include providers marked as incomplete
       responses:
         '200':
           description: Provider list
@@ -2350,22 +2376,22 @@ paths:
   /api/v1/providers/{name}:
     get:
       tags:
-      - Admin
+        - Admin
       summary: Get provider
       description: Return provider metadata and schema details.
       parameters:
-      - name: name
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Provider name
-      - name: include_incomplete
-        in: query
-        required: false
-        schema:
-          type: boolean
-        description: Include providers marked as incomplete
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Provider name
+        - name: include_incomplete
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Include providers marked as incomplete
       responses:
         '200':
           description: Provider details
@@ -2383,22 +2409,22 @@ paths:
   /api/v1/providers/{name}/configure:
     post:
       tags:
-      - Admin
+        - Admin
       summary: Configure provider
       description: Persist provider-specific configuration values.
       parameters:
-      - name: name
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Provider name
-      - name: include_incomplete
-        in: query
-        required: false
-        schema:
-          type: boolean
-        description: Include providers marked as incomplete
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Provider name
+        - name: include_incomplete
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Include providers marked as incomplete
       requestBody:
         required: true
         content:
@@ -2434,22 +2460,22 @@ paths:
   /api/v1/providers/{name}/schema:
     get:
       tags:
-      - Admin
+        - Admin
       summary: Get provider table schema
       description: Return table schema information for a provider.
       parameters:
-      - name: name
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Provider name
-      - name: include_incomplete
-        in: query
-        required: false
-        schema:
-          type: boolean
-        description: Include providers marked as incomplete
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Provider name
+        - name: include_incomplete
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Include providers marked as incomplete
       responses:
         '200':
           description: Provider schema
@@ -2467,22 +2493,22 @@ paths:
   /api/v1/providers/{name}/sync:
     post:
       tags:
-      - Admin
+        - Admin
       summary: Trigger provider sync
       description: Run an immediate full sync for a provider.
       parameters:
-      - name: name
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Provider name
-      - name: include_incomplete
-        in: query
-        required: false
-        schema:
-          type: boolean
-        description: Include providers marked as incomplete
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Provider name
+        - name: include_incomplete
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Include providers marked as incomplete
       responses:
         '200':
           description: Sync result
@@ -2506,22 +2532,22 @@ paths:
   /api/v1/providers/{name}/test:
     post:
       tags:
-      - Admin
+        - Admin
       summary: Test provider connectivity
       description: Run a provider-specific connectivity/authentication test.
       parameters:
-      - name: name
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Provider name
-      - name: include_incomplete
-        in: query
-        required: false
-        schema:
-          type: boolean
-        description: Include providers marked as incomplete
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Provider name
+        - name: include_incomplete
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Include providers marked as incomplete
       responses:
         '200':
           description: Provider test result
@@ -2538,7 +2564,7 @@ paths:
   /api/v1/rbac/permissions:
     get:
       tags:
-      - RBAC
+        - RBAC
       summary: List permissions
       description: List permission identifiers available for assignment.
       responses:
@@ -2553,7 +2579,7 @@ paths:
   /api/v1/rbac/roles:
     get:
       tags:
-      - RBAC
+        - RBAC
       summary: List roles
       description: List RBAC roles.
       responses:
@@ -2572,7 +2598,7 @@ paths:
   /api/v1/rbac/tenants:
     get:
       tags:
-      - RBAC
+        - RBAC
       summary: List tenants
       description: List RBAC tenants.
       responses:
@@ -2589,7 +2615,7 @@ paths:
           content: *id001
     post:
       tags:
-      - RBAC
+        - RBAC
       summary: Create tenant
       description: Create a RBAC tenant.
       responses:
@@ -2617,7 +2643,7 @@ paths:
   /api/v1/rbac/users:
     post:
       tags:
-      - RBAC
+        - RBAC
       summary: Create user
       description: Create a RBAC user record.
       responses:
@@ -2645,7 +2671,7 @@ paths:
   /api/v1/rbac/users/{id}:
     get:
       tags:
-      - RBAC
+        - RBAC
       summary: Get user
       description: Get a RBAC user by ID.
       responses:
@@ -2662,16 +2688,16 @@ paths:
           description: RBAC unavailable
           content: *id001
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: User ID
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: User ID
   /api/v1/rbac/users/{id}/roles:
     post:
       tags:
-      - RBAC
+        - RBAC
       summary: Assign role
       description: Assign a role to a RBAC user.
       responses:
@@ -2691,12 +2717,12 @@ paths:
           description: RBAC unavailable
           content: *id001
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: User ID
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: User ID
       requestBody:
         required: true
         content:
@@ -2706,16 +2732,16 @@ paths:
   /api/v1/remediation/executions:
     get:
       tags:
-      - Admin
+        - Admin
       summary: List remediation executions
       description: List recent remediation execution records.
       parameters:
-      - name: limit
-        in: query
-        required: false
-        schema:
-          type: integer
-        description: Maximum execution records to return
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Maximum execution records to return
       responses:
         '200':
           description: Remediation execution list
@@ -2727,16 +2753,16 @@ paths:
   /api/v1/remediation/executions/{id}:
     get:
       tags:
-      - Admin
+        - Admin
       summary: Get remediation execution
       description: Return a remediation execution by ID.
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Remediation execution ID
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Remediation execution ID
       responses:
         '200':
           description: Remediation execution
@@ -2754,16 +2780,16 @@ paths:
   /api/v1/remediation/executions/{id}/approve:
     post:
       tags:
-      - Admin
+        - Admin
       summary: Approve remediation execution
       description: Approve a remediation execution waiting for human approval.
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Remediation execution ID
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Remediation execution ID
       requestBody:
         required: true
         content:
@@ -2786,16 +2812,16 @@ paths:
   /api/v1/remediation/executions/{id}/reject:
     post:
       tags:
-      - Admin
+        - Admin
       summary: Reject remediation execution
       description: Reject a remediation execution and provide a reason.
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Remediation execution ID
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Remediation execution ID
       requestBody:
         required: true
         content:
@@ -2818,7 +2844,7 @@ paths:
   /api/v1/remediation/rules:
     get:
       tags:
-      - Admin
+        - Admin
       summary: List remediation rules
       description: List automation rules used to trigger remediations.
       responses:
@@ -2831,7 +2857,7 @@ paths:
                 additionalProperties: true
     post:
       tags:
-      - Admin
+        - Admin
       summary: Create remediation rule
       description: Create a new remediation automation rule.
       requestBody:
@@ -2864,16 +2890,16 @@ paths:
   /api/v1/remediation/rules/{id}:
     get:
       tags:
-      - Admin
+        - Admin
       summary: Get remediation rule
       description: Return a remediation rule by ID.
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Remediation rule ID
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Remediation rule ID
       responses:
         '200':
           description: Remediation rule
@@ -2888,19 +2914,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+    delete:
+      tags:
+        - Undocumented
+      summary: DELETE endpoint (placeholder)
+      description: Auto-generated placeholder to keep OpenAPI route coverage in sync with server routes.
+      x-cerebro-generated: "true"
+      responses:
+        "200":
+          description: OK
+    put:
+      tags:
+        - Undocumented
+      summary: PUT endpoint (placeholder)
+      description: Auto-generated placeholder to keep OpenAPI route coverage in sync with server routes.
+      x-cerebro-generated: "true"
+      responses:
+        "200":
+          description: OK
   /api/v1/remediation/rules/{id}/disable:
     post:
       tags:
-      - Admin
+        - Admin
       summary: Disable remediation rule
       description: Disable a remediation rule by ID.
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Remediation rule ID
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Remediation rule ID
       responses:
         '200':
           description: Rule disabled
@@ -2917,16 +2961,16 @@ paths:
   /api/v1/remediation/rules/{id}/enable:
     post:
       tags:
-      - Admin
+        - Admin
       summary: Enable remediation rule
       description: Enable a remediation rule by ID.
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Remediation rule ID
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Remediation rule ID
       responses:
         '200':
           description: Rule enabled
@@ -2943,16 +2987,16 @@ paths:
   /api/v1/reports/compliance/{framework}:
     get:
       tags:
-      - Compliance
+        - Compliance
       summary: Framework compliance report
       description: Generate a findings-based compliance report for a framework label.
       parameters:
-      - name: framework
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Framework identifier or label
+        - name: framework
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Framework identifier or label
       responses:
         '200':
           description: Framework compliance report
@@ -2963,7 +3007,7 @@ paths:
   /api/v1/reports/executive-summary:
     get:
       tags:
-      - Compliance
+        - Compliance
       summary: Executive summary
       description: Return a high-level risk and findings summary for executive reporting.
       responses:
@@ -2976,7 +3020,7 @@ paths:
   /api/v1/reports/risk-summary:
     get:
       tags:
-      - Compliance
+        - Compliance
       summary: Risk category summary
       description: Return open findings aggregated by risk category and severity.
       responses:
@@ -2989,7 +3033,7 @@ paths:
   /api/v1/runtime/detections:
     get:
       tags:
-      - Runtime
+        - Runtime
       summary: List detection rules
       description: List runtime detection rules.
       responses:
@@ -3008,7 +3052,7 @@ paths:
   /api/v1/runtime/events:
     post:
       tags:
-      - Runtime
+        - Runtime
       summary: Ingest runtime event
       description: Ingest a runtime event and evaluate detection/response policies.
       responses:
@@ -3033,7 +3077,7 @@ paths:
   /api/v1/runtime/findings:
     get:
       tags:
-      - Runtime
+        - Runtime
       summary: List runtime findings
       description: List recent runtime findings.
       responses:
@@ -3044,17 +3088,17 @@ paths:
               schema:
                 $ref: '#/components/schemas/RuntimeFindingsResponse'
       parameters:
-      - name: limit
-        in: query
-        required: false
-        schema:
-          type: integer
-          default: 100
-        description: Maximum result size
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 100
+          description: Maximum result size
   /api/v1/runtime/responses:
     get:
       tags:
-      - Runtime
+        - Runtime
       summary: List response policies
       description: List runtime response policies.
       responses:
@@ -3073,7 +3117,7 @@ paths:
   /api/v1/runtime/responses/{id}/disable:
     post:
       tags:
-      - Runtime
+        - Runtime
       summary: Disable response policy
       description: Disable a runtime response policy by ID.
       responses:
@@ -3090,16 +3134,16 @@ paths:
           description: Runtime response unavailable
           content: *id001
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Policy ID
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Policy ID
   /api/v1/runtime/responses/{id}/enable:
     post:
       tags:
-      - Runtime
+        - Runtime
       summary: Enable response policy
       description: Enable a runtime response policy by ID.
       responses:
@@ -3116,16 +3160,16 @@ paths:
           description: Runtime response unavailable
           content: *id001
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Policy ID
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Policy ID
   /api/v1/scan/coverage:
     get:
       tags:
-      - Admin
+        - Admin
       summary: Policy coverage report
       description: Report policy coverage against currently available source tables.
       responses:
@@ -3150,7 +3194,7 @@ paths:
   /api/v1/scan/watermarks:
     get:
       tags:
-      - Admin
+        - Admin
       summary: Scan watermark stats
       description: Return incremental-scan watermark statistics.
       responses:
@@ -3169,16 +3213,16 @@ paths:
   /api/v1/scheduler/jobs/{name}/disable:
     post:
       tags:
-      - Admin
+        - Admin
       summary: Disable scheduler job
       description: Trigger a scheduler job control action by name.
       parameters:
-      - name: name
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Scheduler job name
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Scheduler job name
       responses:
         '200':
           description: Scheduler action accepted
@@ -3189,16 +3233,16 @@ paths:
   /api/v1/scheduler/jobs/{name}/enable:
     post:
       tags:
-      - Admin
+        - Admin
       summary: Enable scheduler job
       description: Trigger a scheduler job control action by name.
       parameters:
-      - name: name
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Scheduler job name
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Scheduler job name
       responses:
         '200':
           description: Scheduler action accepted
@@ -3209,16 +3253,16 @@ paths:
   /api/v1/scheduler/jobs/{name}/run:
     post:
       tags:
-      - Admin
+        - Admin
       summary: Run scheduler job now
       description: Trigger a scheduler job control action by name.
       parameters:
-      - name: name
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Scheduler job name
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Scheduler job name
       responses:
         '202':
           description: Scheduler action accepted
@@ -3253,7 +3297,7 @@ paths:
   /api/v1/slack/commands:
     post:
       tags:
-      - Admin
+        - Admin
       summary: Handle Slack command
       description: Process a Slack slash-command request and return an immediate response payload.
       requestBody:
@@ -3287,10 +3331,9 @@ paths:
   /api/v1/telemetry/ingest:
     post:
       tags:
-      - Runtime
+        - Runtime
       summary: Ingest telemetry batch
-      description: Ingest a telemetry batch and process each runtime event through
-        detection/response.
+      description: Ingest a telemetry batch and process each runtime event through detection/response.
       requestBody:
         required: true
         content:
@@ -3313,7 +3356,7 @@ paths:
   /api/v1/threatintel/feeds:
     get:
       tags:
-      - ThreatIntel
+        - ThreatIntel
       summary: List threat intel feeds
       description: List configured threat-intel feeds and latest sync metadata.
       responses:
@@ -3334,16 +3377,16 @@ paths:
   /api/v1/threatintel/feeds/{id}/sync:
     post:
       tags:
-      - ThreatIntel
+        - ThreatIntel
       summary: Sync threat intel feed
       description: Trigger an immediate synchronization for a feed.
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Feed identifier
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Feed identifier
       responses:
         '200':
           description: Feed synchronized
@@ -3366,16 +3409,16 @@ paths:
   /api/v1/threatintel/lookup/cve/{cve}:
     get:
       tags:
-      - ThreatIntel
+        - ThreatIntel
       summary: Lookup CVE indicator
       description: Lookup a CVE and whether it is marked as known exploited.
       parameters:
-      - name: cve
-        in: path
-        required: true
-        schema:
-          type: string
-        description: CVE identifier
+        - name: cve
+          in: path
+          required: true
+          schema:
+            type: string
+          description: CVE identifier
       responses:
         '200':
           description: CVE lookup result
@@ -3392,16 +3435,16 @@ paths:
   /api/v1/threatintel/lookup/domain/{domain}:
     get:
       tags:
-      - ThreatIntel
+        - ThreatIntel
       summary: Lookup domain indicator
       description: Lookup a domain in threat-intel indicators.
       parameters:
-      - name: domain
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Domain name
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Domain name
       responses:
         '200':
           description: Domain lookup result
@@ -3418,16 +3461,16 @@ paths:
   /api/v1/threatintel/lookup/ip/{ip}:
     get:
       tags:
-      - ThreatIntel
+        - ThreatIntel
       summary: Lookup IP indicator
       description: Lookup an IP address in threat-intel indicators.
       parameters:
-      - name: ip
-        in: path
-        required: true
-        schema:
-          type: string
-        description: IP address
+        - name: ip
+          in: path
+          required: true
+          schema:
+            type: string
+          description: IP address
       responses:
         '200':
           description: IP lookup result
@@ -3444,7 +3487,7 @@ paths:
   /api/v1/threatintel/stats:
     get:
       tags:
-      - ThreatIntel
+        - ThreatIntel
       summary: Threat intel stats
       description: Return current threat-intel indicator and feed statistics.
       responses:
@@ -3463,22 +3506,22 @@ paths:
   /api/v1/tickets:
     get:
       tags:
-      - Tickets
+        - Tickets
       summary: List tickets
       description: List tickets from the configured ticketing provider.
       parameters:
-      - name: status
-        in: query
-        required: false
-        schema:
-          type: string
-        description: Filter by ticket status
-      - name: priority
-        in: query
-        required: false
-        schema:
-          type: string
-        description: Filter by ticket priority
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by ticket status
+        - name: priority
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by ticket priority
       responses:
         '200':
           description: Ticket list
@@ -3495,7 +3538,7 @@ paths:
                 $ref: '#/components/schemas/Error'
     post:
       tags:
-      - Tickets
+        - Tickets
       summary: Create ticket
       description: Create a ticket in the configured ticketing provider.
       requestBody:
@@ -3533,16 +3576,16 @@ paths:
   /api/v1/tickets/{id}:
     get:
       tags:
-      - Tickets
+        - Tickets
       summary: Get ticket
       description: Retrieve a ticket by ID.
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Ticket ID
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Ticket ID
       responses:
         '200':
           description: Ticket details
@@ -3565,16 +3608,16 @@ paths:
                 $ref: '#/components/schemas/Error'
     put:
       tags:
-      - Tickets
+        - Tickets
       summary: Update ticket
       description: Update fields on an existing ticket.
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Ticket ID
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Ticket ID
       requestBody:
         required: true
         content:
@@ -3611,16 +3654,16 @@ paths:
   /api/v1/tickets/{id}/close:
     post:
       tags:
-      - Tickets
+        - Tickets
       summary: Close ticket
       description: Close an existing ticket with an optional resolution.
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Ticket ID
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Ticket ID
       requestBody:
         required: false
         content:
@@ -3649,16 +3692,16 @@ paths:
   /api/v1/tickets/{id}/comments:
     post:
       tags:
-      - Tickets
+        - Tickets
       summary: Add ticket comment
       description: Add a comment to an existing ticket.
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Ticket ID
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Ticket ID
       requestBody:
         required: true
         content:
@@ -3693,7 +3736,7 @@ paths:
   /api/v1/webhooks/test:
     post:
       tags:
-      - Webhooks
+        - Webhooks
       summary: Send webhook test event
       description: Emit a test webhook event to validate delivery wiring.
       requestBody:
@@ -3718,16 +3761,16 @@ paths:
   /api/v1/webhooks/{id}/deliveries:
     get:
       tags:
-      - Webhooks
+        - Webhooks
       summary: List webhook deliveries
       description: Return recent delivery attempts for a webhook.
       parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Webhook ID
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Webhook ID
       responses:
         '200':
           description: Delivery attempts
@@ -3739,7 +3782,7 @@ paths:
   /docs:
     get:
       tags:
-      - Health
+        - Health
       summary: Get docs landing page
       description: Return the embedded API documentation landing page.
       responses:
@@ -3753,7 +3796,7 @@ paths:
   /openapi.yaml:
     get:
       tags:
-      - Health
+        - Health
       summary: Get OpenAPI spec
       description: Return the OpenAPI YAML contract for this API.
       responses:
@@ -3818,7 +3861,7 @@ components:
     QueryRequest:
       type: object
       required:
-      - query
+        - query
       properties:
         query:
           type: string
@@ -3864,8 +3907,8 @@ components:
         effect:
           type: string
           enum:
-          - permit
-          - forbid
+            - permit
+            - forbid
         resource:
           type: string
         conditions:
@@ -3875,10 +3918,10 @@ components:
         severity:
           type: string
           enum:
-          - critical
-          - high
-          - medium
-          - low
+            - critical
+            - high
+            - medium
+            - low
         tags:
           type: array
           items:
@@ -4041,9 +4084,9 @@ components:
         status:
           type: string
           enum:
-          - passing
-          - failing
-          - unknown
+            - passing
+            - failing
+            - unknown
     PreAuditReport:
       type: object
       properties:
@@ -4147,17 +4190,17 @@ components:
     CreateReviewRequest:
       type: object
       required:
-      - name
-      - type
+        - name
+        - type
       properties:
         name:
           type: string
         type:
           type: string
           enum:
-          - user_access
-          - service_account
-          - privileged
+            - user_access
+            - service_account
+            - privileged
         reviewers:
           type: array
           items:
@@ -4189,7 +4232,7 @@ components:
     CreateSessionRequest:
       type: object
       required:
-      - agent_id
+        - agent_id
       properties:
         agent_id:
           type: string
@@ -4220,8 +4263,8 @@ components:
     LineageDriftRequest:
       type: object
       required:
-      - current_state
-      - iac_state
+        - current_state
+        - iac_state
       properties:
         current_state:
           type: object
@@ -4239,14 +4282,14 @@ components:
     RemediationApproveRequest:
       type: object
       required:
-      - approver_id
+        - approver_id
       properties:
         approver_id:
           type: string
     RemediationRejectRequest:
       type: object
       required:
-      - rejecter_id
+        - rejecter_id
       properties:
         rejecter_id:
           type: string
@@ -4255,7 +4298,7 @@ components:
     TicketCreateRequest:
       type: object
       required:
-      - title
+        - title
       properties:
         title:
           type: string
@@ -4275,14 +4318,14 @@ components:
     TicketCommentRequest:
       type: object
       required:
-      - body
+        - body
       properties:
         body:
           type: string
     WebhookTestRequest:
       type: object
       required:
-      - url
+        - url
       properties:
         url:
           type: string
@@ -4293,9 +4336,9 @@ components:
         role:
           type: string
           enum:
-          - user
-          - assistant
-          - system
+            - user
+            - assistant
+            - system
         content:
           type: string
     MessagesResponse:
@@ -4333,8 +4376,8 @@ components:
     CreateWebhookRequest:
       type: object
       required:
-      - url
-      - events
+        - url
+        - events
       properties:
         url:
           type: string
@@ -4434,18 +4477,18 @@ components:
         details:
           type: object
       required:
-      - error
+        - error
     FindingAssignRequest:
       type: object
       required:
-      - assignee
+        - assignee
       properties:
         assignee:
           type: string
     FindingDueDateRequest:
       type: object
       required:
-      - due_at
+        - due_at
       properties:
         due_at:
           type: string
@@ -4453,14 +4496,14 @@ components:
     FindingNoteRequest:
       type: object
       required:
-      - note
+        - note
       properties:
         note:
           type: string
     FindingTicketLinkRequest:
       type: object
       required:
-      - url
+        - url
       properties:
         url:
           type: string
@@ -4477,7 +4520,7 @@ components:
         assignee:
           type: string
       required:
-      - status
+        - status
     GraphStatsResponse:
       type: object
       properties:
@@ -4606,7 +4649,7 @@ components:
     RBACAssignRoleRequest:
       type: object
       required:
-      - role_id
+        - role_id
       properties:
         role_id:
           type: string
@@ -4619,29 +4662,29 @@ components:
     StatusResponse:
       type: object
       required:
-      - status
+        - status
       properties:
         status:
           type: string
     ProviderTestResponse:
       type: object
       required:
-      - status
+        - status
       properties:
         status:
           type: string
           enum:
-          - success
-          - failed
+            - success
+            - failed
         error:
           type: string
     SeverityBreakdown:
       type: object
       required:
-      - critical
-      - high
-      - medium
-      - low
+        - critical
+        - high
+        - medium
+        - low
       properties:
         critical:
           type: integer
@@ -4654,13 +4697,13 @@ components:
     ExecutiveSummaryResponse:
       type: object
       required:
-      - total_findings
-      - open_findings
-      - resolved_findings
-      - suppressed_findings
-      - risk_score
-      - by_severity
-      - top_risks
+        - total_findings
+        - open_findings
+        - resolved_findings
+        - suppressed_findings
+        - risk_score
+        - by_severity
+        - top_risks
       properties:
         total_findings:
           type: integer
@@ -4681,12 +4724,12 @@ components:
     RiskSummaryItem:
       type: object
       required:
-      - category
-      - count
-      - critical
-      - high
-      - medium
-      - low
+        - category
+        - count
+        - critical
+        - high
+        - medium
+        - low
       properties:
         category:
           type: string
@@ -4703,8 +4746,8 @@ components:
     RiskSummaryResponse:
       type: object
       required:
-      - risks
-      - count
+        - risks
+        - count
       properties:
         risks:
           type: array
@@ -4715,9 +4758,9 @@ components:
     FrameworkComplianceControlStatus:
       type: object
       required:
-      - control_id
-      - status
-      - findings
+        - control_id
+        - status
+        - findings
       properties:
         control_id:
           type: string
@@ -4736,16 +4779,16 @@ components:
     FrameworkComplianceReportResponse:
       type: object
       required:
-      - framework
-      - total_controls
-      - assessed_controls
-      - passing_controls
-      - failing_controls
-      - not_assessed_controls
-      - coverage_percent
-      - compliance_percent
-      - control_status
-      - findings_by_control
+        - framework
+        - total_controls
+        - assessed_controls
+        - passing_controls
+        - failing_controls
+        - not_assessed_controls
+        - coverage_percent
+        - compliance_percent
+        - control_status
+        - findings_by_control
       properties:
         framework:
           type: string
@@ -4776,10 +4819,10 @@ components:
     PolicyCoverageGap:
       type: object
       required:
-      - policy_id
-      - policy_name
-      - resource
-      - missing_tables
+        - policy_id
+        - policy_name
+        - resource
+        - missing_tables
       properties:
         policy_id:
           type: string
@@ -4794,16 +4837,16 @@ components:
     ScanCoverageResponse:
       type: object
       required:
-      - total_policies
-      - covered_policies
-      - uncovered_policies
-      - unknown_resource_policies
-      - coverage_percent
-      - known_coverage_percent
-      - available_tables
-      - gaps
-      - missing_tables
-      - missing_by_provider
+        - total_policies
+        - covered_policies
+        - uncovered_policies
+        - unknown_resource_policies
+        - coverage_percent
+        - known_coverage_percent
+        - available_tables
+        - gaps
+        - missing_tables
+        - missing_by_provider
       properties:
         total_policies:
           type: integer
@@ -4834,9 +4877,9 @@ components:
     ScanWatermarkStatsResponse:
       type: object
       required:
-      - tables_with_watermarks
-      - total_rows_scanned
-      - table_stats
+        - tables_with_watermarks
+        - total_rows_scanned
+        - table_stats
       properties:
         tables_with_watermarks:
           type: integer
@@ -4855,14 +4898,14 @@ components:
     SchedulerJobActionResponse:
       type: object
       required:
-      - status
+        - status
       properties:
         status:
           type: string
     TelemetryIngestRequest:
       type: object
       required:
-      - events
+        - events
       properties:
         events:
           type: array
@@ -4877,8 +4920,8 @@ components:
     TelemetryIngestResponse:
       type: object
       required:
-      - processed
-      - findings
+        - processed
+        - findings
       properties:
         processed:
           type: integer
@@ -4887,15 +4930,15 @@ components:
     ThreatIntelFeed:
       type: object
       required:
-      - id
-      - name
-      - description
-      - type
-      - url
-      - format
-      - enabled
-      - last_sync
-      - indicator_count
+        - id
+        - name
+        - description
+        - type
+        - url
+        - format
+        - enabled
+        - last_sync
+        - indicator_count
       properties:
         id:
           type: string
@@ -4919,14 +4962,14 @@ components:
     ThreatIndicator:
       type: object
       required:
-      - id
-      - type
-      - value
-      - source
-      - severity
-      - confidence
-      - first_seen
-      - last_seen
+        - id
+        - type
+        - value
+        - source
+        - severity
+        - confidence
+        - first_seen
+        - last_seen
       properties:
         id:
           type: string
@@ -4959,10 +5002,10 @@ components:
     ThreatIntelStatsResponse:
       type: object
       required:
-      - total_indicators
-      - by_type
-      - feeds_count
-      - last_updated
+        - total_indicators
+        - by_type
+        - feeds_count
+        - last_updated
       properties:
         total_indicators:
           type: integer
@@ -4978,8 +5021,8 @@ components:
     ThreatIntelLookupIPResponse:
       type: object
       required:
-      - found
-      - ip
+        - found
+        - ip
       properties:
         found:
           type: boolean
@@ -4990,8 +5033,8 @@ components:
     ThreatIntelLookupDomainResponse:
       type: object
       required:
-      - found
-      - domain
+        - found
+        - domain
       properties:
         found:
           type: boolean
@@ -5002,9 +5045,9 @@ components:
     ThreatIntelLookupCVEResponse:
       type: object
       required:
-      - found
-      - cve
-      - is_kev
+        - found
+        - cve
+        - is_kev
       properties:
         found:
           type: boolean

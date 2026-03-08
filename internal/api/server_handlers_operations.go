@@ -183,6 +183,46 @@ func (s *Server) createRemediationRule(w http.ResponseWriter, r *http.Request) {
 	s.json(w, http.StatusCreated, rule)
 }
 
+func (s *Server) updateRemediationRule(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		s.error(w, http.StatusBadRequest, "rule id required")
+		return
+	}
+
+	var rule remediation.Rule
+	if err := json.NewDecoder(r.Body).Decode(&rule); err != nil {
+		s.error(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if rule.ID != "" && rule.ID != id {
+		s.error(w, http.StatusBadRequest, "rule id in body must match path id")
+		return
+	}
+
+	rule.ID = id
+	if err := s.app.Remediation.UpdateRule(id, rule); err != nil {
+		s.error(w, http.StatusNotFound, "rule not found")
+		return
+	}
+
+	updated, _ := s.app.Remediation.GetRule(id)
+	s.json(w, http.StatusOK, updated)
+}
+
+func (s *Server) deleteRemediationRule(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		s.error(w, http.StatusBadRequest, "rule id required")
+		return
+	}
+	if err := s.app.Remediation.DeleteRule(id); err != nil {
+		s.error(w, http.StatusNotFound, "rule not found")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) getRemediationRule(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	rule, ok := s.app.Remediation.GetRule(id)

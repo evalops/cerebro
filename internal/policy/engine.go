@@ -317,6 +317,30 @@ func (e *Engine) AddPolicy(p *Policy) {
 	e.policies[p.ID] = p
 }
 
+func (e *Engine) UpdatePolicy(id string, p *Policy) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if _, ok := e.policies[id]; !ok {
+		return false
+	}
+
+	p.ID = id
+	e.policies[id] = p
+	return true
+}
+
+func (e *Engine) DeletePolicy(id string) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if _, ok := e.policies[id]; !ok {
+		return false
+	}
+	delete(e.policies, id)
+	return true
+}
+
 func (e *Engine) GetPolicy(id string) (*Policy, bool) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()

@@ -136,6 +136,67 @@ func TestEngine_AddRule(t *testing.T) {
 	}
 }
 
+func TestEngine_UpdateAndDeleteRule(t *testing.T) {
+	engine := NewEngine(testutil.Logger())
+
+	err := engine.AddRule(Rule{
+		ID:      "updatable-rule",
+		Name:    "Original",
+		Enabled: true,
+		Trigger: Trigger{
+			Type: TriggerFindingCreated,
+		},
+		Actions: []Action{{Type: ActionCreateTicket}},
+	})
+	if err != nil {
+		t.Fatalf("AddRule failed: %v", err)
+	}
+
+	err = engine.UpdateRule("updatable-rule", Rule{
+		Name:    "Updated",
+		Enabled: false,
+		Trigger: Trigger{
+			Type:     TriggerFindingCreated,
+			Severity: "critical",
+		},
+		Actions: []Action{{Type: ActionNotifySlack, Config: map[string]string{"channel": "#security"}}},
+	})
+	if err != nil {
+		t.Fatalf("UpdateRule failed: %v", err)
+	}
+
+	got, ok := engine.GetRule("updatable-rule")
+	if !ok {
+		t.Fatal("expected updated rule to exist")
+	}
+	if got.Name != "Updated" {
+		t.Fatalf("expected updated name, got %s", got.Name)
+	}
+	if got.Enabled {
+		t.Fatal("expected updated rule to be disabled")
+	}
+	if got.ID != "updatable-rule" {
+		t.Fatalf("expected rule ID to remain updatable-rule, got %s", got.ID)
+	}
+	if len(got.Actions) != 1 || got.Actions[0].Type != ActionNotifySlack {
+		t.Fatalf("expected updated actions to be applied, got %+v", got.Actions)
+	}
+
+	if err := engine.UpdateRule("missing-rule", Rule{Name: "Missing"}); err == nil {
+		t.Fatal("expected update on missing rule to fail")
+	}
+
+	if err := engine.DeleteRule("updatable-rule"); err != nil {
+		t.Fatalf("DeleteRule failed: %v", err)
+	}
+	if _, ok := engine.GetRule("updatable-rule"); ok {
+		t.Fatal("expected deleted rule to be absent")
+	}
+	if err := engine.DeleteRule("updatable-rule"); err == nil {
+		t.Fatal("expected second delete on missing rule to fail")
+	}
+}
+
 func TestEngine_RuleWithActions(t *testing.T) {
 	engine := NewEngine(testutil.Logger())
 

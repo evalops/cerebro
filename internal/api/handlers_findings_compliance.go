@@ -73,6 +73,38 @@ func (s *Server) getFinding(w http.ResponseWriter, r *http.Request) {
 	s.json(w, http.StatusOK, f)
 }
 
+func (s *Server) deleteFinding(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if strings.TrimSpace(id) == "" {
+		s.error(w, http.StatusBadRequest, "finding id required")
+		return
+	}
+
+	now := time.Now().UTC()
+	err := s.app.Findings.Update(id, func(f *findings.Finding) error {
+		f.Status = "DELETED"
+		f.ResourceStatus = "Deleted"
+		f.Resolution = "deleted via api"
+		f.UpdatedAt = now
+		f.StatusChangedAt = &now
+		f.ResolvedAt = &now
+		return nil
+	})
+	if errors.Is(err, findings.ErrIssueNotFound) {
+		s.error(w, http.StatusNotFound, "finding not found")
+		return
+	}
+	if err != nil {
+		s.errorFromErr(w, err)
+		return
+	}
+
+	s.json(w, http.StatusOK, map[string]string{
+		"status": "deleted",
+		"id":     id,
+	})
+}
+
 func (s *Server) scanFindings(w http.ResponseWriter, r *http.Request) {
 	if s.app.Snowflake == nil {
 		s.error(w, http.StatusServiceUnavailable, "snowflake not configured")

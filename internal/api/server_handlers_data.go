@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -267,6 +268,44 @@ func (s *Server) createPolicy(w http.ResponseWriter, r *http.Request) {
 	}
 	s.app.Policy.AddPolicy(&p)
 	s.json(w, http.StatusCreated, p)
+}
+
+func (s *Server) updatePolicy(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if strings.TrimSpace(id) == "" {
+		s.error(w, http.StatusBadRequest, "policy id required")
+		return
+	}
+
+	var p policy.Policy
+	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+		s.error(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if strings.TrimSpace(p.ID) != "" && p.ID != id {
+		s.error(w, http.StatusBadRequest, "policy id in body must match path id")
+		return
+	}
+
+	p.ID = id
+	if ok := s.app.Policy.UpdatePolicy(id, &p); !ok {
+		s.error(w, http.StatusNotFound, "policy not found")
+		return
+	}
+	s.json(w, http.StatusOK, p)
+}
+
+func (s *Server) deletePolicy(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if strings.TrimSpace(id) == "" {
+		s.error(w, http.StatusBadRequest, "policy id required")
+		return
+	}
+	if ok := s.app.Policy.DeletePolicy(id); !ok {
+		s.error(w, http.StatusNotFound, "policy not found")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) evaluatePolicy(w http.ResponseWriter, r *http.Request) {
