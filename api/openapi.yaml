@@ -51,6 +51,8 @@ tags:
     description: Administrative endpoints
   - name: Graph
     description: Security graph and risk intelligence endpoints
+  - name: Org
+    description: Organizational topology and information-flow analytics endpoints
   - name: Runtime
     description: Runtime detection and response endpoints
   - name: RBAC
@@ -4400,6 +4402,100 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '503':
+          description: Security graph is not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/org/information-flow:
+    get:
+      tags:
+        - Org
+      summary: Compute shortest information path between two endpoints
+      description: Return the shortest information flow path and estimated latency between the provided endpoints.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          description: Source selector (node ID, name, or team/<name>).
+          schema:
+            type: string
+        - name: to
+          in: query
+          required: true
+          description: Destination selector (node ID, name, or team/<name>).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Information path result
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Missing from/to selectors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: No path exists between selectors
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Security graph is not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/org/clock-speed:
+    get:
+      tags:
+        - Org
+      summary: Compute organizational information-flow clock speed
+      description: Return category-level and aggregate hop/latency metrics for organizational information flow.
+      responses:
+        '200':
+          description: Clock speed metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '503':
+          description: Security graph is not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/org/recommended-connections:
+    get:
+      tags:
+        - Org
+      summary: Recommend missing person connections
+      description: Suggest person-to-person connections that would reduce information flow distance.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of recommendations to return.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+      responses:
+        '200':
+          description: Recommended connections
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
         '503':
           description: Security graph is not initialized
           content:

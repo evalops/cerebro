@@ -344,5 +344,12 @@ func (s *Server) setupRoutes() {
 			r.Get("/visualize/blast-radius/{principalId}", s.visualizeBlastRadius)
 			r.Get("/visualize/report", s.visualizeReport)
 		})
+
+		// Organizational flow endpoints
+		r.Route("/org", func(r chi.Router) {
+			r.Get("/information-flow", s.orgInformationFlow)
+			r.Get("/clock-speed", s.orgClockSpeed)
+			r.Get("/recommended-connections", s.orgRecommendedConnections)
+		})
 	})
 }
