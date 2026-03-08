@@ -2,7 +2,7 @@
 
 Generated from `internal/app/app.go` (`LoadConfig`) via `go run ./scripts/generate_config_docs/main.go`.
 
-Total variables: **237**
+Total variables: **252**
 
 | Variable | Reader(s) | Default(s) | Config Field(s) |
 |---|---|---|---|
@@ -27,6 +27,18 @@ Total variables: **237**
 | `AZURE_TENANT_ID` | `getEnv` | `""` | `AzureTenantID` |
 | `BAMBOOHR_API_TOKEN` | `getEnv` | `""` | `BambooHRAPIToken` |
 | `BAMBOOHR_URL` | `getEnv` | `""` | `BambooHRURL` |
+| `CEREBRO_ACCESS_REVIEW_RETENTION_DAYS` | `getEnvInt` | `0` | `AccessReviewRetentionDays` |
+| `CEREBRO_AUDIT_RETENTION_DAYS` | `getEnvInt` | `0` | `AuditRetentionDays` |
+| `CEREBRO_GRAPH_RETENTION_DAYS` | `getEnvInt` | `0` | `GraphRetentionDays` |
+| `CEREBRO_OTEL_ENABLED` | `getEnvBool` | `false` | `TracingEnabled` |
+| `CEREBRO_OTEL_EXPORTER_OTLP_ENDPOINT` | `getEnv` | `getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "")` | `TracingOTLPEndpoint` |
+| `CEREBRO_OTEL_EXPORTER_OTLP_HEADERS` | `getEnv` | `getEnv("OTEL_EXPORTER_OTLP_HEADERS", "")` | `TracingOTLPHeaders` |
+| `CEREBRO_OTEL_EXPORTER_OTLP_INSECURE` | `getEnvBool` | `getEnvBool("OTEL_EXPORTER_OTLP_INSECURE", false)` | `TracingOTLPInsecure` |
+| `CEREBRO_OTEL_EXPORT_TIMEOUT` | `getEnvDuration` | `5 * time.Second` | `TracingExportTimeout` |
+| `CEREBRO_OTEL_SERVICE_NAME` | `getEnv` | `"cerebro"` | `TracingServiceName` |
+| `CEREBRO_RETENTION_JOB_INTERVAL` | `getEnvDuration` | `24 * time.Hour` | `RetentionJobInterval` |
+| `CEREBRO_SECRETS_RELOAD_INTERVAL` | `getEnvDuration` | `0` | `SecretsReloadInterval` |
+| `CEREBRO_SESSION_RETENTION_DAYS` | `getEnvInt` | `0` | `SessionRetentionDays` |
 | `CLOUDFLARE_API_TOKEN` | `getEnv` | `""` | `CloudflareAPIToken` |
 | `CLOUDTRAIL_LOOKBACK_DAYS` | `getEnvInt` | `7` | `CloudTrailLookbackDays` |
 | `CLOUDTRAIL_REGION` | `getEnv` | `""` | `CloudTrailRegion` |
@@ -144,6 +156,9 @@ Total variables: **237**
 | `OPENAI_API_KEY` | `getEnv` | `""` | `OpenAIAPIKey` |
 | `ORACLE_IDCS_API_TOKEN` | `getEnv` | `""` | `OracleIDCSAPIToken` |
 | `ORACLE_IDCS_URL` | `getEnv` | `""` | `OracleIDCSURL` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `getEnv` | `""` | `TracingOTLPEndpoint` |
+| `OTEL_EXPORTER_OTLP_HEADERS` | `getEnv` | `""` | `TracingOTLPHeaders` |
+| `OTEL_EXPORTER_OTLP_INSECURE` | `getEnvBool` | `false` | `TracingOTLPInsecure` |
 | `PAGERDUTY_ROUTING_KEY` | `getEnv` | `""` | `PagerDutyKey` |
 | `PANTHER_API_TOKEN` | `getEnv` | `""` | `PantherAPIToken` |
 | `PANTHER_BASE_URL` | `getEnv` | `"https://api.runpanther.io/public_api/v1"` | `PantherBaseURL` |

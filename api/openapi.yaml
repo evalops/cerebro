@@ -3900,6 +3900,66 @@ paths:
               schema:
                 type: string
       security: []
+  /api/v1/graph/diff:
+    get:
+      tags:
+        - Undocumented
+      summary: GET endpoint (placeholder)
+      description: Auto-generated placeholder to keep OpenAPI route coverage in sync with server routes.
+      x-cerebro-generated: "true"
+      responses:
+        "200":
+          description: OK
+  /api/v1/graph/evaluate-change:
+    post:
+      tags:
+        - Undocumented
+      summary: POST endpoint (placeholder)
+      description: Auto-generated placeholder to keep OpenAPI route coverage in sync with server routes.
+      x-cerebro-generated: "true"
+      responses:
+        "200":
+          description: OK
+  /api/v1/graph/simulate:
+    post:
+      tags:
+        - Undocumented
+      summary: POST endpoint (placeholder)
+      description: Auto-generated placeholder to keep OpenAPI route coverage in sync with server routes.
+      x-cerebro-generated: "true"
+      responses:
+        "200":
+          description: OK
+  /api/v1/policies/{id}/dry-run:
+    post:
+      tags:
+        - Undocumented
+      summary: POST endpoint (placeholder)
+      description: Auto-generated placeholder to keep OpenAPI route coverage in sync with server routes.
+      x-cerebro-generated: "true"
+      responses:
+        "200":
+          description: OK
+  /api/v1/policies/{id}/rollback:
+    post:
+      tags:
+        - Undocumented
+      summary: POST endpoint (placeholder)
+      description: Auto-generated placeholder to keep OpenAPI route coverage in sync with server routes.
+      x-cerebro-generated: "true"
+      responses:
+        "200":
+          description: OK
+  /api/v1/policies/{id}/versions:
+    get:
+      tags:
+        - Undocumented
+      summary: GET endpoint (placeholder)
+      description: Auto-generated placeholder to keep OpenAPI route coverage in sync with server routes.
+      x-cerebro-generated: "true"
+      responses:
+        "200":
+          description: OK
 components:
   securitySchemes:
     ApiKeyAuth:
