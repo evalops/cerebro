@@ -8,8 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/evalops/cerebro/internal/agents"
-	agentproviders "github.com/evalops/cerebro/internal/agents/providers"
 	"github.com/evalops/cerebro/internal/attackpath"
 	"github.com/evalops/cerebro/internal/cache"
 	"github.com/evalops/cerebro/internal/dspm"
@@ -20,7 +18,6 @@ import (
 	"github.com/evalops/cerebro/internal/notifications"
 	"github.com/evalops/cerebro/internal/policy"
 	"github.com/evalops/cerebro/internal/scanner"
-	"github.com/evalops/cerebro/internal/scm"
 	"github.com/evalops/cerebro/internal/snowflake"
 	"github.com/evalops/cerebro/internal/ticketing"
 	"github.com/evalops/cerebro/internal/webhooks"
@@ -169,95 +166,6 @@ func (a *App) initScanner() {
 
 func (a *App) initCache() {
 	a.Cache = cache.NewPolicyCache(10000, 15*time.Minute)
-}
-
-func (a *App) initAgents() {
-	a.Agents = agents.NewAgentRegistry()
-	if a.Snowflake != nil {
-		store, err := agents.NewSnowflakeSessionStore(a.Snowflake)
-		if err != nil {
-			a.Logger.Warn("failed to initialize persistent agent session store, using in-memory store", "error", err)
-		} else {
-			a.Agents.SetSessionStore(store)
-		}
-	}
-
-	// Initialize SCM client
-	scmClient := scm.NewConfiguredClient(a.Config.GitHubToken, a.Config.GitLabToken, a.Config.GitLabBaseURL)
-
-	// Create security tools for agents
-	toolset := agents.NewSecurityTools(a.Snowflake, a.Findings, a.Policy, scmClient)
-	agentTools := toolset.GetTools()
-
-	remoteToolsCfg := agents.RemoteToolProviderConfig{
-		Enabled:               a.Config.AgentRemoteToolsEnabled,
-		URLs:                  a.Config.NATSJetStreamURLs,
-		ManifestSubject:       a.Config.AgentRemoteToolsManifestSubject,
-		RequestPrefix:         a.Config.AgentRemoteToolsRequestPrefix,
-		DiscoverTimeout:       a.Config.AgentRemoteToolsDiscoverTimeout,
-		RequestTimeout:        a.Config.AgentRemoteToolsRequestTimeout,
-		MaxTools:              a.Config.AgentRemoteToolsMaxTools,
-		ConnectTimeout:        a.Config.NATSJetStreamConnectTimeout,
-		AuthMode:              a.Config.NATSJetStreamAuthMode,
-		Username:              a.Config.NATSJetStreamUsername,
-		Password:              a.Config.NATSJetStreamPassword,
-		NKeySeed:              a.Config.NATSJetStreamNKeySeed,
-		UserJWT:               a.Config.NATSJetStreamUserJWT,
-		TLSEnabled:            a.Config.NATSJetStreamTLSEnabled,
-		TLSCAFile:             a.Config.NATSJetStreamTLSCAFile,
-		TLSCertFile:           a.Config.NATSJetStreamTLSCertFile,
-		TLSKeyFile:            a.Config.NATSJetStreamTLSKeyFile,
-		TLSServerName:         a.Config.NATSJetStreamTLSServerName,
-		TLSInsecureSkipVerify: a.Config.NATSJetStreamTLSInsecure,
-	}
-
-	remoteProvider, err := agents.NewRemoteToolProvider(remoteToolsCfg, a.Logger)
-	if err != nil {
-		a.Logger.Warn("failed to initialize remote tool provider", "error", err)
-	} else if remoteProvider != nil {
-		remoteTools, err := remoteProvider.DiscoverTools(context.Background())
-		if err != nil {
-			a.Logger.Warn("failed to discover remote tools", "error", err)
-			_ = remoteProvider.Close()
-		} else {
-			agentTools = agents.MergeTools(agentTools, remoteTools)
-			a.RemoteTools = remoteProvider
-			if a.RemediationExecutor != nil {
-				a.RemediationExecutor.SetRemoteCaller(remoteProvider)
-			}
-			a.Logger.Info("registered remote tools for agents", "count", len(remoteTools))
-		}
-	}
-
-	// Register Anthropic-based agent if configured
-	if a.Config.AnthropicAPIKey != "" {
-		provider := agentproviders.NewAnthropicProvider(agentproviders.AnthropicConfig{
-			APIKey: a.Config.AnthropicAPIKey,
-		})
-		a.Agents.RegisterAgent(&agents.Agent{
-			ID:          "security-analyst",
-			Name:        "Security Analyst",
-			Description: "AI-powered security analyst for investigating findings and incidents",
-			Provider:    provider,
-			Tools:       agentTools,
-			Memory:      agents.NewMemory(100),
-		})
-	}
-
-	// Register OpenAI-based agent if configured
-	if a.Config.OpenAIAPIKey != "" {
-		provider := agentproviders.NewOpenAIProvider(agentproviders.OpenAIConfig{
-			APIKey: a.Config.OpenAIAPIKey,
-		})
-		a.Agents.RegisterAgent(&agents.Agent{
-			ID:          "incident-responder",
-			Name:        "Incident Responder",
-			Description: "AI-powered incident responder for triage and remediation",
-			Provider:    provider,
-			Tools:       agentTools,
-			Memory:      agents.NewMemory(100),
-		})
-	}
 }
 
 func (a *App) initTicketing() {
