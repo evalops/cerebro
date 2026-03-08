@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/evalops/cerebro/internal/agents"
 	"github.com/evalops/cerebro/internal/findings"
@@ -32,6 +33,10 @@ func TestCerebroToolsApprovalFlags(t *testing.T) {
 	}
 	if scenarioSimulate.RequiresApproval {
 		t.Fatal("simulate should not require approval with current config")
+	}
+	insightCard := findCerebroTool(tools, "insight_card")
+	if insightCard == nil {
+		t.Fatal("expected insight_card tool")
 	}
 
 	accessReview := findCerebroTool(tools, "cerebro.access_review")
@@ -219,6 +224,112 @@ func TestCerebroScenarioSimulateTool_UnsupportedScenario(t *testing.T) {
 	_, err := tool.Handler(context.Background(), json.RawMessage(`{"scenario":"unknown","target":"customer:acme"}`))
 	if err == nil {
 		t.Fatal("expected unsupported scenario error")
+	}
+}
+
+func TestCerebroInsightCardTool(t *testing.T) {
+	g := graph.New()
+	g.AddNode(&graph.Node{ID: "customer:acme", Kind: graph.NodeKindCustomer, Name: "Acme", Properties: map[string]any{
+		"arr":             250000.0,
+		"usage_declining": true,
+		"nps_score":       22,
+	}})
+	g.AddNode(&graph.Node{ID: "person:alice@example.com", Kind: graph.NodeKindPerson, Name: "Alice"})
+	g.AddNode(&graph.Node{ID: "app:billing", Kind: graph.NodeKindApplication, Name: "Billing"})
+	g.AddEdge(&graph.Edge{ID: "alice-customer", Source: "person:alice@example.com", Target: "customer:acme", Kind: graph.EdgeKindInteractedWith, Effect: graph.EdgeEffectAllow, Properties: map[string]any{
+		"last_seen": time.Now().UTC().Format(time.RFC3339),
+	}})
+	g.AddEdge(&graph.Edge{ID: "app-customer", Source: "app:billing", Target: "customer:acme", Kind: graph.EdgeKindOwns, Effect: graph.EdgeEffectAllow})
+	g.BuildIndex()
+
+	application := &App{SecurityGraph: g}
+	tool := findCerebroTool(application.cerebroTools(), "insight_card")
+	if tool == nil {
+		t.Fatal("expected insight_card tool")
+	}
+
+	result, err := tool.Handler(context.Background(), json.RawMessage(`{"entity":"customer:acme"}`))
+	if err != nil {
+		t.Fatalf("tool returned error: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(result), &payload); err != nil {
+		t.Fatalf("decode tool payload: %v", err)
+	}
+	if payload["entity_id"] != "customer:acme" {
+		t.Fatalf("expected entity_id customer:acme, got %#v", payload["entity_id"])
+	}
+	if payload["card_type"] != "customer" {
+		t.Fatalf("expected card_type customer, got %#v", payload["card_type"])
+	}
+	if _, ok := payload["risk_score"]; !ok {
+		t.Fatalf("expected risk_score, got %#v", payload)
+	}
+	if _, ok := payload["blast_radius"]; !ok {
+		t.Fatalf("expected blast_radius, got %#v", payload)
+	}
+	if _, ok := payload["key_relationships"]; !ok {
+		t.Fatalf("expected key_relationships, got %#v", payload)
+	}
+	if _, ok := payload["activity"]; !ok {
+		t.Fatalf("expected activity, got %#v", payload)
+	}
+	if _, ok := payload["recommendations"]; !ok {
+		t.Fatalf("expected recommendations, got %#v", payload)
+	}
+}
+
+func TestCerebroInsightCardTool_FilterSections(t *testing.T) {
+	g := graph.New()
+	g.AddNode(&graph.Node{ID: "person:alice@example.com", Kind: graph.NodeKindPerson, Name: "Alice", Properties: map[string]any{
+		"risk_score": 0.81,
+	}})
+	g.AddNode(&graph.Node{ID: "person:bob@example.com", Kind: graph.NodeKindPerson, Name: "Bob"})
+	g.AddEdge(&graph.Edge{ID: "alice-bob", Source: "person:alice@example.com", Target: "person:bob@example.com", Kind: graph.EdgeKindInteractedWith, Effect: graph.EdgeEffectAllow, Properties: map[string]any{
+		"last_seen": time.Now().UTC().Format(time.RFC3339),
+	}})
+	g.BuildIndex()
+
+	application := &App{SecurityGraph: g}
+	tool := findCerebroTool(application.cerebroTools(), "insight_card")
+	if tool == nil {
+		t.Fatal("expected insight_card tool")
+	}
+
+	result, err := tool.Handler(context.Background(), json.RawMessage(`{"entity":"person:alice@example.com","sections":["risk","activity"]}`))
+	if err != nil {
+		t.Fatalf("tool returned error: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(result), &payload); err != nil {
+		t.Fatalf("decode tool payload: %v", err)
+	}
+	if _, ok := payload["risk_score"]; !ok {
+		t.Fatalf("expected risk_score for selected section, got %#v", payload)
+	}
+	if _, ok := payload["activity"]; !ok {
+		t.Fatalf("expected activity for selected section, got %#v", payload)
+	}
+	if _, ok := payload["key_relationships"]; ok {
+		t.Fatalf("did not expect key_relationships when relationships section is omitted: %#v", payload)
+	}
+	if _, ok := payload["recommendations"]; ok {
+		t.Fatalf("did not expect recommendations when recommendations section is omitted: %#v", payload)
+	}
+}
+
+func TestCerebroInsightCardTool_EntityNotFound(t *testing.T) {
+	application := &App{SecurityGraph: graph.New()}
+	tool := findCerebroTool(application.cerebroTools(), "insight_card")
+	if tool == nil {
+		t.Fatal("expected insight_card tool")
+	}
+
+	_, err := tool.Handler(context.Background(), json.RawMessage(`{"entity":"customer:missing"}`))
+	if err == nil {
+		t.Fatal("expected not found error")
 	}
 }
 

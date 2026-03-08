@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/evalops/cerebro/internal/agents"
 	"github.com/evalops/cerebro/internal/findings"
@@ -48,6 +49,29 @@ func (a *App) cerebroTools() []agents.Tool {
 				"required": []string{"scenario", "target"},
 			},
 			Handler: a.toolCerebroScenarioSimulate,
+		},
+		{
+			Name:        "insight_card",
+			Description: "Build a context-rich entity insight card for Slack/Ensemble responses",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"entity": map[string]any{
+						"type":        "string",
+						"description": "Entity node ID (for example customer:acme-corp, person:alice@example.com)",
+					},
+					"sections": map[string]any{
+						"type":        "array",
+						"description": "Optional sections to include: risk, relationships, activity, recommendations",
+						"items": map[string]any{
+							"type": "string",
+							"enum": []string{"risk", "relationships", "activity", "recommendations"},
+						},
+					},
+				},
+				"required": []string{"entity"},
+			},
+			Handler: a.toolCerebroInsightCard,
 		},
 		{
 			Name:             "cerebro.simulate",
@@ -278,6 +302,65 @@ func (a *App) toolCerebroScenarioSimulate(_ context.Context, args json.RawMessag
 	return marshalToolResponse(response)
 }
 
+func (a *App) toolCerebroInsightCard(_ context.Context, args json.RawMessage) (string, error) {
+	g, err := a.requireSecurityGraph()
+	if err != nil {
+		return "", err
+	}
+
+	var req struct {
+		Entity   string   `json:"entity"`
+		Sections []string `json:"sections"`
+	}
+	if err := decodeToolArgs(args, &req); err != nil {
+		return "", err
+	}
+	req.Entity = strings.TrimSpace(req.Entity)
+	if req.Entity == "" {
+		return "", fmt.Errorf("entity is required")
+	}
+
+	node, ok := g.GetNode(req.Entity)
+	if !ok {
+		return "", fmt.Errorf("entity not found: %s", req.Entity)
+	}
+
+	sections := normalizeInsightSections(req.Sections)
+	cardType := inferInsightCardType(node)
+
+	response := map[string]any{
+		"entity":    firstNonEmpty(node.Name, node.ID),
+		"entity_id": node.ID,
+		"card_type": cardType,
+		"sections":  sections,
+	}
+
+	if sections["risk"] {
+		riskScore, riskTrend, riskSignals := buildInsightRiskSection(g, node)
+		response["risk_score"] = riskScore
+		response["risk_trend"] = riskTrend
+		response["risk_signals"] = riskSignals
+		response["toxic_combinations"] = buildInsightToxicCombinations(g, node.ID)
+	}
+
+	if sections["relationships"] {
+		blast := buildInsightBlastRadius(g, node)
+		response["blast_radius"] = blast
+		response["key_relationships"] = buildInsightRelationships(g, node)
+	}
+
+	if sections["activity"] {
+		response["peer_comparison"] = buildInsightPeerComparison(g, node)
+		response["activity"] = buildInsightActivity(g, node)
+	}
+
+	if sections["recommendations"] {
+		response["recommendations"] = buildInsightRecommendations(g, node)
+	}
+
+	return marshalToolResponse(response)
+}
+
 func buildScenarioSimulationDelta(g *graph.Graph, scenario string, target string, parameters map[string]any) (graph.GraphDelta, error) {
 	switch scenario {
 	case "customer_churn", "access_removal", "service_disruption", "vendor_exit":
@@ -342,6 +425,342 @@ func buildScenarioSimulationDelta(g *graph.Graph, scenario string, target string
 	default:
 		return graph.GraphDelta{}, fmt.Errorf("unsupported scenario %q", scenario)
 	}
+}
+
+func normalizeInsightSections(raw []string) map[string]bool {
+	sections := map[string]bool{
+		"risk":            false,
+		"relationships":   false,
+		"activity":        false,
+		"recommendations": false,
+	}
+	if len(raw) == 0 {
+		for key := range sections {
+			sections[key] = true
+		}
+		return sections
+	}
+	for _, section := range raw {
+		section = strings.ToLower(strings.TrimSpace(section))
+		if _, ok := sections[section]; ok {
+			sections[section] = true
+		}
+	}
+	enabled := false
+	for _, on := range sections {
+		if on {
+			enabled = true
+			break
+		}
+	}
+	if !enabled {
+		for key := range sections {
+			sections[key] = true
+		}
+	}
+	return sections
+}
+
+func inferInsightCardType(node *graph.Node) string {
+	if node == nil {
+		return "entity"
+	}
+	switch node.Kind {
+	case graph.NodeKindCustomer, graph.NodeKindContact, graph.NodeKindCompany, graph.NodeKindDeal, graph.NodeKindOpportunity, graph.NodeKindSubscription:
+		return "customer"
+	case graph.NodeKindPerson, graph.NodeKindUser:
+		return "person"
+	case graph.NodeKindDepartment:
+		return "team"
+	case graph.NodeKindApplication, graph.NodeKindFunction, graph.NodeKindDatabase, graph.NodeKindBucket, graph.NodeKindInstance, graph.NodeKindNetwork:
+		return "service"
+	default:
+		return "entity"
+	}
+}
+
+func buildInsightRiskSection(g *graph.Graph, node *graph.Node) (float64, string, []map[string]any) {
+	if g == nil || node == nil {
+		return 0, "stable", nil
+	}
+	engine := graph.NewRiskEngine(g)
+	entityRisk := engine.ScoreEntity(node.ID)
+	if entityRisk == nil {
+		return mapNodeRiskToScore(node.Risk), "stable", nil
+	}
+	signals := make([]map[string]any, 0, len(entityRisk.Factors))
+	for _, factor := range entityRisk.Factors {
+		signals = append(signals, map[string]any{
+			"family": factor.Source,
+			"signal": firstNonEmpty(factor.Title, factor.Type),
+			"weight": factor.Weight,
+		})
+	}
+	if len(signals) > 5 {
+		signals = signals[:5]
+	}
+	return normalizeRiskScore(entityRisk.Score), firstNonEmpty(entityRisk.Trend, "stable"), signals
+}
+
+func buildInsightToxicCombinations(g *graph.Graph, entityID string) []string {
+	if g == nil || strings.TrimSpace(entityID) == "" {
+		return nil
+	}
+	engine := graph.NewToxicCombinationEngine()
+	combinations := engine.Analyze(g)
+	matches := make([]string, 0)
+	for _, combo := range combinations {
+		if combo == nil {
+			continue
+		}
+		matched := false
+		for _, asset := range combo.AffectedAssets {
+			if asset == entityID {
+				matched = true
+				break
+			}
+		}
+		if !matched && combo.AttackPath != nil {
+			if combo.AttackPath.EntryPoint != nil && combo.AttackPath.EntryPoint.ID == entityID {
+				matched = true
+			}
+			if combo.AttackPath.Target != nil && combo.AttackPath.Target.ID == entityID {
+				matched = true
+			}
+		}
+		if !matched {
+			continue
+		}
+		label := firstNonEmpty(combo.ID, "toxic_combo")
+		name := strings.TrimSpace(combo.Name)
+		if name != "" {
+			label += ": " + name
+		}
+		matches = append(matches, label)
+	}
+	sort.Strings(matches)
+	return matches
+}
+
+func buildInsightBlastRadius(g *graph.Graph, node *graph.Node) map[string]any {
+	if g == nil || node == nil {
+		return map[string]any{"direct": 0, "indirect": 0, "revenue_at_risk": 0.0}
+	}
+	directSet := make(map[string]struct{})
+	for _, edge := range g.GetOutEdges(node.ID) {
+		if edge != nil && strings.TrimSpace(edge.Target) != "" {
+			directSet[edge.Target] = struct{}{}
+		}
+	}
+	for _, edge := range g.GetInEdges(node.ID) {
+		if edge != nil && strings.TrimSpace(edge.Source) != "" {
+			directSet[edge.Source] = struct{}{}
+		}
+	}
+
+	reachable := make(map[string]struct{})
+	queue := make([]string, 0, len(directSet))
+	for id := range directSet {
+		queue = append(queue, id)
+		reachable[id] = struct{}{}
+	}
+	for _, current := range append([]string(nil), queue...) {
+		for _, edge := range g.GetOutEdges(current) {
+			if edge == nil || edge.Target == node.ID {
+				continue
+			}
+			if _, seen := reachable[edge.Target]; !seen {
+				reachable[edge.Target] = struct{}{}
+			}
+		}
+		for _, edge := range g.GetInEdges(current) {
+			if edge == nil || edge.Source == node.ID {
+				continue
+			}
+			if _, seen := reachable[edge.Source]; !seen {
+				reachable[edge.Source] = struct{}{}
+			}
+		}
+	}
+	indirect := len(reachable) - len(directSet)
+	if indirect < 0 {
+		indirect = 0
+	}
+
+	revenueAtRisk := 0.0
+	if node.Kind == graph.NodeKindCustomer {
+		revenueAtRisk = readFloat(mapFromAny(node.Properties), "arr", "annual_revenue", "mrr")
+	} else {
+		for targetID := range directSet {
+			target, ok := g.GetNode(targetID)
+			if !ok || target == nil || target.Kind != graph.NodeKindCustomer {
+				continue
+			}
+			revenueAtRisk += readFloat(mapFromAny(target.Properties), "arr", "annual_revenue", "mrr")
+		}
+	}
+
+	return map[string]any{
+		"direct":          len(directSet),
+		"indirect":        indirect,
+		"revenue_at_risk": revenueAtRisk,
+	}
+}
+
+func buildInsightRelationships(g *graph.Graph, node *graph.Node) []map[string]any {
+	if g == nil || node == nil {
+		return nil
+	}
+	relationships := make([]map[string]any, 0)
+	appendRelationship := func(edge *graph.Edge, direction string) {
+		if edge == nil {
+			return
+		}
+		otherID := edge.Target
+		if direction == "in" {
+			otherID = edge.Source
+		}
+		other, ok := g.GetNode(otherID)
+		if !ok || other == nil {
+			return
+		}
+		relationships = append(relationships, map[string]any{
+			"type":      string(edge.Kind),
+			"direction": direction,
+			"entity_id": other.ID,
+			"entity":    firstNonEmpty(other.Name, other.ID),
+		})
+	}
+	for _, edge := range g.GetOutEdges(node.ID) {
+		appendRelationship(edge, "out")
+	}
+	for _, edge := range g.GetInEdges(node.ID) {
+		appendRelationship(edge, "in")
+	}
+	if len(relationships) > 8 {
+		relationships = relationships[:8]
+	}
+	return relationships
+}
+
+func buildInsightPeerComparison(g *graph.Graph, node *graph.Node) string {
+	if g == nil || node == nil {
+		return "Peer comparison unavailable"
+	}
+	if outlier, ok := graph.GetEntityOutlierScore(g, node.ID); ok && outlier != nil {
+		switch {
+		case outlier.OutlierScore >= 0.90:
+			return "Bottom 10% of comparable peers"
+		case outlier.OutlierScore >= 0.75:
+			return "Bottom 25% of comparable peers"
+		case outlier.OutlierScore >= 0.50:
+			return "Below peer baseline"
+		default:
+			return "Near peer baseline"
+		}
+	}
+	return "No peer anomalies detected"
+}
+
+func buildInsightActivity(g *graph.Graph, node *graph.Node) map[string]any {
+	if g == nil || node == nil {
+		return map[string]any{"interaction_edges": 0}
+	}
+	interactionEdges := 0
+	lastInteraction := time.Time{}
+	for _, edge := range g.GetOutEdges(node.ID) {
+		if edge == nil || edge.Kind != graph.EdgeKindInteractedWith {
+			continue
+		}
+		interactionEdges++
+		if ts, ok := parseTimeValue(firstPresent(mapFromAny(edge.Properties), "last_seen", "last_interaction", "last_activity")); ok && ts.After(lastInteraction) {
+			lastInteraction = ts
+		}
+	}
+	for _, edge := range g.GetInEdges(node.ID) {
+		if edge == nil || edge.Kind != graph.EdgeKindInteractedWith {
+			continue
+		}
+		interactionEdges++
+		if ts, ok := parseTimeValue(firstPresent(mapFromAny(edge.Properties), "last_seen", "last_interaction", "last_activity")); ok && ts.After(lastInteraction) {
+			lastInteraction = ts
+		}
+	}
+
+	out := map[string]any{
+		"interaction_edges": interactionEdges,
+	}
+	if !lastInteraction.IsZero() {
+		out["last_interaction"] = lastInteraction.UTC().Format(time.RFC3339)
+	}
+	return out
+}
+
+func buildInsightRecommendations(g *graph.Graph, node *graph.Node) []string {
+	if g == nil || node == nil {
+		return []string{"Review entity context and validate current ownership"}
+	}
+	riskScore, _, riskSignals := buildInsightRiskSection(g, node)
+	recommendations := make([]string, 0, 4)
+	if riskScore >= 0.70 {
+		recommendations = append(recommendations, "Schedule owner escalation and immediate risk review")
+	}
+	if len(riskSignals) > 0 {
+		recommendations = append(recommendations, "Prioritize top risk signals and address highest-weight contributors")
+	}
+	blast := buildInsightBlastRadius(g, node)
+	if toInt(blast["direct"])+toInt(blast["indirect"]) >= 5 {
+		recommendations = append(recommendations, "Run scenario simulation before making high-impact changes")
+	}
+	if len(recommendations) == 0 {
+		recommendations = append(recommendations, "No immediate high-risk indicators; continue routine monitoring")
+	}
+	return dedupeStrings(recommendations)
+}
+
+func normalizeRiskScore(score float64) float64 {
+	if score <= 0 {
+		return 0
+	}
+	if score > 1 {
+		score = score / 100.0
+	}
+	if score > 1 {
+		return 1
+	}
+	return score
+}
+
+func mapNodeRiskToScore(risk graph.RiskLevel) float64 {
+	switch risk {
+	case graph.RiskCritical:
+		return 0.95
+	case graph.RiskHigh:
+		return 0.75
+	case graph.RiskMedium:
+		return 0.50
+	case graph.RiskLow:
+		return 0.25
+	default:
+		return 0.05
+	}
+}
+
+func dedupeStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }
 
 func simulationAffectedEntityCount(snapshot graph.GraphSimulationSnapshot) int {
@@ -920,4 +1339,51 @@ func stringValue(value any) string {
 		}
 		return fmt.Sprintf("%v", value)
 	}
+}
+
+func readFloat(m map[string]any, keys ...string) float64 {
+	for _, key := range keys {
+		if m == nil {
+			continue
+		}
+		value, ok := m[key]
+		if !ok || value == nil {
+			continue
+		}
+		switch typed := value.(type) {
+		case float64:
+			return typed
+		case float32:
+			return float64(typed)
+		case int:
+			return float64(typed)
+		case int8:
+			return float64(typed)
+		case int16:
+			return float64(typed)
+		case int32:
+			return float64(typed)
+		case int64:
+			return float64(typed)
+		case uint:
+			return float64(typed)
+		case uint8:
+			return float64(typed)
+		case uint16:
+			return float64(typed)
+		case uint32:
+			return float64(typed)
+		case uint64:
+			return float64(typed)
+		case json.Number:
+			if parsed, err := typed.Float64(); err == nil {
+				return parsed
+			}
+		case string:
+			if parsed, err := strconv.ParseFloat(strings.TrimSpace(typed), 64); err == nil {
+				return parsed
+			}
+		}
+	}
+	return 0
 }
