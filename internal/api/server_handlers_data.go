@@ -138,7 +138,7 @@ func (s *Server) listTables(w http.ResponseWriter, r *http.Request) {
 
 	tables, err := s.app.Snowflake.ListTables(r.Context())
 	if err != nil {
-		s.error(w, http.StatusInternalServerError, err.Error())
+		s.errorFromErr(w, err)
 		return
 	}
 	s.json(w, http.StatusOK, map[string]interface{}{"tables": tables, "count": len(tables)})
@@ -200,7 +200,7 @@ func (s *Server) listAssets(w http.ResponseWriter, r *http.Request) {
 		Region:  r.URL.Query().Get("region"),
 	})
 	if err != nil {
-		s.error(w, http.StatusInternalServerError, err.Error())
+		s.errorFromErr(w, err)
 		return
 	}
 	s.json(w, http.StatusOK, map[string]interface{}{"assets": assets, "count": len(assets)})
@@ -259,7 +259,7 @@ func (s *Server) evaluatePolicy(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := s.app.Policy.Evaluate(r.Context(), &req)
 	if err != nil {
-		s.error(w, http.StatusInternalServerError, err.Error())
+		s.errorFromErr(w, err)
 		return
 	}
 	s.json(w, http.StatusOK, resp)

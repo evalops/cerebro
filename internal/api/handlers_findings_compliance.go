@@ -93,7 +93,7 @@ func (s *Server) scanFindings(w http.ResponseWriter, r *http.Request) {
 
 	assets, err := s.app.Snowflake.GetAssets(r.Context(), req.Table, snowflake.AssetFilter{Limit: req.Limit})
 	if err != nil {
-		s.error(w, http.StatusInternalServerError, err.Error())
+		s.errorFromErr(w, err)
 		return
 	}
 
@@ -169,7 +169,7 @@ func (s *Server) exportFindings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		s.error(w, http.StatusInternalServerError, err.Error())
+		s.errorFromErr(w, err)
 		return
 	}
 
@@ -194,7 +194,7 @@ func (s *Server) assignFinding(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, findings.ErrIssueNotFound) {
 			s.error(w, http.StatusNotFound, "finding not found")
 		} else {
-			s.error(w, http.StatusInternalServerError, err.Error())
+			s.errorFromErr(w, err)
 		}
 		return
 	}
@@ -216,7 +216,7 @@ func (s *Server) setFindingDueDate(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, findings.ErrIssueNotFound) {
 			s.error(w, http.StatusNotFound, "finding not found")
 		} else {
-			s.error(w, http.StatusInternalServerError, err.Error())
+			s.errorFromErr(w, err)
 		}
 		return
 	}
@@ -238,7 +238,7 @@ func (s *Server) addFindingNote(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, findings.ErrIssueNotFound) {
 			s.error(w, http.StatusNotFound, "finding not found")
 		} else {
-			s.error(w, http.StatusInternalServerError, err.Error())
+			s.errorFromErr(w, err)
 		}
 		return
 	}
@@ -262,7 +262,7 @@ func (s *Server) linkFindingTicket(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, findings.ErrIssueNotFound) {
 			s.error(w, http.StatusNotFound, "finding not found")
 		} else {
-			s.error(w, http.StatusInternalServerError, err.Error())
+			s.errorFromErr(w, err)
 		}
 		return
 	}

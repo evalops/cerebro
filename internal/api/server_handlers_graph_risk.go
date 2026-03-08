@@ -102,7 +102,7 @@ func (s *Server) rebuildGraph(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.app.RebuildSecurityGraph(r.Context()); err != nil {
-		s.error(w, http.StatusInternalServerError, err.Error())
+		s.errorFromErr(w, err)
 		return
 	}
 

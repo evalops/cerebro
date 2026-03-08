@@ -70,7 +70,7 @@ func (s *Server) configureProvider(w http.ResponseWriter, r *http.Request) {
 			s.error(w, http.StatusNotFound, "provider not found")
 			return
 		}
-		s.error(w, http.StatusInternalServerError, err.Error())
+		s.errorFromErr(w, err)
 		return
 	}
 	s.json(w, http.StatusOK, map[string]string{"status": "configured"})
@@ -91,7 +91,7 @@ func (s *Server) syncProvider(w http.ResponseWriter, r *http.Request) {
 
 	result, err := p.Sync(r.Context(), providers.SyncOptions{FullSync: true})
 	if err != nil {
-		s.error(w, http.StatusInternalServerError, err.Error())
+		s.errorFromErr(w, err)
 		return
 	}
 	s.json(w, http.StatusOK, result)

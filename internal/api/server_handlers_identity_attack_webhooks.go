@@ -99,7 +99,7 @@ func (s *Server) identityReport(w http.ResponseWriter, r *http.Request) {
 
 	report, err := generator.GenerateReport(r.Context(), data)
 	if err != nil {
-		s.error(w, http.StatusInternalServerError, err.Error())
+		s.errorFromErr(w, err)
 		return
 	}
 
@@ -338,7 +338,7 @@ func (s *Server) listAuditLogs(w http.ResponseWriter, r *http.Request) {
 
 	logs, err := s.app.AuditRepo.List(r.Context(), resourceType, resourceID, limit)
 	if err != nil {
-		s.error(w, http.StatusInternalServerError, err.Error())
+		s.errorFromErr(w, err)
 		return
 	}
 	s.json(w, http.StatusOK, map[string]interface{}{"logs": logs, "count": len(logs)})

@@ -182,7 +182,7 @@ func (s *Server) getPolicyCoverage(w http.ResponseWriter, r *http.Request) {
 
 	availableTables, err := s.app.Snowflake.ListAvailableTables(r.Context())
 	if err != nil {
-		s.error(w, http.StatusInternalServerError, err.Error())
+		s.errorFromErr(w, err)
 		return
 	}
 

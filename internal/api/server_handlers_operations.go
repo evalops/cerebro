@@ -48,7 +48,7 @@ func (s *Server) runJob(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, scheduler.ErrSchedulerStopped):
 			s.error(w, http.StatusServiceUnavailable, err.Error())
 		default:
-			s.error(w, http.StatusInternalServerError, err.Error())
+			s.errorFromErr(w, err)
 		}
 		return
 	}
@@ -142,7 +142,7 @@ func (s *Server) createRemediationRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.app.Remediation.AddRule(rule); err != nil {
-		s.error(w, http.StatusInternalServerError, err.Error())
+		s.errorFromErr(w, err)
 		return
 	}
 

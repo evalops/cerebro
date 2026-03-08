@@ -147,7 +147,7 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 			Content: "I understand you want help with: " + req.Content + ". However, no LLM provider is configured. Please set ANTHROPIC_API_KEY or OPENAI_API_KEY.",
 		})
 		if err := s.app.Agents.UpdateSession(session); err != nil {
-			s.error(w, http.StatusInternalServerError, err.Error())
+			s.errorFromErr(w, err)
 			return
 		}
 		s.json(w, http.StatusOK, session.Messages[len(session.Messages)-1])
@@ -156,11 +156,11 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := s.runAgentSessionLoop(r.Context(), session, agent)
 	if err != nil {
-		s.error(w, http.StatusInternalServerError, err.Error())
+		s.errorFromErr(w, err)
 		return
 	}
 	if err := s.app.Agents.UpdateSession(session); err != nil {
-		s.error(w, http.StatusInternalServerError, err.Error())
+		s.errorFromErr(w, err)
 		return
 	}
 	s.json(w, http.StatusOK, resp)
@@ -203,7 +203,7 @@ func (s *Server) approveSessionToolCall(w http.ResponseWriter, r *http.Request) 
 		session.Messages = append(session.Messages, msg)
 		s.logToolApprovalDecision(r.Context(), r, session, pendingCall, "expired")
 		if err := s.app.Agents.UpdateSession(session); err != nil {
-			s.error(w, http.StatusInternalServerError, err.Error())
+			s.errorFromErr(w, err)
 			return
 		}
 		s.json(w, http.StatusBadRequest, msg)
@@ -238,7 +238,7 @@ func (s *Server) approveSessionToolCall(w http.ResponseWriter, r *http.Request) 
 		session.Messages = append(session.Messages, msg)
 		s.logToolApprovalDecision(r.Context(), r, session, pendingCall, "denied")
 		if err := s.app.Agents.UpdateSession(session); err != nil {
-			s.error(w, http.StatusInternalServerError, err.Error())
+			s.errorFromErr(w, err)
 			return
 		}
 		s.json(w, http.StatusOK, msg)
@@ -283,12 +283,12 @@ func (s *Server) approveSessionToolCall(w http.ResponseWriter, r *http.Request) 
 
 	resp, err := s.runAgentSessionLoop(r.Context(), session, agent)
 	if err != nil {
-		s.error(w, http.StatusInternalServerError, err.Error())
+		s.errorFromErr(w, err)
 		return
 	}
 
 	if err := s.app.Agents.UpdateSession(session); err != nil {
-		s.error(w, http.StatusInternalServerError, err.Error())
+		s.errorFromErr(w, err)
 		return
 	}
 	s.json(w, http.StatusOK, resp)
