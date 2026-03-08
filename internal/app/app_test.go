@@ -48,6 +48,32 @@ func TestLoadConfig(t *testing.T) {
 	}
 }
 
+func TestLoadConfigRetention(t *testing.T) {
+	t.Setenv("CEREBRO_AUDIT_RETENTION_DAYS", "45")
+	t.Setenv("CEREBRO_SESSION_RETENTION_DAYS", "21")
+	t.Setenv("CEREBRO_GRAPH_RETENTION_DAYS", "14")
+	t.Setenv("CEREBRO_ACCESS_REVIEW_RETENTION_DAYS", "90")
+	t.Setenv("CEREBRO_RETENTION_JOB_INTERVAL", "2h")
+
+	cfg := LoadConfig()
+
+	if cfg.AuditRetentionDays != 45 {
+		t.Fatalf("expected audit retention days 45, got %d", cfg.AuditRetentionDays)
+	}
+	if cfg.SessionRetentionDays != 21 {
+		t.Fatalf("expected session retention days 21, got %d", cfg.SessionRetentionDays)
+	}
+	if cfg.GraphRetentionDays != 14 {
+		t.Fatalf("expected graph retention days 14, got %d", cfg.GraphRetentionDays)
+	}
+	if cfg.AccessReviewRetentionDays != 90 {
+		t.Fatalf("expected access review retention days 90, got %d", cfg.AccessReviewRetentionDays)
+	}
+	if cfg.RetentionJobInterval != 2*time.Hour {
+		t.Fatalf("expected retention job interval 2h, got %v", cfg.RetentionJobInterval)
+	}
+}
+
 func TestLoadConfig_ConfigFileFallback(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "cerebro.yaml")
 	configBody := `

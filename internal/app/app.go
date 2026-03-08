@@ -71,6 +71,13 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+type retentionCleaner interface {
+	CleanupAuditLogs(ctx context.Context, olderThan time.Time) (int64, error)
+	CleanupAgentData(ctx context.Context, olderThan time.Time) (sessionsDeleted, messagesDeleted int64, err error)
+	CleanupGraphData(ctx context.Context, olderThan time.Time) (pathsDeleted, edgesDeleted, nodesDeleted int64, err error)
+	CleanupAccessReviewData(ctx context.Context, olderThan time.Time) (reviewsDeleted, itemsDeleted int64, err error)
+}
+
 // App is the main application container that holds references to all initialized
 // services. Create a new App using the New() function which handles all service
 // initialization and wiring based on environment configuration.
@@ -106,6 +113,7 @@ type App struct {
 	TicketsRepo       *snowflake.TicketRepository
 	AuditRepo         *snowflake.AuditRepository
 	PolicyHistoryRepo *snowflake.PolicyHistoryRepository
+	RetentionRepo     retentionCleaner
 
 	// Snowflake-backed stores (when available)
 	SnowflakeFindings *findings.SnowflakeStore
@@ -450,16 +458,21 @@ type Config struct {
 	PagerDutyKey       string
 
 	// Scheduler
-	ScanInterval            string // e.g., "1h", "30m"
-	SecurityDigestInterval  string // e.g., "24h", "168h"
-	ScanTables              string // comma-separated list of tables to scan
-	ScanTableTimeout        time.Duration
-	ScanMaxConcurrent       int
-	ScanMinConcurrent       int
-	ScanAdaptiveConcurrency bool
-	ScanRetryAttempts       int
-	ScanRetryBackoff        time.Duration
-	ScanRetryMaxBackoff     time.Duration
+	ScanInterval              string // e.g., "1h", "30m"
+	SecurityDigestInterval    string // e.g., "24h", "168h"
+	ScanTables                string // comma-separated list of tables to scan
+	RetentionJobInterval      time.Duration
+	AuditRetentionDays        int
+	SessionRetentionDays      int
+	GraphRetentionDays        int
+	AccessReviewRetentionDays int
+	ScanTableTimeout          time.Duration
+	ScanMaxConcurrent         int
+	ScanMinConcurrent         int
+	ScanAdaptiveConcurrency   bool
+	ScanRetryAttempts         int
+	ScanRetryBackoff          time.Duration
+	ScanRetryMaxBackoff       time.Duration
 
 	// Finding attestation chain
 	FindingAttestationEnabled          bool
@@ -701,6 +714,11 @@ func LoadConfig() *Config {
 		ScanInterval:                       getEnv("SCAN_INTERVAL", ""),
 		SecurityDigestInterval:             getEnv("SECURITY_DIGEST_INTERVAL", ""),
 		ScanTables:                         getEnv("SCAN_TABLES", ""),
+		RetentionJobInterval:               getEnvDuration("CEREBRO_RETENTION_JOB_INTERVAL", 24*time.Hour),
+		AuditRetentionDays:                 getEnvInt("CEREBRO_AUDIT_RETENTION_DAYS", 0),
+		SessionRetentionDays:               getEnvInt("CEREBRO_SESSION_RETENTION_DAYS", 0),
+		GraphRetentionDays:                 getEnvInt("CEREBRO_GRAPH_RETENTION_DAYS", 0),
+		AccessReviewRetentionDays:          getEnvInt("CEREBRO_ACCESS_REVIEW_RETENTION_DAYS", 0),
 		ScanTableTimeout:                   getEnvDuration("SCAN_TABLE_TIMEOUT", 30*time.Minute),
 		ScanMaxConcurrent:                  getEnvInt("SCAN_MAX_CONCURRENCY", 6),
 		ScanMinConcurrent:                  getEnvInt("SCAN_MIN_CONCURRENCY", 2),

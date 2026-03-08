@@ -112,6 +112,107 @@ func (a *App) initScheduler(_ context.Context) {
 		return nil
 	})
 	a.Logger.Info("scheduled graph rebuild enabled", "interval", graphInterval)
+
+	if a.RetentionRepo != nil && a.retentionEnabled() {
+		interval := a.Config.RetentionJobInterval
+		if interval <= 0 {
+			interval = 24 * time.Hour
+		}
+		a.Scheduler.AddJob("data-retention", interval, func(ctx context.Context) error {
+			return a.runRetentionCleanup(ctx)
+		})
+		a.Logger.Info("scheduled data retention cleanup enabled",
+			"interval", interval,
+			"audit_retention_days", maxRetentionDays(a.Config.AuditRetentionDays),
+			"session_retention_days", maxRetentionDays(a.Config.SessionRetentionDays),
+			"graph_retention_days", maxRetentionDays(a.Config.GraphRetentionDays),
+			"access_review_retention_days", maxRetentionDays(a.Config.AccessReviewRetentionDays),
+		)
+	}
+}
+
+func (a *App) retentionEnabled() bool {
+	return maxRetentionDays(a.Config.AuditRetentionDays) > 0 ||
+		maxRetentionDays(a.Config.SessionRetentionDays) > 0 ||
+		maxRetentionDays(a.Config.GraphRetentionDays) > 0 ||
+		maxRetentionDays(a.Config.AccessReviewRetentionDays) > 0
+}
+
+func maxRetentionDays(days int) int {
+	if days < 0 {
+		return 0
+	}
+	return days
+}
+
+func retentionCutoff(days int) time.Time {
+	return time.Now().UTC().Add(-time.Duration(days) * 24 * time.Hour)
+}
+
+func (a *App) runRetentionCleanup(ctx context.Context) error {
+	if a.RetentionRepo == nil || !a.retentionEnabled() {
+		return nil
+	}
+
+	var (
+		auditDeleted           int64
+		sessionDeleted         int64
+		sessionMessagesDeleted int64
+		graphPathsDeleted      int64
+		graphEdgesDeleted      int64
+		graphNodesDeleted      int64
+		reviewsDeleted         int64
+		reviewItemsDeleted     int64
+	)
+
+	if days := maxRetentionDays(a.Config.AuditRetentionDays); days > 0 {
+		deleted, err := a.RetentionRepo.CleanupAuditLogs(ctx, retentionCutoff(days))
+		if err != nil {
+			return fmt.Errorf("cleanup audit logs: %w", err)
+		}
+		auditDeleted = deleted
+	}
+
+	if days := maxRetentionDays(a.Config.SessionRetentionDays); days > 0 {
+		sessions, messages, err := a.RetentionRepo.CleanupAgentData(ctx, retentionCutoff(days))
+		if err != nil {
+			return fmt.Errorf("cleanup agent sessions: %w", err)
+		}
+		sessionDeleted = sessions
+		sessionMessagesDeleted = messages
+	}
+
+	if days := maxRetentionDays(a.Config.GraphRetentionDays); days > 0 {
+		paths, edges, nodes, err := a.RetentionRepo.CleanupGraphData(ctx, retentionCutoff(days))
+		if err != nil {
+			return fmt.Errorf("cleanup graph data: %w", err)
+		}
+		graphPathsDeleted = paths
+		graphEdgesDeleted = edges
+		graphNodesDeleted = nodes
+	}
+
+	if days := maxRetentionDays(a.Config.AccessReviewRetentionDays); days > 0 {
+		reviews, items, err := a.RetentionRepo.CleanupAccessReviewData(ctx, retentionCutoff(days))
+		if err != nil {
+			return fmt.Errorf("cleanup access review data: %w", err)
+		}
+		reviewsDeleted = reviews
+		reviewItemsDeleted = items
+	}
+
+	a.Logger.Info("retention cleanup completed",
+		"audit_deleted", auditDeleted,
+		"agent_sessions_deleted", sessionDeleted,
+		"agent_messages_deleted", sessionMessagesDeleted,
+		"attack_paths_deleted", graphPathsDeleted,
+		"attack_path_edges_deleted", graphEdgesDeleted,
+		"attack_path_nodes_deleted", graphNodesDeleted,
+		"access_reviews_deleted", reviewsDeleted,
+		"review_items_deleted", reviewItemsDeleted,
+	)
+
+	return nil
 }
 
 func (a *App) runScheduledScan(ctx context.Context, tables []string) error {

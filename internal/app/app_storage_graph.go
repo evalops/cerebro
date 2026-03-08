@@ -21,6 +21,7 @@ func (a *App) initRepositories() {
 	a.TicketsRepo = snowflake.NewTicketRepository(a.Snowflake)
 	a.AuditRepo = snowflake.NewAuditRepository(a.Snowflake)
 	a.PolicyHistoryRepo = snowflake.NewPolicyHistoryRepository(a.Snowflake)
+	a.RetentionRepo = snowflake.NewRetentionRepository(a.Snowflake)
 }
 
 func (a *App) initSnowflakeFindings(ctx context.Context) {
