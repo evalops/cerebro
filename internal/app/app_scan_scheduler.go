@@ -181,7 +181,10 @@ func (a *App) runScheduledScan(ctx context.Context, tables []string) error {
 
 			// Persist findings
 			for _, f := range result.Findings {
-				finding := a.Findings.Upsert(tableCtx, f)
+				finding := a.upsertFindingAndRemediate(tableCtx, f)
+				if finding == nil {
+					continue
+				}
 
 				// Send notification for new critical/high findings
 				if finding.FirstSeen.Equal(finding.LastSeen) && (f.Severity == "critical" || f.Severity == "high") {
@@ -264,7 +267,10 @@ func (a *App) runScheduledScan(ctx context.Context, tables []string) error {
 		a.Logger.Warn("query policy execution failed", "error", errMsg)
 	}
 	for _, f := range queryPolicyResult.Findings {
-		finding := a.Findings.Upsert(ctx, f)
+		finding := a.upsertFindingAndRemediate(ctx, f)
+		if finding == nil {
+			continue
+		}
 		if finding.FirstSeen.Equal(finding.LastSeen) && (f.Severity == "critical" || f.Severity == "high") {
 			if err := a.Notifications.Send(ctx, notifications.Event{
 				Type:     notifications.EventFindingCreated,
@@ -305,7 +311,7 @@ func (a *App) runScheduledScan(ctx context.Context, tables []string) error {
 					}
 				}
 				if a.Findings != nil && f.PolicyID != "" && f.ResourceID != "" {
-					a.Findings.Upsert(ctx, f.ToPolicyFinding())
+					a.upsertFindingAndRemediate(ctx, f.ToPolicyFinding())
 				}
 			}
 			totalViolations += int64(relationshipCount)
@@ -333,7 +339,7 @@ func (a *App) runScheduledScan(ctx context.Context, tables []string) error {
 					if scanner.ShouldSkipGraphToxicCombination(resourceID, graphRiskSet, sqlToxicRiskSets) {
 						continue
 					}
-					a.Findings.Upsert(ctx, f)
+					a.upsertFindingAndRemediate(ctx, f)
 					graphToxicCount++
 				}
 			}
