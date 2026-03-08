@@ -31,9 +31,10 @@ type GraphDelta struct {
 
 // GraphSimulationResult captures before/after simulation state and diff.
 type GraphSimulationResult struct {
-	Before GraphSimulationSnapshot `json:"before"`
-	After  GraphSimulationSnapshot `json:"after"`
-	Delta  GraphSimulationDiff     `json:"delta"`
+	Before                GraphSimulationSnapshot `json:"before"`
+	After                 GraphSimulationSnapshot `json:"after"`
+	Delta                 GraphSimulationDiff     `json:"delta"`
+	PersonDepartureImpact *PersonDepartureImpact  `json:"person_departure_impact,omitempty"`
 }
 
 // GraphSimulationSnapshot contains key metrics for one graph state.
@@ -56,6 +57,7 @@ type GraphSimulationDiff struct {
 
 // Simulate applies a delta to a cloned graph and returns before/after metrics.
 func (g *Graph) Simulate(delta GraphDelta) (*GraphSimulationResult, error) {
+	removedPeople := delta.removedPersonIDs(g)
 	changedNodeIDs := delta.changedNodeIDs()
 
 	before := analyzeSimulationSnapshot(g, changedNodeIDs)
@@ -71,6 +73,9 @@ func (g *Graph) Simulate(delta GraphDelta) (*GraphSimulationResult, error) {
 		Before: before,
 		After:  after,
 		Delta:  buildSimulationDiff(before, after),
+	}
+	if len(removedPeople) == 1 {
+		result.PersonDepartureImpact = buildPersonDepartureImpact(g, hypothetical, removedPeople[0])
 	}
 	return result, nil
 }
@@ -197,6 +202,36 @@ func (d GraphDelta) changedNodeIDs() map[string]struct{} {
 		}
 	}
 	return ids
+}
+
+func (d GraphDelta) removedPersonIDs(g *Graph) []string {
+	if g == nil {
+		return nil
+	}
+	ids := make(map[string]struct{})
+	for _, mutation := range d.Nodes {
+		if normalizeMutationAction(mutation.Action) != "remove" {
+			continue
+		}
+		nodeID := strings.TrimSpace(mutation.ID)
+		if nodeID == "" && mutation.Node != nil {
+			nodeID = strings.TrimSpace(mutation.Node.ID)
+		}
+		if nodeID == "" {
+			continue
+		}
+		node, ok := g.GetNode(nodeID)
+		if !ok || node == nil || node.Kind != NodeKindPerson {
+			continue
+		}
+		ids[nodeID] = struct{}{}
+	}
+	result := make([]string, 0, len(ids))
+	for id := range ids {
+		result = append(result, id)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func analyzeSimulationSnapshot(g *Graph, changedNodeIDs map[string]struct{}) GraphSimulationSnapshot {
