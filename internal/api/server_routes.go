@@ -296,6 +296,7 @@ func (s *Server) setupRoutes() {
 			r.Get("/reverse-access/{resourceId}", s.reverseAccess)
 			r.Post("/rebuild", s.rebuildGraph)
 			r.Post("/simulate", s.simulateGraph)
+			r.Post("/evaluate-change", s.evaluateGraphChange)
 
 			// Risk Intelligence endpoints
 			r.Get("/risk-report", s.riskReport)
