@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	apiclient "github.com/evalops/cerebro/internal/client"
 	"github.com/evalops/cerebro/internal/policy"
 )
 
@@ -71,6 +72,7 @@ var (
 )
 
 var runPolicyListDirectFn = runPolicyListDirect
+var runPolicyTestDirectFn = runPolicyTestDirect
 var runPolicyDiffDirectFn = runPolicyDiffDirect
 
 func init() {
@@ -215,82 +217,130 @@ func runPolicyValidate(cmd *cobra.Command, args []string) error {
 }
 
 func runPolicyTest(cmd *cobra.Command, args []string) error {
+	mode, err := loadCLIExecutionMode()
+	if err != nil {
+		return err
+	}
+
+	if mode != cliExecutionModeDirect {
+		if apiErr := runPolicyTestViaAPI(cmd, args); apiErr == nil {
+			return nil
+		} else if mode == cliExecutionModeAPI || !shouldFallbackToDirect(mode, apiErr) {
+			return fmt.Errorf("policy test via api failed: %w", apiErr)
+		} else {
+			Warning("API unavailable; using direct mode: %v", apiErr)
+		}
+	}
+
+	return runPolicyTestDirectFn(cmd, args)
+}
+
+func runPolicyTestViaAPI(cmd *cobra.Command, args []string) error {
+	policyID := args[0]
+	assetFile := args[1]
+
+	asset, err := loadPolicyTestAsset(assetFile)
+	if err != nil {
+		return err
+	}
+
+	apiClient, err := newCLIAPIClient()
+	if err != nil {
+		return err
+	}
+
+	p, err := apiClient.GetPolicy(commandContextOrBackground(cmd), policyID)
+	if err != nil {
+		if apiclient.IsAPIErrorStatus(err, 404) {
+			return fmt.Errorf("policy not found: %s", policyID)
+		}
+		return fmt.Errorf("get policy: %w", err)
+	}
+
+	dryRun, err := apiClient.DryRunPolicyChange(commandContextOrBackground(cmd), policyID, *p, []map[string]interface{}{asset}, 1)
+	if err != nil {
+		return fmt.Errorf("dry-run policy test: %w", err)
+	}
+
+	violations := []string{}
+	if dryRun.Impact != nil && dryRun.Impact.AfterMatches > 0 {
+		violations = append(violations, "policy conditions matched asset")
+	}
+	return renderPolicyTestResult(policyID, p.Name, assetFile, violations)
+}
+
+func runPolicyTestDirect(cmd *cobra.Command, args []string) error {
 	policyID := args[0]
 	assetFile := args[1]
 
 	engine := policy.NewEngine()
-
-	jsonError := func(err error, extra map[string]interface{}) error {
-		if policyTestOutput != FormatJSON {
-			return err
-		}
-		payload := map[string]interface{}{
-			"passed":    false,
-			"policy_id": policyID,
-			"asset":     assetFile,
-			"error":     err.Error(),
-		}
-		for k, v := range extra {
-			payload[k] = v
-		}
-		if jsonErr := JSONOutput(payload); jsonErr != nil {
-			return jsonErr
-		}
-		return err
-	}
-
 	if err := engine.LoadPolicies(policiesPath()); err != nil {
-		return jsonError(fmt.Errorf("load policies: %w", err), nil)
+		return fmt.Errorf("load policies: %w", err)
 	}
 
 	p, ok := engine.GetPolicy(policyID)
 	if !ok {
-		return jsonError(fmt.Errorf("policy not found: %s", policyID), nil)
+		return fmt.Errorf("policy not found: %s", policyID)
 	}
 
-	data, err := os.ReadFile(assetFile) // #nosec G304 -- asset path is explicitly provided by the caller for policy testing
+	asset, err := loadPolicyTestAsset(assetFile)
 	if err != nil {
-		return jsonError(fmt.Errorf("read asset file: %w", err), map[string]interface{}{"policy": p.Name})
-	}
-
-	var asset map[string]interface{}
-	if parseErr := json.Unmarshal(data, &asset); parseErr != nil {
-		return jsonError(fmt.Errorf("parse asset: %w", parseErr), map[string]interface{}{"policy": p.Name})
+		return err
 	}
 
 	testFindings, err := engine.EvaluateAsset(cmd.Context(), asset)
 	if err != nil {
-		return jsonError(fmt.Errorf("evaluate: %w", err), map[string]interface{}{"policy": p.Name})
+		return fmt.Errorf("evaluate: %w", err)
 	}
 
-	passed := len(testFindings) == 0
-
-	if policyTestOutput == FormatJSON {
-		violations := make([]string, 0, len(testFindings))
-		for _, f := range testFindings {
-			violations = append(violations, f.Description)
+	violations := make([]string, 0, len(testFindings))
+	for _, f := range testFindings {
+		if strings.TrimSpace(f.PolicyID) != policyID {
+			continue
 		}
+		violations = append(violations, f.Description)
+	}
+
+	return renderPolicyTestResult(policyID, p.Name, assetFile, violations)
+}
+
+func loadPolicyTestAsset(path string) (map[string]interface{}, error) {
+	data, err := os.ReadFile(path) // #nosec G304 -- asset path is explicitly provided by the caller for policy testing
+	if err != nil {
+		return nil, fmt.Errorf("read asset file: %w", err)
+	}
+
+	var asset map[string]interface{}
+	if err := json.Unmarshal(data, &asset); err != nil {
+		return nil, fmt.Errorf("parse asset: %w", err)
+	}
+	return asset, nil
+}
+
+func renderPolicyTestResult(policyID, policyName, assetFile string, violations []string) error {
+	passed := len(violations) == 0
+	if policyTestOutput == FormatJSON {
 		return JSONOutput(map[string]interface{}{
 			"policy_id":  policyID,
-			"policy":     p.Name,
+			"policy":     policyName,
 			"asset":      assetFile,
 			"passed":     passed,
 			"violations": violations,
 		})
 	}
 
-	fmt.Printf("Policy: %s\n", p.Name)
+	fmt.Printf("Policy: %s\n", policyName)
 	fmt.Printf("Asset:  %s\n\n", assetFile)
 
 	if passed {
 		fmt.Println("Result: PASS (no violations)")
-	} else {
-		fmt.Println("Result: FAIL")
-		for _, f := range testFindings {
-			fmt.Printf("  - %s\n", f.Description)
-		}
+		return nil
 	}
 
+	fmt.Println("Result: FAIL")
+	for _, violation := range violations {
+		fmt.Printf("  - %s\n", violation)
+	}
 	return nil
 }
 

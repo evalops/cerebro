@@ -42,6 +42,16 @@ func (c *Client) ListPolicies(ctx context.Context, limit, offset int) ([]*policy
 	return resp.Policies, nil
 }
 
+func (c *Client) GetPolicy(ctx context.Context, policyID string) (*policy.Policy, error) {
+	path := "/api/v1/policies/" + url.PathEscape(strings.TrimSpace(policyID))
+
+	var resp policy.Policy
+	if err := c.doJSON(ctx, http.MethodGet, path, nil, nil, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 func (c *Client) DryRunPolicyChange(ctx context.Context, policyID string, candidate policy.Policy, assets []map[string]interface{}, assetLimit int) (*PolicyDryRunResponse, error) {
 	req := map[string]interface{}{
 		"policy": candidate,

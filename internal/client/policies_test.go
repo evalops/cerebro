@@ -54,6 +54,38 @@ func TestListPolicies_SendsPaginationAndParsesResponse(t *testing.T) {
 	}
 }
 
+func TestGetPolicy_SendsPathAndParsesResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/policies/policy-1" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":       "policy-1",
+			"name":     "Policy 1",
+			"effect":   "forbid",
+			"resource": "aws::s3::bucket",
+			"severity": "high",
+		})
+	}))
+	defer server.Close()
+
+	c, err := New(Config{BaseURL: server.URL})
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+
+	p, err := c.GetPolicy(context.Background(), "policy-1")
+	if err != nil {
+		t.Fatalf("get policy: %v", err)
+	}
+	if p == nil {
+		t.Fatal("expected non-nil policy")
+	}
+	if p.ID != "policy-1" {
+		t.Fatalf("unexpected policy id: %s", p.ID)
+	}
+}
+
 func TestDryRunPolicyChange_SendsCandidateAndAssets(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
