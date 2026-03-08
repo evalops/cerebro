@@ -70,6 +70,8 @@ var (
 	policyDiffAssetFile  string
 )
 
+var runPolicyListDirectFn = runPolicyListDirect
+
 func init() {
 	policyCmd.AddCommand(policyListCmd)
 	policyCmd.AddCommand(policyValidateCmd)
@@ -94,6 +96,35 @@ func policiesPath() string {
 }
 
 func runPolicyList(cmd *cobra.Command, args []string) error {
+	ctx := commandContextOrBackground(cmd)
+	mode, err := loadCLIExecutionMode()
+	if err != nil {
+		return err
+	}
+
+	if mode != cliExecutionModeDirect {
+		apiClient, err := newCLIAPIClient()
+		if err != nil {
+			if mode == cliExecutionModeAPI {
+				return err
+			}
+			Warning("API client configuration invalid; using direct mode: %v", err)
+		} else {
+			policies, err := apiClient.ListPolicies(ctx, 0, 0)
+			if err == nil {
+				return renderPolicyList(policies)
+			}
+			if mode == cliExecutionModeAPI || !shouldFallbackToDirect(mode, err) {
+				return fmt.Errorf("list policies via api: %w", err)
+			}
+			Warning("API unavailable; using direct mode: %v", err)
+		}
+	}
+
+	return runPolicyListDirectFn(cmd, args)
+}
+
+func runPolicyListDirect(cmd *cobra.Command, args []string) error {
 	engine := policy.NewEngine()
 
 	if err := engine.LoadPolicies(policiesPath()); err != nil {
@@ -101,7 +132,10 @@ func runPolicyList(cmd *cobra.Command, args []string) error {
 	}
 
 	policies := engine.ListPolicies()
+	return renderPolicyList(policies)
+}
 
+func renderPolicyList(policies []*policy.Policy) error {
 	switch policyOutput {
 	case FormatJSON:
 		return JSONOutput(map[string]interface{}{
