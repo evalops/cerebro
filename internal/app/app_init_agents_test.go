@@ -60,6 +60,53 @@ func TestRemoteToolProviderConfigFromConfig(t *testing.T) {
 	}
 }
 
+func TestToolPublisherConfigFromConfig(t *testing.T) {
+	cfg := &Config{
+		AgentToolPublisherEnabled:         true,
+		NATSJetStreamURLs:                 []string{"nats://a:4222", "nats://b:4222"},
+		AgentToolPublisherManifestSubject: "cerebro.manifest",
+		AgentToolPublisherRequestPrefix:   "cerebro.request",
+		AgentToolPublisherRequestTimeout:  55 * time.Second,
+		NATSJetStreamConnectTimeout:       4 * time.Second,
+		NATSJetStreamAuthMode:             "jwt",
+		NATSJetStreamUsername:             "user-b",
+		NATSJetStreamPassword:             "pass-b",
+		NATSJetStreamNKeySeed:             "seed-b",
+		NATSJetStreamUserJWT:              "jwt-b",
+		NATSJetStreamTLSEnabled:           true,
+		NATSJetStreamTLSCAFile:            "/tmp/ca2.pem",
+		NATSJetStreamTLSCertFile:          "/tmp/cert2.pem",
+		NATSJetStreamTLSKeyFile:           "/tmp/key2.pem",
+		NATSJetStreamTLSServerName:        "nats.tools.internal",
+		NATSJetStreamTLSInsecure:          true,
+	}
+
+	got := toolPublisherConfigFromConfig(cfg)
+	want := agents.ToolPublisherConfig{
+		Enabled:               true,
+		URLs:                  []string{"nats://a:4222", "nats://b:4222"},
+		ManifestSubject:       "cerebro.manifest",
+		RequestPrefix:         "cerebro.request",
+		RequestTimeout:        55 * time.Second,
+		ConnectTimeout:        4 * time.Second,
+		AuthMode:              "jwt",
+		Username:              "user-b",
+		Password:              "pass-b",
+		NKeySeed:              "seed-b",
+		UserJWT:               "jwt-b",
+		TLSEnabled:            true,
+		TLSCAFile:             "/tmp/ca2.pem",
+		TLSCertFile:           "/tmp/cert2.pem",
+		TLSKeyFile:            "/tmp/key2.pem",
+		TLSServerName:         "nats.tools.internal",
+		TLSInsecureSkipVerify: true,
+	}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected tool publisher config:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
 func TestRegisterConfiguredAIAgents(t *testing.T) {
 	testCases := []struct {
 		name         string

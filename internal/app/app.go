@@ -101,6 +101,7 @@ type App struct {
 	Webhooks      *webhooks.Service
 	TapConsumer   *events.Consumer
 	RemoteTools   *agents.RemoteToolProvider
+	ToolPublisher *agents.ToolPublisher
 	Notifications *notifications.Manager
 	Scheduler     *scheduler.Scheduler
 

@@ -47,6 +47,7 @@ type FeatureServices struct {
 	Webhooks      *webhooks.Service
 	TapConsumer   *events.Consumer
 	RemoteTools   *agents.RemoteToolProvider
+	ToolPublisher *agents.ToolPublisher
 	Notifications *notifications.Manager
 	Scheduler     *scheduler.Scheduler
 }
@@ -99,6 +100,7 @@ func (a *App) FeatureServices() FeatureServices {
 		Webhooks:      a.Webhooks,
 		TapConsumer:   a.TapConsumer,
 		RemoteTools:   a.RemoteTools,
+		ToolPublisher: a.ToolPublisher,
 		Notifications: a.Notifications,
 		Scheduler:     a.Scheduler,
 	}

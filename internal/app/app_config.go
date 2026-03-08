@@ -324,6 +324,16 @@ type Config struct {
 	AgentRemoteToolsRequestTimeout  time.Duration
 	AgentRemoteToolsMaxTools        int
 
+	// Cerebro tool publisher for external orchestrators (for example Ensemble)
+	AgentToolPublisherEnabled         bool
+	AgentToolPublisherManifestSubject string
+	AgentToolPublisherRequestPrefix   string
+	AgentToolPublisherRequestTimeout  time.Duration
+
+	// Tool-specific approval policy for published Cerebro tools
+	CerebroSimulateNeedsApproval     bool
+	CerebroAccessReviewNeedsApproval bool
+
 	// Notifications
 	SlackWebhookURL    string
 	SlackSigningSecret string
@@ -588,6 +598,12 @@ func LoadConfig() *Config {
 		AgentRemoteToolsDiscoverTimeout:    getEnvDuration("AGENT_REMOTE_TOOLS_DISCOVER_TIMEOUT", 5*time.Second),
 		AgentRemoteToolsRequestTimeout:     getEnvDuration("AGENT_REMOTE_TOOLS_REQUEST_TIMEOUT", 30*time.Second),
 		AgentRemoteToolsMaxTools:           getEnvInt("AGENT_REMOTE_TOOLS_MAX_TOOLS", 200),
+		AgentToolPublisherEnabled:          getEnvBool("AGENT_TOOL_PUBLISHER_ENABLED", false),
+		AgentToolPublisherManifestSubject:  getEnv("AGENT_TOOL_PUBLISHER_MANIFEST_SUBJECT", "cerebro.tools.manifest"),
+		AgentToolPublisherRequestPrefix:    getEnv("AGENT_TOOL_PUBLISHER_REQUEST_PREFIX", "cerebro.tools.request"),
+		AgentToolPublisherRequestTimeout:   getEnvDuration("AGENT_TOOL_PUBLISHER_REQUEST_TIMEOUT", 30*time.Second),
+		CerebroSimulateNeedsApproval:       getEnvBool("CEREBRO_TOOL_SIMULATE_REQUIRES_APPROVAL", true),
+		CerebroAccessReviewNeedsApproval:   getEnvBool("CEREBRO_TOOL_ACCESS_REVIEW_REQUIRES_APPROVAL", true),
 		SlackWebhookURL:                    getEnv("SLACK_WEBHOOK_URL", ""),
 		SlackSigningSecret:                 getEnv("SLACK_SIGNING_SECRET", ""),
 		PagerDutyKey:                       getEnv("PAGERDUTY_ROUTING_KEY", ""),

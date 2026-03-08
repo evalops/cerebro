@@ -2,7 +2,7 @@
 
 Generated from `internal/app/app_config.go` (`LoadConfig`) via `go run ./scripts/generate_config_docs/main.go`.
 
-Total variables: **252**
+Total variables: **258**
 
 | Variable | Reader(s) | Default(s) | Config Field(s) |
 |---|---|---|---|
@@ -12,6 +12,10 @@ Total variables: **252**
 | `AGENT_REMOTE_TOOLS_MAX_TOOLS` | `getEnvInt` | `200` | `AgentRemoteToolsMaxTools` |
 | `AGENT_REMOTE_TOOLS_REQUEST_PREFIX` | `getEnv` | `"ensemble.tools.request"` | `AgentRemoteToolsRequestPrefix` |
 | `AGENT_REMOTE_TOOLS_REQUEST_TIMEOUT` | `getEnvDuration` | `30 * time.Second` | `AgentRemoteToolsRequestTimeout` |
+| `AGENT_TOOL_PUBLISHER_ENABLED` | `getEnvBool` | `false` | `AgentToolPublisherEnabled` |
+| `AGENT_TOOL_PUBLISHER_MANIFEST_SUBJECT` | `getEnv` | `"cerebro.tools.manifest"` | `AgentToolPublisherManifestSubject` |
+| `AGENT_TOOL_PUBLISHER_REQUEST_PREFIX` | `getEnv` | `"cerebro.tools.request"` | `AgentToolPublisherRequestPrefix` |
+| `AGENT_TOOL_PUBLISHER_REQUEST_TIMEOUT` | `getEnvDuration` | `30 * time.Second` | `AgentToolPublisherRequestTimeout` |
 | `ANTHROPIC_API_KEY` | `getEnv` | `""` | `AnthropicAPIKey` |
 | `API_AUTH_ENABLED` | `getEnvBool` | `len(apiKeys) > 0` | `-` |
 | `API_CORS_ALLOWED_ORIGINS` | `getEnv` | `""` | `CORSAllowedOrigins` |
@@ -39,6 +43,8 @@ Total variables: **252**
 | `CEREBRO_RETENTION_JOB_INTERVAL` | `getEnvDuration` | `24 * time.Hour` | `RetentionJobInterval` |
 | `CEREBRO_SECRETS_RELOAD_INTERVAL` | `getEnvDuration` | `0` | `SecretsReloadInterval` |
 | `CEREBRO_SESSION_RETENTION_DAYS` | `getEnvInt` | `0` | `SessionRetentionDays` |
+| `CEREBRO_TOOL_ACCESS_REVIEW_REQUIRES_APPROVAL` | `getEnvBool` | `true` | `CerebroAccessReviewNeedsApproval` |
+| `CEREBRO_TOOL_SIMULATE_REQUIRES_APPROVAL` | `getEnvBool` | `true` | `CerebroSimulateNeedsApproval` |
 | `CLOUDFLARE_API_TOKEN` | `getEnv` | `""` | `CloudflareAPIToken` |
 | `CLOUDTRAIL_LOOKBACK_DAYS` | `getEnvInt` | `7` | `CloudTrailLookbackDays` |
 | `CLOUDTRAIL_REGION` | `getEnv` | `""` | `CloudTrailRegion` |

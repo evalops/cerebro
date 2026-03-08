@@ -41,6 +41,13 @@ func (a *App) initAgents() {
 		}
 	}
 
+	publisher, err := agents.NewToolPublisher(toolPublisherConfigFromConfig(a.Config), a.cerebroTools(), a.Logger)
+	if err != nil {
+		a.Logger.Warn("failed to initialize cerebro tool publisher", "error", err)
+	} else if publisher != nil {
+		a.ToolPublisher = publisher
+	}
+
 	registerConfiguredAIAgents(a.Agents, a.Config, agentTools)
 }
 
@@ -53,6 +60,28 @@ func remoteToolProviderConfigFromConfig(cfg *Config) agents.RemoteToolProviderCo
 		DiscoverTimeout:       cfg.AgentRemoteToolsDiscoverTimeout,
 		RequestTimeout:        cfg.AgentRemoteToolsRequestTimeout,
 		MaxTools:              cfg.AgentRemoteToolsMaxTools,
+		ConnectTimeout:        cfg.NATSJetStreamConnectTimeout,
+		AuthMode:              cfg.NATSJetStreamAuthMode,
+		Username:              cfg.NATSJetStreamUsername,
+		Password:              cfg.NATSJetStreamPassword,
+		NKeySeed:              cfg.NATSJetStreamNKeySeed,
+		UserJWT:               cfg.NATSJetStreamUserJWT,
+		TLSEnabled:            cfg.NATSJetStreamTLSEnabled,
+		TLSCAFile:             cfg.NATSJetStreamTLSCAFile,
+		TLSCertFile:           cfg.NATSJetStreamTLSCertFile,
+		TLSKeyFile:            cfg.NATSJetStreamTLSKeyFile,
+		TLSServerName:         cfg.NATSJetStreamTLSServerName,
+		TLSInsecureSkipVerify: cfg.NATSJetStreamTLSInsecure,
+	}
+}
+
+func toolPublisherConfigFromConfig(cfg *Config) agents.ToolPublisherConfig {
+	return agents.ToolPublisherConfig{
+		Enabled:               cfg.AgentToolPublisherEnabled,
+		URLs:                  cfg.NATSJetStreamURLs,
+		ManifestSubject:       cfg.AgentToolPublisherManifestSubject,
+		RequestPrefix:         cfg.AgentToolPublisherRequestPrefix,
+		RequestTimeout:        cfg.AgentToolPublisherRequestTimeout,
 		ConnectTimeout:        cfg.NATSJetStreamConnectTimeout,
 		AuthMode:              cfg.NATSJetStreamAuthMode,
 		Username:              cfg.NATSJetStreamUsername,
