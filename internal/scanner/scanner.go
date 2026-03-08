@@ -31,6 +31,8 @@ type Scanner struct {
 	evalCache        *cache.PolicyCache // optional: caches asset hash -> skip
 }
 
+const evalCacheNamespace = "asset_eval"
+
 type ScanConfig struct {
 	Workers   int
 	BatchSize int
@@ -80,12 +82,14 @@ func hashAsset(asset map[string]interface{}) string {
 }
 
 type ScanResult struct {
-	Findings   []policy.Finding
-	Scanned    int64
-	Violations int64
-	Skipped    int64 // assets skipped via cache
-	Duration   time.Duration
-	Errors     []string
+	Findings    []policy.Finding
+	Scanned     int64
+	Violations  int64
+	Skipped     int64 // assets skipped via cache
+	CacheHits   int64
+	CacheMisses int64
+	Duration    time.Duration
+	Errors      []string
 }
 
 // ScanAssets evaluates policies against assets using a worker pool
@@ -111,6 +115,8 @@ func (s *Scanner) ScanAssets(ctx context.Context, assets []map[string]interface{
 	var scanned int64
 	var violations int64
 	var skipped int64
+	var cacheHits int64
+	var cacheMisses int64
 
 	// Start workers
 	var wg sync.WaitGroup
@@ -135,9 +141,11 @@ func (s *Scanner) ScanAssets(ctx context.Context, assets []map[string]interface{
 				var contentHash string
 				if s.evalCache != nil && assetID != "" {
 					contentHash = hashAsset(asset)
-					if cached, hit := s.evalCache.GetEvaluation(contentHash, assetID); hit {
+					cacheAssetID := assetID + ":" + contentHash
+					if cached, hit := s.evalCache.GetEvaluation(evalCacheNamespace, cacheAssetID); hit {
 						atomic.AddInt64(&scanned, 1)
 						atomic.AddInt64(&skipped, 1)
+						atomic.AddInt64(&cacheHits, 1)
 						if cachedFindings, ok := cached.([]policy.Finding); ok && len(cachedFindings) > 0 {
 							atomic.AddInt64(&violations, int64(len(cachedFindings)))
 							select {
@@ -148,6 +156,7 @@ func (s *Scanner) ScanAssets(ctx context.Context, assets []map[string]interface{
 						}
 						continue
 					}
+					atomic.AddInt64(&cacheMisses, 1)
 				}
 
 				findings, err := s.engine.EvaluateAsset(ctx, asset)
@@ -162,7 +171,8 @@ func (s *Scanner) ScanAssets(ctx context.Context, assets []map[string]interface{
 				}
 
 				if s.evalCache != nil && assetID != "" {
-					s.evalCache.SetEvaluation(contentHash, assetID, findings)
+					cacheAssetID := assetID + ":" + contentHash
+					s.evalCache.SetEvaluation(evalCacheNamespace, cacheAssetID, findings)
 				}
 
 				if len(findings) > 0 {
@@ -209,12 +219,16 @@ func (s *Scanner) ScanAssets(ctx context.Context, assets []map[string]interface{
 	result.Scanned = atomic.LoadInt64(&scanned)
 	result.Violations = atomic.LoadInt64(&violations)
 	result.Skipped = atomic.LoadInt64(&skipped)
+	result.CacheHits = atomic.LoadInt64(&cacheHits)
+	result.CacheMisses = atomic.LoadInt64(&cacheMisses)
 	result.Duration = time.Since(start)
 
 	s.logger.Info("scan complete",
 		"scanned", result.Scanned,
 		"violations", result.Violations,
 		"cache_skipped", result.Skipped,
+		"cache_hits", result.CacheHits,
+		"cache_misses", result.CacheMisses,
 		"duration_ms", result.Duration.Milliseconds(),
 	)
 

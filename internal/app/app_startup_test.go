@@ -157,3 +157,17 @@ func TestClose_LogsWarningWhenGraphShutdownTimesOut(t *testing.T) {
 		t.Fatalf("expected graph shutdown timeout warning, got logs: %s", logs.String())
 	}
 }
+
+func TestInitCache_EntriesDoNotExpireImmediately(t *testing.T) {
+	a := &App{}
+	a.initCache()
+	if a.Cache == nil {
+		t.Fatal("expected cache to be initialized")
+	}
+
+	a.Cache.SetEvaluation("policy-1", "asset-1", "hit")
+	time.Sleep(2 * time.Millisecond)
+	if _, ok := a.Cache.GetEvaluation("policy-1", "asset-1"); !ok {
+		t.Fatal("expected cache entry to survive immediate follow-up lookup")
+	}
+}

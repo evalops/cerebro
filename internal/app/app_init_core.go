@@ -166,7 +166,7 @@ func (a *App) initScanner() {
 }
 
 func (a *App) initCache() {
-	a.Cache = cache.NewPolicyCache(10000, 0) // No TTL for policy cache
+	a.Cache = cache.NewPolicyCache(10000, 15*time.Minute)
 }
 
 func (a *App) initAgents() {

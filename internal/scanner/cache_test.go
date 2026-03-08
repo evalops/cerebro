@@ -70,6 +70,12 @@ func TestScannerWithCache(t *testing.T) {
 	if r1.Scanned != 2 {
 		t.Errorf("first scan: expected 2 scanned, got %d", r1.Scanned)
 	}
+	if r1.CacheMisses != 2 {
+		t.Errorf("first scan: expected 2 cache misses, got %d", r1.CacheMisses)
+	}
+	if r1.CacheHits != 0 {
+		t.Errorf("first scan: expected 0 cache hits, got %d", r1.CacheHits)
+	}
 	firstViolations := r1.Violations
 
 	// Second scan with same assets: should get cache hits but still report findings
@@ -77,8 +83,14 @@ func TestScannerWithCache(t *testing.T) {
 	if r2.Scanned != 2 {
 		t.Errorf("second scan: expected 2 scanned, got %d", r2.Scanned)
 	}
-	if r2.Skipped < 1 {
-		t.Logf("cache skipped: %d (may be 0 if cache key format doesn't match)", r2.Skipped)
+	if r2.CacheHits != 2 {
+		t.Errorf("second scan: expected 2 cache hits, got %d", r2.CacheHits)
+	}
+	if r2.CacheMisses != 0 {
+		t.Errorf("second scan: expected 0 cache misses, got %d", r2.CacheMisses)
+	}
+	if r2.Skipped != 2 {
+		t.Errorf("second scan: expected 2 skipped via cache, got %d", r2.Skipped)
 	}
 	// Violations must remain the same on cache hit -- findings must not be dropped
 	if r2.Violations != firstViolations {
@@ -112,8 +124,14 @@ func TestScannerCacheCountersArePerScan(t *testing.T) {
 	// Third scan: 1 cache hit
 	r3 := s.ScanAssets(context.Background(), assets)
 
-	// Skipped must reflect THIS scan only, not accumulate
+	// Cache counters must reflect THIS scan only, not accumulate.
 	if r2.Skipped != r3.Skipped {
 		t.Errorf("skipped should be per-scan: scan2=%d scan3=%d", r2.Skipped, r3.Skipped)
+	}
+	if r2.CacheHits != r3.CacheHits {
+		t.Errorf("cache hits should be per-scan: scan2=%d scan3=%d", r2.CacheHits, r3.CacheHits)
+	}
+	if r2.CacheMisses != r3.CacheMisses {
+		t.Errorf("cache misses should be per-scan: scan2=%d scan3=%d", r2.CacheMisses, r3.CacheMisses)
 	}
 }
