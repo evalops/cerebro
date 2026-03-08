@@ -137,6 +137,83 @@ func runMultiAccountAWSSync(ctx context.Context, start time.Time) error {
 		return fmt.Errorf("--aws-profiles did not include any valid profile names")
 	}
 
+	mode, err := loadCLIExecutionMode()
+	if err != nil {
+		return err
+	}
+
+	supportsAPI, apiReason := syncSupportsAWSAPIMode()
+	if mode != cliExecutionModeDirect && supportsAPI {
+		apiClient, err := newCLIAPIClient()
+		if err != nil {
+			if mode == cliExecutionModeAPI {
+				return err
+			}
+			Warning("API client configuration invalid; using direct mode: %v", err)
+		} else {
+			return runMultiAccountAWSSyncViaAPI(ctx, start, profiles, apiClient, mode)
+		}
+	}
+
+	if mode == cliExecutionModeAPI && !supportsAPI {
+		return fmt.Errorf("aws multi-account sync API mode unsupported: %s", apiReason)
+	}
+	if mode != cliExecutionModeDirect && !supportsAPI {
+		Warning("API sync mode skipped; using direct mode: %s", apiReason)
+	}
+
+	return runMultiAccountAWSSyncDirectFn(ctx, start, profiles)
+}
+
+func runMultiAccountAWSSyncViaAPI(
+	ctx context.Context,
+	start time.Time,
+	profiles []string,
+	apiClient *apiclient.Client,
+	mode cliExecutionMode,
+) error {
+	Info("Starting multi-account AWS sync (%d profiles)...", len(profiles))
+	tableFilter := parseTableFilter(syncTable)
+	totalResults := make([]nativesync.SyncResult, 0, len(profiles))
+
+	for idx, profile := range profiles {
+		Info("Syncing AWS profile: %s", profile)
+		profileStart := time.Now()
+
+		resp, err := apiClient.RunAWSSync(ctx, apiclient.AWSSyncRequest{
+			Profile:     profile,
+			Region:      strings.TrimSpace(syncRegion),
+			MultiRegion: syncMultiRegion,
+			Concurrency: syncConcurrency,
+			Tables:      tableFilter,
+			Validate:    syncValidate,
+		})
+		if err != nil {
+			if mode == cliExecutionModeAuto && shouldFallbackToDirect(mode, err) {
+				if idx == 0 {
+					Warning("API unavailable; using direct mode: %v", err)
+					return runMultiAccountAWSSyncDirectFn(ctx, start, profiles)
+				}
+				return fmt.Errorf("aws multi-account sync via api failed after syncing %d/%d profiles: %w", idx, len(profiles), err)
+			}
+			return fmt.Errorf("aws multi-account sync via api failed: %w", err)
+		}
+		if resp != nil {
+			totalResults = append(totalResults, resp.Results...)
+		}
+		Success("Profile %s synced in %s", profile, time.Since(profileStart).Round(time.Second))
+	}
+
+	provider := fmt.Sprintf("AWS (%d profiles)", len(profiles))
+	if syncValidate {
+		provider = fmt.Sprintf("AWS (%d profiles) (validate)", len(profiles))
+	}
+	return printSyncResults(totalResults, start, provider)
+}
+
+var runMultiAccountAWSSyncDirectFn = runMultiAccountAWSSyncDirect
+
+func runMultiAccountAWSSyncDirect(ctx context.Context, start time.Time, profiles []string) error {
 	Info("Starting multi-account AWS sync (%d profiles)...", len(profiles))
 	var totalResults []nativesync.SyncResult
 	var syncErrs []error
