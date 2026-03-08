@@ -6,6 +6,9 @@ import "time"
 type NodeKind string
 
 const (
+	// Wildcard kind used by graph patterns.
+	NodeKindAny NodeKind = "any"
+
 	// Identity nodes
 	NodeKindUser           NodeKind = "user"
 	NodeKindRole           NodeKind = "role"
