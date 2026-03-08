@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -16,7 +17,10 @@ import (
 // Agent endpoints
 
 func (s *Server) listAgents(w http.ResponseWriter, r *http.Request) {
+	pagination := ParsePagination(r, 100, 1000)
 	agentList := s.app.Agents.ListAgents()
+	sort.Slice(agentList, func(i, j int) bool { return agentList[i].ID < agentList[j].ID })
+
 	result := make([]map[string]interface{}, len(agentList))
 	for i, a := range agentList {
 		result[i] = map[string]interface{}{
@@ -26,7 +30,13 @@ func (s *Server) listAgents(w http.ResponseWriter, r *http.Request) {
 			"tools":       len(a.Tools),
 		}
 	}
-	s.json(w, http.StatusOK, map[string]interface{}{"agents": result, "count": len(result)})
+	paged, paginationResp := paginateSlice(result, pagination)
+	s.json(w, http.StatusOK, map[string]interface{}{
+		"agents":      paged,
+		"count":       len(paged),
+		"pagination":  paginationResp,
+		"total_count": len(result),
+	})
 }
 
 func (s *Server) getAgent(w http.ResponseWriter, r *http.Request) {

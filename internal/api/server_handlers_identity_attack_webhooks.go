@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -215,7 +216,10 @@ func (s *Server) addEdge(w http.ResponseWriter, r *http.Request) {
 // Webhook endpoints
 
 func (s *Server) listWebhooks(w http.ResponseWriter, r *http.Request) {
+	pagination := ParsePagination(r, 100, 1000)
 	hooks := s.app.Webhooks.ListWebhooks()
+	sort.Slice(hooks, func(i, j int) bool { return hooks[i].ID < hooks[j].ID })
+
 	// Redact secrets
 	result := make([]map[string]interface{}, len(hooks))
 	for i, h := range hooks {
@@ -227,7 +231,13 @@ func (s *Server) listWebhooks(w http.ResponseWriter, r *http.Request) {
 			"created_at": h.CreatedAt,
 		}
 	}
-	s.json(w, http.StatusOK, map[string]interface{}{"webhooks": result, "count": len(result)})
+	paged, paginationResp := paginateSlice(result, pagination)
+	s.json(w, http.StatusOK, map[string]interface{}{
+		"webhooks":    paged,
+		"count":       len(paged),
+		"pagination":  paginationResp,
+		"total_count": len(result),
+	})
 }
 
 func (s *Server) createWebhook(w http.ResponseWriter, r *http.Request) {
@@ -316,32 +326,70 @@ func (s *Server) testWebhook(w http.ResponseWriter, r *http.Request) {
 // Audit log endpoints
 
 func (s *Server) listAuditLogs(w http.ResponseWriter, r *http.Request) {
+	pagination := ParsePagination(r, 100, 1000)
 	resourceType := r.URL.Query().Get("resource_type")
 	resourceID := r.URL.Query().Get("resource_id")
-	limit := 100
+
+	limit := pagination.Limit
 	if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
 		parsedLimit, err := strconv.Atoi(rawLimit)
 		if err != nil || parsedLimit <= 0 {
 			s.error(w, http.StatusBadRequest, "limit must be a positive integer")
 			return
 		}
-		if parsedLimit > 1000 {
-			parsedLimit = 1000
+		if parsedLimit > pagination.Limit {
+			limit = pagination.Limit
+		} else {
+			limit = parsedLimit
 		}
-		limit = parsedLimit
+	}
+
+	offset := pagination.Offset
+	if rawOffset := strings.TrimSpace(r.URL.Query().Get("offset")); rawOffset != "" {
+		parsedOffset, err := strconv.Atoi(rawOffset)
+		if err != nil || parsedOffset < 0 {
+			s.error(w, http.StatusBadRequest, "offset must be a non-negative integer")
+			return
+		}
+		offset = parsedOffset
 	}
 
 	if s.app.AuditRepo == nil {
-		s.json(w, http.StatusOK, map[string]interface{}{"logs": []interface{}{}, "message": "snowflake not configured"})
+		s.json(w, http.StatusOK, map[string]interface{}{
+			"logs":       []interface{}{},
+			"count":      0,
+			"message":    "snowflake not configured",
+			"pagination": PaginationResponse{Limit: limit, Offset: offset, HasMore: false},
+		})
 		return
 	}
 
-	logs, err := s.app.AuditRepo.List(r.Context(), resourceType, resourceID, limit)
+	fetchLimit := limit + offset + 1
+	if fetchLimit > 1000 {
+		fetchLimit = 1000
+	}
+
+	logs, err := s.app.AuditRepo.List(r.Context(), resourceType, resourceID, fetchLimit)
 	if err != nil {
 		s.errorFromErr(w, err)
 		return
 	}
-	s.json(w, http.StatusOK, map[string]interface{}{"logs": logs, "count": len(logs)})
+
+	if offset > len(logs) {
+		offset = len(logs)
+	}
+
+	window := logs[offset:]
+	hasMore := len(window) > limit
+	if hasMore {
+		window = window[:limit]
+	}
+
+	s.json(w, http.StatusOK, map[string]interface{}{
+		"logs":       window,
+		"count":      len(window),
+		"pagination": PaginationResponse{Limit: limit, Offset: offset, HasMore: hasMore},
+	})
 }
 
 // Scheduler endpoints

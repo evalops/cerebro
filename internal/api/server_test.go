@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	goruntime "runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -114,6 +115,19 @@ func decodeJSON(t *testing.T, w *httptest.ResponseRecorder) map[string]interface
 	return out
 }
 
+func decodePagination(t *testing.T, body map[string]interface{}) map[string]interface{} {
+	t.Helper()
+	raw, ok := body["pagination"]
+	if !ok {
+		t.Fatalf("expected pagination object in response: %v", body)
+	}
+	pagination, ok := raw.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected pagination map, got %T", raw)
+	}
+	return pagination
+}
+
 type scriptedAgentProvider struct {
 	responses []*agents.Response
 	index     int
@@ -165,6 +179,14 @@ func (p *staticProvider) Schema() []providers.TableSchema {
 		PrimaryKey: []string{"id"},
 	}}
 }
+
+type stubNotifier struct {
+	name string
+}
+
+func (n stubNotifier) Send(context.Context, notifications.Event) error { return nil }
+func (n stubNotifier) Name() string                                    { return n.name }
+func (n stubNotifier) Test(context.Context) error                      { return nil }
 
 // --- Health / Readiness ---
 
@@ -392,6 +414,37 @@ func TestListPolicies_Empty(t *testing.T) {
 	body := decodeJSON(t, w)
 	if body["count"].(float64) != 0 {
 		t.Fatalf("expected 0, got %v", body["count"])
+	}
+}
+
+func TestListPolicies_Pagination(t *testing.T) {
+	s := newTestServer(t)
+	s.app.Policy.AddPolicy(&policy.Policy{ID: "policy-1", Name: "Policy 1", Effect: "forbid", Resource: "aws::s3::bucket", Conditions: []string{"public == true"}, Severity: "high"})
+	s.app.Policy.AddPolicy(&policy.Policy{ID: "policy-2", Name: "Policy 2", Effect: "forbid", Resource: "aws::s3::bucket", Conditions: []string{"public == true"}, Severity: "high"})
+	s.app.Policy.AddPolicy(&policy.Policy{ID: "policy-3", Name: "Policy 3", Effect: "forbid", Resource: "aws::s3::bucket", Conditions: []string{"public == true"}, Severity: "high"})
+
+	w := do(t, s, "GET", "/api/v1/policies/?limit=2&offset=1", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	body := decodeJSON(t, w)
+	if body["count"].(float64) != 2 {
+		t.Fatalf("expected paged count 2, got %v", body["count"])
+	}
+	if body["total_count"].(float64) != 3 {
+		t.Fatalf("expected total_count 3, got %v", body["total_count"])
+	}
+
+	pagination := decodePagination(t, body)
+	if pagination["limit"].(float64) != 2 {
+		t.Fatalf("expected pagination.limit 2, got %v", pagination["limit"])
+	}
+	if pagination["offset"].(float64) != 1 {
+		t.Fatalf("expected pagination.offset 1, got %v", pagination["offset"])
+	}
+	if pagination["has_more"].(bool) {
+		t.Fatal("expected has_more false for final page")
 	}
 }
 
@@ -944,6 +997,34 @@ func TestGetAttackPath_RespectsMaxDepth(t *testing.T) {
 	}
 }
 
+func TestListToxicCombinations_PaginationMetadata(t *testing.T) {
+	s := newTestServer(t)
+	w := do(t, s, "GET", "/api/v1/graph/toxic-combinations?limit=1&offset=0", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	body := decodeJSON(t, w)
+	pagination := decodePagination(t, body)
+	if pagination["limit"].(float64) != 1 || pagination["offset"].(float64) != 0 {
+		t.Fatalf("unexpected pagination: %v", pagination)
+	}
+}
+
+func TestAnalyzePeerGroups_PaginationMetadata(t *testing.T) {
+	s := newTestServer(t)
+	w := do(t, s, "GET", "/api/v1/graph/peer-groups?limit=1&offset=0", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	body := decodeJSON(t, w)
+	pagination := decodePagination(t, body)
+	if pagination["limit"].(float64) != 1 || pagination["offset"].(float64) != 0 {
+		t.Fatalf("unexpected pagination: %v", pagination)
+	}
+}
+
 // --- Webhooks CRUD ---
 
 func TestWebhookCRUD(t *testing.T) {
@@ -976,6 +1057,39 @@ func TestWebhookCRUD(t *testing.T) {
 	w = do(t, s, "DELETE", "/api/v1/webhooks/"+id, nil)
 	if w.Code != http.StatusNoContent && w.Code != http.StatusOK {
 		t.Fatalf("expected 200/204, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestListWebhooks_Pagination(t *testing.T) {
+	s := newTestServer(t)
+
+	for i := 1; i <= 3; i++ {
+		w := do(t, s, "POST", "/api/v1/webhooks/", map[string]interface{}{
+			"url":    "https://example.com/hook-" + strconv.Itoa(i),
+			"events": []string{"finding.created"},
+		})
+		if w.Code != http.StatusCreated {
+			t.Fatalf("create webhook %d: expected 201, got %d", i, w.Code)
+		}
+	}
+
+	w := do(t, s, "GET", "/api/v1/webhooks/?limit=2&offset=1", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	body := decodeJSON(t, w)
+	if body["count"].(float64) != 2 {
+		t.Fatalf("expected count 2, got %v", body["count"])
+	}
+	if body["total_count"].(float64) != 3 {
+		t.Fatalf("expected total_count 3, got %v", body["total_count"])
+	}
+	pagination := decodePagination(t, body)
+	if pagination["limit"].(float64) != 2 || pagination["offset"].(float64) != 1 {
+		t.Fatalf("unexpected pagination: %v", pagination)
+	}
+	if pagination["has_more"].(bool) {
+		t.Fatal("expected has_more false on final page")
 	}
 }
 
@@ -1012,6 +1126,27 @@ func TestRemediationRuleCRUD(t *testing.T) {
 	}
 }
 
+func TestListRemediationRules_Pagination(t *testing.T) {
+	s := newTestServer(t)
+
+	w := do(t, s, "GET", "/api/v1/remediation/rules?limit=2&offset=1", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	body := decodeJSON(t, w)
+	if body["count"].(float64) != 2 {
+		t.Fatalf("expected count 2, got %v", body["count"])
+	}
+	if body["total_count"].(float64) < 2 {
+		t.Fatalf("expected total_count >= 2, got %v", body["total_count"])
+	}
+	pagination := decodePagination(t, body)
+	if pagination["limit"].(float64) != 2 || pagination["offset"].(float64) != 1 {
+		t.Fatalf("unexpected pagination: %v", pagination)
+	}
+}
+
 // --- Scheduler ---
 
 func TestSchedulerStatus(t *testing.T) {
@@ -1027,6 +1162,30 @@ func TestSchedulerListJobs(t *testing.T) {
 	w := do(t, s, "GET", "/api/v1/scheduler/jobs", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestSchedulerListJobs_Pagination(t *testing.T) {
+	s := newTestServer(t)
+	s.app.Scheduler.AddJob("job-a", time.Hour, func(ctx context.Context) error { return nil })
+	s.app.Scheduler.AddJob("job-b", time.Hour, func(ctx context.Context) error { return nil })
+	s.app.Scheduler.AddJob("job-c", time.Hour, func(ctx context.Context) error { return nil })
+
+	w := do(t, s, "GET", "/api/v1/scheduler/jobs?limit=1&offset=1", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	body := decodeJSON(t, w)
+	if body["count"].(float64) != 1 {
+		t.Fatalf("expected count 1, got %v", body["count"])
+	}
+	pagination := decodePagination(t, body)
+	if pagination["limit"].(float64) != 1 || pagination["offset"].(float64) != 1 {
+		t.Fatalf("unexpected pagination: %v", pagination)
+	}
+	if !pagination["has_more"].(bool) {
+		t.Fatal("expected has_more true when more jobs remain")
 	}
 }
 
@@ -1258,6 +1417,51 @@ func TestListNotifiers(t *testing.T) {
 	w := do(t, s, "GET", "/api/v1/notifications/", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestListNotifiers_Pagination(t *testing.T) {
+	s := newTestServer(t)
+	s.app.Notifications.AddNotifier(stubNotifier{name: "zeta"})
+	s.app.Notifications.AddNotifier(stubNotifier{name: "alpha"})
+	s.app.Notifications.AddNotifier(stubNotifier{name: "bravo"})
+
+	w := do(t, s, "GET", "/api/v1/notifications/?limit=2&offset=1", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	body := decodeJSON(t, w)
+	if body["count"].(float64) != 2 {
+		t.Fatalf("expected count 2, got %v", body["count"])
+	}
+	pagination := decodePagination(t, body)
+	if pagination["limit"].(float64) != 2 || pagination["offset"].(float64) != 1 {
+		t.Fatalf("unexpected pagination: %v", pagination)
+	}
+}
+
+func TestListAgents_Pagination(t *testing.T) {
+	s := newTestServer(t)
+	s.app.Agents.RegisterAgent(&agents.Agent{ID: "agent-a", Name: "A"})
+	s.app.Agents.RegisterAgent(&agents.Agent{ID: "agent-b", Name: "B"})
+	s.app.Agents.RegisterAgent(&agents.Agent{ID: "agent-c", Name: "C"})
+
+	w := do(t, s, "GET", "/api/v1/agents/?limit=2&offset=1", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	body := decodeJSON(t, w)
+	if body["count"].(float64) != 2 {
+		t.Fatalf("expected count 2, got %v", body["count"])
+	}
+	if body["total_count"].(float64) != 3 {
+		t.Fatalf("expected total_count 3, got %v", body["total_count"])
+	}
+	pagination := decodePagination(t, body)
+	if pagination["limit"].(float64) != 2 || pagination["offset"].(float64) != 1 {
+		t.Fatalf("unexpected pagination: %v", pagination)
 	}
 }
 
@@ -1549,6 +1753,31 @@ func TestListAuditLogsRejectsNonPositiveLimit(t *testing.T) {
 	w := do(t, s, "GET", "/api/v1/audit?limit=-1", nil)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for invalid limit, got %d", w.Code)
+	}
+}
+
+func TestListAuditLogsRejectsNegativeOffset(t *testing.T) {
+	s := newTestServer(t)
+	w := do(t, s, "GET", "/api/v1/audit?offset=-1", nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid offset, got %d", w.Code)
+	}
+}
+
+func TestListAuditLogsDegradedResponseIncludesPagination(t *testing.T) {
+	s := newTestServer(t)
+	w := do(t, s, "GET", "/api/v1/audit?limit=5&offset=2", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	body := decodeJSON(t, w)
+	pagination := decodePagination(t, body)
+	if pagination["limit"].(float64) != 5 || pagination["offset"].(float64) != 2 {
+		t.Fatalf("unexpected pagination: %v", pagination)
+	}
+	if pagination["has_more"].(bool) {
+		t.Fatal("expected has_more false for degraded empty response")
 	}
 }
 

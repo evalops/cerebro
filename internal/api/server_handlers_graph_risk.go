@@ -134,6 +134,7 @@ func (s *Server) listToxicCombinations(w http.ResponseWriter, r *http.Request) {
 		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
 		return
 	}
+	pagination := ParsePagination(r, 100, 1000)
 
 	engine := graph.NewToxicCombinationEngine()
 	results := engine.Analyze(s.app.SecurityGraph)
@@ -150,20 +151,14 @@ func (s *Server) listToxicCombinations(w http.ResponseWriter, r *http.Request) {
 		results = filtered
 	}
 
-	// Limit results
-	limit := 50
-	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 200 {
-			limit = l
-		}
-	}
-	if len(results) > limit {
-		results = results[:limit]
-	}
+	paged, paginationResp := paginateSlice(results, pagination)
 
 	s.json(w, http.StatusOK, map[string]interface{}{
-		"total":   len(results),
-		"results": results,
+		"total":       len(results),
+		"results":     paged,
+		"count":       len(paged),
+		"pagination":  paginationResp,
+		"total_count": len(results),
 	})
 }
 
@@ -290,6 +285,7 @@ func (s *Server) analyzePeerGroups(w http.ResponseWriter, r *http.Request) {
 		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
 		return
 	}
+	pagination := ParsePagination(r, 100, 1000)
 
 	minSimilarity := 0.7
 	if simStr := r.URL.Query().Get("min_similarity"); simStr != "" {
@@ -307,13 +303,17 @@ func (s *Server) analyzePeerGroups(w http.ResponseWriter, r *http.Request) {
 
 	analysis := graph.AnalyzePeerGroups(s.app.SecurityGraph, minSimilarity, minGroupSize)
 	privilegeCreep := graph.FindPrivilegeCreep(s.app.SecurityGraph, 1.5)
+	pagedGroups, paginationResp := paginateSlice(analysis.Groups, pagination)
 
 	s.json(w, http.StatusOK, map[string]interface{}{
 		"total_principals": analysis.TotalPrincipals,
-		"groups":           analysis.Groups,
+		"groups":           pagedGroups,
 		"ungrouped":        analysis.Ungrouped,
 		"outliers":         analysis.Outliers,
 		"privilege_creep":  privilegeCreep,
+		"count":            len(pagedGroups),
+		"pagination":       paginationResp,
+		"total_count":      len(analysis.Groups),
 	})
 }
 

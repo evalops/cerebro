@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -135,13 +136,22 @@ func (s *Server) listTables(w http.ResponseWriter, r *http.Request) {
 		s.error(w, http.StatusServiceUnavailable, "snowflake not configured")
 		return
 	}
+	pagination := ParsePagination(r, 100, 1000)
 
 	tables, err := s.app.Snowflake.ListTables(r.Context())
 	if err != nil {
 		s.errorFromErr(w, err)
 		return
 	}
-	s.json(w, http.StatusOK, map[string]interface{}{"tables": tables, "count": len(tables)})
+	sort.Strings(tables)
+	paged, paginationResp := paginateSlice(tables, pagination)
+
+	s.json(w, http.StatusOK, map[string]interface{}{
+		"tables":      paged,
+		"count":       len(paged),
+		"pagination":  paginationResp,
+		"total_count": len(tables),
+	})
 }
 
 func (s *Server) executeQuery(w http.ResponseWriter, r *http.Request) {
@@ -226,8 +236,17 @@ func (s *Server) getAsset(w http.ResponseWriter, r *http.Request) {
 // Policy endpoints
 
 func (s *Server) listPolicies(w http.ResponseWriter, r *http.Request) {
+	pagination := ParsePagination(r, 100, 1000)
 	policies := s.app.Policy.ListPolicies()
-	s.json(w, http.StatusOK, map[string]interface{}{"policies": policies, "count": len(policies)})
+	sort.Slice(policies, func(i, j int) bool { return policies[i].ID < policies[j].ID })
+
+	paged, paginationResp := paginateSlice(policies, pagination)
+	s.json(w, http.StatusOK, map[string]interface{}{
+		"policies":    paged,
+		"count":       len(paged),
+		"pagination":  paginationResp,
+		"total_count": len(policies),
+	})
 }
 
 func (s *Server) getPolicy(w http.ResponseWriter, r *http.Request) {

@@ -375,3 +375,18 @@ func BuildPaginationResponse(total int64, params PaginationParams, resultCount i
 		HasMore: int64(params.Offset+resultCount) < total,
 	}
 }
+
+func paginateSlice[T any](items []T, params PaginationParams) ([]T, PaginationResponse) {
+	total := len(items)
+	if params.Offset > total {
+		params.Offset = total
+	}
+
+	end := params.Offset + params.Limit
+	if end > total {
+		end = total
+	}
+
+	paged := items[params.Offset:end]
+	return paged, BuildPaginationResponse(int64(total), params, len(paged))
+}

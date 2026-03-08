@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sort"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
@@ -20,7 +21,10 @@ func (s *Server) schedulerStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listJobs(w http.ResponseWriter, r *http.Request) {
+	pagination := ParsePagination(r, 100, 1000)
 	jobs := s.app.Scheduler.ListJobs()
+	sort.Slice(jobs, func(i, j int) bool { return jobs[i].Name < jobs[j].Name })
+
 	result := make([]map[string]interface{}, len(jobs))
 	for i, j := range jobs {
 		result[i] = map[string]interface{}{
@@ -34,7 +38,13 @@ func (s *Server) listJobs(w http.ResponseWriter, r *http.Request) {
 			result[i]["last_run"] = j.LastRun
 		}
 	}
-	s.json(w, http.StatusOK, map[string]interface{}{"jobs": result, "count": len(result)})
+	paged, paginationResp := paginateSlice(result, pagination)
+	s.json(w, http.StatusOK, map[string]interface{}{
+		"jobs":        paged,
+		"count":       len(paged),
+		"pagination":  paginationResp,
+		"total_count": len(result),
+	})
 }
 
 func (s *Server) runJob(w http.ResponseWriter, r *http.Request) {
@@ -78,8 +88,16 @@ func (s *Server) disableJob(w http.ResponseWriter, r *http.Request) {
 // Notification endpoints
 
 func (s *Server) listNotifiers(w http.ResponseWriter, r *http.Request) {
+	pagination := ParsePagination(r, 100, 1000)
 	notifiers := s.app.Notifications.ListNotifiers()
-	s.json(w, http.StatusOK, map[string]interface{}{"notifiers": notifiers, "count": len(notifiers)})
+	sort.Strings(notifiers)
+	paged, paginationResp := paginateSlice(notifiers, pagination)
+	s.json(w, http.StatusOK, map[string]interface{}{
+		"notifiers":   paged,
+		"count":       len(paged),
+		"pagination":  paginationResp,
+		"total_count": len(notifiers),
+	})
 }
 
 func (s *Server) testNotifications(w http.ResponseWriter, r *http.Request) {
@@ -127,10 +145,16 @@ func (s *Server) slackCommands(w http.ResponseWriter, r *http.Request) {
 // Remediation endpoints
 
 func (s *Server) listRemediationRules(w http.ResponseWriter, r *http.Request) {
+	pagination := ParsePagination(r, 100, 1000)
 	rules := s.app.Remediation.ListRules()
+	sort.Slice(rules, func(i, j int) bool { return rules[i].ID < rules[j].ID })
+	paged, paginationResp := paginateSlice(rules, pagination)
+
 	s.json(w, http.StatusOK, map[string]interface{}{
-		"rules": rules,
-		"count": len(rules),
+		"rules":       paged,
+		"count":       len(paged),
+		"pagination":  paginationResp,
+		"total_count": len(rules),
 	})
 }
 
