@@ -11,6 +11,7 @@ import (
 
 func (s *Server) setupMiddleware() {
 	s.router.Use(middleware.RequestID)
+	s.router.Use(TracingMiddleware)
 	s.router.Use(middleware.Logger)
 	s.router.Use(middleware.Recoverer)
 	s.router.Use(SecurityHeaders())

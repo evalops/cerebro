@@ -42,6 +42,11 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Engine is the core policy evaluation engine. It maintains an in-memory cache
@@ -613,6 +618,26 @@ func topLevelConditionField(field string) string {
 }
 
 func (e *Engine) Evaluate(ctx context.Context, req *EvalRequest) (*EvalResponse, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	action := ""
+	if req != nil {
+		action = req.Action
+	}
+	_, span := otel.Tracer("cerebro.policy").Start(ctx, "policy.evaluate",
+		trace.WithAttributes(
+			attribute.String("policy.action", strings.TrimSpace(action)),
+		),
+	)
+	defer span.End()
+	if req == nil {
+		err := fmt.Errorf("eval request is required")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
+	}
+
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
@@ -632,10 +657,29 @@ func (e *Engine) Evaluate(ctx context.Context, req *EvalRequest) (*EvalResponse,
 		}
 	}
 
+	span.SetAttributes(
+		attribute.Int("policy.count", len(e.policies)),
+		attribute.Int("policy.matched_count", len(resp.Matched)),
+		attribute.String("policy.decision", resp.Decision),
+	)
+
 	return resp, nil
 }
 
 func (e *Engine) EvaluateAsset(ctx context.Context, asset map[string]interface{}) ([]Finding, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	assetType, _ := asset["type"].(string)
+	assetTableName, _ := asset["_cq_table"].(string)
+	_, span := otel.Tracer("cerebro.policy").Start(ctx, "policy.evaluate_asset",
+		trace.WithAttributes(
+			attribute.String("asset.type", strings.TrimSpace(assetType)),
+			attribute.String("asset.table", strings.TrimSpace(assetTableName)),
+		),
+	)
+	defer span.End()
+
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
@@ -692,6 +736,11 @@ func (e *Engine) EvaluateAsset(ctx context.Context, asset map[string]interface{}
 			})
 		}
 	}
+
+	span.SetAttributes(
+		attribute.Int("policy.count", len(e.policies)),
+		attribute.Int("policy.findings_count", len(findings)),
+	)
 
 	return findings, nil
 }

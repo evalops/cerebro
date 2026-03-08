@@ -74,6 +74,39 @@ func TestLoadConfigRetention(t *testing.T) {
 	}
 }
 
+func TestLoadConfigTracing(t *testing.T) {
+	t.Setenv("CEREBRO_OTEL_ENABLED", "true")
+	t.Setenv("CEREBRO_OTEL_SERVICE_NAME", "cerebro-test")
+	t.Setenv("CEREBRO_OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4318")
+	t.Setenv("CEREBRO_OTEL_EXPORTER_OTLP_INSECURE", "true")
+	t.Setenv("CEREBRO_OTEL_EXPORTER_OTLP_HEADERS", "x-api-key=abc123,env=dev")
+	t.Setenv("CEREBRO_OTEL_SAMPLE_RATIO", "0.5")
+	t.Setenv("CEREBRO_OTEL_EXPORT_TIMEOUT", "4s")
+
+	cfg := LoadConfig()
+	if !cfg.TracingEnabled {
+		t.Fatal("expected tracing to be enabled")
+	}
+	if cfg.TracingServiceName != "cerebro-test" {
+		t.Fatalf("expected tracing service name cerebro-test, got %q", cfg.TracingServiceName)
+	}
+	if cfg.TracingOTLPEndpoint != "localhost:4318" {
+		t.Fatalf("expected tracing endpoint localhost:4318, got %q", cfg.TracingOTLPEndpoint)
+	}
+	if !cfg.TracingOTLPInsecure {
+		t.Fatal("expected tracing OTLP insecure to be true")
+	}
+	if cfg.TracingSampleRatio != 0.5 {
+		t.Fatalf("expected tracing sample ratio 0.5, got %v", cfg.TracingSampleRatio)
+	}
+	if cfg.TracingExportTimeout != 4*time.Second {
+		t.Fatalf("expected tracing export timeout 4s, got %v", cfg.TracingExportTimeout)
+	}
+	if cfg.TracingOTLPHeaders["x-api-key"] != "abc123" || cfg.TracingOTLPHeaders["env"] != "dev" {
+		t.Fatalf("unexpected tracing headers: %#v", cfg.TracingOTLPHeaders)
+	}
+}
+
 func TestLoadConfig_ConfigFileFallback(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "cerebro.yaml")
 	configBody := `
@@ -873,6 +906,34 @@ func TestGetEnvDuration(t *testing.T) {
 	val = getEnvDuration("NONEXISTENT_DUR", time.Hour)
 	if val != time.Hour {
 		t.Errorf("expected 1h, got %v", val)
+	}
+}
+
+func TestGetEnvFloat(t *testing.T) {
+	os.Setenv("TEST_FLOAT", "0.25")
+	defer os.Unsetenv("TEST_FLOAT")
+
+	val := getEnvFloat("TEST_FLOAT", 1.0)
+	if val != 0.25 {
+		t.Errorf("expected 0.25, got %v", val)
+	}
+
+	val = getEnvFloat("NONEXISTENT_FLOAT", 0.75)
+	if val != 0.75 {
+		t.Errorf("expected fallback 0.75, got %v", val)
+	}
+}
+
+func TestParseKeyValueCSV(t *testing.T) {
+	parsed := parseKeyValueCSV("x-api-key=abc123, env=dev,invalid,no-value= ")
+	if parsed["x-api-key"] != "abc123" {
+		t.Fatalf("expected x-api-key=abc123, got %q", parsed["x-api-key"])
+	}
+	if parsed["env"] != "dev" {
+		t.Fatalf("expected env=dev, got %q", parsed["env"])
+	}
+	if _, ok := parsed["invalid"]; ok {
+		t.Fatalf("did not expect invalid entry to be parsed: %#v", parsed)
 	}
 }
 

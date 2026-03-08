@@ -248,6 +248,12 @@ func (a *App) Close() error {
 		a.Scheduler.Stop()
 	}
 
+	if a.traceShutdown != nil {
+		if err := a.traceShutdown(shutdownCtx); err != nil {
+			errs = append(errs, fmt.Errorf("otel shutdown: %w", err))
+		}
+	}
+
 	if len(errs) > 0 {
 		return fmt.Errorf("close errors: %v", errs)
 	}

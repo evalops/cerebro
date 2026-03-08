@@ -138,6 +138,7 @@ type App struct {
 	Propagation          *graph.PropagationEngine
 	graphReady           chan struct{} // closed when initial graph build completes
 	graphCancel          context.CancelFunc
+	traceShutdown        func(context.Context) error
 
 	// Cached table list from Snowflake (shared by graph builder + policy coverage)
 	AvailableTables []string
@@ -146,8 +147,15 @@ type App struct {
 // Config holds all application configuration
 type Config struct {
 	// Server
-	Port     int
-	LogLevel string
+	Port                 int
+	LogLevel             string
+	TracingEnabled       bool
+	TracingServiceName   string
+	TracingOTLPEndpoint  string
+	TracingOTLPInsecure  bool
+	TracingOTLPHeaders   map[string]string
+	TracingSampleRatio   float64
+	TracingExportTimeout time.Duration
 
 	// Snowflake (key-pair auth only)
 	SnowflakeAccount    string
@@ -515,6 +523,13 @@ func LoadConfig() *Config {
 	cfg := &Config{
 		Port:                               getEnvInt("API_PORT", 8080),
 		LogLevel:                           getEnv("LOG_LEVEL", "info"),
+		TracingEnabled:                     getEnvBool("CEREBRO_OTEL_ENABLED", false),
+		TracingServiceName:                 getEnv("CEREBRO_OTEL_SERVICE_NAME", "cerebro"),
+		TracingOTLPEndpoint:                getEnv("CEREBRO_OTEL_EXPORTER_OTLP_ENDPOINT", getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "")),
+		TracingOTLPInsecure:                getEnvBool("CEREBRO_OTEL_EXPORTER_OTLP_INSECURE", getEnvBool("OTEL_EXPORTER_OTLP_INSECURE", false)),
+		TracingOTLPHeaders:                 parseKeyValueCSV(getEnv("CEREBRO_OTEL_EXPORTER_OTLP_HEADERS", getEnv("OTEL_EXPORTER_OTLP_HEADERS", ""))),
+		TracingSampleRatio:                 getEnvFloat("CEREBRO_OTEL_SAMPLE_RATIO", 1.0),
+		TracingExportTimeout:               getEnvDuration("CEREBRO_OTEL_EXPORT_TIMEOUT", 5*time.Second),
 		SnowflakeAccount:                   getEnv("SNOWFLAKE_ACCOUNT", ""),
 		SnowflakeUser:                      getEnv("SNOWFLAKE_USER", ""),
 		SnowflakePrivateKey:                normalizePrivateKey(getEnv("SNOWFLAKE_PRIVATE_KEY", "")),
@@ -768,6 +783,10 @@ func New(ctx context.Context) (*App, error) {
 	app := &App{
 		Config: cfg,
 		Logger: logger,
+	}
+
+	if err := runInitErrorStep("telemetry", func() error { return app.initTelemetry(ctx) }); err != nil {
+		logger.Warn("telemetry initialization failed", "error", err)
 	}
 
 	// Phase 1: Snowflake + policies (everything else depends on these)

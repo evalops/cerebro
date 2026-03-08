@@ -4,6 +4,9 @@ import (
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/evalops/cerebro/internal/telemetry"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 var sharedProviderTransport = &http.Transport{
@@ -20,13 +23,20 @@ var sharedProviderTransport = &http.Transport{
 	ExpectContinueTimeout: 1 * time.Second,
 }
 
+var tracedProviderTransport = otelhttp.NewTransport(sharedProviderTransport)
+
 func newProviderHTTPClient(timeout time.Duration) *http.Client {
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
 
+	transport := http.RoundTripper(sharedProviderTransport)
+	if telemetry.Enabled() {
+		transport = tracedProviderTransport
+	}
+
 	return &http.Client{
 		Timeout:   timeout,
-		Transport: sharedProviderTransport,
+		Transport: transport,
 	}
 }
