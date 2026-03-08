@@ -119,6 +119,44 @@ func (c *Client) RunAWSSync(ctx context.Context, req AWSSyncRequest) (*SyncRunRe
 	return &resp, nil
 }
 
+type GCPSyncRequest struct {
+	Project     string
+	Concurrency int
+	Tables      []string
+	Validate    bool
+}
+
+func (c *Client) RunGCPSync(ctx context.Context, req GCPSyncRequest) (*SyncRunResponse, error) {
+	var reqBody map[string]interface{}
+	if project := strings.TrimSpace(req.Project); project != "" {
+		reqBody = map[string]interface{}{"project": project}
+	}
+	if req.Concurrency > 0 {
+		if reqBody == nil {
+			reqBody = make(map[string]interface{}, 1)
+		}
+		reqBody["concurrency"] = req.Concurrency
+	}
+	if len(req.Tables) > 0 {
+		if reqBody == nil {
+			reqBody = make(map[string]interface{}, 1)
+		}
+		reqBody["tables"] = req.Tables
+	}
+	if req.Validate {
+		if reqBody == nil {
+			reqBody = make(map[string]interface{}, 1)
+		}
+		reqBody["validate"] = true
+	}
+
+	var resp SyncRunResponse
+	if err := c.doJSON(ctx, http.MethodPost, "/api/v1/sync/gcp", nil, reqBody, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
 type K8sSyncRequest struct {
 	Kubeconfig  string
 	Context     string

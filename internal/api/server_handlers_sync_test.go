@@ -249,3 +249,90 @@ func TestSyncAWS_UsesRequestOptions(t *testing.T) {
 		t.Fatalf("expected relationships count in response body, got %s", w.Body.String())
 	}
 }
+
+func TestSyncGCP_RequiresSnowflake(t *testing.T) {
+	s := newTestServer(t)
+
+	w := do(t, s, http.MethodPost, "/api/v1/sync/gcp", map[string]interface{}{
+		"project":     "proj-123",
+		"concurrency": 4,
+		"tables":      []string{"gcp_compute_instances"},
+	})
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestSyncGCP_InvalidRequest(t *testing.T) {
+	s := newTestServer(t)
+
+	w := do(t, s, http.MethodPost, "/api/v1/sync/gcp", "not-json")
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid request, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestSyncGCP_RequiresProject(t *testing.T) {
+	s := newTestServer(t)
+	s.app.Snowflake = &snowflake.Client{}
+
+	w := do(t, s, http.MethodPost, "/api/v1/sync/gcp", map[string]interface{}{
+		"concurrency": 4,
+		"tables":      []string{"gcp_compute_instances"},
+	})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestSyncGCP_UsesRequestOptions(t *testing.T) {
+	s := newTestServer(t)
+	s.app.Snowflake = &snowflake.Client{}
+
+	originalRun := runGCPSyncWithOptions
+	t.Cleanup(func() { runGCPSyncWithOptions = originalRun })
+
+	called := false
+	runGCPSyncWithOptions = func(ctx context.Context, client *snowflake.Client, req gcpSyncRequest) (*gcpSyncOutcome, error) {
+		called = true
+		if client != s.app.Snowflake {
+			t.Fatalf("expected server snowflake client to be passed through")
+		}
+		if req.Project != "proj-123" {
+			t.Fatalf("expected project proj-123, got %q", req.Project)
+		}
+		if req.Concurrency != 5 {
+			t.Fatalf("expected concurrency 5, got %d", req.Concurrency)
+		}
+		if len(req.Tables) != 2 || req.Tables[0] != "gcp_compute_instances" || req.Tables[1] != "gcp_storage_buckets" {
+			t.Fatalf("unexpected table filter: %#v", req.Tables)
+		}
+		if !req.Validate {
+			t.Fatal("expected validate=true")
+		}
+		return &gcpSyncOutcome{
+			Results:                    []nativesync.SyncResult{{Table: "gcp_compute_instances", Synced: 6}},
+			RelationshipsExtracted:     8,
+			RelationshipsSkippedReason: "test reason",
+		}, nil
+	}
+
+	w := do(t, s, http.MethodPost, "/api/v1/sync/gcp", map[string]interface{}{
+		"project":     "  proj-123  ",
+		"concurrency": 5,
+		"tables":      []string{"GCP_COMPUTE_INSTANCES", "gcp_compute_instances", " gcp_storage_buckets "},
+		"validate":    true,
+	})
+	if !called {
+		t.Fatal("expected sync runner to be called")
+	}
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"provider":"gcp"`) {
+		t.Fatalf("expected provider in response body, got %s", w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"relationships_extracted":8`) {
+		t.Fatalf("expected relationships count in response body, got %s", w.Body.String())
+	}
+}

@@ -305,6 +305,104 @@ func (s *Server) syncAWS(w http.ResponseWriter, r *http.Request) {
 	s.json(w, http.StatusOK, resp)
 }
 
+type gcpSyncRequest struct {
+	Project     string   `json:"project"`
+	Concurrency int      `json:"concurrency"`
+	Tables      []string `json:"tables"`
+	Validate    bool     `json:"validate"`
+}
+
+type gcpSyncOutcome struct {
+	Results                    []nativesync.SyncResult
+	RelationshipsExtracted     int64
+	RelationshipsSkippedReason string
+}
+
+var runGCPSyncWithOptions = func(ctx context.Context, client *snowflake.Client, req gcpSyncRequest) (*gcpSyncOutcome, error) {
+	if req.Project == "" {
+		return nil, fmt.Errorf("project is required")
+	}
+
+	opts := []nativesync.GCPEngineOption{nativesync.WithGCPProject(req.Project)}
+	if req.Concurrency > 0 {
+		opts = append(opts, nativesync.WithGCPConcurrency(req.Concurrency))
+	}
+	if len(req.Tables) > 0 {
+		opts = append(opts, nativesync.WithGCPTableFilter(req.Tables))
+	}
+
+	syncer := nativesync.NewGCPSyncEngine(client, slog.Default(), opts...)
+	if req.Validate {
+		results, err := syncer.ValidateTables(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("validation failed: %w", err)
+		}
+		return &gcpSyncOutcome{Results: results}, nil
+	}
+
+	results, err := syncer.SyncAll(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("sync failed: %w", err)
+	}
+
+	outcome := &gcpSyncOutcome{Results: results}
+	if len(req.Tables) > 0 {
+		outcome.RelationshipsSkippedReason = "table filter is set"
+		return outcome, nil
+	}
+
+	extractor := nativesync.NewRelationshipExtractor(client, slog.Default())
+	relCount, err := extractor.ExtractAndPersist(ctx)
+	if err != nil {
+		outcome.RelationshipsSkippedReason = fmt.Sprintf("relationship extraction failed: %v", err)
+		return outcome, nil
+	}
+	outcome.RelationshipsExtracted = int64(relCount)
+
+	return outcome, nil
+}
+
+func (s *Server) syncGCP(w http.ResponseWriter, r *http.Request) {
+	var req gcpSyncRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		s.error(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+
+	req.Project = strings.TrimSpace(req.Project)
+	req.Tables = normalizeSyncTables(req.Tables)
+	if req.Project == "" {
+		s.error(w, http.StatusBadRequest, "project is required")
+		return
+	}
+
+	if s.app.Snowflake == nil {
+		s.error(w, http.StatusServiceUnavailable, "snowflake not configured")
+		return
+	}
+
+	outcome, err := runGCPSyncWithOptions(r.Context(), s.app.Snowflake, req)
+	if err != nil {
+		s.errorFromErr(w, err)
+		return
+	}
+	if outcome == nil {
+		outcome = &gcpSyncOutcome{}
+	}
+
+	resp := map[string]interface{}{
+		"provider":                "gcp",
+		"validate":                req.Validate,
+		"results":                 outcome.Results,
+		"relationships_extracted": outcome.RelationshipsExtracted,
+	}
+	if outcome.RelationshipsSkippedReason != "" {
+		resp["relationships_skipped_reason"] = outcome.RelationshipsSkippedReason
+	}
+
+	s.json(w, http.StatusOK, resp)
+}
+
 func normalizeSyncTables(raw []string) []string {
 	if len(raw) == 0 {
 		return nil
