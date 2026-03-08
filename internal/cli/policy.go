@@ -71,6 +71,7 @@ var (
 )
 
 var runPolicyListDirectFn = runPolicyListDirect
+var runPolicyDiffDirectFn = runPolicyDiffDirect
 
 func init() {
 	policyCmd.AddCommand(policyListCmd)
@@ -294,6 +295,105 @@ func runPolicyTest(cmd *cobra.Command, args []string) error {
 }
 
 func runPolicyDiff(cmd *cobra.Command, args []string) error {
+	mode, err := loadCLIExecutionMode()
+	if err != nil {
+		return err
+	}
+
+	if mode != cliExecutionModeDirect {
+		if err := runPolicyDiffViaAPI(cmd, args, mode); err == nil {
+			return nil
+		} else if mode == cliExecutionModeAPI || !shouldFallbackToDirect(mode, err) {
+			return err
+		}
+	}
+
+	return runPolicyDiffDirectFn(cmd, args)
+}
+
+func runPolicyDiffViaAPI(cmd *cobra.Command, args []string, mode cliExecutionMode) error {
+	ctx := commandContextOrBackground(cmd)
+	policyID := strings.TrimSpace(args[0])
+	candidatePath := strings.TrimSpace(args[1])
+	if policyID == "" {
+		return fmt.Errorf("policy id is required")
+	}
+	if candidatePath == "" {
+		return fmt.Errorf("candidate file is required")
+	}
+
+	apiClient, err := newCLIAPIClient()
+	if err != nil {
+		return err
+	}
+
+	data, err := os.ReadFile(candidatePath) // #nosec G304 -- candidate policy path is explicitly provided by caller
+	if err != nil {
+		return fmt.Errorf("read candidate policy: %w", err)
+	}
+	var candidate policy.Policy
+	if err := json.Unmarshal(data, &candidate); err != nil {
+		return fmt.Errorf("parse candidate policy: %w", err)
+	}
+	candidate.ID = policyID
+
+	var assets []map[string]interface{}
+	if assetsPath := strings.TrimSpace(policyDiffAssetFile); assetsPath != "" {
+		loaded, err := loadPolicyDiffAssets(assetsPath)
+		if err != nil {
+			return err
+		}
+		assets = loaded
+	}
+
+	dryRun, err := apiClient.DryRunPolicyChange(ctx, policyID, candidate, assets, 0)
+	if err != nil {
+		return fmt.Errorf("policy dry-run via api: %w", err)
+	}
+
+	response := map[string]interface{}{
+		"policy_id":      policyID,
+		"candidate_file": candidatePath,
+		"changed":        dryRun.Diff.Changed,
+		"diff":           dryRun.Diff,
+	}
+
+	if assetsPath := strings.TrimSpace(policyDiffAssetFile); assetsPath != "" {
+		response["assets_file"] = assetsPath
+	}
+	if dryRun.Impact != nil {
+		response["impact"] = dryRun.Impact
+	}
+
+	if policyDiffOutput == FormatJSON {
+		return JSONOutput(response)
+	}
+
+	fmt.Printf("Policy: %s\n", policyID)
+	fmt.Printf("Candidate: %s\n", candidatePath)
+	if !dryRun.Diff.Changed {
+		fmt.Println("Diff: no semantic changes")
+	} else {
+		fmt.Printf("Diff: %d changed fields\n", len(dryRun.Diff.FieldDiffs))
+		for _, field := range dryRun.Diff.FieldDiffs {
+			fmt.Printf("  - %s\n", field.Field)
+		}
+	}
+
+	if impactAny, ok := response["impact"]; ok {
+		impact := impactAny.(*policy.PolicyDryRunImpact)
+		fmt.Println("\nDry-run impact:")
+		fmt.Printf("  Assets:         %d\n", impact.AssetCount)
+		fmt.Printf("  Matches before: %d\n", impact.BeforeMatches)
+		fmt.Printf("  Matches after:  %d\n", impact.AfterMatches)
+		fmt.Printf("  Added findings: %d\n", len(impact.AddedFindingIDs))
+		fmt.Printf("  Removed findings: %d\n", len(impact.RemovedFindingIDs))
+	}
+
+	return nil
+}
+
+func runPolicyDiffDirect(cmd *cobra.Command, args []string) error {
 	policyID := strings.TrimSpace(args[0])
 	candidatePath := strings.TrimSpace(args[1])
 	if policyID == "" {
