@@ -35,6 +35,8 @@ func TestEngine_ListRules(t *testing.T) {
 		"pagerduty-critical",
 		"auto-ticket-high",
 		"s3-public-notify",
+		"identity-stale-user-remediation",
+		"identity-excessive-privilege-remediation",
 	}
 
 	for _, id := range expectedRules {

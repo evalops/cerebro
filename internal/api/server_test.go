@@ -1524,6 +1524,100 @@ func TestListReviews(t *testing.T) {
 	}
 }
 
+func TestCollectStaleAccessFindings_SkipsOrphanedWithoutHRData(t *testing.T) {
+	detector := identity.NewStaleAccessDetector(identity.DefaultThresholds())
+
+	users := []map[string]interface{}{
+		{
+			"arn":                "arn:aws:iam::123456789012:user/alice",
+			"user_name":          "alice",
+			"password_last_used": "2000-01-01T00:00:00Z",
+			"provider":           "aws",
+			"account_id":         "123456789012",
+		},
+	}
+
+	findings := collectStaleAccessFindings(context.Background(), detector, users, nil, nil, nil, nil)
+	if len(findings) == 0 {
+		t.Fatal("expected stale access findings")
+	}
+
+	for _, finding := range findings {
+		if finding.Type == identity.StaleAccessOrphanedAccount {
+			t.Fatal("expected orphaned account detection to be skipped without HR data")
+		}
+	}
+}
+
+func TestPersistStaleAccessFindings_PersistsAndRunsRemediation(t *testing.T) {
+	s := newTestServer(t)
+	s.app.RemediationExecutor = remediation.NewExecutor(
+		s.app.Remediation,
+		s.app.Ticketing,
+		s.app.Notifications,
+		s.app.Findings,
+		s.app.Webhooks,
+	)
+
+	err := s.app.Remediation.AddRule(remediation.Rule{
+		ID:          "test-identity-stale-resolve",
+		Name:        "Resolve stale identity finding",
+		Description: "Test-only rule",
+		Enabled:     true,
+		Trigger: remediation.Trigger{
+			Type:     remediation.TriggerFindingCreated,
+			PolicyID: "identity-stale-inactive-user",
+		},
+		Actions: []remediation.Action{
+			{Type: remediation.ActionResolveFinding},
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to add remediation rule: %v", err)
+	}
+
+	now := time.Now().Add(-120 * 24 * time.Hour)
+	stale := identity.StaleAccessFinding{
+		ID:       "stale-user-arn:aws:iam::123456789012:user/alice",
+		Type:     identity.StaleAccessInactiveUser,
+		Severity: "high",
+		Principal: identity.Principal{
+			ID:    "arn:aws:iam::123456789012:user/alice",
+			Type:  "user",
+			Name:  "alice",
+			Email: "alice@example.com",
+		},
+		Provider:     "aws",
+		Account:      "123456789012",
+		LastActivity: &now,
+		DaysSince:    120,
+		Details:      "stale user",
+		Remediation:  "disable user",
+	}
+
+	persisted, remediated := s.persistStaleAccessFindings(context.Background(), []identity.StaleAccessFinding{stale})
+	if persisted != 1 {
+		t.Fatalf("expected persisted=1, got %d", persisted)
+	}
+	if remediated == 0 {
+		t.Fatalf("expected remediation executions, got %d", remediated)
+	}
+
+	findingID := "identity-" + stale.ID
+	record, ok := s.app.Findings.Get(findingID)
+	if !ok {
+		t.Fatalf("expected finding %s in store", findingID)
+	}
+	if strings.ToUpper(record.Status) != "RESOLVED" {
+		t.Fatalf("expected finding to be resolved by remediation rule, got status=%s", record.Status)
+	}
+
+	_, remediatedAgain := s.persistStaleAccessFindings(context.Background(), []identity.StaleAccessFinding{stale})
+	if remediatedAgain != 0 {
+		t.Fatalf("expected no remediation run on re-observation, got %d", remediatedAgain)
+	}
+}
+
 // --- Reports ---
 
 func TestExecutiveSummary(t *testing.T) {

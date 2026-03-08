@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"sort"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/evalops/cerebro/internal/attackpath"
 	"github.com/evalops/cerebro/internal/identity"
+	"github.com/evalops/cerebro/internal/remediation"
 	"github.com/evalops/cerebro/internal/snowflake"
 	"github.com/evalops/cerebro/internal/webhooks"
 )
@@ -23,42 +25,142 @@ func (s *Server) detectStaleAccess(w http.ResponseWriter, r *http.Request) {
 	}
 
 	detector := identity.NewStaleAccessDetector(identity.DefaultThresholds())
-
-	// Fetch users from Snowflake
-	users, err := s.app.Snowflake.GetAssets(r.Context(), "aws_iam_users", snowflake.AssetFilter{Limit: 1000})
-	if err != nil {
-		users = []map[string]interface{}{}
+	fetch := func(table string) []map[string]interface{} {
+		rows, err := s.app.Snowflake.GetAssets(r.Context(), table, snowflake.AssetFilter{Limit: 1000})
+		if err != nil {
+			return []map[string]interface{}{}
+		}
+		return rows
 	}
 
-	// Fetch credentials
-	creds, err := s.app.Snowflake.GetAssets(r.Context(), "aws_iam_credential_reports", snowflake.AssetFilter{Limit: 1000})
-	if err != nil {
-		creds = []map[string]interface{}{}
-	}
+	users := make([]map[string]interface{}, 0)
+	users = append(users, fetch("aws_iam_users")...)
+	users = append(users, fetch("okta_users")...)
+	users = append(users, fetch("azure_ad_users")...)
+	users = append(users, fetch("entra_users")...)
+	users = append(users, fetch("google_workspace_users")...)
 
-	// Fetch service accounts
-	sas, err := s.app.Snowflake.GetAssets(r.Context(), "gcp_iam_service_accounts", snowflake.AssetFilter{Limit: 1000})
-	if err != nil {
-		sas = []map[string]interface{}{}
-	}
+	credentials := fetch("aws_iam_credential_reports")
 
-	staleUsers := detector.DetectStaleUsers(r.Context(), users)
-	unusedKeys := detector.DetectUnusedAccessKeys(r.Context(), creds)
-	staleSAs := detector.DetectStaleServiceAccounts(r.Context(), sas)
-	allFindings := make([]identity.StaleAccessFinding, 0, len(staleUsers)+len(unusedKeys)+len(staleSAs))
-	allFindings = append(allFindings, staleUsers...)
-	allFindings = append(allFindings, unusedKeys...)
-	allFindings = append(allFindings, staleSAs...)
+	serviceAccounts := make([]map[string]interface{}, 0)
+	serviceAccounts = append(serviceAccounts, fetch("gcp_iam_service_accounts")...)
+	serviceAccounts = append(serviceAccounts, fetch("k8s_core_service_accounts")...)
+
+	hrData := make([]map[string]interface{}, 0)
+	hrData = append(hrData, fetch("bamboohr_employees")...)
+	hrData = append(hrData, fetch("workday_workers")...)
+
+	roleBindings := make([]map[string]interface{}, 0)
+	roleBindings = append(roleBindings, fetch("azure_rbac_role_assignments")...)
+	roleBindings = append(roleBindings, fetch("k8s_rbac_risky_bindings")...)
+
+	allFindings := collectStaleAccessFindings(r.Context(), detector, users, credentials, serviceAccounts, hrData, roleBindings)
+	persistedCount, remediatedCount := s.persistStaleAccessFindings(r.Context(), allFindings)
 
 	s.json(w, http.StatusOK, map[string]interface{}{
-		"findings": allFindings,
-		"count":    len(allFindings),
+		"findings":           allFindings,
+		"count":              len(allFindings),
+		"persisted_findings": persistedCount,
+		"remediation_runs":   remediatedCount,
 		"summary": map[string]int{
 			"inactive_users":      countByType(allFindings, identity.StaleAccessInactiveUser),
 			"unused_keys":         countByType(allFindings, identity.StaleAccessUnusedAccessKey),
+			"orphaned_accounts":   countByType(allFindings, identity.StaleAccessOrphanedAccount),
+			"excessive_privilege": countByType(allFindings, identity.StaleAccessExcessivePrivilege),
 			"stale_service_accts": countByType(allFindings, identity.StaleAccessStaleServiceAccount),
 		},
 	})
+}
+
+func collectStaleAccessFindings(
+	ctx context.Context,
+	detector *identity.StaleAccessDetector,
+	users []map[string]interface{},
+	credentials []map[string]interface{},
+	serviceAccounts []map[string]interface{},
+	hrData []map[string]interface{},
+	roleBindings []map[string]interface{},
+) []identity.StaleAccessFinding {
+	if detector == nil {
+		return nil
+	}
+
+	collected := make([]identity.StaleAccessFinding, 0)
+	seen := make(map[string]bool)
+	appendUnique := func(items []identity.StaleAccessFinding) {
+		for _, finding := range items {
+			if seen[finding.ID] {
+				continue
+			}
+			seen[finding.ID] = true
+			collected = append(collected, finding)
+		}
+	}
+
+	appendUnique(detector.DetectStaleUsers(ctx, users))
+	appendUnique(detector.DetectUnusedAccessKeys(ctx, credentials))
+	appendUnique(detector.DetectStaleServiceAccounts(ctx, serviceAccounts))
+	if len(hrData) > 0 {
+		appendUnique(detector.DetectOrphanedAccounts(ctx, users, hrData))
+	}
+	if len(roleBindings) > 0 {
+		appendUnique(detector.DetectExcessivePrivileges(ctx, roleBindings))
+	}
+	return collected
+}
+
+func (s *Server) persistStaleAccessFindings(ctx context.Context, staleFindings []identity.StaleAccessFinding) (int, int) {
+	if s.app.Findings == nil || len(staleFindings) == 0 {
+		return 0, 0
+	}
+
+	persistedCount := 0
+	remediationRuns := 0
+	for _, staleFinding := range staleFindings {
+		policyFinding := staleFinding.ToPolicyFinding()
+		finding := s.app.Findings.Upsert(ctx, policyFinding)
+		persistedCount++
+
+		// Only trigger remediation on first observation.
+		if !finding.FirstSeen.Equal(finding.LastSeen) {
+			continue
+		}
+		if s.app.Remediation == nil || s.app.RemediationExecutor == nil {
+			continue
+		}
+
+		event := remediation.Event{
+			Type:       remediation.TriggerFindingCreated,
+			FindingID:  finding.ID,
+			Severity:   strings.ToLower(strings.TrimSpace(finding.Severity)),
+			PolicyID:   finding.PolicyID,
+			SignalType: finding.SignalType,
+			Domain:     finding.Domain,
+			EntityID:   finding.ResourceID,
+			Data: map[string]any{
+				"resource_id":   finding.ResourceID,
+				"resource_type": finding.ResourceType,
+				"provider":      staleFinding.Provider,
+				"account":       staleFinding.Account,
+				"days_since":    staleFinding.DaysSince,
+			},
+		}
+
+		executions, err := s.app.Remediation.Evaluate(ctx, event)
+		if err != nil {
+			s.app.Logger.Warn("failed to evaluate stale-access remediation", "finding_id", finding.ID, "error", err)
+			continue
+		}
+		for _, execution := range executions {
+			if err := s.app.RemediationExecutor.Execute(ctx, execution); err != nil {
+				s.app.Logger.Warn("failed to execute stale-access remediation", "execution_id", execution.ID, "error", err)
+				continue
+			}
+			remediationRuns++
+		}
+	}
+
+	return persistedCount, remediationRuns
 }
 
 func countByType(findings []identity.StaleAccessFinding, t identity.StaleAccessType) int {

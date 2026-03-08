@@ -247,6 +247,60 @@ func (e *Engine) loadDefaultRules() {
 			},
 		},
 		{
+			ID:          "identity-stale-user-remediation",
+			Name:        "Stale User Access Remediation",
+			Description: "Create and notify on stale inactive user findings for identity hygiene follow-up",
+			Enabled:     true,
+			Trigger: Trigger{
+				Type:     TriggerFindingCreated,
+				PolicyID: "identity-stale-inactive-user",
+			},
+			Actions: []Action{
+				{
+					Type: ActionCreateTicket,
+					Config: map[string]string{
+						"priority": "high",
+						"labels":   "identity,stale-access,auto-generated",
+					},
+					RequiresApproval: false,
+				},
+				{
+					Type: ActionNotifySlack,
+					Config: map[string]string{
+						"channel": "#identity-security",
+					},
+					RequiresApproval: false,
+				},
+			},
+		},
+		{
+			ID:          "identity-excessive-privilege-remediation",
+			Name:        "Identity Excessive Privilege Escalation",
+			Description: "Escalate excessive identity privilege findings with high-priority response",
+			Enabled:     true,
+			Trigger: Trigger{
+				Type:     TriggerFindingCreated,
+				PolicyID: "identity-excessive-privilege",
+			},
+			Actions: []Action{
+				{
+					Type: ActionCreateTicket,
+					Config: map[string]string{
+						"priority": "highest",
+						"labels":   "identity,privilege,critical,auto-generated",
+					},
+					RequiresApproval: false,
+				},
+				{
+					Type: ActionNotifySlack,
+					Config: map[string]string{
+						"channel": "#security-alerts",
+					},
+					RequiresApproval: false,
+				},
+			},
+		},
+		{
 			ID:          "signal-escalate-customer-health-critical",
 			Name:        "Escalate Critical Customer Health Signals",
 			Description: "Escalate critical customer-health signals to account owner and create a tracking ticket",
