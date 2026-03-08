@@ -647,7 +647,7 @@ jobs:
       
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.25.7'
+          go-version-file: go.mod
       
       - name: Install dependencies
         run: go mod download
@@ -677,13 +677,13 @@ jobs:
       
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.25.7'
+          go-version-file: go.mod
       
       - name: Build
         run: make build
       
       - name: Build Docker image
-        run: docker build -t cerebro:${{ github.sha }} .
+        run: docker build --build-arg GO_VERSION="$(./scripts/go_version.sh)" -t cerebro:${{ github.sha }} .
 ```
 
 ---

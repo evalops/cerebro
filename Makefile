@@ -12,6 +12,7 @@ TRIVY_IMAGE ?= aquasec/trivy:0.34.0
 TRIVY_CACHE_DIR ?= $(HOME)/.cache/trivy
 SECURITY_SCAN_IMAGE ?= cerebro:ci
 GO_BIN ?= $(shell go env GOPATH)/bin
+GO_VERSION ?= $(shell ./scripts/go_version.sh)
 GOFLAGS ?= -mod=vendor
 
 export GOFLAGS
@@ -78,7 +79,7 @@ dev:
 
 # Docker build
 docker-build:
-	docker build -t cerebro:latest .
+	docker build --build-arg GO_VERSION=$(GO_VERSION) -t cerebro:latest .
 
 # Download/update Trivy vulnerability database cache
 trivy-db:
@@ -92,7 +93,7 @@ trivy-db:
 security-scan: security-scan-built
 
 security-scan-built: trivy-db
-	docker build -f Dockerfile -t $(SECURITY_SCAN_IMAGE) .
+	docker build --build-arg GO_VERSION=$(GO_VERSION) -f Dockerfile -t $(SECURITY_SCAN_IMAGE) .
 	docker run --rm \
 		-v /var/run/docker.sock:/var/run/docker.sock \
 		-v "$(TRIVY_CACHE_DIR):/root/.cache" \
