@@ -78,6 +78,7 @@ Total variables: **235**
 | `JAMF_CLIENT_SECRET` | `getEnv` | `""` | `JamfClientSecret` |
 | `JIRA_API_TOKEN` | `getEnv` | `""` | `JiraAPIToken` |
 | `JIRA_BASE_URL` | `getEnv` | `""` | `JiraBaseURL` |
+| `JIRA_CLOSE_TRANSITIONS` | `getEnv` | `"Done,Closed,Resolve Issue"` | `JiraCloseTransitions` |
 | `JIRA_EMAIL` | `getEnv` | `""` | `JiraEmail` |
 | `JIRA_PROJECT` | `getEnv` | `"SEC"` | `JiraProject` |
 | `JOB_IDEMPOTENCY_TABLE_NAME` | `getEnv` | `""` | `JobIdempotencyTableName` |

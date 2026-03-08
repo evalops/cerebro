@@ -127,6 +127,18 @@ func TestLoadConfigCORSAllowedOrigins(t *testing.T) {
 	}
 }
 
+func TestLoadConfigJiraCloseTransitions(t *testing.T) {
+	os.Setenv("JIRA_CLOSE_TRANSITIONS", "Done, Closed, Resolve Issue")
+	defer os.Unsetenv("JIRA_CLOSE_TRANSITIONS")
+
+	cfg := LoadConfig()
+
+	expected := []string{"Done", "Closed", "Resolve Issue"}
+	if !reflect.DeepEqual(cfg.JiraCloseTransitions, expected) {
+		t.Fatalf("expected Jira close transitions %v, got %v", expected, cfg.JiraCloseTransitions)
+	}
+}
+
 func TestLoadConfig_Defaults(t *testing.T) {
 	// Clear any env vars that might affect defaults
 	os.Unsetenv("API_PORT")

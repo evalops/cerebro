@@ -9,6 +9,7 @@ import (
 // Provider interface for ticketing systems
 type Provider interface {
 	Name() string
+	Validate(ctx context.Context) error
 	CreateTicket(ctx context.Context, ticket *Ticket) (*Ticket, error)
 	UpdateTicket(ctx context.Context, id string, update *TicketUpdate) (*Ticket, error)
 	GetTicket(ctx context.Context, id string) (*Ticket, error)

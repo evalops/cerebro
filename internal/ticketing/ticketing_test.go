@@ -23,6 +23,8 @@ func NewMockProvider(name string) *MockProvider {
 
 func (m *MockProvider) Name() string { return m.name }
 
+func (m *MockProvider) Validate(ctx context.Context) error { return nil }
+
 func (m *MockProvider) CreateTicket(ctx context.Context, ticket *Ticket) (*Ticket, error) {
 	ticket.ID = "MOCK-" + ticket.Title[:min(5, len(ticket.Title))]
 	ticket.ExternalID = ticket.ID

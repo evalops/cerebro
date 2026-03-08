@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/evalops/cerebro/internal/agents"
 	agentproviders "github.com/evalops/cerebro/internal/agents/providers"
@@ -263,12 +264,17 @@ func (a *App) initTicketing() {
 	// Register Jira if configured
 	if a.Config.JiraBaseURL != "" && a.Config.JiraAPIToken != "" {
 		jira := ticketing.NewJiraProvider(ticketing.JiraConfig{
-			BaseURL:  a.Config.JiraBaseURL,
-			Email:    a.Config.JiraEmail,
-			APIToken: a.Config.JiraAPIToken,
-			Project:  a.Config.JiraProject,
+			BaseURL:          a.Config.JiraBaseURL,
+			Email:            a.Config.JiraEmail,
+			APIToken:         a.Config.JiraAPIToken,
+			Project:          a.Config.JiraProject,
+			CloseTransitions: a.Config.JiraCloseTransitions,
 		})
-		a.Ticketing.RegisterProvider(jira)
+		if err := validateTicketingProvider(jira); err != nil {
+			a.Logger.Error("ticketing provider validation failed", "provider", jira.Name(), "error", err)
+		} else {
+			a.Ticketing.RegisterProvider(jira)
+		}
 	}
 
 	// Register Linear if configured
@@ -277,8 +283,18 @@ func (a *App) initTicketing() {
 			APIKey: a.Config.LinearAPIKey,
 			TeamID: a.Config.LinearTeamID,
 		})
-		a.Ticketing.RegisterProvider(linear)
+		if err := validateTicketingProvider(linear); err != nil {
+			a.Logger.Error("ticketing provider validation failed", "provider", linear.Name(), "error", err)
+		} else {
+			a.Ticketing.RegisterProvider(linear)
+		}
 	}
+}
+
+func validateTicketingProvider(provider ticketing.Provider) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return provider.Validate(ctx)
 }
 
 func (a *App) initIdentity() {

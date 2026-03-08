@@ -81,6 +81,7 @@ export SNOWFLAKE_WAREHOUSE="COMPUTE_WH"
 | `JIRA_EMAIL` | Jira user email | - | No |
 | `JIRA_API_TOKEN` | Jira API token | - | No |
 | `JIRA_PROJECT` | Default project key | `SEC` | No |
+| `JIRA_CLOSE_TRANSITIONS` | Comma-separated Jira transition names attempted when closing issues | `Done,Closed,Resolve Issue` | No |
 
 **Example:**
 ```bash
@@ -88,6 +89,7 @@ export JIRA_BASE_URL="https://mycompany.atlassian.net"
 export JIRA_EMAIL="security@company.com"
 export JIRA_API_TOKEN="ATATT3xFfGF..."
 export JIRA_PROJECT="SECURITY"
+export JIRA_CLOSE_TRANSITIONS="Done,Closed,Resolve Issue"
 ```
 
 #### Linear

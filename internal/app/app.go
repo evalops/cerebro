@@ -152,12 +152,13 @@ type Config struct {
 	OpenAIAPIKey    string
 
 	// Ticketing
-	JiraBaseURL  string
-	JiraEmail    string
-	JiraAPIToken string
-	JiraProject  string
-	LinearAPIKey string
-	LinearTeamID string
+	JiraBaseURL          string
+	JiraEmail            string
+	JiraAPIToken         string
+	JiraProject          string
+	JiraCloseTransitions []string
+	LinearAPIKey         string
+	LinearTeamID         string
 
 	// Custom Providers
 	CrowdStrikeClientID     string
@@ -508,6 +509,7 @@ func LoadConfig() *Config {
 		JiraEmail:                          getEnv("JIRA_EMAIL", ""),
 		JiraAPIToken:                       getEnv("JIRA_API_TOKEN", ""),
 		JiraProject:                        getEnv("JIRA_PROJECT", "SEC"),
+		JiraCloseTransitions:               splitCSV(getEnv("JIRA_CLOSE_TRANSITIONS", "Done,Closed,Resolve Issue")),
 		LinearAPIKey:                       getEnv("LINEAR_API_KEY", ""),
 		LinearTeamID:                       getEnv("LINEAR_TEAM_ID", ""),
 		CrowdStrikeClientID:                getEnv("CROWDSTRIKE_CLIENT_ID", ""),
