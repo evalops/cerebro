@@ -797,6 +797,39 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SyncStatus'
+  /api/v1/sync/backfill-relationships:
+    post:
+      tags:
+        - Admin
+      summary: Normalize relationship IDs in Snowflake
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                batch_size:
+                  type: integer
+                  minimum: 1
+      responses:
+        '200':
+          description: Relationship backfill complete
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RelationshipBackfillResponse'
+        '400':
+          description: Invalid backfill request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Backfill unavailable because Snowflake is not configured
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/scheduler/status:
     get:
       tags:
@@ -4813,6 +4846,22 @@ components:
         checked_at:
           type: string
           format: date-time
+    RelationshipBackfillResponse:
+      type: object
+      required:
+        - scanned
+        - updated
+        - deleted
+        - skipped
+      properties:
+        scanned:
+          type: integer
+        updated:
+          type: integer
+        deleted:
+          type: integer
+        skipped:
+          type: integer
     SchedulerStatus:
       type: object
       properties:

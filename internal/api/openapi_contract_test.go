@@ -56,6 +56,14 @@ func TestOpenAPIContract_CriticalRoutes(t *testing.T) {
 			expectedStatus: http.StatusServiceUnavailable,
 		},
 		{
+			name:           "sync relationship backfill unavailable contract",
+			method:         http.MethodPost,
+			pathTemplate:   "/api/v1/sync/backfill-relationships",
+			requestPath:    "/api/v1/sync/backfill-relationships",
+			body:           map[string]interface{}{"batch_size": 200},
+			expectedStatus: http.StatusServiceUnavailable,
+		},
+		{
 			name:           "threat intel stats response contract",
 			method:         http.MethodGet,
 			pathTemplate:   "/api/v1/threatintel/stats",

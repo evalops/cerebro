@@ -290,6 +290,11 @@ func (s *Server) setupRoutes() {
 			r.Get("/coverage", s.getPolicyCoverage)
 		})
 
+		// Sync management endpoints
+		r.Route("/sync", func(r chi.Router) {
+			r.Post("/backfill-relationships", s.backfillRelationshipIDs)
+		})
+
 		// Telemetry ingestion (for agents)
 		r.Route("/telemetry", func(r chi.Router) {
 			r.Post("/ingest", s.ingestTelemetry)
