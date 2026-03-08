@@ -253,6 +253,7 @@ func cloneNode(node *Node) *Node {
 	}
 	cloned := *node
 	cloned.Properties = cloneAnyMap(node.Properties)
+	cloned.PreviousProperties = cloneAnyMap(node.PreviousProperties)
 	cloned.Tags = cloneStringMap(node.Tags)
 	cloned.Findings = append([]string(nil), node.Findings...)
 	return &cloned

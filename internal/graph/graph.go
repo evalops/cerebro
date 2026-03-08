@@ -5,6 +5,10 @@ import (
 	"time"
 )
 
+var temporalNowUTC = func() time.Time {
+	return time.Now().UTC()
+}
+
 // Graph represents the security graph containing all nodes and edges
 type Graph struct {
 	nodes    map[string]*Node
@@ -51,9 +55,12 @@ func New() *Graph {
 
 // AddNode adds a node to the graph
 func (g *Graph) AddNode(node *Node) {
+	if node == nil || node.ID == "" {
+		return
+	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	g.nodes[node.ID] = node
+	g.addNodeLocked(node)
 	g.markGraphChangedLocked()
 }
 
@@ -65,17 +72,22 @@ func (g *Graph) AddNodesBatch(nodes []*Node) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	for _, node := range nodes {
-		g.nodes[node.ID] = node
+		if node == nil || node.ID == "" {
+			continue
+		}
+		g.addNodeLocked(node)
 	}
 	g.markGraphChangedLocked()
 }
 
 // AddEdge adds an edge to the graph
 func (g *Graph) AddEdge(edge *Edge) {
+	if edge == nil || edge.Source == "" || edge.Target == "" {
+		return
+	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	g.outEdges[edge.Source] = append(g.outEdges[edge.Source], edge)
-	g.inEdges[edge.Target] = append(g.inEdges[edge.Target], edge)
+	g.addEdgeLocked(edge)
 	g.markGraphChangedLocked()
 }
 
@@ -87,8 +99,10 @@ func (g *Graph) AddEdgesBatch(edges []*Edge) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	for _, edge := range edges {
-		g.outEdges[edge.Source] = append(g.outEdges[edge.Source], edge)
-		g.inEdges[edge.Target] = append(g.inEdges[edge.Target], edge)
+		if edge == nil || edge.Source == "" || edge.Target == "" {
+			continue
+		}
+		g.addEdgeLocked(edge)
 	}
 	g.markGraphChangedLocked()
 }
@@ -98,11 +112,18 @@ func (g *Graph) RemoveNode(id string) bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	if _, ok := g.nodes[id]; !ok {
+	node, ok := g.nodes[id]
+	if !ok || node.DeletedAt != nil {
 		return false
 	}
 
-	delete(g.nodes, id)
+	now := temporalNowUTC()
+	node.DeletedAt = &now
+	node.UpdatedAt = now
+	if node.Version <= 0 {
+		node.Version = 1
+	}
+	node.Version++
 	g.removeEdgesByNodeLocked(id)
 	g.markGraphChangedLocked()
 	return true
@@ -113,30 +134,20 @@ func (g *Graph) RemoveEdge(source, target string, kind EdgeKind) bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	matches := func(edge *Edge) bool {
-		return edge.Source == source && edge.Target == target && edge.Kind == kind
-	}
-
 	removed := false
 	if edges, ok := g.outEdges[source]; ok {
-		pruned, changed := pruneEdges(edges, matches)
-		if changed {
-			removed = true
-			if len(pruned) == 0 {
-				delete(g.outEdges, source)
-			} else {
-				g.outEdges[source] = pruned
+		for _, edge := range edges {
+			if edge == nil || edge.DeletedAt != nil {
+				continue
 			}
-		}
-	}
-	if edges, ok := g.inEdges[target]; ok {
-		pruned, changed := pruneEdges(edges, matches)
-		if changed {
-			removed = true
-			if len(pruned) == 0 {
-				delete(g.inEdges, target)
-			} else {
-				g.inEdges[target] = pruned
+			if edge.Source == source && edge.Target == target && edge.Kind == kind {
+				now := temporalNowUTC()
+				edge.DeletedAt = &now
+				if edge.Version <= 0 {
+					edge.Version = 1
+				}
+				edge.Version++
+				removed = true
 			}
 		}
 	}
@@ -163,14 +174,24 @@ func (g *Graph) SetNodeProperty(id string, key string, value any) bool {
 	defer g.mu.Unlock()
 
 	node, ok := g.nodes[id]
-	if !ok {
+	if !ok || node.DeletedAt != nil {
 		return false
 	}
 
+	node.PreviousProperties = cloneAnyMap(node.Properties)
 	if node.Properties == nil {
 		node.Properties = make(map[string]any)
 	}
 	node.Properties[key] = value
+	now := temporalNowUTC()
+	if node.CreatedAt.IsZero() {
+		node.CreatedAt = now
+	}
+	node.UpdatedAt = now
+	if node.Version <= 0 {
+		node.Version = 1
+	}
+	node.Version++
 	g.markGraphChangedLocked()
 	return true
 }
@@ -185,6 +206,17 @@ func (g *Graph) GetNode(id string) (*Node, bool) {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 	n, ok := g.nodes[id]
+	if !ok || n == nil || n.DeletedAt != nil {
+		return nil, false
+	}
+	return n, true
+}
+
+// GetNodeIncludingDeleted retrieves a node by ID, including soft-deleted nodes.
+func (g *Graph) GetNodeIncludingDeleted(id string) (*Node, bool) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	n, ok := g.nodes[id]
 	return n, ok
 }
 
@@ -192,14 +224,14 @@ func (g *Graph) GetNode(id string) (*Node, bool) {
 func (g *Graph) GetOutEdges(nodeID string) []*Edge {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
-	return g.outEdges[nodeID]
+	return g.activeEdgesForNodeLocked(g.outEdges[nodeID])
 }
 
 // GetInEdges returns edges pointing to a node
 func (g *Graph) GetInEdges(nodeID string) []*Edge {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
-	return g.inEdges[nodeID]
+	return g.activeEdgesForNodeLocked(g.inEdges[nodeID])
 }
 
 // GetAllNodes returns all nodes in the graph
@@ -208,9 +240,36 @@ func (g *Graph) GetAllNodes() []*Node {
 	defer g.mu.RUnlock()
 	nodes := make([]*Node, 0, len(g.nodes))
 	for _, n := range g.nodes {
+		if n == nil || n.DeletedAt != nil {
+			continue
+		}
 		nodes = append(nodes, n)
 	}
 	return nodes
+}
+
+// GetAllNodesIncludingDeleted returns all nodes, including soft-deleted nodes.
+func (g *Graph) GetAllNodesIncludingDeleted() []*Node {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	nodes := make([]*Node, 0, len(g.nodes))
+	for _, n := range g.nodes {
+		if n == nil {
+			continue
+		}
+		nodes = append(nodes, n)
+	}
+	return nodes
+}
+
+// Nodes returns active (non-deleted) nodes.
+func (g *Graph) Nodes() []*Node {
+	return g.GetAllNodes()
+}
+
+// NodesIncludingDeleted returns all nodes, including soft-deleted nodes.
+func (g *Graph) NodesIncludingDeleted() []*Node {
+	return g.GetAllNodesIncludingDeleted()
 }
 
 // GetNodesByKind returns nodes of specific kinds
@@ -223,6 +282,9 @@ func (g *Graph) GetNodesByKind(kinds ...NodeKind) []*Node {
 	}
 	var nodes []*Node
 	for _, n := range g.nodes {
+		if n == nil || n.DeletedAt != nil {
+			continue
+		}
 		if kindSet[n.Kind] {
 			nodes = append(nodes, n)
 		}
@@ -236,6 +298,9 @@ func (g *Graph) GetNodesByAccount(accountID string) []*Node {
 	defer g.mu.RUnlock()
 	var nodes []*Node
 	for _, n := range g.nodes {
+		if n == nil || n.DeletedAt != nil {
+			continue
+		}
 		if n.Account == accountID {
 			nodes = append(nodes, n)
 		}
@@ -250,6 +315,9 @@ func (g *Graph) GetCrossAccountEdges() []*Edge {
 	var edges []*Edge
 	for _, edgeList := range g.outEdges {
 		for _, e := range edgeList {
+			if !g.activeEdgeLocked(e) {
+				continue
+			}
 			if e.IsCrossAccount() {
 				edges = append(edges, e)
 			}
@@ -264,7 +332,11 @@ func (g *Graph) GetAllEdges() map[string][]*Edge {
 	defer g.mu.RUnlock()
 	result := make(map[string][]*Edge)
 	for source, edges := range g.outEdges {
-		result[source] = append([]*Edge{}, edges...)
+		active := g.activeEdgesForNodeLocked(edges)
+		if len(active) == 0 {
+			continue
+		}
+		result[source] = active
 	}
 	return result
 }
@@ -273,7 +345,14 @@ func (g *Graph) GetAllEdges() map[string][]*Edge {
 func (g *Graph) NodeCount() int {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
-	return len(g.nodes)
+	count := 0
+	for _, node := range g.nodes {
+		if node == nil || node.DeletedAt != nil {
+			continue
+		}
+		count++
+	}
+	return count
 }
 
 // EdgeCount returns the total number of edges
@@ -282,7 +361,11 @@ func (g *Graph) EdgeCount() int {
 	defer g.mu.RUnlock()
 	count := 0
 	for _, edges := range g.outEdges {
-		count += len(edges)
+		for _, edge := range edges {
+			if g.activeEdgeLocked(edge) {
+				count++
+			}
+		}
 	}
 	return count
 }
@@ -329,6 +412,9 @@ func (g *Graph) BuildIndex() {
 
 	// Index all nodes
 	for _, node := range g.nodes {
+		if node == nil || node.DeletedAt != nil {
+			continue
+		}
 		g.indexByKind[node.Kind] = append(g.indexByKind[node.Kind], node)
 
 		if node.Account != "" {
@@ -363,6 +449,9 @@ func (g *Graph) BuildIndex() {
 	// Index cross-account edges
 	for _, edgeList := range g.outEdges {
 		for _, edge := range edgeList {
+			if !g.activeEdgeLocked(edge) {
+				continue
+			}
 			if edge.IsCrossAccount() {
 				g.crossAccountEdge = append(g.crossAccountEdge, edge)
 			}
@@ -480,6 +569,9 @@ func (g *Graph) getNodesByKindScan(kinds ...NodeKind) []*Node {
 	}
 	var nodes []*Node
 	for _, n := range g.nodes {
+		if n == nil || n.DeletedAt != nil {
+			continue
+		}
 		if kindSet[n.Kind] {
 			nodes = append(nodes, n)
 		}
@@ -496,6 +588,9 @@ func (g *Graph) GetNodesByAccountIndexed(accountID string) []*Node {
 		// Fall back to scan
 		var nodes []*Node
 		for _, n := range g.nodes {
+			if n == nil || n.DeletedAt != nil {
+				continue
+			}
 			if n.Account == accountID {
 				nodes = append(nodes, n)
 			}
@@ -514,6 +609,9 @@ func (g *Graph) GetNodesByRisk(risk RiskLevel) []*Node {
 	if !g.indexBuilt {
 		var nodes []*Node
 		for _, n := range g.nodes {
+			if n == nil || n.DeletedAt != nil {
+				continue
+			}
 			if n.Risk == risk {
 				nodes = append(nodes, n)
 			}
@@ -532,6 +630,9 @@ func (g *Graph) GetInternetFacingNodes() []*Node {
 	if !g.indexBuilt {
 		var nodes []*Node
 		for _, n := range g.nodes {
+			if n == nil || n.DeletedAt != nil {
+				continue
+			}
 			if g.isInternetFacing(n) {
 				nodes = append(nodes, n)
 			}
@@ -550,6 +651,9 @@ func (g *Graph) GetCrownJewels() []*Node {
 	if !g.indexBuilt {
 		var nodes []*Node
 		for _, n := range g.nodes {
+			if n == nil || n.DeletedAt != nil {
+				continue
+			}
 			if g.isCrownJewel(n) {
 				nodes = append(nodes, n)
 			}
@@ -597,49 +701,105 @@ func (g *Graph) GetResourceNodesByARNPrefix(prefix string) []*Node {
 	return g.indexByARNPrefix[prefix]
 }
 
+func (g *Graph) addNodeLocked(node *Node) {
+	now := temporalNowUTC()
+	if existing, ok := g.nodes[node.ID]; ok && existing != nil {
+		if existing.CreatedAt.IsZero() {
+			existing.CreatedAt = now
+		}
+		if node.CreatedAt.IsZero() {
+			node.CreatedAt = existing.CreatedAt
+		}
+		node.PreviousProperties = cloneAnyMap(existing.Properties)
+		if node.Version <= existing.Version {
+			node.Version = existing.Version + 1
+		}
+	}
+
+	if node.CreatedAt.IsZero() {
+		node.CreatedAt = now
+	}
+	if node.UpdatedAt.IsZero() {
+		node.UpdatedAt = now
+	}
+	if node.Version <= 0 {
+		node.Version = 1
+	}
+	node.DeletedAt = nil
+	g.nodes[node.ID] = node
+}
+
+func (g *Graph) addEdgeLocked(edge *Edge) {
+	now := temporalNowUTC()
+	if edge.CreatedAt.IsZero() {
+		edge.CreatedAt = now
+	}
+	if edge.Version <= 0 {
+		edge.Version = 1
+	}
+	edge.DeletedAt = nil
+	g.outEdges[edge.Source] = append(g.outEdges[edge.Source], edge)
+	g.inEdges[edge.Target] = append(g.inEdges[edge.Target], edge)
+}
+
+func (g *Graph) activeEdgesForNodeLocked(edges []*Edge) []*Edge {
+	if len(edges) == 0 {
+		return nil
+	}
+	active := make([]*Edge, 0, len(edges))
+	for _, edge := range edges {
+		if g.activeEdgeLocked(edge) {
+			active = append(active, edge)
+		}
+	}
+	return active
+}
+
+func (g *Graph) activeEdgeLocked(edge *Edge) bool {
+	if edge == nil || edge.DeletedAt != nil {
+		return false
+	}
+	if source, ok := g.nodes[edge.Source]; ok && source != nil && source.DeletedAt != nil {
+		return false
+	}
+	if target, ok := g.nodes[edge.Target]; ok && target != nil && target.DeletedAt != nil {
+		return false
+	}
+	return true
+}
+
 func (g *Graph) removeEdgesByNodeLocked(nodeID string) bool {
 	removed := false
 
-	if _, ok := g.outEdges[nodeID]; ok {
-		delete(g.outEdges, nodeID)
-		removed = true
-	}
-	if _, ok := g.inEdges[nodeID]; ok {
-		delete(g.inEdges, nodeID)
-		removed = true
-	}
-
-	for source, edges := range g.outEdges {
-		pruned, changed := pruneEdges(edges, func(edge *Edge) bool {
-			return edge.Target == nodeID
-		})
-		if !changed {
-			continue
-		}
-		removed = true
-		if len(pruned) == 0 {
-			delete(g.outEdges, source)
-		} else {
-			g.outEdges[source] = pruned
+	if edges, ok := g.outEdges[nodeID]; ok {
+		for _, edge := range edges {
+			if g.markEdgeDeletedLocked(edge) {
+				removed = true
+			}
 		}
 	}
-
-	for target, edges := range g.inEdges {
-		pruned, changed := pruneEdges(edges, func(edge *Edge) bool {
-			return edge.Source == nodeID
-		})
-		if !changed {
-			continue
-		}
-		removed = true
-		if len(pruned) == 0 {
-			delete(g.inEdges, target)
-		} else {
-			g.inEdges[target] = pruned
+	if edges, ok := g.inEdges[nodeID]; ok {
+		for _, edge := range edges {
+			if g.markEdgeDeletedLocked(edge) {
+				removed = true
+			}
 		}
 	}
 
 	return removed
+}
+
+func (g *Graph) markEdgeDeletedLocked(edge *Edge) bool {
+	if edge == nil || edge.DeletedAt != nil {
+		return false
+	}
+	now := temporalNowUTC()
+	edge.DeletedAt = &now
+	if edge.Version <= 0 {
+		edge.Version = 1
+	}
+	edge.Version++
+	return true
 }
 
 func pruneEdges(edges []*Edge, remove func(edge *Edge) bool) ([]*Edge, bool) {

@@ -1,5 +1,7 @@
 package graph
 
+import "time"
+
 // EdgeKind represents the type of relationship between nodes
 type EdgeKind string
 
@@ -55,6 +57,9 @@ type Edge struct {
 	Priority   int            `json:"priority"` // deny=100, allow=50
 	Properties map[string]any `json:"properties,omitempty"`
 	Risk       RiskLevel      `json:"risk"`
+	CreatedAt  time.Time      `json:"created_at"`
+	DeletedAt  *time.Time     `json:"deleted_at,omitempty"`
+	Version    int            `json:"version"`
 }
 
 // IsDeny returns true if this edge denies access
