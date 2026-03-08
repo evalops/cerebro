@@ -228,6 +228,8 @@ func (a *App) runScheduledScan(ctx context.Context, tables []string) error {
 	var totalViolations int64
 	var queryPolicyFindingCount int
 	var queryPolicyErrorCount int
+	var orgTopologyFindingCount int
+	var orgTopologyErrorCount int
 	var relationshipCount int
 	var graphToxicCount int
 	var graphPaths int
@@ -481,16 +483,35 @@ func (a *App) runScheduledScan(ctx context.Context, tables []string) error {
 					graphToxicCount++
 				}
 			}
+
+			orgTopologyResult := a.ScanOrgTopologyPolicies(ctx)
+			orgTopologyFindingCount = len(orgTopologyResult.Findings)
+			orgTopologyErrorCount = len(orgTopologyResult.Errors)
+			for _, errMsg := range orgTopologyResult.Errors {
+				a.Logger.Warn("org topology policy execution failed", "error", errMsg)
+			}
+			for _, finding := range orgTopologyResult.Findings {
+				a.upsertFindingAndRemediate(ctx, finding)
+			}
 		}
 	}
 	if graphToxicCount > 0 {
 		totalViolations += int64(graphToxicCount)
+	}
+	if orgTopologyFindingCount > 0 {
+		totalViolations += int64(orgTopologyFindingCount)
 	}
 	if relationshipCount > 0 || graphToxicCount > 0 {
 		a.Logger.Info("toxic combination analysis complete",
 			"relationship_count", relationshipCount,
 			"graph_count", graphToxicCount,
 			"attack_paths", graphPaths,
+		)
+	}
+	if orgTopologyFindingCount > 0 || orgTopologyErrorCount > 0 {
+		a.Logger.Info("org topology policy scan complete",
+			"findings", orgTopologyFindingCount,
+			"errors", orgTopologyErrorCount,
 		)
 	}
 
@@ -519,6 +540,8 @@ func (a *App) runScheduledScan(ctx context.Context, tables []string) error {
 			"tables":                   tables,
 			"query_policy_findings":    queryPolicyFindingCount,
 			"query_policy_errors":      queryPolicyErrorCount,
+			"org_topology_findings":    orgTopologyFindingCount,
+			"org_topology_errors":      orgTopologyErrorCount,
 			"relationship_toxic_count": relationshipCount,
 			"graph_toxic_count":        graphToxicCount,
 			"graph_attack_paths":       graphPaths,
