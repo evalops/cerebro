@@ -77,6 +77,11 @@ func runScan(cmd *cobra.Command, args []string) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
+	mode, err := loadCLIExecutionMode()
+	if err != nil {
+		return err
+	}
+
 	application, err := app.New(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to initialize: %w", err)
@@ -93,7 +98,8 @@ func runScan(cmd *cobra.Command, args []string) error {
 	}
 
 	localMode := localDataset != nil && len(localDataset.Tables) > 0
-	if application.Snowflake == nil && !localMode {
+	apiCompatible, apiReason := scanSupportsAPIMode(localMode)
+	if application.Snowflake == nil && !localMode && (mode == cliExecutionModeDirect || !apiCompatible) {
 		preflight := evaluateScanPreflight(application, nil)
 		return fmt.Errorf("scan preflight failed: %s (run 'cerebro scan --preflight' for details)", preflight.Message)
 	}
@@ -116,13 +122,6 @@ func runScan(cmd *cobra.Command, args []string) error {
 			Info("Extracted %d relationships", relCount)
 		}
 	}
-
-	policies := application.Policy.ListPolicies()
-	if len(policies) == 0 {
-		return fmt.Errorf("no policies loaded")
-	}
-
-	Info("Loaded %d policies", len(policies))
 
 	tuning := application.ScanTuning()
 
@@ -208,6 +207,33 @@ func runScan(cmd *cobra.Command, args []string) error {
 		}
 		return nil
 	}
+
+	if mode != cliExecutionModeDirect {
+		if !apiCompatible {
+			if mode == cliExecutionModeAPI {
+				return fmt.Errorf("scan via api is not supported for this invocation: %s", apiReason)
+			}
+			Warning("API scan mode skipped; using direct mode: %s", apiReason)
+		} else {
+			err := runScanViaAPI(ctx, tables)
+			if err == nil {
+				return nil
+			}
+			if mode == cliExecutionModeAPI || !shouldFallbackToDirect(mode, err) {
+				return fmt.Errorf("scan via api failed: %w", err)
+			}
+			if application.Snowflake == nil && !localMode {
+				return fmt.Errorf("scan via api failed and direct fallback is unavailable: %w", err)
+			}
+			Warning("API unavailable; using direct mode: %v", err)
+		}
+	}
+
+	policies := application.Policy.ListPolicies()
+	if len(policies) == 0 {
+		return fmt.Errorf("no policies loaded")
+	}
+	Info("Loaded %d policies", len(policies))
 
 	if scanDryRun {
 		fmt.Println(bold("\nDry run - would scan:"))
@@ -722,6 +748,131 @@ func runScan(cmd *cobra.Command, args []string) error {
 			}
 		}
 	}
+
+	return nil
+}
+
+type apiScanTableResult struct {
+	Table      string `json:"table"`
+	Scanned    int64  `json:"scanned"`
+	Violations int64  `json:"violations"`
+	Duration   string `json:"duration,omitempty"`
+}
+
+func scanSupportsAPIMode(localMode bool) (bool, string) {
+	if localMode {
+		return false, "local dataset mode requires direct execution"
+	}
+	if scanDryRun {
+		return false, "--dry-run requires direct execution"
+	}
+	if scanExtractRelationships {
+		return false, "--extract-relationships requires direct execution"
+	}
+	if scanFull {
+		return false, "--full requires direct execution"
+	}
+	if scanToxicCombos {
+		return false, "--toxic-combos currently requires direct execution"
+	}
+	if scanUseGraph {
+		return false, "--graph currently requires direct execution"
+	}
+	return true, ""
+}
+
+func runScanViaAPI(ctx context.Context, tables []string) error {
+	apiClient, err := newCLIAPIClient()
+	if err != nil {
+		return err
+	}
+
+	start := time.Now()
+	var totalScanned int64
+	var totalViolations int64
+	allFindings := make([]map[string]interface{}, 0)
+	tableResults := make([]apiScanTableResult, 0, len(tables))
+
+	for _, table := range tables {
+		resp, err := apiClient.ScanFindings(ctx, table, scanLimit)
+		if err != nil {
+			return fmt.Errorf("scan table %q via api: %w", table, err)
+		}
+		totalScanned += resp.Scanned
+		totalViolations += resp.Violations
+		allFindings = append(allFindings, resp.Findings...)
+		tableResults = append(tableResults, apiScanTableResult{
+			Table:      table,
+			Scanned:    resp.Scanned,
+			Violations: resp.Violations,
+			Duration:   resp.Duration,
+		})
+
+		if scanOutput == FormatTable {
+			fmt.Printf("\n%s Scanning %s via API...\n", color(colorCyan, "→"), table)
+			fmt.Printf("Scanned %d assets, found %d violations\n", resp.Scanned, resp.Violations)
+		}
+	}
+
+	duration := time.Since(start)
+
+	if scanOutput == FormatJSON {
+		return JSONOutput(map[string]interface{}{
+			"scanned":    totalScanned,
+			"violations": totalViolations,
+			"duration":   duration.String(),
+			"findings":   allFindings,
+			"tables":     tableResults,
+			"mode":       "api",
+		})
+	}
+
+	if scanOutput == FormatCSV {
+		headers := []string{"severity", "policy_id", "title", "resource_id", "resource_name", "risks", "toxic_combo"}
+		rows := make([][]string, 0, len(allFindings))
+		for _, f := range allFindings {
+			rows = append(rows, []string{
+				toString(f["severity"]),
+				toString(f["policy_id"]),
+				toString(f["title"]),
+				toString(f["resource_id"]),
+				toString(f["resource_name"]),
+				findingRiskString(f),
+				toString(f["toxic_combo"]),
+			})
+		}
+		return CSVOutput(headers, rows)
+	}
+
+	sevCounts := map[string]int{"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
+	for _, f := range allFindings {
+		sev := strings.ToUpper(toString(f["severity"]))
+		sevCounts[sev]++
+	}
+
+	fmt.Println()
+	fmt.Println(strings.Repeat("=", 50))
+	fmt.Printf("%s Scan Complete (API)\n", bold("✓"))
+	fmt.Println(strings.Repeat("=", 50))
+	fmt.Printf("Assets scanned:  %d\n", totalScanned)
+	if totalViolations > 0 {
+		fmt.Printf("Violations:      %s\n", color(colorRed, fmt.Sprintf("%d", totalViolations)))
+		if sevCounts["CRITICAL"] > 0 {
+			fmt.Printf("  Critical:      %s\n", color(colorRed, fmt.Sprintf("%d", sevCounts["CRITICAL"])))
+		}
+		if sevCounts["HIGH"] > 0 {
+			fmt.Printf("  High:          %s\n", color(colorYellow, fmt.Sprintf("%d", sevCounts["HIGH"])))
+		}
+		if sevCounts["MEDIUM"] > 0 {
+			fmt.Printf("  Medium:        %d\n", sevCounts["MEDIUM"])
+		}
+		if sevCounts["LOW"] > 0 {
+			fmt.Printf("  Low:           %d\n", sevCounts["LOW"])
+		}
+	} else {
+		fmt.Printf("Violations:      %s\n", color(colorGreen, "0"))
+	}
+	fmt.Printf("Duration:        %s\n", duration.Round(time.Millisecond))
 
 	return nil
 }
