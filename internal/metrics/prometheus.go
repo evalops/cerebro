@@ -43,7 +43,7 @@ var (
 			Name: "cerebro_syncs_total",
 			Help: "Total number of sync operations",
 		},
-		[]string{"provider", "table", "region", "status"},
+		[]string{"provider", "status"},
 	)
 
 	SyncDuration = prometheus.NewHistogramVec(
@@ -52,7 +52,7 @@ var (
 			Help:    "Duration of sync operations",
 			Buckets: prometheus.ExponentialBuckets(0.1, 2, 10),
 		},
-		[]string{"provider", "table", "region"},
+		[]string{"provider"},
 	)
 
 	SyncRows = prometheus.NewCounterVec(
@@ -60,7 +60,7 @@ var (
 			Name: "cerebro_sync_rows_total",
 			Help: "Total number of rows synced",
 		},
-		[]string{"provider", "table", "region"},
+		[]string{"provider"},
 	)
 
 	SyncErrors = prometheus.NewCounterVec(
@@ -68,7 +68,7 @@ var (
 			Name: "cerebro_sync_errors_total",
 			Help: "Total number of sync errors",
 		},
-		[]string{"provider", "table", "region"},
+		[]string{"provider"},
 	)
 
 	ScanDuration = prometheus.NewHistogramVec(
@@ -403,17 +403,20 @@ func RecordSyncMetrics(provider, table, region string, duration time.Duration, r
 	if errorCount > 0 {
 		status = "error"
 	}
-	regionLabel := normalizeRegion(region)
-	SyncsTotal.WithLabelValues(provider, table, regionLabel, status).Inc()
-	SyncDuration.WithLabelValues(provider, table, regionLabel).Observe(duration.Seconds())
-	SyncRows.WithLabelValues(provider, table, regionLabel).Add(float64(rows))
+	_ = table
+	_ = region
+	providerLabel := normalizeProvider(provider)
+	SyncsTotal.WithLabelValues(providerLabel, status).Inc()
+	SyncDuration.WithLabelValues(providerLabel).Observe(duration.Seconds())
+	SyncRows.WithLabelValues(providerLabel).Add(float64(rows))
 	if errorCount > 0 {
-		SyncErrors.WithLabelValues(provider, table, regionLabel).Add(float64(errorCount))
+		SyncErrors.WithLabelValues(providerLabel).Add(float64(errorCount))
 	}
 }
 
 // RecordHTTPRequest records metrics for an HTTP request
 func RecordHTTPRequest(method, path string, status int, duration time.Duration) {
+	path = normalizeMetricPath(path)
 	HTTPRequestsTotal.WithLabelValues(method, path, statusBucket(status)).Inc()
 	HTTPRequestDuration.WithLabelValues(method, path).Observe(duration.Seconds())
 }
@@ -592,9 +595,39 @@ func statusBucket(status int) string {
 	}
 }
 
-func normalizeRegion(region string) string {
-	if region == "" {
-		return "global"
+func normalizeProvider(provider string) string {
+	if strings.TrimSpace(provider) == "" {
+		return "unknown"
 	}
-	return region
+	return provider
+}
+
+func normalizeMetricPath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "/"
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	if len(path) > 1 {
+		path = strings.TrimRight(path, "/")
+	}
+
+	switch {
+	case strings.HasPrefix(path, "/api/v1/assets/"):
+		return "/api/v1/assets/{table}"
+	case strings.HasPrefix(path, "/api/v1/policies/"):
+		return "/api/v1/policies/{id}"
+	case strings.HasPrefix(path, "/api/v1/findings/"):
+		return "/api/v1/findings/{id}"
+	case strings.HasPrefix(path, "/api/v1/"):
+		parts := strings.Split(strings.Trim(path, "/"), "/")
+		if len(parts) >= 4 {
+			return "/" + strings.Join(parts[:3], "/") + "/{subpath}"
+		}
+		return path
+	default:
+		return path
+	}
 }

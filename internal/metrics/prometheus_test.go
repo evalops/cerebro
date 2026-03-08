@@ -125,6 +125,35 @@ func TestStatusBucket(t *testing.T) {
 	}
 }
 
+func TestNormalizeProvider(t *testing.T) {
+	if got := normalizeProvider(""); got != "unknown" {
+		t.Fatalf("expected unknown provider label, got %q", got)
+	}
+	if got := normalizeProvider("aws"); got != "aws" {
+		t.Fatalf("expected provider label aws, got %q", got)
+	}
+}
+
+func TestNormalizeMetricPath(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{input: "", want: "/"},
+		{input: "health", want: "/health"},
+		{input: "/api/v1/findings/abc123", want: "/api/v1/findings/{id}"},
+		{input: "/api/v1/assets/aws_s3_buckets", want: "/api/v1/assets/{table}"},
+		{input: "/api/v1/webhooks/test/path", want: "/api/v1/webhooks/{subpath}"},
+		{input: "/metrics", want: "/metrics"},
+	}
+
+	for _, tt := range tests {
+		if got := normalizeMetricPath(tt.input); got != tt.want {
+			t.Fatalf("normalizeMetricPath(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
 func TestCacheMetrics(t *testing.T) {
 	Register()
 
