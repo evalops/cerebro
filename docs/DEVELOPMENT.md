@@ -63,6 +63,9 @@ make config-docs
 
 # Verify generated env-var docs are committed (drift check)
 make config-docs-check
+
+# Run go:generate directives for generated artifacts
+go generate ./internal/app ./internal/api
 ```
 
 ### Building

@@ -24,6 +24,9 @@ func TestPreCommitHookRunsFastLintOnStagedGoFiles(t *testing.T) {
 	if !strings.Contains(text, "git diff --cached --name-only --diff-filter=ACM -- '*.go'") {
 		t.Fatalf("expected pre-commit hook to lint staged Go files")
 	}
+	if !strings.Contains(text, "STAGED_PACKAGE_DIRS") {
+		t.Fatalf("expected pre-commit hook to lint staged package directories")
+	}
 }
 
 func TestGolangCILintConfigEnablesTestLinting(t *testing.T) {
@@ -135,6 +138,40 @@ func TestDockerBuildCommandsPassGoVersionBuildArg(t *testing.T) {
 	}
 	if !strings.Contains(ciText, "docker build --build-arg GO_VERSION=\"${GO_VERSION}\" -f Dockerfile -t cerebro:ci .") {
 		t.Fatalf("expected CI workflow Docker build to pass GO_VERSION build arg")
+	}
+}
+
+func TestGoGenerateDirectivesForGeneratedArtifacts(t *testing.T) {
+	root := repoRoot(t)
+
+	appPath := filepath.Join(root, "internal", "app", "app.go")
+	appContent, err := os.ReadFile(appPath)
+	if err != nil {
+		t.Fatalf("read app.go: %v", err)
+	}
+	appText := string(appContent)
+	if !strings.Contains(appText, "//go:generate sh -c \"cd ../.. && go run ./scripts/generate_config_docs/main.go\"") {
+		t.Fatalf("expected app.go to include go:generate directive for config docs")
+	}
+
+	routesPath := filepath.Join(root, "internal", "api", "server_routes.go")
+	routesContent, err := os.ReadFile(routesPath)
+	if err != nil {
+		t.Fatalf("read server_routes.go: %v", err)
+	}
+	routesText := string(routesContent)
+	if !strings.Contains(routesText, "//go:generate sh -c \"cd ../.. && go run ./scripts/openapi_route_parity.go --write\"") {
+		t.Fatalf("expected server_routes.go to include go:generate directive for OpenAPI sync")
+	}
+
+	devGuidePath := filepath.Join(root, "docs", "DEVELOPMENT.md")
+	devGuideContent, err := os.ReadFile(devGuidePath)
+	if err != nil {
+		t.Fatalf("read DEVELOPMENT.md: %v", err)
+	}
+	devGuideText := string(devGuideContent)
+	if !strings.Contains(devGuideText, "go generate ./internal/app ./internal/api") {
+		t.Fatalf("expected DEVELOPMENT.md to document go generate workflow")
 	}
 }
 

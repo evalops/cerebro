@@ -27,5 +27,7 @@ if ! command -v golangci-lint &>/dev/null; then
   exit 1
 fi
 
+mapfile -t STAGED_PACKAGE_DIRS < <(printf '%s\n' "${STAGED_FILES[@]}" | xargs -n1 dirname | sed 's#^\\.$#./#' | sort -u)
+
 echo "golangci-lint: running fast checks on staged Go files..."
-golangci-lint run --fast-only --timeout 2m "${STAGED_FILES[@]}"
+golangci-lint run --fast-only --timeout 2m "${STAGED_PACKAGE_DIRS[@]}"

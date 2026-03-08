@@ -1,3 +1,5 @@
+//go:generate sh -c "cd ../.. && go run ./scripts/openapi_route_parity.go --write"
+
 package api
 
 import (

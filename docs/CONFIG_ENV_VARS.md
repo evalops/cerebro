@@ -2,7 +2,7 @@
 
 Generated from `internal/app/app.go` (`LoadConfig`) via `go run ./scripts/generate_config_docs/main.go`.
 
-Total variables: **235**
+Total variables: **237**
 
 | Variable | Reader(s) | Default(s) | Config Field(s) |
 |---|---|---|---|
@@ -156,10 +156,10 @@ Total variables: **235**
 | `PINGONE_CLIENT_SECRET` | `getEnv` | `""` | `PingIdentityClientSecret` |
 | `PINGONE_ENVIRONMENT_ID` | `getEnv` | `""` | `PingIdentityEnvironmentID` |
 | `POLICIES_PATH` | `getEnv` | `"policies"` | `PoliciesPath` |
-| `QUERY_POLICY_ROW_LIMIT` | `getEnvInt` | `1000` | `QueryPolicyRowLimit` |
 | `QUALYS_PASSWORD` | `getEnv` | `""` | `QualysPassword` |
 | `QUALYS_PLATFORM` | `getEnv` | `"US1"` | `QualysPlatform` |
 | `QUALYS_USERNAME` | `getEnv` | `""` | `QualysUsername` |
+| `QUERY_POLICY_ROW_LIMIT` | `getEnvInt` | `snowflake.MaxReadOnlyQueryLimit` | `QueryPolicyRowLimit` |
 | `RAMP_API_URL` | `getEnv` | `"https://api.ramp.com/developer/v1"` | `RampAPIURL` |
 | `RAMP_CLIENT_ID` | `getEnv` | `""` | `RampClientID` |
 | `RAMP_CLIENT_SECRET` | `getEnv` | `""` | `RampClientSecret` |

@@ -30,6 +30,8 @@
 //
 // The New() function initializes all services based on environment configuration.
 // Services gracefully handle missing configuration (e.g., no Snowflake connection).
+//
+//go:generate sh -c "cd ../.. && go run ./scripts/generate_config_docs/main.go"
 package app
 
 import (
