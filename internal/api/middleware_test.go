@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -343,6 +344,34 @@ func TestRBACMiddleware_PassesThroughWithoutAuthenticatedUser(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected pass-through without user context, got %d", w.Code)
+	}
+}
+
+func TestRBACMiddleware_SetsTenantInContext(t *testing.T) {
+	rbac := auth.NewRBAC()
+	if err := rbac.CreateUser(&auth.User{
+		ID:       "tenant-user-1",
+		Email:    "tenant@example.com",
+		TenantID: "tenant-acme",
+		RoleIDs:  []string{"viewer"},
+	}); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	m := RBACMiddleware(rbac)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(GetTenantID(r.Context())))
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/findings", nil)
+	req = req.WithContext(context.WithValue(req.Context(), contextKeyUserID, "tenant-user-1"))
+	w := httptest.NewRecorder()
+	m.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if got := strings.TrimSpace(w.Body.String()); got != "tenant-acme" {
+		t.Fatalf("expected tenant-acme in context, got %q", got)
 	}
 }
 

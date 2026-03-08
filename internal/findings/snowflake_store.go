@@ -133,6 +133,9 @@ func (s *SnowflakeStore) Upsert(ctx context.Context, pf policy.Finding) *Finding
 			existing.Resource = pf.Resource
 			invalidateResourceJSONCache(existing)
 		}
+		if existing.TenantID == "" {
+			existing.TenantID = extractTenantID(pf.Resource)
+		}
 		existing.UpdatedAt = now
 		if pf.Description != "" {
 			existing.Description = pf.Description
@@ -228,6 +231,7 @@ func (s *SnowflakeStore) Upsert(ctx context.Context, pf policy.Finding) *Finding
 		ID:                 pf.ID,
 		IssueID:            pf.ID,
 		ControlID:          pf.ControlID,
+		TenantID:           extractTenantID(pf.Resource),
 		PolicyID:           pf.PolicyID,
 		PolicyName:         pf.PolicyName,
 		Title:              pf.Title,
@@ -302,6 +306,9 @@ func (s *SnowflakeStore) List(filter FindingFilter) []*Finding {
 		if filter.PolicyID != "" && f.PolicyID != filter.PolicyID {
 			continue
 		}
+		if filter.TenantID != "" && !strings.EqualFold(strings.TrimSpace(f.TenantID), strings.TrimSpace(filter.TenantID)) {
+			continue
+		}
 		if filter.SignalType != "" && !strings.EqualFold(f.SignalType, filter.SignalType) {
 			continue
 		}
@@ -341,6 +348,9 @@ func (s *SnowflakeStore) Count(filter FindingFilter) int {
 			continue
 		}
 		if filter.PolicyID != "" && f.PolicyID != filter.PolicyID {
+			continue
+		}
+		if filter.TenantID != "" && !strings.EqualFold(strings.TrimSpace(f.TenantID), strings.TrimSpace(filter.TenantID)) {
 			continue
 		}
 		if filter.SignalType != "" && !strings.EqualFold(f.SignalType, filter.SignalType) {

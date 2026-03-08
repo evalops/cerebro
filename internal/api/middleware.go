@@ -32,6 +32,7 @@ type contextKey string
 const (
 	contextKeyAPIKey contextKey = "api_key"
 	contextKeyUserID contextKey = "user_id"
+	contextKeyTenant contextKey = "tenant_id"
 )
 
 type AuthConfig struct {
@@ -178,6 +179,15 @@ func GetAPIKey(ctx context.Context) string {
 	return ""
 }
 
+func GetTenantID(ctx context.Context) string {
+	if v := ctx.Value(contextKeyTenant); v != nil {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
 // MaxBodySize limits the size of request bodies to prevent denial of service
 func MaxBodySize(maxBytes int64) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -208,6 +218,10 @@ func RBACMiddleware(rbac *auth.RBAC) func(http.Handler) http.Handler {
 			if userID == "" {
 				next.ServeHTTP(w, r)
 				return
+			}
+			if user, ok := rbac.GetUser(userID); ok && strings.TrimSpace(user.TenantID) != "" {
+				ctx := context.WithValue(r.Context(), contextKeyTenant, user.TenantID)
+				r = r.WithContext(ctx)
 			}
 
 			requiredPerm := routePermission(r.Method, r.URL.Path)

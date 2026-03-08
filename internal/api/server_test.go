@@ -2010,6 +2010,110 @@ func TestAuthMiddleware_RBACRouteMatrix(t *testing.T) {
 	}
 }
 
+func TestAuthMiddleware_TenantIsolationForFindings(t *testing.T) {
+	a := newTestApp(t)
+	a.Config.APIAuthEnabled = true
+	a.Config.APIKeys = map[string]string{
+		"alice-key": "alice-tenant-a",
+		"bob-key":   "bob-tenant-b",
+	}
+
+	if err := a.RBAC.CreateUser(&auth.User{
+		ID:       "alice-tenant-a",
+		Email:    "alice@example.com",
+		TenantID: "tenant-a",
+		RoleIDs:  []string{"analyst"},
+	}); err != nil {
+		t.Fatalf("create alice user: %v", err)
+	}
+	if err := a.RBAC.CreateUser(&auth.User{
+		ID:       "bob-tenant-b",
+		Email:    "bob@example.com",
+		TenantID: "tenant-b",
+		RoleIDs:  []string{"analyst"},
+	}); err != nil {
+		t.Fatalf("create bob user: %v", err)
+	}
+
+	a.Findings.Upsert(context.Background(), policy.Finding{
+		ID:          "finding-tenant-a",
+		PolicyID:    "policy-a",
+		PolicyName:  "Policy A",
+		Severity:    "high",
+		Description: "tenant a finding",
+		Resource: map[string]interface{}{
+			"_cq_id":    "asset-a",
+			"_cq_table": "aws_s3_buckets",
+			"tenant_id": "tenant-a",
+		},
+	})
+	a.Findings.Upsert(context.Background(), policy.Finding{
+		ID:          "finding-tenant-b",
+		PolicyID:    "policy-b",
+		PolicyName:  "Policy B",
+		Severity:    "critical",
+		Description: "tenant b finding",
+		Resource: map[string]interface{}{
+			"_cq_id":    "asset-b",
+			"_cq_table": "aws_s3_buckets",
+			"tenant_id": "tenant-b",
+		},
+	})
+
+	s := NewServer(a)
+
+	doAuth := func(method, path, apiKey string, body interface{}) *httptest.ResponseRecorder {
+		var reader io.Reader
+		if body != nil {
+			payload, err := json.Marshal(body)
+			if err != nil {
+				t.Fatalf("marshal body: %v", err)
+			}
+			reader = bytes.NewReader(payload)
+		}
+		req := httptest.NewRequest(method, path, reader)
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		if body != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, req)
+		return w
+	}
+
+	aliceList := doAuth(http.MethodGet, "/api/v1/findings", "alice-key", nil)
+	if aliceList.Code != http.StatusOK {
+		t.Fatalf("expected alice list status 200, got %d", aliceList.Code)
+	}
+	aliceBody := decodeJSON(t, aliceList)
+	if aliceBody["count"].(float64) != 1 {
+		t.Fatalf("expected alice to see 1 finding, got %v", aliceBody["count"])
+	}
+	aliceFindings, ok := aliceBody["findings"].([]interface{})
+	if !ok || len(aliceFindings) != 1 {
+		t.Fatalf("expected alice findings list with one entry, got %#v", aliceBody["findings"])
+	}
+	aliceFinding, ok := aliceFindings[0].(map[string]interface{})
+	if !ok || aliceFinding["id"] != "finding-tenant-a" {
+		t.Fatalf("expected alice to see finding-tenant-a, got %#v", aliceFindings[0])
+	}
+
+	aliceCrossTenantGet := doAuth(http.MethodGet, "/api/v1/findings/finding-tenant-b", "alice-key", nil)
+	if aliceCrossTenantGet.Code != http.StatusNotFound {
+		t.Fatalf("expected alice cross-tenant get to return 404, got %d", aliceCrossTenantGet.Code)
+	}
+
+	aliceCrossTenantResolve := doAuth(http.MethodPost, "/api/v1/findings/finding-tenant-b/resolve", "alice-key", nil)
+	if aliceCrossTenantResolve.Code != http.StatusNotFound {
+		t.Fatalf("expected alice cross-tenant resolve to return 404, got %d", aliceCrossTenantResolve.Code)
+	}
+
+	bobGet := doAuth(http.MethodGet, "/api/v1/findings/finding-tenant-b", "bob-key", nil)
+	if bobGet.Code != http.StatusOK {
+		t.Fatalf("expected bob to access own finding, got %d", bobGet.Code)
+	}
+}
+
 func TestAgentSessionOwnershipEnforcedWhenAuthenticated(t *testing.T) {
 	a := newTestApp(t)
 	a.Config.APIAuthEnabled = true

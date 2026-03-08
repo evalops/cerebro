@@ -123,6 +123,37 @@ func TestStoreList(t *testing.T) {
 	}
 }
 
+func TestStoreListAndCount_FilterByTenant(t *testing.T) {
+	store := NewStore()
+
+	store.Upsert(context.Background(), policy.Finding{
+		ID:       "tenant-a-f1",
+		PolicyID: "p1",
+		Severity: "high",
+		Resource: map[string]interface{}{"tenant_id": "tenant-a"},
+	})
+	store.Upsert(context.Background(), policy.Finding{
+		ID:       "tenant-b-f1",
+		PolicyID: "p1",
+		Severity: "high",
+		Resource: map[string]interface{}{"tenant_id": "tenant-b"},
+	})
+
+	tenantAFindings := store.List(FindingFilter{TenantID: "tenant-a"})
+	if len(tenantAFindings) != 1 {
+		t.Fatalf("expected 1 finding for tenant-a, got %d", len(tenantAFindings))
+	}
+	if tenantAFindings[0].ID != "tenant-a-f1" {
+		t.Fatalf("expected tenant-a-f1, got %s", tenantAFindings[0].ID)
+	}
+	if got := store.Count(FindingFilter{TenantID: "tenant-a"}); got != 1 {
+		t.Fatalf("expected tenant-a count=1, got %d", got)
+	}
+	if got := store.Count(FindingFilter{TenantID: "tenant-b"}); got != 1 {
+		t.Fatalf("expected tenant-b count=1, got %d", got)
+	}
+}
+
 func TestStoreStats(t *testing.T) {
 	store := NewStore()
 

@@ -10,6 +10,7 @@ import (
 type findingMetadata struct {
 	IssueID             string                    `json:"issue_id,omitempty"`
 	ControlID           string                    `json:"control_id,omitempty"`
+	TenantID            string                    `json:"tenant_id,omitempty"`
 	Title               string                    `json:"title,omitempty"`
 	SignalType          string                    `json:"signal_type,omitempty"`
 	Domain              string                    `json:"domain,omitempty"`
@@ -55,6 +56,7 @@ func buildFindingMetadata(f *Finding) ([]byte, error) {
 	metadata := findingMetadata{
 		IssueID:             f.IssueID,
 		ControlID:           f.ControlID,
+		TenantID:            f.TenantID,
 		Title:               f.Title,
 		SignalType:          f.SignalType,
 		Domain:              f.Domain,
@@ -117,6 +119,9 @@ func applyFindingMetadata(f *Finding, data []byte) {
 	}
 	if f.ControlID == "" {
 		f.ControlID = metadata.ControlID
+	}
+	if f.TenantID == "" {
+		f.TenantID = metadata.TenantID
 	}
 	if f.Title == "" {
 		f.Title = metadata.Title

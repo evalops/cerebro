@@ -17,6 +17,7 @@ import (
 )
 
 func (s *Server) listFindings(w http.ResponseWriter, r *http.Request) {
+	store := s.findingsStoreForRequest(r.Context())
 	pagination := ParsePagination(r, 100, 1000)
 
 	filter := findings.FindingFilter{
@@ -29,8 +30,8 @@ func (s *Server) listFindings(w http.ResponseWriter, r *http.Request) {
 		Offset:     pagination.Offset,
 	}
 
-	total := s.app.Findings.Count(filter)
-	list := s.app.Findings.List(filter)
+	total := store.Count(filter)
+	list := store.List(filter)
 	paginationResp := BuildPaginationResponse(int64(total), pagination, len(list))
 
 	s.json(w, http.StatusOK, map[string]interface{}{
@@ -41,15 +42,17 @@ func (s *Server) listFindings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) findingsStats(w http.ResponseWriter, r *http.Request) {
-	stats := s.app.Findings.Stats()
+	store := s.findingsStoreForRequest(r.Context())
+	stats := store.Stats()
 	s.json(w, http.StatusOK, stats)
 }
 
 func (s *Server) signalsDashboard(w http.ResponseWriter, r *http.Request) {
-	stats := s.app.Findings.Stats()
-	open := s.app.Findings.Count(findings.FindingFilter{Status: "OPEN"})
-	snoozed := s.app.Findings.Count(findings.FindingFilter{Status: "SNOOZED"})
-	recent := s.app.Findings.List(findings.FindingFilter{Limit: 25})
+	store := s.findingsStoreForRequest(r.Context())
+	stats := store.Stats()
+	open := store.Count(findings.FindingFilter{Status: "OPEN"})
+	snoozed := store.Count(findings.FindingFilter{Status: "SNOOZED"})
+	recent := store.List(findings.FindingFilter{Limit: 25})
 
 	s.json(w, http.StatusOK, map[string]interface{}{
 		"summary": map[string]interface{}{
@@ -64,8 +67,9 @@ func (s *Server) signalsDashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getFinding(w http.ResponseWriter, r *http.Request) {
+	store := s.findingsStoreForRequest(r.Context())
 	id := chi.URLParam(r, "id")
-	f, ok := s.app.Findings.Get(id)
+	f, ok := store.Get(id)
 	if !ok {
 		s.error(w, http.StatusNotFound, "finding not found")
 		return
@@ -74,6 +78,7 @@ func (s *Server) getFinding(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteFinding(w http.ResponseWriter, r *http.Request) {
+	store := s.findingsStoreForRequest(r.Context())
 	id := chi.URLParam(r, "id")
 	if strings.TrimSpace(id) == "" {
 		s.error(w, http.StatusBadRequest, "finding id required")
@@ -81,7 +86,7 @@ func (s *Server) deleteFinding(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now().UTC()
-	err := s.app.Findings.Update(id, func(f *findings.Finding) error {
+	err := store.Update(id, func(f *findings.Finding) error {
 		f.Status = "DELETED"
 		f.ResourceStatus = "Deleted"
 		f.Resolution = "deleted via api"
@@ -106,6 +111,7 @@ func (s *Server) deleteFinding(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) scanFindings(w http.ResponseWriter, r *http.Request) {
+	store := s.findingsStoreForRequest(r.Context())
 	if s.app.Snowflake == nil {
 		s.error(w, http.StatusServiceUnavailable, "snowflake not configured")
 		return
@@ -133,7 +139,7 @@ func (s *Server) scanFindings(w http.ResponseWriter, r *http.Request) {
 
 	// Persist findings
 	for _, f := range result.Findings {
-		s.app.Findings.Upsert(r.Context(), f)
+		store.Upsert(r.Context(), f)
 	}
 
 	s.json(w, http.StatusOK, map[string]interface{}{
@@ -145,8 +151,9 @@ func (s *Server) scanFindings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) resolveFinding(w http.ResponseWriter, r *http.Request) {
+	store := s.findingsStoreForRequest(r.Context())
 	id := chi.URLParam(r, "id")
-	if s.app.Findings.Resolve(id) {
+	if store.Resolve(id) {
 		s.json(w, http.StatusOK, map[string]string{"status": "resolved"})
 	} else {
 		s.error(w, http.StatusNotFound, "finding not found")
@@ -154,8 +161,9 @@ func (s *Server) resolveFinding(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) suppressFinding(w http.ResponseWriter, r *http.Request) {
+	store := s.findingsStoreForRequest(r.Context())
 	id := chi.URLParam(r, "id")
-	if s.app.Findings.Suppress(id) {
+	if store.Suppress(id) {
 		s.json(w, http.StatusOK, map[string]string{"status": "suppressed"})
 	} else {
 		s.error(w, http.StatusNotFound, "finding not found")
@@ -163,6 +171,7 @@ func (s *Server) suppressFinding(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) exportFindings(w http.ResponseWriter, r *http.Request) {
+	store := s.findingsStoreForRequest(r.Context())
 	filter := findings.FindingFilter{
 		Severity:   r.URL.Query().Get("severity"),
 		Status:     r.URL.Query().Get("status"),
@@ -170,7 +179,7 @@ func (s *Server) exportFindings(w http.ResponseWriter, r *http.Request) {
 		SignalType: r.URL.Query().Get("signal_type"),
 		Domain:     r.URL.Query().Get("domain"),
 	}
-	list := s.app.Findings.List(filter)
+	list := store.List(filter)
 
 	// Enrich findings with cloud URLs, tags, etc.
 	for _, f := range list {
@@ -212,6 +221,7 @@ func (s *Server) exportFindings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) assignFinding(w http.ResponseWriter, r *http.Request) {
+	store := s.findingsStoreForRequest(r.Context())
 	id := chi.URLParam(r, "id")
 	var req struct {
 		Assignee string `json:"assignee"`
@@ -221,7 +231,7 @@ func (s *Server) assignFinding(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mgr := findings.NewIssueManager(s.app.Findings)
+	mgr := findings.NewIssueManager(store)
 	if err := mgr.Assign(id, req.Assignee); err != nil {
 		if errors.Is(err, findings.ErrIssueNotFound) {
 			s.error(w, http.StatusNotFound, "finding not found")
@@ -234,6 +244,7 @@ func (s *Server) assignFinding(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) setFindingDueDate(w http.ResponseWriter, r *http.Request) {
+	store := s.findingsStoreForRequest(r.Context())
 	id := chi.URLParam(r, "id")
 	var req struct {
 		DueAt time.Time `json:"due_at"`
@@ -243,7 +254,7 @@ func (s *Server) setFindingDueDate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mgr := findings.NewIssueManager(s.app.Findings)
+	mgr := findings.NewIssueManager(store)
 	if err := mgr.SetDueDate(id, req.DueAt); err != nil {
 		if errors.Is(err, findings.ErrIssueNotFound) {
 			s.error(w, http.StatusNotFound, "finding not found")
@@ -256,6 +267,7 @@ func (s *Server) setFindingDueDate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) addFindingNote(w http.ResponseWriter, r *http.Request) {
+	store := s.findingsStoreForRequest(r.Context())
 	id := chi.URLParam(r, "id")
 	var req struct {
 		Note string `json:"note"`
@@ -265,7 +277,7 @@ func (s *Server) addFindingNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mgr := findings.NewIssueManager(s.app.Findings)
+	mgr := findings.NewIssueManager(store)
 	if err := mgr.AddNote(id, req.Note); err != nil {
 		if errors.Is(err, findings.ErrIssueNotFound) {
 			s.error(w, http.StatusNotFound, "finding not found")
@@ -278,6 +290,7 @@ func (s *Server) addFindingNote(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) linkFindingTicket(w http.ResponseWriter, r *http.Request) {
+	store := s.findingsStoreForRequest(r.Context())
 	id := chi.URLParam(r, "id")
 	var req struct {
 		URL        string `json:"url"`
@@ -289,7 +302,7 @@ func (s *Server) linkFindingTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mgr := findings.NewIssueManager(s.app.Findings)
+	mgr := findings.NewIssueManager(store)
 	if err := mgr.LinkTicket(id, req.URL, req.Name, req.ExternalID); err != nil {
 		if errors.Is(err, findings.ErrIssueNotFound) {
 			s.error(w, http.StatusNotFound, "finding not found")
@@ -304,20 +317,20 @@ func (s *Server) linkFindingTicket(w http.ResponseWriter, r *http.Request) {
 // Reporting endpoints
 
 func (s *Server) executiveSummary(w http.ResponseWriter, r *http.Request) {
-	reporter := findings.NewComplianceReporter(s.app.Findings, s.app.Policy)
+	reporter := findings.NewComplianceReporter(s.findingsStoreForRequest(r.Context()), s.app.Policy)
 	summary := reporter.GenerateExecutiveSummary()
 	s.json(w, http.StatusOK, summary)
 }
 
 func (s *Server) riskSummary(w http.ResponseWriter, r *http.Request) {
-	reporter := findings.NewComplianceReporter(s.app.Findings, s.app.Policy)
+	reporter := findings.NewComplianceReporter(s.findingsStoreForRequest(r.Context()), s.app.Policy)
 	risks := reporter.GenerateRiskSummary()
 	s.json(w, http.StatusOK, map[string]interface{}{"risks": risks, "count": len(risks)})
 }
 
 func (s *Server) frameworkComplianceReport(w http.ResponseWriter, r *http.Request) {
 	framework := chi.URLParam(r, "framework")
-	reporter := findings.NewComplianceReporter(s.app.Findings, s.app.Policy)
+	reporter := findings.NewComplianceReporter(s.findingsStoreForRequest(r.Context()), s.app.Policy)
 	report := reporter.GenerateFrameworkReport(framework)
 	s.json(w, http.StatusOK, report)
 }
@@ -348,7 +361,8 @@ func (s *Server) generateComplianceReport(w http.ResponseWriter, r *http.Request
 	}
 
 	// Generate report based on current findings
-	openFindingsByPolicy := s.openFindingsByPolicy()
+	store := s.findingsStoreForRequest(r.Context())
+	openFindingsByPolicy := s.openFindingsByPolicy(store)
 
 	report := compliance.ComplianceReport{
 		FrameworkID:   framework.ID,
@@ -380,7 +394,7 @@ func (s *Server) generateComplianceReport(w http.ResponseWriter, r *http.Request
 				failCount += count
 			}
 			// Get sample findings for evidence (limit to 5 per policy)
-			policyFindings := s.app.Findings.List(findings.FindingFilter{PolicyID: policyID, Status: "open"})
+			policyFindings := store.List(findings.FindingFilter{PolicyID: policyID, Status: "open"})
 			for j, f := range policyFindings {
 				if j >= 5 {
 					break
@@ -459,7 +473,8 @@ func (s *Server) preAuditCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	openFindingsByPolicy := s.openFindingsByPolicy()
+	store := s.findingsStoreForRequest(r.Context())
+	openFindingsByPolicy := s.openFindingsByPolicy(store)
 
 	type ControlCheck struct {
 		ControlID   string   `json:"control_id"`
@@ -551,9 +566,9 @@ func (s *Server) generateAuditRecommendations(failing, atRisk, total int) []stri
 	return recs
 }
 
-func (s *Server) openFindingsByPolicy() map[string]int {
+func (s *Server) openFindingsByPolicy(store findings.FindingStore) map[string]int {
 	counts := make(map[string]int)
-	for _, finding := range s.app.Findings.List(findings.FindingFilter{Status: "OPEN"}) {
+	for _, finding := range store.List(findings.FindingFilter{Status: "OPEN"}) {
 		if finding.PolicyID == "" {
 			continue
 		}
@@ -573,7 +588,7 @@ func (s *Server) exportAuditPackage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	generatedAt := time.Now().UTC()
-	pkg := compliance.BuildAuditPackage(framework, s.openFindingsByPolicy(), generatedAt)
+	pkg := compliance.BuildAuditPackage(framework, s.openFindingsByPolicy(s.findingsStoreForRequest(r.Context())), generatedAt)
 
 	zipBytes, err := compliance.RenderAuditPackageZIP(pkg)
 	if err != nil {

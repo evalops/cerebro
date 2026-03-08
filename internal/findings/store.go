@@ -68,6 +68,7 @@ type Finding struct {
 	ID        string `json:"id"`
 	IssueID   string `json:"issue_id,omitempty"`
 	ControlID string `json:"control_id,omitempty"` // Policy control ID
+	TenantID  string `json:"tenant_id,omitempty"`
 
 	// Policy info
 	PolicyID    string `json:"policy_id"`
@@ -228,6 +229,9 @@ func (s *Store) Upsert(ctx context.Context, pf policy.Finding) *Finding {
 		if len(pf.Resource) > 0 {
 			existing.Resource = pf.Resource
 		}
+		if existing.TenantID == "" {
+			existing.TenantID = extractTenantID(pf.Resource)
+		}
 		if pf.ResourceID != "" {
 			existing.ResourceID = pf.ResourceID
 		}
@@ -295,6 +299,7 @@ func (s *Store) Upsert(ctx context.Context, pf policy.Finding) *Finding {
 	if resourceName == "" {
 		resourceName = extractResourceName(pf.Resource)
 	}
+	tenantID := extractTenantID(pf.Resource)
 
 	// Extract frameworks and controls for the finding
 	frameworks := make([]string, 0, len(pf.Frameworks))
@@ -310,6 +315,7 @@ func (s *Store) Upsert(ctx context.Context, pf policy.Finding) *Finding {
 		ID:                 pf.ID,
 		IssueID:            pf.ID, // Use same ID as issue ID for now
 		ControlID:          pf.ControlID,
+		TenantID:           tenantID,
 		PolicyID:           pf.PolicyID,
 		PolicyName:         pf.PolicyName,
 		Title:              pf.Title,
@@ -456,6 +462,24 @@ func extractResourceType(resource map[string]interface{}) string {
 	return ""
 }
 
+func extractTenantID(resource map[string]interface{}) string {
+	if len(resource) == 0 {
+		return ""
+	}
+	candidates := []string{"tenant_id", "tenantId", "tenant", "organization_id", "org_id"}
+	for _, key := range candidates {
+		if raw, ok := resource[key]; ok && raw != nil {
+			if value, ok := raw.(string); ok {
+				value = strings.TrimSpace(value)
+				if value != "" {
+					return value
+				}
+			}
+		}
+	}
+	return ""
+}
+
 func (s *Store) Get(id string) (*Finding, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -494,6 +518,9 @@ func (s *Store) List(filter FindingFilter) []*Finding {
 			continue
 		}
 		if filter.PolicyID != "" && f.PolicyID != filter.PolicyID {
+			continue
+		}
+		if filter.TenantID != "" && !strings.EqualFold(strings.TrimSpace(f.TenantID), strings.TrimSpace(filter.TenantID)) {
 			continue
 		}
 		if filter.SignalType != "" && !strings.EqualFold(f.SignalType, filter.SignalType) {
@@ -535,6 +562,9 @@ func (s *Store) Count(filter FindingFilter) int {
 			continue
 		}
 		if filter.PolicyID != "" && f.PolicyID != filter.PolicyID {
+			continue
+		}
+		if filter.TenantID != "" && !strings.EqualFold(strings.TrimSpace(f.TenantID), strings.TrimSpace(filter.TenantID)) {
 			continue
 		}
 		if filter.SignalType != "" && !strings.EqualFold(f.SignalType, filter.SignalType) {
@@ -617,6 +647,7 @@ type FindingFilter struct {
 	Severity   string
 	Status     string
 	PolicyID   string
+	TenantID   string
 	SignalType string
 	Domain     string
 	Limit      int

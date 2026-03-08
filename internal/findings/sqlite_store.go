@@ -169,6 +169,7 @@ func (s *SQLiteStore) Upsert(ctx context.Context, pf policy.Finding) *Finding {
 			ID:                 pf.ID,
 			IssueID:            pf.ID,
 			ControlID:          pf.ControlID,
+			TenantID:           extractTenantID(pf.Resource),
 			PolicyID:           pf.PolicyID,
 			PolicyName:         pf.PolicyName,
 			Title:              pf.Title,
@@ -254,6 +255,9 @@ func (s *SQLiteStore) Upsert(ctx context.Context, pf policy.Finding) *Finding {
 	}
 	if len(pf.Resource) > 0 {
 		existing.Resource = pf.Resource
+	}
+	if existing.TenantID == "" {
+		existing.TenantID = extractTenantID(pf.Resource)
 	}
 	if pf.ResourceID != "" {
 		existing.ResourceID = pf.ResourceID
@@ -488,7 +492,9 @@ func (s *SQLiteStore) List(filter FindingFilter) []*Finding {
 
 	query += " ORDER BY first_seen DESC"
 
-	applyDBPagination := strings.TrimSpace(filter.SignalType) == "" && strings.TrimSpace(filter.Domain) == ""
+	applyDBPagination := strings.TrimSpace(filter.SignalType) == "" &&
+		strings.TrimSpace(filter.Domain) == "" &&
+		strings.TrimSpace(filter.TenantID) == ""
 	if applyDBPagination {
 		if filter.Limit > 0 {
 			query += " LIMIT ?"
@@ -534,6 +540,9 @@ func (s *SQLiteStore) List(filter FindingFilter) []*Finding {
 		if filter.Domain != "" && !strings.EqualFold(f.Domain, filter.Domain) {
 			continue
 		}
+		if filter.TenantID != "" && !strings.EqualFold(strings.TrimSpace(f.TenantID), strings.TrimSpace(filter.TenantID)) {
+			continue
+		}
 		result = append(result, &f)
 	}
 
@@ -552,7 +561,9 @@ func (s *SQLiteStore) List(filter FindingFilter) []*Finding {
 }
 
 func (s *SQLiteStore) Count(filter FindingFilter) int {
-	if strings.TrimSpace(filter.SignalType) != "" || strings.TrimSpace(filter.Domain) != "" {
+	if strings.TrimSpace(filter.SignalType) != "" ||
+		strings.TrimSpace(filter.Domain) != "" ||
+		strings.TrimSpace(filter.TenantID) != "" {
 		filter.Limit = 0
 		filter.Offset = 0
 		return len(s.List(filter))
