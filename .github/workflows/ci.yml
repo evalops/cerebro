@@ -141,9 +141,12 @@ jobs:
               "github.com/evalops/cerebro/internal/app": 47.0,
               "github.com/evalops/cerebro/internal/cache": 82.0,
               "github.com/evalops/cerebro/internal/graph": 62.0,
+              "github.com/evalops/cerebro/internal/jobs": 24.5,
               "github.com/evalops/cerebro/internal/policy": 72.0,
+              "github.com/evalops/cerebro/internal/providers": 51.0,
               "github.com/evalops/cerebro/internal/scanner": 44.0,
               "github.com/evalops/cerebro/internal/scheduler": 71.5,
+              "github.com/evalops/cerebro/internal/sync": 11.5,
           }
 
           pattern = re.compile(r"^ok\s+(\S+)\s+.*coverage:\s+([0-9.]+)% of statements$")

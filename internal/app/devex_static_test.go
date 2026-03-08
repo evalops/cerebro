@@ -277,6 +277,27 @@ func TestNoLogPrintCallsInAppCode(t *testing.T) {
 	}
 }
 
+func TestCICoverageThresholdsIncludeSyncProvidersAndJobs(t *testing.T) {
+	root := repoRoot(t)
+	ciPath := filepath.Join(root, ".github", "workflows", "ci.yml")
+	content, err := os.ReadFile(ciPath)
+	if err != nil {
+		t.Fatalf("read ci workflow: %v", err)
+	}
+	text := string(content)
+
+	required := []string{
+		"\"github.com/evalops/cerebro/internal/sync\":",
+		"\"github.com/evalops/cerebro/internal/providers\":",
+		"\"github.com/evalops/cerebro/internal/jobs\":",
+	}
+	for _, needle := range required {
+		if !strings.Contains(text, needle) {
+			t.Fatalf("expected CI coverage thresholds to include %s", needle)
+		}
+	}
+}
+
 func expectedGoVersionFromGoMod(t *testing.T, root string) string {
 	t.Helper()
 
