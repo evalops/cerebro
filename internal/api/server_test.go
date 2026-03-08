@@ -180,6 +180,35 @@ func (p *staticProvider) Schema() []providers.TableSchema {
 	}}
 }
 
+type captureSyncProvider struct {
+	name     string
+	provider providers.ProviderType
+	calls    int
+	lastOpts providers.SyncOptions
+}
+
+func (p *captureSyncProvider) Name() string { return p.name }
+
+func (p *captureSyncProvider) Type() providers.ProviderType { return p.provider }
+
+func (p *captureSyncProvider) Configure(context.Context, map[string]interface{}) error { return nil }
+
+func (p *captureSyncProvider) Sync(_ context.Context, opts providers.SyncOptions) (*providers.SyncResult, error) {
+	p.calls++
+	p.lastOpts = opts
+	return &providers.SyncResult{Provider: p.name}, nil
+}
+
+func (p *captureSyncProvider) Test(context.Context) error { return nil }
+
+func (p *captureSyncProvider) Schema() []providers.TableSchema {
+	return []providers.TableSchema{{
+		Name:       "table",
+		Columns:    []providers.ColumnSchema{{Name: "id", Type: "string", Required: true}},
+		PrimaryKey: []string{"id"},
+	}}
+}
+
 type stubNotifier struct {
 	name string
 }
@@ -1581,6 +1610,54 @@ func TestConfigureProvider_NotFound(t *testing.T) {
 	w := do(t, s, "POST", "/api/v1/providers/missing/configure", map[string]interface{}{"token": "x"})
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestSyncProvider_UsesRequestOptions(t *testing.T) {
+	a := newTestApp(t)
+	provider := &captureSyncProvider{name: "okta", provider: providers.ProviderTypeIdentity}
+	a.Providers.Register(provider)
+
+	s := NewServer(a)
+	w := do(t, s, "POST", "/api/v1/providers/okta/sync", map[string]interface{}{
+		"full_sync": false,
+		"tables":    []string{"okta_users", "okta_groups"},
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	if provider.calls != 1 {
+		t.Fatalf("expected exactly one provider sync call, got %d", provider.calls)
+	}
+	if provider.lastOpts.FullSync {
+		t.Fatalf("expected full_sync=false, got %+v", provider.lastOpts)
+	}
+	if len(provider.lastOpts.Tables) != 2 || provider.lastOpts.Tables[0] != "okta_users" || provider.lastOpts.Tables[1] != "okta_groups" {
+		t.Fatalf("expected table filter to be forwarded, got %+v", provider.lastOpts.Tables)
+	}
+}
+
+func TestSyncProvider_EmptyBodyDefaultsToFullSync(t *testing.T) {
+	a := newTestApp(t)
+	provider := &captureSyncProvider{name: "okta", provider: providers.ProviderTypeIdentity}
+	a.Providers.Register(provider)
+
+	s := NewServer(a)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/providers/okta/sync", nil)
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if provider.calls != 1 {
+		t.Fatalf("expected exactly one provider sync call, got %d", provider.calls)
+	}
+	if !provider.lastOpts.FullSync {
+		t.Fatalf("expected default full sync behavior, got %+v", provider.lastOpts)
+	}
+	if len(provider.lastOpts.Tables) != 0 {
+		t.Fatalf("expected no table filter by default, got %+v", provider.lastOpts.Tables)
 	}
 }
 

@@ -19,6 +19,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/evalops/cerebro/internal/app"
+	apiclient "github.com/evalops/cerebro/internal/client"
 	"github.com/evalops/cerebro/internal/jobs"
 	providerregistry "github.com/evalops/cerebro/internal/providers"
 	"github.com/evalops/cerebro/internal/snowflake"
@@ -724,7 +725,7 @@ func executeProviderSync(ctx context.Context, _ *snowflake.Client, schedule *Syn
 		return err
 	}
 
-	if len(spec.TableFilter) == 0 && mode != cliExecutionModeDirect {
+	if mode != cliExecutionModeDirect {
 		apiClient, err := newCLIAPIClient()
 		if err != nil {
 			if mode == cliExecutionModeAPI {
@@ -732,7 +733,11 @@ func executeProviderSync(ctx context.Context, _ *snowflake.Client, schedule *Syn
 			}
 			Warning("[%s] API client configuration invalid; using direct mode: %v", schedule.Name, err)
 		} else {
-			result, err := apiClient.SyncProvider(ctx, providerName)
+			fullSync := true
+			result, err := apiClient.SyncProviderWithOptions(ctx, providerName, apiclient.ProviderSyncOptions{
+				FullSync: &fullSync,
+				Tables:   spec.TableFilter,
+			})
 			if err == nil {
 				if result != nil && len(result.Errors) > 0 {
 					return fmt.Errorf("provider %q sync reported errors: %s", providerName, strings.Join(result.Errors, "; "))
@@ -744,10 +749,6 @@ func executeProviderSync(ctx context.Context, _ *snowflake.Client, schedule *Syn
 			}
 			Warning("[%s] API unavailable; using direct mode for provider sync: %v", schedule.Name, err)
 		}
-	}
-
-	if len(spec.TableFilter) > 0 && mode == cliExecutionModeAPI {
-		return fmt.Errorf("provider %q table-filtered sync is not supported in api mode", providerName)
 	}
 
 	application, err := newScheduleAppFn(ctx)

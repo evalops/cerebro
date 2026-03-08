@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 
@@ -89,7 +90,25 @@ func (s *Server) syncProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := p.Sync(r.Context(), providers.SyncOptions{FullSync: true})
+	opts := providers.SyncOptions{FullSync: true}
+	var req struct {
+		FullSync *bool    `json:"full_sync,omitempty"`
+		Tables   []string `json:"tables,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if !errors.Is(err, io.EOF) {
+			s.error(w, http.StatusBadRequest, "invalid request")
+			return
+		}
+	}
+	if req.FullSync != nil {
+		opts.FullSync = *req.FullSync
+	}
+	if len(req.Tables) > 0 {
+		opts.Tables = req.Tables
+	}
+
+	result, err := p.Sync(r.Context(), opts)
 	if err != nil {
 		s.errorFromErr(w, err)
 		return

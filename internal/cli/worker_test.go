@@ -20,6 +20,7 @@ type testWorkerProvider struct {
 	err    error
 	result *providerregistry.SyncResult
 	calls  int
+	last   providerregistry.SyncOptions
 }
 
 func (p *testWorkerProvider) Name() string { return p.name }
@@ -30,8 +31,9 @@ func (p *testWorkerProvider) Type() providerregistry.ProviderType {
 
 func (p *testWorkerProvider) Configure(context.Context, map[string]interface{}) error { return nil }
 
-func (p *testWorkerProvider) Sync(context.Context, providerregistry.SyncOptions) (*providerregistry.SyncResult, error) {
+func (p *testWorkerProvider) Sync(_ context.Context, opts providerregistry.SyncOptions) (*providerregistry.SyncResult, error) {
 	p.calls++
+	p.last = opts
 	if p.err != nil {
 		return p.result, p.err
 	}

@@ -312,6 +312,19 @@ func TestExecuteProviderSync_APIModeSkipsDirectInitialization(t *testing.T) {
 		if r.URL.Path != "/api/v1/providers/okta/sync" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
+		var payload struct {
+			FullSync bool     `json:"full_sync"`
+			Tables   []string `json:"tables"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode request payload: %v", err)
+		}
+		if !payload.FullSync {
+			t.Fatalf("expected full_sync=true, got %+v", payload)
+		}
+		if len(payload.Tables) != 0 {
+			t.Fatalf("expected no tables for empty schedule filter, got %+v", payload.Tables)
+		}
 		_, _ = w.Write([]byte(`{"provider":"okta","errors":[]}`))
 	}))
 	defer server.Close()
@@ -345,12 +358,22 @@ func TestExecuteProviderSync_AutoModeFallbacksToDirectOnTransportError(t *testin
 	t.Setenv(envCLIExecutionMode, string(cliExecutionModeAuto))
 	t.Setenv(envCLIAPIURL, "http://127.0.0.1:1")
 
-	err := executeProviderSync(context.Background(), nil, &SyncSchedule{Name: "nightly-okta", Provider: "okta"})
+	err := executeProviderSync(context.Background(), nil, &SyncSchedule{
+		Name:     "nightly-okta",
+		Provider: "okta",
+		Table:    "okta_users,okta_groups",
+	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if provider.calls != 1 {
 		t.Fatalf("expected direct fallback sync call, got %d", provider.calls)
+	}
+	if !provider.last.FullSync {
+		t.Fatalf("expected direct fallback to request full sync, got %+v", provider.last)
+	}
+	if !slices.Equal(provider.last.Tables, []string{"okta_users", "okta_groups"}) {
+		t.Fatalf("expected table-filter fallback in direct mode, got %+v", provider.last.Tables)
 	}
 }
 
@@ -384,6 +407,58 @@ func TestExecuteProviderSync_AutoModeDoesNotFallbackOnUnauthorized(t *testing.T)
 	}
 	if calledNewApp {
 		t.Fatal("did not expect direct fallback on unauthorized api response")
+	}
+}
+
+func TestExecuteProviderSync_APIModePassesTableFilterInRequest(t *testing.T) {
+	originalNewScheduleApp := newScheduleAppFn
+	t.Cleanup(func() {
+		newScheduleAppFn = originalNewScheduleApp
+	})
+
+	calledNewApp := false
+	newScheduleAppFn = func(context.Context) (*app.App, error) {
+		calledNewApp = true
+		return nil, fmt.Errorf("should not initialize app in api mode")
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("expected POST, got %s", r.Method)
+		}
+		if r.URL.Path != "/api/v1/providers/okta/sync" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		var payload struct {
+			FullSync bool     `json:"full_sync"`
+			Tables   []string `json:"tables"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode request payload: %v", err)
+		}
+		if !payload.FullSync {
+			t.Fatalf("expected full_sync=true, got %+v", payload)
+		}
+		if !slices.Equal(payload.Tables, []string{"okta_users", "okta_groups"}) {
+			t.Fatalf("expected table filters in api payload, got %+v", payload.Tables)
+		}
+		_, _ = w.Write([]byte(`{"provider":"okta","errors":[]}`))
+	}))
+	defer server.Close()
+
+	t.Setenv(envCLIExecutionMode, string(cliExecutionModeAPI))
+	t.Setenv(envCLIAPIURL, server.URL)
+
+	err := executeProviderSync(context.Background(), nil, &SyncSchedule{
+		Name:     "nightly-okta",
+		Provider: "okta",
+		Table:    "okta_users,okta_groups",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if calledNewApp {
+		t.Fatal("expected direct app initialization to be skipped in api mode")
 	}
 }
 
