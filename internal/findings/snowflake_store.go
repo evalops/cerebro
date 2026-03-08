@@ -90,8 +90,10 @@ func (s *SnowflakeStore) Load(ctx context.Context) error {
 		if resolvedAt.Valid {
 			f.ResolvedAt = &resolvedAt.Time
 		}
-		if resourceData != nil {
-			_ = json.Unmarshal(resourceData, &f.Resource)
+		if len(resourceData) > 0 {
+			if err := parseResourceData(&f, resourceData); err != nil {
+				return fmt.Errorf("parse resource data for finding %s: %w", f.ID, err)
+			}
 		}
 		if remediation.Valid {
 			f.Remediation = remediation.String
@@ -119,6 +121,7 @@ func (s *SnowflakeStore) Upsert(ctx context.Context, pf policy.Finding) *Finding
 		existing.LastSeen = now
 		if len(pf.Resource) > 0 {
 			existing.Resource = pf.Resource
+			invalidateResourceJSONCache(existing)
 		}
 		existing.UpdatedAt = now
 		if pf.Description != "" {
@@ -265,6 +268,7 @@ func (s *SnowflakeStore) Update(id string, mutate func(*Finding) error) error {
 	if err := mutate(f); err != nil {
 		return err
 	}
+	invalidateResourceJSONCache(f)
 	f.Status = normalizeStatus(f.Status)
 	EnrichFinding(f)
 	s.dirty[id] = true
@@ -448,7 +452,10 @@ func (s *SnowflakeStore) Sync(ctx context.Context) error {
 		values := make([]string, 0, len(batch))
 		args := make([]interface{}, 0, len(batch)*14)
 		for _, f := range batch {
-			resourceJSON, _ := json.Marshal(f.Resource)
+			resourceJSON, err := resourceJSONForSync(f)
+			if err != nil {
+				return fmt.Errorf("marshal resource data for finding %s: %w", f.ID, err)
+			}
 			metadataJSON, _ := buildFindingMetadata(f)
 			if len(metadataJSON) == 0 {
 				metadataJSON = []byte("{}")
@@ -529,6 +536,46 @@ func (s *SnowflakeStore) Sync(ctx context.Context) error {
 
 	s.syncedAt = time.Now()
 	return nil
+}
+
+func parseResourceData(f *Finding, raw []byte) error {
+	if len(raw) == 0 {
+		f.Resource = nil
+		f.resourceJSONRaw = nil
+		return nil
+	}
+
+	f.resourceJSONRaw = cloneBytes(raw)
+	return json.Unmarshal(raw, &f.Resource)
+}
+
+func resourceJSONForSync(f *Finding) ([]byte, error) {
+	if len(f.resourceJSONRaw) > 0 {
+		return cloneBytes(f.resourceJSONRaw), nil
+	}
+
+	resourceJSON, err := json.Marshal(f.Resource)
+	if err != nil {
+		return nil, err
+	}
+	f.resourceJSONRaw = cloneBytes(resourceJSON)
+	return resourceJSON, nil
+}
+
+func invalidateResourceJSONCache(f *Finding) {
+	if f == nil {
+		return
+	}
+	f.resourceJSONRaw = nil
+}
+
+func cloneBytes(src []byte) []byte {
+	if len(src) == 0 {
+		return nil
+	}
+	dst := make([]byte, len(src))
+	copy(dst, src)
+	return dst
 }
 
 // SyncedAt returns when the store was last synced

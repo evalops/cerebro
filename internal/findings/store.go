@@ -142,6 +142,9 @@ type Finding struct {
 	TicketExternalIDs []string `json:"ticket_external_ids,omitempty"`
 	Notes             string   `json:"note,omitempty"`
 	EntityIDs         []string `json:"entity_ids,omitempty"`
+
+	// Cached raw resource JSON used by SnowflakeStore to avoid repeated marshalling.
+	resourceJSONRaw []byte `json:"-"`
 }
 
 // Signal is a backward-compatible alias for generalized findings.
