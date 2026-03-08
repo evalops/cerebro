@@ -38,7 +38,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -148,13 +147,23 @@ type App struct {
 
 // New creates and wires up the entire application using environment-backed config.
 func New(ctx context.Context) (*App, error) {
-	return NewWithConfig(ctx, LoadConfig())
+	return NewWithOptions(ctx)
 }
 
 // NewWithConfig creates and wires up the entire application from an explicit config.
 // This enables deterministic integration tests and gradual container decomposition
 // without relying on process-wide environment mutation.
 func NewWithConfig(ctx context.Context, cfg *Config) (*App, error) {
+	return NewWithOptions(ctx, WithConfig(cfg))
+}
+
+// NewWithOptions creates and wires up the entire application from constructor options.
+// This allows incremental decomposition of app construction while preserving the
+// existing New/NewWithConfig behavior.
+func NewWithOptions(ctx context.Context, opts ...Option) (*App, error) {
+	options := applyOptions(opts)
+
+	cfg := options.config
 	if cfg == nil {
 		cfg = LoadConfig()
 	}
@@ -164,15 +173,16 @@ func NewWithConfig(ctx context.Context, cfg *Config) (*App, error) {
 		return nil, fmt.Errorf("api auth enabled but no API_KEYS configured")
 	}
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: parseLogLevel(cfg.LogLevel),
-	}))
+	logger := options.logger
+	if logger == nil {
+		logger = newDefaultAppLogger(cfg.LogLevel)
+	}
 
 	app := &App{
 		Config: cfg,
 		Logger: logger,
 	}
-	app.secretsLoader = envSecretsLoader{}
+	app.secretsLoader = options.secretsLoader
 	app.setAPIKeys(cfg.APIKeys)
 
 	if err := app.initialize(ctx); err != nil {
