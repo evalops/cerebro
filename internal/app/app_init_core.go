@@ -12,6 +12,7 @@ import (
 	agentproviders "github.com/evalops/cerebro/internal/agents/providers"
 	"github.com/evalops/cerebro/internal/attackpath"
 	"github.com/evalops/cerebro/internal/cache"
+	"github.com/evalops/cerebro/internal/dspm"
 	"github.com/evalops/cerebro/internal/events"
 	"github.com/evalops/cerebro/internal/findings"
 	"github.com/evalops/cerebro/internal/identity"
@@ -163,6 +164,7 @@ func (a *App) initScanner() {
 	if a.Cache != nil {
 		a.Scanner.SetCache(a.Cache)
 	}
+	a.DSPM = dspm.NewScanner(dspm.NewMetadataFetcher(), a.Logger, dspm.DefaultScannerConfig())
 }
 
 func (a *App) initCache() {

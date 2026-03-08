@@ -188,6 +188,38 @@ func TestGetControlsForPolicy(t *testing.T) {
 	}
 }
 
+func TestDSPMPolicyMappingsInFrameworks(t *testing.T) {
+	restrictedControls := GetControlsForPolicy("dspm-restricted-data-unencrypted")
+	if len(restrictedControls) < 2 {
+		t.Fatalf("expected dspm-restricted-data-unencrypted in at least 2 frameworks, got %d", len(restrictedControls))
+	}
+	restrictedFrameworks := make(map[string]bool, len(restrictedControls))
+	for _, c := range restrictedControls {
+		restrictedFrameworks[c.Framework.ID] = true
+	}
+	if !restrictedFrameworks["pci-dss-4.0"] {
+		t.Error("expected dspm-restricted-data-unencrypted to map to PCI DSS")
+	}
+	if !restrictedFrameworks["hipaa-security"] {
+		t.Error("expected dspm-restricted-data-unencrypted to map to HIPAA")
+	}
+
+	publicControls := GetControlsForPolicy("dspm-confidential-data-public")
+	if len(publicControls) < 2 {
+		t.Fatalf("expected dspm-confidential-data-public in at least 2 frameworks, got %d", len(publicControls))
+	}
+	publicFrameworks := make(map[string]bool, len(publicControls))
+	for _, c := range publicControls {
+		publicFrameworks[c.Framework.ID] = true
+	}
+	if !publicFrameworks["pci-dss-4.0"] {
+		t.Error("expected dspm-confidential-data-public to map to PCI DSS")
+	}
+	if !publicFrameworks["hipaa-security"] {
+		t.Error("expected dspm-confidential-data-public to map to HIPAA")
+	}
+}
+
 func TestSeverityWeight(t *testing.T) {
 	tests := []struct {
 		severity ControlSeverity

@@ -204,6 +204,12 @@ func (a *App) runScheduledScan(ctx context.Context, tables []string) error {
 				}
 			}
 
+			dspmFindings := a.scanAndPersistDSPMFindings(tableCtx, table, assets)
+			if dspmFindings > 0 {
+				totalViolations += dspmFindings
+				tableViolations += dspmFindings
+			}
+
 			// If we got fewer than batchSize, we're done with this table
 			if len(assets) < batchSize {
 				break

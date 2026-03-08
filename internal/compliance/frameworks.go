@@ -286,7 +286,7 @@ var PCIDSS40 = Framework{
 			ID:          "1.3.1",
 			Title:       "Inbound traffic to CDE is restricted to necessary traffic",
 			Description: "Network security controls must limit inbound traffic.",
-			PolicyIDs:   []string{"aws-ec2-public-ip-ssh", "aws-ec2-public-ip-rdp", "aws-rds-no-public-access"},
+			PolicyIDs:   []string{"aws-ec2-public-ip-ssh", "aws-ec2-public-ip-rdp", "aws-rds-no-public-access", "dspm-confidential-data-public"},
 		},
 		{
 			ID:          "1.4.1",
@@ -308,7 +308,7 @@ var PCIDSS40 = Framework{
 			ID:          "3.5.1",
 			Title:       "Account data is rendered unreadable via encryption",
 			Description: "Stored cardholder data must be encrypted.",
-			PolicyIDs:   []string{"aws-s3-bucket-encryption-enabled", "aws-rds-encryption-enabled", "aws-ebs-encryption-default", "aws-ec2-ebs-volume-encrypted"},
+			PolicyIDs:   []string{"aws-s3-bucket-encryption-enabled", "aws-rds-encryption-enabled", "aws-ebs-encryption-default", "aws-ec2-ebs-volume-encrypted", "dspm-restricted-data-unencrypted"},
 		},
 
 		// Requirement 4: Protect Data in Transit
@@ -440,7 +440,7 @@ var HIPAA = Framework{
 			ID:          "164.312(a)(2)(iv)",
 			Title:       "Access Control - Encryption and Decryption",
 			Description: "Implement mechanism to encrypt and decrypt ePHI.",
-			PolicyIDs:   []string{"aws-s3-bucket-encryption-enabled", "aws-rds-encryption-enabled", "aws-ebs-encryption-default"},
+			PolicyIDs:   []string{"aws-s3-bucket-encryption-enabled", "aws-rds-encryption-enabled", "aws-ebs-encryption-default", "dspm-restricted-data-unencrypted"},
 		},
 		{
 			ID:          "164.312(b)",
@@ -464,7 +464,7 @@ var HIPAA = Framework{
 			ID:          "164.312(e)(1)",
 			Title:       "Transmission Security - Integrity Controls",
 			Description: "Implement security measures to ensure transmitted ePHI is not improperly modified.",
-			PolicyIDs:   []string{"aws-s3-bucket-ssl-only", "aws-elb-https-only"},
+			PolicyIDs:   []string{"aws-s3-bucket-ssl-only", "aws-elb-https-only", "dspm-confidential-data-public"},
 		},
 		{
 			ID:          "164.312(e)(2)(ii)",

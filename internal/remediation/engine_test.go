@@ -37,6 +37,8 @@ func TestEngine_ListRules(t *testing.T) {
 		"s3-public-notify",
 		"identity-stale-user-remediation",
 		"identity-excessive-privilege-remediation",
+		"dspm-restricted-data-unencrypted-remediation",
+		"dspm-confidential-data-public-remediation",
 	}
 
 	for _, id := range expectedRules {

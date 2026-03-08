@@ -49,6 +49,7 @@ import (
 	"github.com/evalops/cerebro/internal/auth"
 	"github.com/evalops/cerebro/internal/cache"
 	"github.com/evalops/cerebro/internal/compliance"
+	"github.com/evalops/cerebro/internal/dspm"
 	"github.com/evalops/cerebro/internal/events"
 	"github.com/evalops/cerebro/internal/findings"
 	"github.com/evalops/cerebro/internal/graph"
@@ -85,6 +86,7 @@ type App struct {
 	Policy    *policy.Engine
 	Findings  findings.FindingStore
 	Scanner   *scanner.Scanner
+	DSPM      *dspm.Scanner
 	Cache     *cache.PolicyCache
 
 	// Feature services

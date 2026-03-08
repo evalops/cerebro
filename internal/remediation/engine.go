@@ -301,6 +301,60 @@ func (e *Engine) loadDefaultRules() {
 			},
 		},
 		{
+			ID:          "dspm-restricted-data-unencrypted-remediation",
+			Name:        "DSPM Restricted Data Encryption Enforcement",
+			Description: "Escalate and track restricted data stores detected without encryption at rest",
+			Enabled:     true,
+			Trigger: Trigger{
+				Type:     TriggerFindingCreated,
+				PolicyID: "dspm-restricted-data-unencrypted",
+			},
+			Actions: []Action{
+				{
+					Type: ActionCreateTicket,
+					Config: map[string]string{
+						"priority": "highest",
+						"labels":   "dspm,data-encryption,restricted,auto-generated",
+					},
+					RequiresApproval: false,
+				},
+				{
+					Type: ActionNotifySlack,
+					Config: map[string]string{
+						"channel": "#security-alerts",
+					},
+					RequiresApproval: false,
+				},
+			},
+		},
+		{
+			ID:          "dspm-confidential-data-public-remediation",
+			Name:        "DSPM Public Sensitive Data Access Restriction",
+			Description: "Trigger response playbooks when confidential or restricted data is publicly exposed",
+			Enabled:     true,
+			Trigger: Trigger{
+				Type:     TriggerFindingCreated,
+				PolicyID: "dspm-confidential-data-public",
+			},
+			Actions: []Action{
+				{
+					Type: ActionCreateTicket,
+					Config: map[string]string{
+						"priority": "highest",
+						"labels":   "dspm,public-exposure,data-security,auto-generated",
+					},
+					RequiresApproval: false,
+				},
+				{
+					Type: ActionNotifySlack,
+					Config: map[string]string{
+						"channel": "#security-alerts",
+					},
+					RequiresApproval: false,
+				},
+			},
+		},
+		{
 			ID:          "signal-escalate-customer-health-critical",
 			Name:        "Escalate Critical Customer Health Signals",
 			Description: "Escalate critical customer-health signals to account owner and create a tracking ticket",
