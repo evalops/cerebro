@@ -126,6 +126,7 @@ type App struct {
 	// Security Graph
 	SecurityGraph        *graph.Graph
 	SecurityGraphBuilder *graph.Builder
+	Propagation          *graph.PropagationEngine
 	graphReady           chan struct{} // closed when initial graph build completes
 	graphCancel          context.CancelFunc
 
@@ -804,6 +805,7 @@ func New(ctx context.Context) (*App, error) {
 	if err := g2.Wait(); err != nil {
 		return nil, fmt.Errorf("phase 2b init failed: %w", err)
 	}
+	app.startEventRemediation(ctx)
 
 	// Phase 3: depends on findings store being ready
 	app.initScanner()

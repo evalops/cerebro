@@ -184,6 +184,7 @@ func (a *App) initSecurityGraph(ctx context.Context) {
 
 	if a.Snowflake == nil {
 		a.Logger.Warn("security graph disabled - snowflake not configured")
+		a.Propagation = nil
 		a.graphCancel = nil
 		close(a.graphReady)
 		return
@@ -192,6 +193,7 @@ func (a *App) initSecurityGraph(ctx context.Context) {
 	source := graph.NewSnowflakeSource(a.Snowflake)
 	a.SecurityGraphBuilder = graph.NewBuilder(source, a.Logger)
 	a.SecurityGraph = a.SecurityGraphBuilder.Graph()
+	a.Propagation = graph.NewPropagationEngine(a.SecurityGraph)
 
 	graphCtx := ctx
 	if graphCtx == nil {

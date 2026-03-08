@@ -208,6 +208,9 @@ type Event struct {
 	Data      map[string]interface{} `json:"data"`
 }
 
+// EventSubscriber handles in-process webhook events.
+type EventSubscriber func(ctx context.Context, event Event) error
+
 // EventPublisher can publish webhook events to external systems (for example JetStream).
 type EventPublisher interface {
 	Publish(ctx context.Context, event Event) error
@@ -244,14 +247,16 @@ type Service struct {
 	client              *http.Client
 	deliveryConcurrency int
 	eventPublisher      EventPublisher
+	subscribers         []EventSubscriber
 	mu                  sync.RWMutex
 	skipValidation      bool // For testing only - allows localhost URLs
 }
 
 func NewService() *Service {
 	return &Service{
-		webhooks:   make(map[string]*Webhook),
-		deliveries: make([]Delivery, 0),
+		webhooks:    make(map[string]*Webhook),
+		deliveries:  make([]Delivery, 0),
+		subscribers: make([]EventSubscriber, 0),
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -320,6 +325,16 @@ func (s *Service) EventPublisherStatus(ctx context.Context) map[string]interface
 	}
 	status["configured"] = true
 	return status
+}
+
+// Subscribe registers an in-process subscriber for all emitted events.
+func (s *Service) Subscribe(subscriber EventSubscriber) {
+	if subscriber == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.subscribers = append(s.subscribers, subscriber)
 }
 
 // Close releases service resources.
@@ -461,6 +476,7 @@ func (s *Service) EmitWithErrors(ctx context.Context, eventType EventType, data 
 
 	s.mu.RLock()
 	publisher := s.eventPublisher
+	subscribers := append([]EventSubscriber(nil), s.subscribers...)
 	webhooks := make([]*Webhook, 0)
 	for _, w := range s.webhooks {
 		if w.Enabled && s.isSubscribed(w, eventType) {
@@ -473,6 +489,11 @@ func (s *Service) EmitWithErrors(ctx context.Context, eventType EventType, data 
 	if publisher != nil {
 		if err := publisher.Publish(ctx, event); err != nil {
 			errs = append(errs, fmt.Errorf("event publisher: %w", err))
+		}
+	}
+	for _, subscriber := range subscribers {
+		if err := subscriber(ctx, event); err != nil {
+			errs = append(errs, fmt.Errorf("event subscriber: %w", err))
 		}
 	}
 

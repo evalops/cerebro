@@ -474,3 +474,23 @@ func TestMustEmitter(t *testing.T) {
 		t.Error("expected MustEmitter to return NoopEmitter when nil")
 	}
 }
+
+func TestServiceSubscribeReceivesEmittedEvents(t *testing.T) {
+	svc := NewServiceForTesting()
+	received := false
+
+	svc.Subscribe(func(_ context.Context, event Event) error {
+		received = true
+		if event.Type != EventSignalCreated {
+			t.Fatalf("expected event type %q, got %q", EventSignalCreated, event.Type)
+		}
+		return nil
+	})
+
+	if err := svc.EmitWithErrors(context.Background(), EventSignalCreated, map[string]interface{}{"signal_type": "test"}); err != nil {
+		t.Fatalf("emit with subscriber: %v", err)
+	}
+	if !received {
+		t.Fatal("expected subscriber to receive emitted event")
+	}
+}
