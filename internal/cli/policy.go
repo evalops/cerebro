@@ -72,6 +72,7 @@ var (
 )
 
 var runPolicyListDirectFn = runPolicyListDirect
+var runPolicyValidateDirectFn = runPolicyValidateDirect
 var runPolicyTestDirectFn = runPolicyTestDirect
 var runPolicyDiffDirectFn = runPolicyDiffDirect
 
@@ -175,41 +176,83 @@ func renderPolicyList(policies []*policy.Policy) error {
 }
 
 func runPolicyValidate(cmd *cobra.Command, args []string) error {
-	engine := policy.NewEngine()
-
-	if err := engine.LoadPolicies(policiesPath()); err != nil {
-		if policyValidateOutput == FormatJSON {
-			if jsonErr := JSONOutput(map[string]interface{}{
-				"valid": false,
-				"error": err.Error(),
-			}); jsonErr != nil {
-				return jsonErr
-			}
-			return err
-		}
-		Error("Validation failed: %v", err)
+	mode, err := loadCLIExecutionMode()
+	if err != nil {
 		return err
 	}
 
-	policies := engine.ListPolicies()
+	if mode != cliExecutionModeDirect {
+		if apiErr := runPolicyValidateViaAPI(cmd); apiErr == nil {
+			return nil
+		} else if mode == cliExecutionModeAPI || !shouldFallbackToDirect(mode, apiErr) {
+			return fmt.Errorf("policy validate via api failed: %w", apiErr)
+		} else {
+			Warning("API unavailable; using direct mode: %v", apiErr)
+		}
+	}
 
-	// Additional validation checks
+	return runPolicyValidateDirectFn(cmd, args)
+}
+
+func runPolicyValidateViaAPI(cmd *cobra.Command) error {
+	apiClient, err := newCLIAPIClient()
+	if err != nil {
+		return err
+	}
+
+	policies, err := apiClient.ListPolicies(commandContextOrBackground(cmd), 0, 0)
+	if err != nil {
+		return fmt.Errorf("list policies: %w", err)
+	}
+
+	return renderPolicyValidateResult(len(policies), summarizePolicySeverities(policies))
+}
+
+func runPolicyValidateDirect(cmd *cobra.Command, args []string) error {
+	engine := policy.NewEngine()
+
+	if err := engine.LoadPolicies(policiesPath()); err != nil {
+		return renderPolicyValidateFailure(err)
+	}
+
+	policies := engine.ListPolicies()
+	return renderPolicyValidateResult(len(policies), summarizePolicySeverities(policies))
+}
+
+func renderPolicyValidateFailure(err error) error {
+	if policyValidateOutput == FormatJSON {
+		if jsonErr := JSONOutput(map[string]interface{}{
+			"valid": false,
+			"error": err.Error(),
+		}); jsonErr != nil {
+			return jsonErr
+		}
+		return err
+	}
+	Error("Validation failed: %v", err)
+	return err
+}
+
+func summarizePolicySeverities(policies []*policy.Policy) map[string]int {
 	severityCounts := map[string]int{"critical": 0, "high": 0, "medium": 0, "low": 0}
 	for _, p := range policies {
 		if count, ok := severityCounts[p.Severity]; ok {
 			severityCounts[p.Severity] = count + 1
 		}
 	}
+	return severityCounts
+}
 
+func renderPolicyValidateResult(policyCount int, severityCounts map[string]int) error {
 	if policyValidateOutput == FormatJSON {
 		return JSONOutput(map[string]interface{}{
 			"valid":           true,
-			"count":           len(policies),
+			"count":           policyCount,
 			"severity_counts": severityCounts,
 		})
 	}
 
-	Success("Validated %d policies", len(policies))
+	Success("Validated %d policies", policyCount)
 	fmt.Printf("  Critical: %d, High: %d, Medium: %d, Low: %d\n",
 		severityCounts["critical"], severityCounts["high"],
 		severityCounts["medium"], severityCounts["low"])
