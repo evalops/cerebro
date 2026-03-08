@@ -13,6 +13,10 @@ type Graph struct {
 	mu       sync.RWMutex
 	metadata Metadata
 
+	// Traversal cache for expensive reachability queries.
+	blastRadiusCache   sync.Map
+	blastRadiusVersion uint64
+
 	// Indexes for O(1) lookups - rebuilt on BuildIndex()
 	indexByKind      map[NodeKind][]*Node
 	indexByAccount   map[string][]*Node
@@ -38,9 +42,10 @@ type Metadata struct {
 // New creates a new empty graph
 func New() *Graph {
 	return &Graph{
-		nodes:    make(map[string]*Node),
-		outEdges: make(map[string][]*Edge),
-		inEdges:  make(map[string][]*Edge),
+		nodes:              make(map[string]*Node),
+		outEdges:           make(map[string][]*Edge),
+		inEdges:            make(map[string][]*Edge),
+		blastRadiusVersion: 1,
 	}
 }
 
@@ -49,7 +54,7 @@ func (g *Graph) AddNode(node *Node) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.nodes[node.ID] = node
-	g.indexBuilt = false
+	g.markGraphChangedLocked()
 }
 
 // AddNodesBatch adds multiple nodes in a single lock acquisition
@@ -62,7 +67,7 @@ func (g *Graph) AddNodesBatch(nodes []*Node) {
 	for _, node := range nodes {
 		g.nodes[node.ID] = node
 	}
-	g.indexBuilt = false
+	g.markGraphChangedLocked()
 }
 
 // AddEdge adds an edge to the graph
@@ -71,7 +76,7 @@ func (g *Graph) AddEdge(edge *Edge) {
 	defer g.mu.Unlock()
 	g.outEdges[edge.Source] = append(g.outEdges[edge.Source], edge)
 	g.inEdges[edge.Target] = append(g.inEdges[edge.Target], edge)
-	g.indexBuilt = false
+	g.markGraphChangedLocked()
 }
 
 // AddEdgesBatch adds multiple edges in a single lock acquisition
@@ -85,7 +90,7 @@ func (g *Graph) AddEdgesBatch(edges []*Edge) {
 		g.outEdges[edge.Source] = append(g.outEdges[edge.Source], edge)
 		g.inEdges[edge.Target] = append(g.inEdges[edge.Target], edge)
 	}
-	g.indexBuilt = false
+	g.markGraphChangedLocked()
 }
 
 // RemoveNode removes a node and all edges touching it.
@@ -99,7 +104,7 @@ func (g *Graph) RemoveNode(id string) bool {
 
 	delete(g.nodes, id)
 	g.removeEdgesByNodeLocked(id)
-	g.indexBuilt = false
+	g.markGraphChangedLocked()
 	return true
 }
 
@@ -137,7 +142,7 @@ func (g *Graph) RemoveEdge(source, target string, kind EdgeKind) bool {
 	}
 
 	if removed {
-		g.indexBuilt = false
+		g.markGraphChangedLocked()
 	}
 	return removed
 }
@@ -148,7 +153,7 @@ func (g *Graph) RemoveEdgesByNode(nodeID string) {
 	defer g.mu.Unlock()
 
 	if g.removeEdgesByNodeLocked(nodeID) {
-		g.indexBuilt = false
+		g.markGraphChangedLocked()
 	}
 }
 
@@ -166,7 +171,7 @@ func (g *Graph) SetNodeProperty(id string, key string, value any) bool {
 		node.Properties = make(map[string]any)
 	}
 	node.Properties[key] = value
-	g.indexBuilt = false
+	g.markGraphChangedLocked()
 	return true
 }
 
@@ -289,7 +294,7 @@ func (g *Graph) Clear() {
 	g.nodes = make(map[string]*Node)
 	g.outEdges = make(map[string][]*Edge)
 	g.inEdges = make(map[string][]*Edge)
-	g.indexBuilt = false
+	g.markGraphChangedLocked()
 }
 
 // SetMetadata sets the graph metadata
@@ -571,7 +576,7 @@ func (g *Graph) GetCrossAccountEdgesIndexed() []*Edge {
 func (g *Graph) InvalidateIndex() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	g.indexBuilt = false
+	g.markGraphChangedLocked()
 }
 
 // IsIndexBuilt returns whether the index is current
@@ -656,4 +661,13 @@ func pruneEdges(edges []*Edge, remove func(edge *Edge) bool) ([]*Edge, bool) {
 		return edges, false
 	}
 	return kept, true
+}
+
+func (g *Graph) markGraphChangedLocked() {
+	g.indexBuilt = false
+	g.blastRadiusVersion++
+	g.blastRadiusCache.Range(func(key, _ any) bool {
+		g.blastRadiusCache.Delete(key)
+		return true
+	})
 }
