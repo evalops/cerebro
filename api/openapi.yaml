@@ -871,6 +871,51 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /api/v1/sync/k8s:
+    post:
+      tags:
+        - Admin
+      summary: Run Kubernetes native sync
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                kubeconfig:
+                  type: string
+                context:
+                  type: string
+                namespace:
+                  type: string
+                concurrency:
+                  type: integer
+                  minimum: 1
+                tables:
+                  type: array
+                  items:
+                    type: string
+                validate:
+                  type: boolean
+      responses:
+        '200':
+          description: Kubernetes sync run complete
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncRunResponse'
+        '400':
+          description: Invalid Kubernetes sync request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Kubernetes sync unavailable because Snowflake is not configured
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/scheduler/status:
     get:
       tags:

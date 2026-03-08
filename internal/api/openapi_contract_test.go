@@ -72,6 +72,14 @@ func TestOpenAPIContract_CriticalRoutes(t *testing.T) {
 			expectedStatus: http.StatusServiceUnavailable,
 		},
 		{
+			name:           "sync k8s unavailable contract",
+			method:         http.MethodPost,
+			pathTemplate:   "/api/v1/sync/k8s",
+			requestPath:    "/api/v1/sync/k8s",
+			body:           map[string]interface{}{"namespace": "default", "tables": []string{"k8s_pods"}},
+			expectedStatus: http.StatusServiceUnavailable,
+		},
+		{
 			name:           "threat intel stats response contract",
 			method:         http.MethodGet,
 			pathTemplate:   "/api/v1/threatintel/stats",

@@ -113,6 +113,79 @@ func (s *Server) syncAzure(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+type k8sSyncRequest struct {
+	Kubeconfig  string   `json:"kubeconfig"`
+	Context     string   `json:"context"`
+	Namespace   string   `json:"namespace"`
+	Concurrency int      `json:"concurrency"`
+	Tables      []string `json:"tables"`
+	Validate    bool     `json:"validate"`
+}
+
+var runK8sSyncWithOptions = func(ctx context.Context, client *snowflake.Client, req k8sSyncRequest) ([]nativesync.SyncResult, error) {
+	opts := []nativesync.K8sEngineOption{}
+	if req.Kubeconfig != "" {
+		opts = append(opts, nativesync.WithK8sKubeconfig(req.Kubeconfig))
+	}
+	if req.Context != "" {
+		opts = append(opts, nativesync.WithK8sContext(req.Context))
+	}
+	if req.Namespace != "" {
+		opts = append(opts, nativesync.WithK8sNamespace(req.Namespace))
+	}
+	if req.Concurrency > 0 {
+		opts = append(opts, nativesync.WithK8sConcurrency(req.Concurrency))
+	}
+	if len(req.Tables) > 0 {
+		opts = append(opts, nativesync.WithK8sTableFilter(req.Tables))
+	}
+
+	syncer := nativesync.NewK8sSyncEngine(client, slog.Default(), opts...)
+	if req.Validate {
+		results, err := syncer.ValidateTables(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("validation failed: %w", err)
+		}
+		return results, nil
+	}
+
+	results, err := syncer.SyncAll(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("sync failed: %w", err)
+	}
+	return results, nil
+}
+
+func (s *Server) syncK8s(w http.ResponseWriter, r *http.Request) {
+	var req k8sSyncRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		s.error(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+
+	req.Kubeconfig = strings.TrimSpace(req.Kubeconfig)
+	req.Context = strings.TrimSpace(req.Context)
+	req.Namespace = strings.TrimSpace(req.Namespace)
+	req.Tables = normalizeSyncTables(req.Tables)
+
+	if s.app.Snowflake == nil {
+		s.error(w, http.StatusServiceUnavailable, "snowflake not configured")
+		return
+	}
+
+	results, err := runK8sSyncWithOptions(r.Context(), s.app.Snowflake, req)
+	if err != nil {
+		s.errorFromErr(w, err)
+		return
+	}
+
+	s.json(w, http.StatusOK, map[string]interface{}{
+		"provider": "k8s",
+		"validate": req.Validate,
+		"results":  results,
+	})
+}
+
 func normalizeSyncTables(raw []string) []string {
 	if len(raw) == 0 {
 		return nil

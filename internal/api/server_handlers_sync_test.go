@@ -96,3 +96,78 @@ func TestSyncAzure_UsesRequestOptions(t *testing.T) {
 		t.Fatalf("expected provider in response body, got %s", w.Body.String())
 	}
 }
+
+func TestSyncK8s_RequiresSnowflake(t *testing.T) {
+	s := newTestServer(t)
+
+	w := do(t, s, http.MethodPost, "/api/v1/sync/k8s", map[string]interface{}{
+		"namespace":   "default",
+		"concurrency": 8,
+		"tables":      []string{"k8s_pods"},
+	})
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestSyncK8s_InvalidRequest(t *testing.T) {
+	s := newTestServer(t)
+
+	w := do(t, s, http.MethodPost, "/api/v1/sync/k8s", "not-json")
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid request, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestSyncK8s_UsesRequestOptions(t *testing.T) {
+	s := newTestServer(t)
+	s.app.Snowflake = &snowflake.Client{}
+
+	originalRun := runK8sSyncWithOptions
+	t.Cleanup(func() { runK8sSyncWithOptions = originalRun })
+
+	called := false
+	runK8sSyncWithOptions = func(ctx context.Context, client *snowflake.Client, req k8sSyncRequest) ([]nativesync.SyncResult, error) {
+		called = true
+		if client != s.app.Snowflake {
+			t.Fatalf("expected server snowflake client to be passed through")
+		}
+		if req.Kubeconfig != "/tmp/kubeconfig" {
+			t.Fatalf("expected kubeconfig /tmp/kubeconfig, got %q", req.Kubeconfig)
+		}
+		if req.Context != "prod-context" {
+			t.Fatalf("expected context prod-context, got %q", req.Context)
+		}
+		if req.Namespace != "payments" {
+			t.Fatalf("expected namespace payments, got %q", req.Namespace)
+		}
+		if req.Concurrency != 4 {
+			t.Fatalf("expected concurrency 4, got %d", req.Concurrency)
+		}
+		if len(req.Tables) != 2 || req.Tables[0] != "k8s_pods" || req.Tables[1] != "k8s_services" {
+			t.Fatalf("unexpected table filter: %#v", req.Tables)
+		}
+		if !req.Validate {
+			t.Fatal("expected validate=true")
+		}
+		return []nativesync.SyncResult{{Table: "k8s_pods", Synced: 2}}, nil
+	}
+
+	w := do(t, s, http.MethodPost, "/api/v1/sync/k8s", map[string]interface{}{
+		"kubeconfig":  " /tmp/kubeconfig ",
+		"context":     " prod-context ",
+		"namespace":   " payments ",
+		"concurrency": 4,
+		"tables":      []string{"K8S_PODS", "k8s_pods", " k8s_services "},
+		"validate":    true,
+	})
+	if !called {
+		t.Fatal("expected sync runner to be called")
+	}
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"provider":"k8s"`) {
+		t.Fatalf("expected provider in response body, got %s", w.Body.String())
+	}
+}

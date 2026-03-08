@@ -71,3 +71,55 @@ func (c *Client) RunAzureSync(ctx context.Context, req AzureSyncRequest) (*SyncR
 	}
 	return &resp, nil
 }
+
+type K8sSyncRequest struct {
+	Kubeconfig  string
+	Context     string
+	Namespace   string
+	Concurrency int
+	Tables      []string
+	Validate    bool
+}
+
+func (c *Client) RunK8sSync(ctx context.Context, req K8sSyncRequest) (*SyncRunResponse, error) {
+	var reqBody map[string]interface{}
+	if kubeconfig := strings.TrimSpace(req.Kubeconfig); kubeconfig != "" {
+		reqBody = map[string]interface{}{"kubeconfig": kubeconfig}
+	}
+	if kubeCtx := strings.TrimSpace(req.Context); kubeCtx != "" {
+		if reqBody == nil {
+			reqBody = make(map[string]interface{}, 1)
+		}
+		reqBody["context"] = kubeCtx
+	}
+	if namespace := strings.TrimSpace(req.Namespace); namespace != "" {
+		if reqBody == nil {
+			reqBody = make(map[string]interface{}, 1)
+		}
+		reqBody["namespace"] = namespace
+	}
+	if req.Concurrency > 0 {
+		if reqBody == nil {
+			reqBody = make(map[string]interface{}, 1)
+		}
+		reqBody["concurrency"] = req.Concurrency
+	}
+	if len(req.Tables) > 0 {
+		if reqBody == nil {
+			reqBody = make(map[string]interface{}, 1)
+		}
+		reqBody["tables"] = req.Tables
+	}
+	if req.Validate {
+		if reqBody == nil {
+			reqBody = make(map[string]interface{}, 1)
+		}
+		reqBody["validate"] = true
+	}
+
+	var resp SyncRunResponse
+	if err := c.doJSON(ctx, http.MethodPost, "/api/v1/sync/k8s", nil, reqBody, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
