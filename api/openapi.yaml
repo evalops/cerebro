@@ -4542,6 +4542,66 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /api/v1/org/meeting-insights:
+    get:
+      tags:
+        - Org
+      summary: Analyze meeting quality and optimization opportunities
+      description: Return missing participants, unnecessary attendees, redundant meeting pairs, fragile bridges, and aggregate meeting optimization metrics.
+      parameters:
+        - name: team
+          in: query
+          required: false
+          description: Optional team/department filter (for example engineering).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Meeting optimization insight report
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '503':
+          description: Security graph is not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/org/meetings/{id}/analysis:
+    get:
+      tags:
+        - Org
+      summary: Analyze one meeting in detail
+      description: Return detailed missing participant, redundancy, and fragile-bridge context for a single meeting.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Meeting activity node ID.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Meeting analysis
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '404':
+          description: Meeting analysis not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Security graph is not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/policies/{id}/dry-run:
     post:
       parameters:
