@@ -114,6 +114,14 @@ func TestOpenAPIContract_CriticalRoutes(t *testing.T) {
 			expectedStatus: http.StatusOK,
 		},
 		{
+			name:           "findings scan unavailable contract",
+			method:         http.MethodPost,
+			pathTemplate:   "/api/v1/findings/scan",
+			requestPath:    "/api/v1/findings/scan",
+			body:           map[string]interface{}{"tables": []string{"aws_s3_buckets"}, "limit": 25},
+			expectedStatus: http.StatusServiceUnavailable,
+		},
+		{
 			name:           "agents list contract",
 			method:         http.MethodGet,
 			pathTemplate:   "/api/v1/agents",

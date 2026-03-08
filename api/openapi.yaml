@@ -418,15 +418,21 @@ paths:
         - Findings
       summary: Trigger a security scan
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
               properties:
+                table:
+                  type: string
                 tables:
                   type: array
                   items:
                     type: string
+                limit:
+                  type: integer
+                  minimum: 1
       responses:
         '200':
           description: Scan results
@@ -434,6 +440,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ScanResponse'
+        '400':
+          description: Invalid scan request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Scan unavailable because Snowflake is not configured
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/findings/{id}/resolve:
     post:
       tags:
@@ -4341,6 +4359,12 @@ components:
             type: integer
     ScanResponse:
       type: object
+      required:
+        - scanned
+        - violations
+        - duration
+        - findings
+        - tables
       properties:
         findings:
           type: array
@@ -4348,8 +4372,30 @@ components:
             $ref: '#/components/schemas/Finding'
         scanned:
           type: integer
-        duration_ms:
+        violations:
           type: integer
+        duration:
+          type: string
+        tables:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScanTableResult'
+    ScanTableResult:
+      type: object
+      required:
+        - table
+        - scanned
+        - violations
+        - duration
+      properties:
+        table:
+          type: string
+        scanned:
+          type: integer
+        violations:
+          type: integer
+        duration:
+          type: string
     Framework:
       type: object
       properties:
