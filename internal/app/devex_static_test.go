@@ -187,6 +187,20 @@ func TestGoGenerateDirectivesForGeneratedArtifacts(t *testing.T) {
 	}
 }
 
+func TestConfigDocsGeneratorIgnoresMethodLoadConfig(t *testing.T) {
+	root := repoRoot(t)
+	scriptPath := filepath.Join(root, "scripts", "generate_config_docs", "main.go")
+	content, err := os.ReadFile(scriptPath)
+	if err != nil {
+		t.Fatalf("read generate_config_docs script: %v", err)
+	}
+	text := string(content)
+
+	if !strings.Contains(text, "if fn.Recv != nil") {
+		t.Fatalf("expected config docs generator to ignore method declarations when matching LoadConfig")
+	}
+}
+
 func TestDependabotConfigCoversCoreEcosystems(t *testing.T) {
 	root := repoRoot(t)
 

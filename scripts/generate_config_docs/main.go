@@ -86,6 +86,10 @@ func findFunc(file *ast.File, name string) *ast.FuncDecl {
 		if !ok || fn.Name == nil || fn.Name.Name != name {
 			continue
 		}
+		// Ignore methods (e.g. type receivers) and only match package-level funcs.
+		if fn.Recv != nil {
+			continue
+		}
 		return fn
 	}
 	return nil
