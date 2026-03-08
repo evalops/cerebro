@@ -19,6 +19,11 @@ func TestParseTapType(t *testing.T) {
 	if system != "gong" || entity != "call_completed" || action != "call_completed" {
 		t.Fatalf("unexpected activity parse result: system=%q entity=%q action=%q", system, entity, action)
 	}
+
+	channel, interactionType := parseTapInteractionType("ensemble.tap.interaction.gong.call_completed")
+	if channel != "gong" || interactionType != "call_completed" {
+		t.Fatalf("unexpected interaction parse result: channel=%q type=%q", channel, interactionType)
+	}
 }
 
 func TestDeriveComputedFields(t *testing.T) {
@@ -194,4 +199,182 @@ func TestHandleTapCloudEvent_ActivitySubjectCreatesNodesAndEdges(t *testing.T) {
 	if len(actorEdges) == 0 || actorEdges[0].Kind != graph.EdgeKindInteractedWith {
 		t.Fatalf("expected actor interacted_with edge, got %#v", actorEdges)
 	}
+}
+
+func TestHandleTapCloudEvent_InteractionSubjectCreatesPeopleAndEdge(t *testing.T) {
+	a := &App{SecurityGraph: graph.New()}
+	now := time.Date(2026, 3, 8, 13, 0, 0, 0, time.UTC)
+	evt := events.CloudEvent{
+		Type: "ensemble.tap.interaction.gong.call",
+		Time: now,
+		Data: map[string]interface{}{
+			"participants": []any{
+				map[string]any{"email": "alice@example.com", "name": "Alice"},
+				map[string]any{"email": "bob@example.com", "name": "Bob"},
+			},
+			"duration_seconds": 1800,
+		},
+	}
+
+	if err := a.handleTapCloudEvent(context.Background(), evt); err != nil {
+		t.Fatalf("handleTapCloudEvent failed: %v", err)
+	}
+
+	aliceNode, ok := a.SecurityGraph.GetNode("person:alice@example.com")
+	if !ok {
+		t.Fatal("expected alice person node")
+	}
+	if aliceNode.Kind != graph.NodeKindPerson {
+		t.Fatalf("expected alice node kind %q, got %q", graph.NodeKindPerson, aliceNode.Kind)
+	}
+
+	edge := findInteractionEdge(a.SecurityGraph, "person:alice@example.com", "person:bob@example.com")
+	if edge == nil {
+		t.Fatal("expected interaction edge between alice and bob")
+	}
+	if got := toInt(edge.Properties["frequency"]); got != 1 {
+		t.Fatalf("expected frequency=1, got %d", got)
+	}
+	if got := int(toFloatForTest(edge.Properties["total_duration_seconds"])); got != 1800 {
+		t.Fatalf("expected total_duration_seconds=1800, got %d", got)
+	}
+	if channels := stringSliceForTest(edge.Properties["interaction_channels"]); len(channels) == 0 || channels[0] != "gong" {
+		t.Fatalf("expected interaction_channels to include gong, got %+v", channels)
+	}
+	if types := stringSliceForTest(edge.Properties["interaction_types"]); len(types) == 0 || types[0] != "call" {
+		t.Fatalf("expected interaction_types to include call, got %+v", types)
+	}
+}
+
+func TestHandleTapCloudEvent_InteractionSubjectAggregatesAcrossEvents(t *testing.T) {
+	a := &App{SecurityGraph: graph.New()}
+	first := events.CloudEvent{
+		Type: "ensemble.tap.interaction.slack.message",
+		Time: time.Date(2026, 3, 8, 12, 0, 0, 0, time.UTC),
+		Data: map[string]interface{}{
+			"snapshot": map[string]any{
+				"participants": []any{
+					map[string]any{"id": "person:alice@example.com"},
+					map[string]any{"id": "person:bob@example.com"},
+				},
+				"duration_seconds": 60,
+			},
+		},
+	}
+	second := events.CloudEvent{
+		Type: "ensemble.tap.interaction.github.review",
+		Time: time.Date(2026, 3, 8, 15, 0, 0, 0, time.UTC),
+		Data: map[string]interface{}{
+			"participants": []any{
+				"person:bob@example.com",
+				"person:alice@example.com",
+			},
+			"duration_minutes": 10,
+		},
+	}
+
+	if err := a.handleTapCloudEvent(context.Background(), first); err != nil {
+		t.Fatalf("first interaction event failed: %v", err)
+	}
+	if err := a.handleTapCloudEvent(context.Background(), second); err != nil {
+		t.Fatalf("second interaction event failed: %v", err)
+	}
+
+	edge := findInteractionEdge(a.SecurityGraph, "person:alice@example.com", "person:bob@example.com")
+	if edge == nil {
+		t.Fatal("expected interaction edge between alice and bob")
+	}
+	if got := toInt(edge.Properties["frequency"]); got != 2 {
+		t.Fatalf("expected frequency=2, got %d", got)
+	}
+	if got := toInt(edge.Properties["previous_frequency"]); got != 1 {
+		t.Fatalf("expected previous_frequency=1, got %d", got)
+	}
+	if got := int(toFloatForTest(edge.Properties["total_duration_seconds"])); got != 660 {
+		t.Fatalf("expected total_duration_seconds=660, got %d", got)
+	}
+	if !containsStringForTest(stringSliceForTest(edge.Properties["interaction_channels"]), "slack") ||
+		!containsStringForTest(stringSliceForTest(edge.Properties["interaction_channels"]), "github") {
+		t.Fatalf("expected channels to include slack and github, got %+v", edge.Properties["interaction_channels"])
+	}
+	if !containsStringForTest(stringSliceForTest(edge.Properties["interaction_types"]), "message") ||
+		!containsStringForTest(stringSliceForTest(edge.Properties["interaction_types"]), "review") {
+		t.Fatalf("expected types to include message and review, got %+v", edge.Properties["interaction_types"])
+	}
+	lastSeen := timeFromProperty(edge.Properties["last_seen"])
+	expected := time.Date(2026, 3, 8, 15, 0, 0, 0, time.UTC)
+	if !lastSeen.Equal(expected) {
+		t.Fatalf("expected last_seen=%s, got %s", expected.Format(time.RFC3339), lastSeen.Format(time.RFC3339))
+	}
+}
+
+func findInteractionEdge(g *graph.Graph, left, right string) *graph.Edge {
+	for _, edge := range g.GetOutEdges(left) {
+		if edge.Kind == graph.EdgeKindInteractedWith && edge.Target == right {
+			return edge
+		}
+	}
+	for _, edge := range g.GetOutEdges(right) {
+		if edge.Kind == graph.EdgeKindInteractedWith && edge.Target == left {
+			return edge
+		}
+	}
+	return nil
+}
+
+func toFloatForTest(value any) float64 {
+	switch typed := value.(type) {
+	case float64:
+		return typed
+	case float32:
+		return float64(typed)
+	case int:
+		return float64(typed)
+	case int64:
+		return float64(typed)
+	default:
+		return 0
+	}
+}
+
+func stringSliceForTest(value any) []string {
+	switch typed := value.(type) {
+	case []string:
+		return typed
+	case []any:
+		out := make([]string, 0, len(typed))
+		for _, item := range typed {
+			out = append(out, anyToString(item))
+		}
+		return out
+	case string:
+		if typed == "" {
+			return nil
+		}
+		return []string{typed}
+	default:
+		return nil
+	}
+}
+
+func containsStringForTest(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func timeFromProperty(value any) time.Time {
+	switch typed := value.(type) {
+	case time.Time:
+		return typed.UTC()
+	case string:
+		parsed, err := time.Parse(time.RFC3339, typed)
+		if err == nil {
+			return parsed.UTC()
+		}
+	}
+	return time.Time{}
 }
