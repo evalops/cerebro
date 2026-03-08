@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"container/heap"
 	"fmt"
 	"sort"
 )
@@ -18,6 +19,8 @@ const (
 type ImpactPathAnalyzer struct {
 	graph *Graph
 }
+
+const maxImpactPaths = 50
 
 // ImpactStep is one hop in an impact path.
 type ImpactStep struct {
@@ -77,7 +80,8 @@ func (a *ImpactPathAnalyzer) Analyze(startNodeID string, scenario ImpactScenario
 	}
 
 	queue := []bfsState{{nodeID: startNodeID, visited: map[string]bool{startNodeID: true}}}
-	paths := make([]*ImpactPath, 0)
+	topPaths := &impactPathMinHeap{}
+	heap.Init(topPaths)
 
 	for len(queue) > 0 {
 		state := queue[0]
@@ -110,19 +114,14 @@ func (a *ImpactPathAnalyzer) Analyze(startNodeID string, scenario ImpactScenario
 
 			if a.isScenarioTarget(scenario, targetNode, startNodeID) {
 				path := a.materializePath(scenario, startNodeID, targetNode.ID, nextSteps)
-				paths = append(paths, path)
+				pushImpactPathTopK(topPaths, path, maxImpactPaths)
 			}
 
 			queue = append(queue, bfsState{nodeID: edge.Target, steps: nextSteps, visited: nextVisited})
 		}
 	}
 
-	sort.Slice(paths, func(i, j int) bool {
-		return paths[i].Score > paths[j].Score
-	})
-	if len(paths) > 50 {
-		paths = paths[:50]
-	}
+	paths := popImpactPathsDescending(topPaths)
 
 	metrics := aggregateImpactMetrics(paths)
 	chokepoints := a.impactChokepoints(paths, startNodeID)
@@ -240,8 +239,14 @@ func (a *ImpactPathAnalyzer) materializePath(scenario ImpactScenario, startNodeI
 }
 
 func (a *ImpactPathAnalyzer) impactChokepoints(paths []*ImpactPath, startNodeID string) []*Chokepoint {
+	if len(paths) == 0 {
+		return nil
+	}
+
+	pathsByTarget := make(map[string][]*ImpactPath)
 	nodeCounts := make(map[string]int)
 	for _, path := range paths {
+		pathsByTarget[path.EndNode] = append(pathsByTarget[path.EndNode], path)
 		for _, step := range path.Steps {
 			if step.ToNode == startNodeID || step.ToNode == path.EndNode {
 				continue
@@ -259,17 +264,70 @@ func (a *ImpactPathAnalyzer) impactChokepoints(paths []*ImpactPath, startNodeID 
 		if !ok {
 			continue
 		}
-		impact := float64(count) / float64(len(paths))
+		blockedTargets := 0
+		blockedPaths := 0
+		betweennessAccumulator := 0.0
+		totalTargets := len(pathsByTarget)
+
+		for _, targetPaths := range pathsByTarget {
+			if len(targetPaths) == 0 {
+				continue
+			}
+
+			shortestLen := len(targetPaths[0].Steps)
+			for _, path := range targetPaths[1:] {
+				if len(path.Steps) < shortestLen {
+					shortestLen = len(path.Steps)
+				}
+			}
+
+			totalShortest := 0
+			throughShortest := 0
+			hasAlternatePath := false
+
+			for _, path := range targetPaths {
+				containsNode := pathHasIntermediateNode(path, nodeID, startNodeID)
+				if !containsNode {
+					hasAlternatePath = true
+				}
+				if len(path.Steps) != shortestLen {
+					continue
+				}
+				totalShortest++
+				if containsNode {
+					throughShortest++
+				}
+			}
+
+			if totalShortest > 0 {
+				betweennessAccumulator += float64(throughShortest) / float64(totalShortest)
+			}
+			if !hasAlternatePath {
+				blockedTargets++
+				blockedPaths += len(targetPaths)
+			}
+		}
+
+		betweenness := 0.0
+		impact := 0.0
+		if totalTargets > 0 {
+			betweenness = betweennessAccumulator / float64(totalTargets)
+			impact = float64(blockedTargets) / float64(totalTargets)
+		}
+
 		result = append(result, &Chokepoint{
 			Node:                  node,
 			PathsThrough:          count,
-			BlockedPaths:          count,
-			BetweennessCentrality: impact,
+			BlockedPaths:          blockedPaths,
+			BetweennessCentrality: betweenness,
 			RemediationImpact:     impact,
 		})
 	}
 
 	sort.Slice(result, func(i, j int) bool {
+		if result[i].RemediationImpact == result[j].RemediationImpact {
+			return result[i].BetweennessCentrality > result[j].BetweennessCentrality
+		}
 		return result[i].RemediationImpact > result[j].RemediationImpact
 	})
 	if len(result) > 20 {
@@ -324,4 +382,68 @@ func cloneVisited(visited map[string]bool) map[string]bool {
 		cloned[key] = value
 	}
 	return cloned
+}
+
+func pathHasIntermediateNode(path *ImpactPath, nodeID, startNodeID string) bool {
+	if path == nil {
+		return false
+	}
+	for _, step := range path.Steps {
+		if step.ToNode != nodeID {
+			continue
+		}
+		if step.ToNode == startNodeID || step.ToNode == path.EndNode {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+type impactPathMinHeap []*ImpactPath
+
+func (h impactPathMinHeap) Len() int {
+	return len(h)
+}
+
+func (h impactPathMinHeap) Less(i, j int) bool {
+	return h[i].Score < h[j].Score
+}
+
+func (h impactPathMinHeap) Swap(i, j int) {
+	h[i], h[j] = h[j], h[i]
+}
+
+func (h *impactPathMinHeap) Push(x any) {
+	*h = append(*h, x.(*ImpactPath))
+}
+
+func (h *impactPathMinHeap) Pop() any {
+	old := *h
+	n := len(old)
+	item := old[n-1]
+	*h = old[:n-1]
+	return item
+}
+
+func pushImpactPathTopK(h *impactPathMinHeap, path *ImpactPath, limit int) {
+	if limit <= 0 || path == nil {
+		return
+	}
+	heap.Push(h, path)
+	if h.Len() > limit {
+		_ = heap.Pop(h)
+	}
+}
+
+func popImpactPathsDescending(h *impactPathMinHeap) []*ImpactPath {
+	if h == nil || h.Len() == 0 {
+		return nil
+	}
+
+	paths := make([]*ImpactPath, h.Len())
+	for i := len(paths) - 1; i >= 0; i-- {
+		paths[i] = heap.Pop(h).(*ImpactPath)
+	}
+	return paths
 }
