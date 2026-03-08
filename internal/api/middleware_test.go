@@ -93,7 +93,9 @@ func TestAPIKeyAuth(t *testing.T) {
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		userID := GetUserID(r.Context())
-		w.Write([]byte(userID))
+		if _, err := w.Write([]byte(userID)); err != nil {
+			t.Fatalf("write response: %v", err)
+		}
 	})
 
 	middleware := APIKeyAuth(cfg)(handler)
@@ -137,10 +139,10 @@ func TestAPIKeyAuth(t *testing.T) {
 			wantStatus: http.StatusOK,
 		},
 		{
-			name:       "Metrics endpoint requires auth",
+			name:       "Metrics endpoint - no auth required",
 			path:       "/metrics",
 			apiKey:     "",
-			wantStatus: http.StatusUnauthorized,
+			wantStatus: http.StatusOK,
 		},
 		{
 			name:       "Docs endpoint - no auth required",

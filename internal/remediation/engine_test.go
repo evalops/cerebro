@@ -218,7 +218,9 @@ func TestEngine_RuleWithActions(t *testing.T) {
 			{Type: ActionNotifyPagerDuty, Config: map[string]string{}},
 		},
 	}
-	engine.AddRule(rule)
+	if err := engine.AddRule(rule); err != nil {
+		t.Fatalf("AddRule failed: %v", err)
+	}
 
 	found, ok := engine.GetRule("multi-action")
 	if !ok {
@@ -359,7 +361,9 @@ func TestEngine_ListExecutions(t *testing.T) {
 			Severity:  "critical",
 			FindingID: "test-" + string(rune('0'+i)),
 		}
-		engine.Evaluate(context.Background(), event)
+		if _, err := engine.Evaluate(context.Background(), event); err != nil {
+			t.Fatalf("Evaluate failed: %v", err)
+		}
 	}
 
 	executions := engine.ListExecutions(10)

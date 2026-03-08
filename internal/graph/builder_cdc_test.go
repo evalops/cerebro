@@ -44,9 +44,7 @@ func (s *cdcRoutingSource) Query(ctx context.Context, query string, args ...any)
 	if strings.Contains(lower, "select event_id") && strings.Contains(lower, "from cdc_events") {
 		s.queryHits["cdc_events"]++
 		rows := make([]map[string]any, 0, len(s.events))
-		for _, row := range s.events {
-			rows = append(rows, row)
-		}
+		rows = append(rows, s.events...)
 		return &QueryResult{Rows: rows, Count: len(rows)}, nil
 	}
 

@@ -2,10 +2,11 @@ package scheduler
 
 import (
 	"context"
+	crand "crypto/rand"
 	"errors"
 	"fmt"
 	"log/slog"
-	"math/rand"
+	"math/big"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -34,7 +35,12 @@ var retryJitterFunc = func(base time.Duration) time.Duration {
 	if maxJitter <= 0 {
 		return 0
 	}
-	return time.Duration(rand.Int63n(int64(maxJitter) + 1))
+	max := int64(maxJitter) + 1
+	n, err := crand.Int(crand.Reader, big.NewInt(max))
+	if err != nil {
+		return 0
+	}
+	return time.Duration(n.Int64())
 }
 
 // Job represents a scheduled task

@@ -811,27 +811,6 @@ func (g *Graph) markEdgeDeletedLocked(edge *Edge) bool {
 	return true
 }
 
-func pruneEdges(edges []*Edge, remove func(edge *Edge) bool) ([]*Edge, bool) {
-	if len(edges) == 0 {
-		return edges, false
-	}
-
-	kept := make([]*Edge, 0, len(edges))
-	removed := false
-	for _, edge := range edges {
-		if remove(edge) {
-			removed = true
-			continue
-		}
-		kept = append(kept, edge)
-	}
-
-	if !removed {
-		return edges, false
-	}
-	return kept, true
-}
-
 func (g *Graph) markGraphChangedLocked() {
 	g.indexBuilt = false
 	g.blastRadiusVersion++

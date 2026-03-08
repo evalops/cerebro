@@ -49,7 +49,9 @@ func TestIssueManager_FileStorePersistsUpdates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("re-open file store: %v", err)
 	}
-	defer reloaded.Close()
+	defer func() {
+		_ = reloaded.Close()
+	}()
 
 	f, ok := reloaded.Get("f-1")
 	if !ok {
@@ -119,7 +121,9 @@ func TestIssueManager_SQLiteStorePersistsUpdates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("re-open sqlite store: %v", err)
 	}
-	defer reloaded.Close()
+	defer func() {
+		_ = reloaded.Close()
+	}()
 
 	persisted, ok := reloaded.Get("f-1")
 	if !ok {

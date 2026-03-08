@@ -3903,63 +3903,242 @@ paths:
   /api/v1/graph/diff:
     get:
       tags:
-        - Undocumented
-      summary: GET endpoint (placeholder)
-      description: Auto-generated placeholder to keep OpenAPI route coverage in sync with server routes.
-      x-cerebro-generated: "true"
+        - Graph
+      summary: Compare graph snapshots by timestamp
+      description: Return the structural diff between two graph snapshots identified by RFC3339 timestamps.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          description: RFC3339 timestamp for the starting snapshot.
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: true
+          description: RFC3339 timestamp for the ending snapshot.
+          schema:
+            type: string
+            format: date-time
       responses:
-        "200":
-          description: OK
+        '200':
+          description: Graph diff result
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: No snapshots available for the requested timestamps
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Failed to compute graph diff
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/graph/evaluate-change:
     post:
       tags:
-        - Undocumented
-      summary: POST endpoint (placeholder)
-      description: Auto-generated placeholder to keep OpenAPI route coverage in sync with server routes.
-      x-cerebro-generated: "true"
+        - Graph
+      summary: Evaluate a graph change proposal
+      description: Evaluate blast radius and propagation impact for graph mutations without applying them.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
       responses:
-        "200":
-          description: OK
+        '200':
+          description: Graph change evaluation result
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid graph change request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Security graph is not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/graph/simulate:
     post:
       tags:
-        - Undocumented
-      summary: POST endpoint (placeholder)
-      description: Auto-generated placeholder to keep OpenAPI route coverage in sync with server routes.
-      x-cerebro-generated: "true"
+        - Graph
+      summary: Simulate graph mutations
+      description: Simulate graph node and edge mutations and return the resulting risk model without persisting changes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
       responses:
-        "200":
-          description: OK
+        '200':
+          description: Graph simulation result
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid mutation payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Security graph is not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/policies/{id}/dry-run:
     post:
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Policy identifier
+          schema:
+            type: string
       tags:
-        - Undocumented
-      summary: POST endpoint (placeholder)
-      description: Auto-generated placeholder to keep OpenAPI route coverage in sync with server routes.
-      x-cerebro-generated: "true"
+        - Policies
+      summary: Dry-run a policy change
+      description: Evaluate a candidate policy revision against request-supplied or fetched assets without persisting changes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
       responses:
-        "200":
-          description: OK
+        '200':
+          description: Dry-run impact result
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid dry-run request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Policy not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Failed to evaluate dry-run request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/policies/{id}/rollback:
     post:
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Policy identifier
+          schema:
+            type: string
       tags:
-        - Undocumented
-      summary: POST endpoint (placeholder)
-      description: Auto-generated placeholder to keep OpenAPI route coverage in sync with server routes.
-      x-cerebro-generated: "true"
+        - Policies
+      summary: Roll back a policy version
+      description: Restore the current policy definition to a specific historical version.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - version
+              properties:
+                version:
+                  type: integer
+                  minimum: 1
       responses:
-        "200":
-          description: OK
+        '200':
+          description: Rolled-back policy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Policy'
+        '400':
+          description: Invalid rollback request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Policy or version not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/policies/{id}/versions:
     get:
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Policy identifier
+          schema:
+            type: string
       tags:
-        - Undocumented
-      summary: GET endpoint (placeholder)
-      description: Auto-generated placeholder to keep OpenAPI route coverage in sync with server routes.
-      x-cerebro-generated: "true"
+        - Policies
+      summary: List policy version history
+      description: Return persisted policy versions for a policy ID in descending version order.
       responses:
-        "200":
-          description: OK
+        '200':
+          description: Policy version history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policy_id:
+                    type: string
+                  versions:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+                  count:
+                    type: integer
+        '404':
+          description: Policy not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 components:
   securitySchemes:
     ApiKeyAuth:

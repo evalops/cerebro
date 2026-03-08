@@ -177,8 +177,8 @@ func RateLimitMiddlewareWithLimiter(cfg RateLimitConfig, rl *RateLimiter) func(h
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Skip rate limiting for public endpoints.
-			if isPublicEndpoint(r.URL.Path) {
+			// Skip rate limiting for health/docs endpoints only.
+			if isRateLimitBypassEndpoint(r.URL.Path) {
 				next.ServeHTTP(w, r)
 				return
 			}

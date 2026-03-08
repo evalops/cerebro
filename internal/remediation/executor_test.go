@@ -45,9 +45,9 @@ func TestExecutor_ApproveBypassesApprovalGate(t *testing.T) {
 		t.Fatalf("status = %s, want %s", execution.Status, ExecutionApproval)
 	}
 
-	if err := executor.Approve(context.Background(), execution.ID, "alice"); err == nil {
-		// notify_slack fails because notifications are not configured; approval should still move
-		// past the approval gate and execute actions.
+	if err := executor.Approve(context.Background(), execution.ID, "alice"); err != nil {
+		// notify_slack fails when notifications are not configured in this test setup.
+		t.Logf("Approve returned expected execution error: %v", err)
 	}
 	if execution.Status == ExecutionApproval {
 		t.Fatalf("status remained %s after approve", ExecutionApproval)

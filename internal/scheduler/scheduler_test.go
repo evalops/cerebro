@@ -392,7 +392,7 @@ func TestScheduler_RetrySchedulesBackoffAndResetsOnSuccess(t *testing.T) {
 	if got.LastError == "" {
 		t.Fatal("expected last error to be populated after failure")
 	}
-	if got.NextRun.Sub(time.Now()) >= got.Interval {
+	if time.Until(got.NextRun) >= got.Interval {
 		t.Fatalf("expected retry next run before normal interval; next=%s interval=%s", got.NextRun, got.Interval)
 	}
 
@@ -412,8 +412,9 @@ func TestScheduler_RetrySchedulesBackoffAndResetsOnSuccess(t *testing.T) {
 	if got.LastError != "" {
 		t.Fatalf("last error after success = %q, want empty", got.LastError)
 	}
-	if got.NextRun.Sub(time.Now()) < 30*time.Minute {
-		t.Fatalf("expected successful run to restore normal interval scheduling, next in %s", got.NextRun.Sub(time.Now()))
+	untilNextRun := time.Until(got.NextRun)
+	if untilNextRun < 30*time.Minute {
+		t.Fatalf("expected successful run to restore normal interval scheduling, next in %s", untilNextRun)
 	}
 }
 
@@ -452,8 +453,9 @@ func TestScheduler_RetryStopsAfterMaxRetries(t *testing.T) {
 	if got.LastError == "" {
 		t.Fatal("expected last error to remain populated after terminal failure")
 	}
-	if got.NextRun.Sub(time.Now()) < 30*time.Minute {
-		t.Fatalf("expected terminal failure to defer to normal interval, next in %s", got.NextRun.Sub(time.Now()))
+	untilNextRun := time.Until(got.NextRun)
+	if untilNextRun < 30*time.Minute {
+		t.Fatalf("expected terminal failure to defer to normal interval, next in %s", untilNextRun)
 	}
 }
 

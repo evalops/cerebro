@@ -399,9 +399,11 @@ func TestMockProvider_Operations(t *testing.T) {
 
 	// Update
 	status := "in_progress"
-	provider.UpdateTicket(context.Background(), ticket.ID, &TicketUpdate{
+	if _, err := provider.UpdateTicket(context.Background(), ticket.ID, &TicketUpdate{
 		Status: &status,
-	})
+	}); err != nil {
+		t.Fatalf("UpdateTicket failed: %v", err)
+	}
 
 	found, _ = provider.GetTicket(context.Background(), ticket.ID)
 	if found.Status != "in_progress" {
@@ -415,7 +417,9 @@ func TestMockProvider_Operations(t *testing.T) {
 	}
 
 	// Close
-	provider.Close(context.Background(), ticket.ID, "resolved")
+	if err := provider.Close(context.Background(), ticket.ID, "resolved"); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
 	found, _ = provider.GetTicket(context.Background(), ticket.ID)
 	if found.Status != "closed" {
 		t.Error("Close failed")

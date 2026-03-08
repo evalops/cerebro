@@ -113,7 +113,7 @@ func (a *App) initScheduler(_ context.Context) {
 	})
 	a.Logger.Info("scheduled graph rebuild enabled", "interval", graphInterval)
 
-	if a.RetentionRepo != nil && a.retentionEnabled() {
+	if a.retentionEnabled() {
 		interval := a.Config.RetentionJobInterval
 		if interval <= 0 {
 			interval = 24 * time.Hour

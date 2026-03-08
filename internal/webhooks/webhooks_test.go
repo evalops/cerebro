@@ -417,7 +417,7 @@ func TestServiceEventPublisherReadyRequiresContext(t *testing.T) {
 	publisher := &mockEventPublisher{}
 	svc.SetEventPublisher(publisher)
 
-	if err := svc.EventPublisherReady(nil); err == nil {
+	if err := svc.EventPublisherReady(nilContext()); err == nil {
 		t.Fatal("expected readiness error when context is nil")
 	}
 }
@@ -445,13 +445,17 @@ func TestServiceEventPublisherStatusRequiresContext(t *testing.T) {
 	publisher := &mockEventPublisher{status: map[string]interface{}{"ready": true}}
 	svc.SetEventPublisher(publisher)
 
-	status := svc.EventPublisherStatus(nil)
+	status := svc.EventPublisherStatus(nilContext())
 	if ready, ok := status["ready"].(bool); !ok || ready {
 		t.Fatalf("expected ready=false when context is nil, got %#v", status)
 	}
 	if status["error"] == nil {
 		t.Fatalf("expected context error status, got %#v", status)
 	}
+}
+
+func nilContext() context.Context {
+	return nil
 }
 
 func TestNoopEmitter(t *testing.T) {

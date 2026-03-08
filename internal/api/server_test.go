@@ -898,7 +898,9 @@ func TestComplianceExportAuditPackage_ReturnsZip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open summary entry: %v", err)
 	}
-	defer summaryRC.Close()
+	defer func() {
+		_ = summaryRC.Close()
+	}()
 
 	var summary struct {
 		FailingControls int `json:"failing_controls"`
@@ -1024,7 +1026,9 @@ func TestComplianceReportAndExport_IgnoreResolvedFindings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open summary entry: %v", err)
 	}
-	defer summaryRC.Close()
+	defer func() {
+		_ = summaryRC.Close()
+	}()
 
 	var exportSummary struct {
 		FailingControls int `json:"failing_controls"`

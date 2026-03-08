@@ -19,7 +19,9 @@ func TestSQLiteStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
-	defer store.Close()
+	defer func() {
+		_ = store.Close()
+	}()
 
 	ctx := context.Background()
 
@@ -111,13 +113,17 @@ func TestSQLiteStore(t *testing.T) {
 	}
 
 	// Test Persistence (close and reopen)
-	store.Close()
+	if err := store.Close(); err != nil {
+		t.Fatalf("close store: %v", err)
+	}
 
 	store2, err := NewSQLiteStore(dbPath)
 	if err != nil {
 		t.Fatalf("failed to re-open store: %v", err)
 	}
-	defer store2.Close()
+	defer func() {
+		_ = store2.Close()
+	}()
 
 	stats2 := store2.Stats()
 	if stats2.Total != 1 {
@@ -133,7 +139,9 @@ func TestSQLiteStore_Concurrency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
-	defer store.Close()
+	defer func() {
+		_ = store.Close()
+	}()
 
 	ctx := context.Background()
 	count := 100
@@ -171,7 +179,9 @@ func TestSQLiteStore_SignalTypeDomainFiltersAndStats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
-	defer store.Close()
+	defer func() {
+		_ = store.Close()
+	}()
 
 	ctx := context.Background()
 	store.Upsert(ctx, policy.Finding{ID: "f-1", PolicyID: "p-1", Severity: "high"})

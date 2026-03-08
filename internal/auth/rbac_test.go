@@ -66,7 +66,9 @@ func TestRBAC_AssignRole(t *testing.T) {
 		Email: "test@example.com",
 		Name:  "Test User",
 	}
-	rbac.CreateUser(user)
+	if err := rbac.CreateUser(user); err != nil {
+		t.Fatalf("CreateUser failed: %v", err)
+	}
 
 	// Assign role
 	err := rbac.AssignRole(user.ID, "analyst")
@@ -99,7 +101,9 @@ func TestRBAC_HasPermission(t *testing.T) {
 		Name:    "Test User",
 		RoleIDs: []string{"analyst"},
 	}
-	rbac.CreateUser(user)
+	if err := rbac.CreateUser(user); err != nil {
+		t.Fatalf("CreateUser failed: %v", err)
+	}
 
 	tests := []struct {
 		permission string
@@ -221,8 +225,12 @@ func TestRBAC_ListTenants(t *testing.T) {
 	rbac := NewRBAC()
 
 	// Create tenants
-	rbac.CreateTenant(&Tenant{Name: "Org 1"})
-	rbac.CreateTenant(&Tenant{Name: "Org 2"})
+	if err := rbac.CreateTenant(&Tenant{Name: "Org 1"}); err != nil {
+		t.Fatalf("CreateTenant Org 1 failed: %v", err)
+	}
+	if err := rbac.CreateTenant(&Tenant{Name: "Org 2"}); err != nil {
+		t.Fatalf("CreateTenant Org 2 failed: %v", err)
+	}
 
 	tenants := rbac.ListTenants()
 	if len(tenants) != 2 {

@@ -89,7 +89,7 @@ func (a *App) startSecretsReloader(parent context.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if err := a.ReloadSecrets(context.Background()); err != nil && a.Logger != nil {
+				if err := a.ReloadSecrets(ctx); err != nil && a.Logger != nil {
 					a.Logger.Warn("periodic secret reload failed", "error", err)
 				}
 			}

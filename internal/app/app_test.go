@@ -18,16 +18,10 @@ import (
 
 func TestLoadConfig(t *testing.T) {
 	// Set some env vars
-	os.Setenv("API_PORT", "9999")
-	os.Setenv("LOG_LEVEL", "debug")
-	os.Setenv("RBAC_STATE_FILE", "/tmp/rbac-state.json")
-	os.Setenv("SECURITY_DIGEST_INTERVAL", "24h")
-	defer func() {
-		os.Unsetenv("API_PORT")
-		os.Unsetenv("LOG_LEVEL")
-		os.Unsetenv("RBAC_STATE_FILE")
-		os.Unsetenv("SECURITY_DIGEST_INTERVAL")
-	}()
+	t.Setenv("API_PORT", "9999")
+	t.Setenv("LOG_LEVEL", "debug")
+	t.Setenv("RBAC_STATE_FILE", "/tmp/rbac-state.json")
+	t.Setenv("SECURITY_DIGEST_INTERVAL", "24h")
 
 	cfg := LoadConfig()
 
@@ -173,8 +167,7 @@ LOG_LEVEL = "warn"
 }
 
 func TestLoadConfigWebhookURLs(t *testing.T) {
-	os.Setenv("WEBHOOK_URLS", "https://example.com/hook1, https://example.com/hook2")
-	defer os.Unsetenv("WEBHOOK_URLS")
+	t.Setenv("WEBHOOK_URLS", "https://example.com/hook1, https://example.com/hook2")
 
 	cfg := LoadConfig()
 
@@ -185,8 +178,7 @@ func TestLoadConfigWebhookURLs(t *testing.T) {
 }
 
 func TestLoadConfigCORSAllowedOrigins(t *testing.T) {
-	os.Setenv("API_CORS_ALLOWED_ORIGINS", "https://app.example.com, https://admin.example.com")
-	defer os.Unsetenv("API_CORS_ALLOWED_ORIGINS")
+	t.Setenv("API_CORS_ALLOWED_ORIGINS", "https://app.example.com, https://admin.example.com")
 
 	cfg := LoadConfig()
 
@@ -197,8 +189,7 @@ func TestLoadConfigCORSAllowedOrigins(t *testing.T) {
 }
 
 func TestLoadConfigQueryPolicyRowLimit(t *testing.T) {
-	os.Setenv("QUERY_POLICY_ROW_LIMIT", "321")
-	defer os.Unsetenv("QUERY_POLICY_ROW_LIMIT")
+	t.Setenv("QUERY_POLICY_ROW_LIMIT", "321")
 
 	cfg := LoadConfig()
 	if cfg.QueryPolicyRowLimit != 321 {
@@ -207,8 +198,7 @@ func TestLoadConfigQueryPolicyRowLimit(t *testing.T) {
 }
 
 func TestLoadConfigJiraCloseTransitions(t *testing.T) {
-	os.Setenv("JIRA_CLOSE_TRANSITIONS", "Done, Closed, Resolve Issue")
-	defer os.Unsetenv("JIRA_CLOSE_TRANSITIONS")
+	t.Setenv("JIRA_CLOSE_TRANSITIONS", "Done, Closed, Resolve Issue")
 
 	cfg := LoadConfig()
 
@@ -220,10 +210,10 @@ func TestLoadConfigJiraCloseTransitions(t *testing.T) {
 
 func TestLoadConfig_Defaults(t *testing.T) {
 	// Clear any env vars that might affect defaults
-	os.Unsetenv("API_PORT")
-	os.Unsetenv("LOG_LEVEL")
-	os.Unsetenv("SNOWFLAKE_SCHEMA")
-	os.Unsetenv("SNOWFLAKE_DATABASE")
+	t.Setenv("API_PORT", "")
+	t.Setenv("LOG_LEVEL", "")
+	t.Setenv("SNOWFLAKE_SCHEMA", "")
+	t.Setenv("SNOWFLAKE_DATABASE", "")
 
 	cfg := LoadConfig()
 
@@ -245,12 +235,8 @@ func TestLoadConfig_Defaults(t *testing.T) {
 }
 
 func TestNew_APIAuthEnabledWithoutKeys(t *testing.T) {
-	os.Setenv("API_AUTH_ENABLED", "true")
-	os.Unsetenv("API_KEYS")
-	defer func() {
-		os.Unsetenv("API_AUTH_ENABLED")
-		os.Unsetenv("API_KEYS")
-	}()
+	t.Setenv("API_AUTH_ENABLED", "true")
+	t.Setenv("API_KEYS", "")
 
 	ctx := context.Background()
 	_, err := New(ctx)
@@ -261,16 +247,20 @@ func TestNew_APIAuthEnabledWithoutKeys(t *testing.T) {
 
 func TestNew_WithoutSnowflake(t *testing.T) {
 	// Clear snowflake config to test initialization without it
-	os.Unsetenv("SNOWFLAKE_PRIVATE_KEY")
-	os.Unsetenv("SNOWFLAKE_ACCOUNT")
-	os.Unsetenv("SNOWFLAKE_USER")
+	t.Setenv("SNOWFLAKE_PRIVATE_KEY", "")
+	t.Setenv("SNOWFLAKE_ACCOUNT", "")
+	t.Setenv("SNOWFLAKE_USER", "")
 
 	ctx := context.Background()
 	app, err := New(ctx)
 	if err != nil {
 		t.Fatalf("New() failed: %v", err)
 	}
-	defer app.Close()
+	defer func() {
+		if closeErr := app.Close(); closeErr != nil {
+			t.Fatalf("Close() failed: %v", closeErr)
+		}
+	}()
 
 	// Core services should be initialized
 	if app.Policy == nil {
@@ -353,21 +343,20 @@ func TestNew_WithoutSnowflake(t *testing.T) {
 }
 
 func TestNew_WebhookURLs(t *testing.T) {
-	os.Setenv("WEBHOOK_URLS", "https://1.1.1.1/hook")
-	os.Unsetenv("SLACK_WEBHOOK_URL")
-	os.Unsetenv("PAGERDUTY_ROUTING_KEY")
-	defer func() {
-		os.Unsetenv("WEBHOOK_URLS")
-		os.Unsetenv("SLACK_WEBHOOK_URL")
-		os.Unsetenv("PAGERDUTY_ROUTING_KEY")
-	}()
+	t.Setenv("WEBHOOK_URLS", "https://1.1.1.1/hook")
+	t.Setenv("SLACK_WEBHOOK_URL", "")
+	t.Setenv("PAGERDUTY_ROUTING_KEY", "")
 
 	ctx := context.Background()
 	app, err := New(ctx)
 	if err != nil {
 		t.Fatalf("New() failed: %v", err)
 	}
-	defer app.Close()
+	defer func() {
+		if closeErr := app.Close(); closeErr != nil {
+			t.Fatalf("Close() failed: %v", closeErr)
+		}
+	}()
 
 	hooks := app.Webhooks.ListWebhooks()
 	if len(hooks) != 1 {
@@ -386,16 +375,20 @@ func TestNew_WebhookURLs(t *testing.T) {
 }
 
 func TestNew_ServicesWired(t *testing.T) {
-	os.Unsetenv("SNOWFLAKE_PRIVATE_KEY")
-	os.Unsetenv("SNOWFLAKE_ACCOUNT")
-	os.Unsetenv("SNOWFLAKE_USER")
+	t.Setenv("SNOWFLAKE_PRIVATE_KEY", "")
+	t.Setenv("SNOWFLAKE_ACCOUNT", "")
+	t.Setenv("SNOWFLAKE_USER", "")
 
 	ctx := context.Background()
 	app, err := New(ctx)
 	if err != nil {
 		t.Fatalf("New() failed: %v", err)
 	}
-	defer app.Close()
+	defer func() {
+		if closeErr := app.Close(); closeErr != nil {
+			t.Fatalf("Close() failed: %v", closeErr)
+		}
+	}()
 
 	// Verify policy engine loaded policies
 	policies := app.Policy.ListPolicies()
@@ -837,9 +830,9 @@ func TestScanQueryPolicies_AddsTruncationMetaFinding(t *testing.T) {
 }
 
 func TestApp_Close(t *testing.T) {
-	os.Unsetenv("SNOWFLAKE_PRIVATE_KEY")
-	os.Unsetenv("SNOWFLAKE_ACCOUNT")
-	os.Unsetenv("SNOWFLAKE_USER")
+	t.Setenv("SNOWFLAKE_PRIVATE_KEY", "")
+	t.Setenv("SNOWFLAKE_ACCOUNT", "")
+	t.Setenv("SNOWFLAKE_USER", "")
 
 	ctx := context.Background()
 	app, _ := New(ctx)
@@ -851,8 +844,7 @@ func TestApp_Close(t *testing.T) {
 }
 
 func TestGetEnv(t *testing.T) {
-	os.Setenv("TEST_VAR", "test_value")
-	defer os.Unsetenv("TEST_VAR")
+	t.Setenv("TEST_VAR", "test_value")
 
 	val := getEnv("TEST_VAR", "default")
 	if val != "test_value" {
@@ -866,8 +858,7 @@ func TestGetEnv(t *testing.T) {
 }
 
 func TestGetEnvInt(t *testing.T) {
-	os.Setenv("TEST_INT", "42")
-	defer os.Unsetenv("TEST_INT")
+	t.Setenv("TEST_INT", "42")
 
 	val := getEnvInt("TEST_INT", 0)
 	if val != 42 {
@@ -894,18 +885,16 @@ func TestGetEnvBool(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		os.Setenv("TEST_BOOL", tt.value)
+		t.Setenv("TEST_BOOL", tt.value)
 		got := getEnvBool("TEST_BOOL", false)
 		if got != tt.want {
 			t.Errorf("getEnvBool(%q) = %v, want %v", tt.value, got, tt.want)
 		}
-		os.Unsetenv("TEST_BOOL")
 	}
 }
 
 func TestGetEnvDuration(t *testing.T) {
-	os.Setenv("TEST_DUR", "5m")
-	defer os.Unsetenv("TEST_DUR")
+	t.Setenv("TEST_DUR", "5m")
 
 	val := getEnvDuration("TEST_DUR", time.Hour)
 	if val != 5*time.Minute {
@@ -919,8 +908,7 @@ func TestGetEnvDuration(t *testing.T) {
 }
 
 func TestGetEnvFloat(t *testing.T) {
-	os.Setenv("TEST_FLOAT", "0.25")
-	defer os.Unsetenv("TEST_FLOAT")
+	t.Setenv("TEST_FLOAT", "0.25")
 
 	val := getEnvFloat("TEST_FLOAT", 1.0)
 	if val != 0.25 {

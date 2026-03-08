@@ -76,7 +76,7 @@ func (r *RetentionRepository) deleteBefore(ctx context.Context, table, timeColum
 		return 0, fmt.Errorf("invalid table reference for %s: %w", table, err)
 	}
 
-	// #nosec G202 -- tableRef is validated via SafeQualifiedTableRef, timeColumn is constant.
+	// #nosec G201 -- tableRef is validated via SafeQualifiedTableRef, timeColumn is constant.
 	query := fmt.Sprintf(`DELETE FROM %s WHERE %s < ?`, tableRef, timeColumn)
 	result, err := r.client.db.ExecContext(ctx, query, olderThan.UTC())
 	if err != nil {

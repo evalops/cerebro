@@ -83,7 +83,9 @@ func TestRenderAuditPackageZIP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open manifest: %v", err)
 	}
-	defer rc.Close()
+	defer func() {
+		_ = rc.Close()
+	}()
 
 	var manifest AuditManifest
 	if err := json.NewDecoder(rc).Decode(&manifest); err != nil {

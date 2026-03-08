@@ -243,6 +243,13 @@ func RBACMiddleware(rbac *auth.RBAC) func(http.Handler) http.Handler {
 
 func isPublicEndpoint(path string) bool {
 	return path == "/health" || path == "/ready" ||
+		path == "/metrics" ||
+		path == "/docs" ||
+		path == "/openapi.yaml"
+}
+
+func isRateLimitBypassEndpoint(path string) bool {
+	return path == "/health" || path == "/ready" ||
 		path == "/docs" ||
 		path == "/openapi.yaml"
 }
