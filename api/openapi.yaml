@@ -220,22 +220,58 @@ paths:
                 $ref: '#/components/schemas/Policy'
     delete:
       tags:
-        - Undocumented
-      summary: DELETE endpoint (placeholder)
-      description: Auto-generated placeholder to keep OpenAPI route coverage in sync with server routes.
-      x-cerebro-generated: "true"
+        - Policies
+      summary: Delete a policy
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        "200":
-          description: OK
+        '204':
+          description: Policy deleted
+        '404':
+          description: Policy not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     put:
       tags:
-        - Undocumented
-      summary: PUT endpoint (placeholder)
-      description: Auto-generated placeholder to keep OpenAPI route coverage in sync with server routes.
-      x-cerebro-generated: "true"
+        - Policies
+      summary: Update an existing policy
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Policy'
       responses:
-        "200":
-          description: OK
+        '200':
+          description: Policy updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Policy'
+        '400':
+          description: Invalid policy payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Policy not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/policies/evaluate:
     post:
       tags:
@@ -354,13 +390,28 @@ paths:
                 $ref: '#/components/schemas/Finding'
     delete:
       tags:
-        - Undocumented
-      summary: DELETE endpoint (placeholder)
-      description: Auto-generated placeholder to keep OpenAPI route coverage in sync with server routes.
-      x-cerebro-generated: "true"
+        - Findings
+      summary: Soft delete a finding
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
-        "200":
-          description: OK
+        '200':
+          description: Finding deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '404':
+          description: Finding not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/findings/scan:
     post:
       tags:
@@ -2916,22 +2967,64 @@ paths:
                 $ref: '#/components/schemas/Error'
     delete:
       tags:
-        - Undocumented
-      summary: DELETE endpoint (placeholder)
-      description: Auto-generated placeholder to keep OpenAPI route coverage in sync with server routes.
-      x-cerebro-generated: "true"
+        - Admin
+      summary: Delete remediation rule
+      description: Delete a remediation rule by ID.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Remediation rule ID
       responses:
-        "200":
-          description: OK
+        '204':
+          description: Rule deleted
+        '404':
+          description: Rule not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
     put:
       tags:
-        - Undocumented
-      summary: PUT endpoint (placeholder)
-      description: Auto-generated placeholder to keep OpenAPI route coverage in sync with server routes.
-      x-cerebro-generated: "true"
+        - Admin
+      summary: Update remediation rule
+      description: Update an existing remediation rule by ID.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Remediation rule ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
       responses:
-        "200":
-          description: OK
+        '200':
+          description: Rule updated
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid rule payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Rule not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/remediation/rules/{id}/disable:
     post:
       tags:
