@@ -526,7 +526,7 @@ func buildMapperSourceSLO(stats graphingest.MapperStats) []mapperSourceSLO {
 	for source, sourceStats := range stats.SourceStats {
 		processed := maxInt64(0, sourceStats.EventsProcessed)
 		matched := maxInt64(0, sourceStats.EventsMatched)
-		rejectedWrites := sourceStats.EventsRejected + sourceStats.NodesRejected + sourceStats.EdgesRejected
+		rejectedWrites := sourceStats.NodesRejected + sourceStats.EdgesRejected
 		totalWrites := sourceStats.NodesUpserted + sourceStats.EdgesUpserted + rejectedWrites
 
 		matchRate := percentInt64(matched, processed)
