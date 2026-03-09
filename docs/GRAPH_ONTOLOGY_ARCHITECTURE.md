@@ -25,6 +25,8 @@ First-class kinds for high-frequency organizational operations:
 
 - `pull_request`
 - `deployment_run`
+- `pipeline_run`
+- `check_run`
 - `meeting`
 - `document`
 - `communication_thread`
@@ -59,6 +61,10 @@ To enforce consistency, use the graph-level helper:
 - `WriteMetadata.PropertyMap()`
 
 API handlers, tool writeback handlers, and graph actuation flows should all normalize metadata through this contract.
+
+Generated ontology snapshot:
+
+- `docs/GRAPH_ONTOLOGY_AUTOGEN.md` (via `go run ./scripts/generate_graph_ontology_docs/main.go`)
 
 ## Ingestion Mapping Strategy
 

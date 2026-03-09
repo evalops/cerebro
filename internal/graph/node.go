@@ -61,6 +61,8 @@ const (
 	NodeKindActivity      NodeKind = "activity"
 	NodeKindPullRequest   NodeKind = "pull_request"
 	NodeKindDeploymentRun NodeKind = "deployment_run"
+	NodeKindPipelineRun   NodeKind = "pipeline_run"
+	NodeKindCheckRun      NodeKind = "check_run"
 	NodeKindMeeting       NodeKind = "meeting"
 	NodeKindDocument      NodeKind = "document"
 	NodeKindThread        NodeKind = "communication_thread"

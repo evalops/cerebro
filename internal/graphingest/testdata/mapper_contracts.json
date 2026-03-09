@@ -301,6 +301,84 @@
     ]
   },
   {
+    "name": "github_check_run_completed_contract",
+    "event": {
+      "id": "evt-contract-github-check-1",
+      "type": "ensemble.tap.github.check_run.completed",
+      "time": "2026-03-09T13:15:00Z",
+      "source": "urn:ensemble:tap",
+      "data": {
+        "repository": "payments-api",
+        "check_run_id": "991",
+        "check_name": "unit-tests",
+        "status": "completed",
+        "conclusion": "success",
+        "commit_sha": "abc1234",
+        "url": "https://github.com/example/payments-api/actions/runs/991",
+        "actor_email": "ci-bot@example.com"
+      }
+    },
+    "seed_nodes": [
+      {
+        "id": "person:ci-bot@example.com",
+        "kind": "person",
+        "name": "CI Bot",
+        "properties": {
+          "email": "ci-bot@example.com"
+        }
+      }
+    ],
+    "expected_mapping": "github_check_run_completed",
+    "expected_nodes": [
+      {"id": "service:payments-api", "kind": "service"},
+      {"id": "check_run:payments-api:991", "kind": "check_run"}
+    ],
+    "expected_edges": [
+      {"source": "check_run:payments-api:991", "target": "service:payments-api", "kind": "targets"},
+      {"source": "person:ci-bot@example.com", "target": "service:payments-api", "kind": "interacted_with"}
+    ]
+  },
+  {
+    "name": "ci_pipeline_completed_contract",
+    "event": {
+      "id": "evt-contract-ci-pipeline-1",
+      "type": "ensemble.tap.ci.pipeline.completed",
+      "time": "2026-03-09T13:18:00Z",
+      "source": "urn:ensemble:tap",
+      "data": {
+        "service": "payments",
+        "pipeline_id": "pipe-1",
+        "run_id": "run-9",
+        "pipeline_name": "payments-main",
+        "status": "succeeded",
+        "branch": "main",
+        "commit_sha": "abc1234",
+        "started_at": "2026-03-09T13:16:00Z",
+        "completed_at": "2026-03-09T13:18:00Z",
+        "actor_email": "build@example.com"
+      }
+    },
+    "seed_nodes": [
+      {
+        "id": "person:build@example.com",
+        "kind": "person",
+        "name": "Build User",
+        "properties": {
+          "email": "build@example.com"
+        }
+      }
+    ],
+    "expected_mapping": "ci_pipeline_completed",
+    "expected_nodes": [
+      {"id": "service:payments", "kind": "service"},
+      {"id": "pipeline_run:payments:pipe-1:run-9", "kind": "pipeline_run"}
+    ],
+    "expected_edges": [
+      {"source": "pipeline_run:payments:pipe-1:run-9", "target": "service:payments", "kind": "targets"},
+      {"source": "person:build@example.com", "target": "service:payments", "kind": "interacted_with"}
+    ]
+  },
+  {
     "name": "sales_call_contract",
     "event": {
       "id": "evt-contract-sales-1",

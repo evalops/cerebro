@@ -303,6 +303,23 @@ jobs:
       - name: Verify generated config docs are committed
         run: git diff --exit-code -- docs/CONFIG_ENV_VARS.md
 
+  ontology-docs-drift:
+    name: ontology-docs-drift
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+
+      - name: Regenerate graph ontology catalog
+        run: go run ./scripts/generate_graph_ontology_docs/main.go
+
+      - name: Verify generated graph ontology docs are committed
+        run: git diff --exit-code -- docs/GRAPH_ONTOLOGY_AUTOGEN.md
+
   api-auth-smoke:
     name: api-auth-smoke
     runs-on: blacksmith-4vcpu-ubuntu-2404

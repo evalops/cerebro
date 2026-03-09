@@ -1,4 +1,4 @@
-.PHONY: build run test sync clean dev serve policy-list docker-build trivy-db security-scan security-scan-built security-scan-source vendor vendor-check oss-audit openapi-check openapi-sync config-docs config-docs-check platform-up platform-down platform-logs platform-smoke hooks
+.PHONY: build run test sync clean dev serve policy-list docker-build trivy-db security-scan security-scan-built security-scan-source vendor vendor-check oss-audit openapi-check openapi-sync config-docs config-docs-check ontology-docs ontology-docs-check platform-up platform-down platform-logs platform-smoke hooks
 
 # Version info
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -140,6 +140,12 @@ config-docs:
 
 config-docs-check: config-docs
 	git diff --exit-code -- docs/CONFIG_ENV_VARS.md
+
+ontology-docs:
+	go run ./scripts/generate_graph_ontology_docs/main.go
+
+ontology-docs-check: ontology-docs
+	git diff --exit-code -- docs/GRAPH_ONTOLOGY_AUTOGEN.md
 
 # Docker run
 docker-run:
