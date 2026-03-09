@@ -55,6 +55,16 @@ func (s *Server) graphIntelligenceInsights(w http.ResponseWriter, r *http.Reques
 		windowDays = parsed
 	}
 
+	maxInsights := 8
+	if raw := strings.TrimSpace(r.URL.Query().Get("max_insights")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 20 {
+			s.error(w, http.StatusBadRequest, "max_insights must be between 1 and 20")
+			return
+		}
+		maxInsights = parsed
+	}
+
 	includeCounterfactual := true
 	if raw := strings.TrimSpace(r.URL.Query().Get("include_counterfactual")); raw != "" {
 		parsed, err := strconv.ParseBool(raw)
@@ -107,7 +117,7 @@ func (s *Server) graphIntelligenceInsights(w http.ResponseWriter, r *http.Reques
 		OutcomeWindow:         time.Duration(windowDays) * 24 * time.Hour,
 		SchemaHistoryLimit:    historyLimit,
 		SchemaSinceVersion:    sinceVersion,
-		MaxInsights:           8,
+		MaxInsights:           maxInsights,
 		IncludeCounterfactual: includeCounterfactual,
 		TemporalDiff:          temporalDiff,
 	})

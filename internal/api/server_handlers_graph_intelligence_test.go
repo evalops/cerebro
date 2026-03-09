@@ -18,7 +18,7 @@ func TestGraphIntelligenceInsightsEndpoint(t *testing.T) {
 	g.AddEdge(&graph.Edge{ID: "alice-role", Source: "user:alice", Target: "role:ops", Kind: graph.EdgeKindCanAssume, Effect: graph.EdgeEffectAllow})
 	g.AddEdge(&graph.Edge{ID: "role-db", Source: "role:ops", Target: "db:prod", Kind: graph.EdgeKindCanRead, Effect: graph.EdgeEffectAllow})
 
-	w := do(t, s, http.MethodGet, "/api/v1/graph/intelligence/insights?window_days=30&include_counterfactual=false", nil)
+	w := do(t, s, http.MethodGet, "/api/v1/graph/intelligence/insights?window_days=30&include_counterfactual=false&max_insights=1", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
@@ -33,6 +33,9 @@ func TestGraphIntelligenceInsightsEndpoint(t *testing.T) {
 	insights, ok := body["insights"].([]any)
 	if !ok || len(insights) == 0 {
 		t.Fatalf("expected insights, got %#v", body["insights"])
+	}
+	if len(insights) != 1 {
+		t.Fatalf("expected max_insights=1 to limit result to one insight, got %d", len(insights))
 	}
 	first, ok := insights[0].(map[string]any)
 	if !ok {
@@ -65,6 +68,11 @@ func TestGraphIntelligenceInsightsEndpoint_InvalidParams(t *testing.T) {
 	w = do(t, s, http.MethodGet, "/api/v1/graph/intelligence/insights?include_counterfactual=maybe", nil)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for invalid include_counterfactual, got %d", w.Code)
+	}
+
+	w = do(t, s, http.MethodGet, "/api/v1/graph/intelligence/insights?max_insights=0", nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for max_insights=0, got %d", w.Code)
 	}
 }
 
