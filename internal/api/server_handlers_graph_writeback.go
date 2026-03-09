@@ -160,7 +160,7 @@ type graphActuateRecommendationRequest struct {
 func (s *Server) graphWriteObservation(w http.ResponseWriter, r *http.Request) {
 	g := s.app.SecurityGraph
 	if g == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 
@@ -228,7 +228,7 @@ func (s *Server) graphWriteObservation(w http.ResponseWriter, r *http.Request) {
 func (s *Server) graphWriteClaim(w http.ResponseWriter, r *http.Request) {
 	g := s.app.SecurityGraph
 	if g == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 
@@ -284,7 +284,7 @@ func (s *Server) graphWriteClaim(w http.ResponseWriter, r *http.Request) {
 func (s *Server) graphAnnotateEntity(w http.ResponseWriter, r *http.Request) {
 	g := s.app.SecurityGraph
 	if g == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 
@@ -355,7 +355,7 @@ func (s *Server) graphAnnotateEntity(w http.ResponseWriter, r *http.Request) {
 func (s *Server) graphWriteDecision(w http.ResponseWriter, r *http.Request) {
 	g := s.app.SecurityGraph
 	if g == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 
@@ -460,7 +460,7 @@ func (s *Server) graphWriteDecision(w http.ResponseWriter, r *http.Request) {
 func (s *Server) graphWriteOutcome(w http.ResponseWriter, r *http.Request) {
 	g := s.app.SecurityGraph
 	if g == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 
@@ -545,7 +545,7 @@ func (s *Server) graphWriteOutcome(w http.ResponseWriter, r *http.Request) {
 func (s *Server) graphResolveIdentity(w http.ResponseWriter, r *http.Request) {
 	g := s.app.SecurityGraph
 	if g == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 
@@ -579,7 +579,7 @@ func (s *Server) graphResolveIdentity(w http.ResponseWriter, r *http.Request) {
 func (s *Server) graphSplitIdentity(w http.ResponseWriter, r *http.Request) {
 	g := s.app.SecurityGraph
 	if g == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 
@@ -611,7 +611,7 @@ func (s *Server) graphSplitIdentity(w http.ResponseWriter, r *http.Request) {
 func (s *Server) graphReviewIdentity(w http.ResponseWriter, r *http.Request) {
 	g := s.app.SecurityGraph
 	if g == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 
@@ -642,7 +642,7 @@ func (s *Server) graphReviewIdentity(w http.ResponseWriter, r *http.Request) {
 func (s *Server) graphIdentityCalibration(w http.ResponseWriter, r *http.Request) {
 	g := s.app.SecurityGraph
 	if g == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 
@@ -687,7 +687,7 @@ func (s *Server) graphIdentityCalibration(w http.ResponseWriter, r *http.Request
 func (s *Server) graphActuateRecommendation(w http.ResponseWriter, r *http.Request) {
 	g := s.app.SecurityGraph
 	if g == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 

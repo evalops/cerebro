@@ -561,7 +561,7 @@ func (s *Server) evaluatePolicy(w http.ResponseWriter, r *http.Request) {
 	var propagationResult *graph.PropagationResult
 	if decision != "deny" && req.ProposedChange != nil {
 		if s.app.SecurityGraph == nil {
-			s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+			s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 			return
 		}
 

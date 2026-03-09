@@ -2,17 +2,27 @@
 
 ## Overview
 
-Cerebro is a comprehensive security data platform for cloud and SaaS posture management. It combines data ingestion (native sync), storage (Snowflake), policy evaluation (Cedar-style), and intelligent security analysis (AI agents) into a unified platform.
+Cerebro is being refactored from a security-first CSPM product into a domain-agnostic graph and intelligence platform. Security remains the first major application surface, but the long-term architecture treats security, org intelligence, and future domains as applications built on one shared graph substrate.
 
 Graph-specific architecture references:
 
 - [Graph Intelligence Layer](./GRAPH_INTELLIGENCE_LAYER.md)
 - [Graph Ontology Architecture](./GRAPH_ONTOLOGY_ARCHITECTURE.md)
 - [Graph World Model Architecture](./GRAPH_WORLD_MODEL_ARCHITECTURE.md)
+- [Platform Transition Architecture](./PLATFORM_TRANSITION_ARCHITECTURE.md)
 - [Graph Ontology Auto-Generated Catalog](./GRAPH_ONTOLOGY_AUTOGEN.md)
 - [CloudEvents Auto-Generated Catalog](./CLOUDEVENTS_AUTOGEN.md)
 - [CloudEvents Machine-Readable Contract Catalog](./CLOUDEVENTS_CONTRACTS.json)
 - [Graph Ontology External Patterns](./GRAPH_ONTOLOGY_EXTERNAL_PATTERNS.md)
+
+## Transition Direction
+
+The current implementation still reflects historical security-first packaging, especially in API namespaces and some internal service boundaries. The target architecture separates:
+
+- platform capabilities: graph query, ontology/schema, ingest contracts, evidence/claim/decision/action/outcome writes, identity resolution, simulation, actuation, and intelligence quality/calibration
+- application capabilities: security/CSPM, org intelligence, compliance, runtime detection/response, and future verticals
+
+See [PLATFORM_TRANSITION_ARCHITECTURE.md](./PLATFORM_TRANSITION_ARCHITECTURE.md) for the concrete endpoint inventory, boundary diagnosis, migration matrix, and schema proposals that define this transition.
 
 ## System Architecture
 

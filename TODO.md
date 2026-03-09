@@ -5,6 +5,39 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 14 - Platform Transition Architecture + API Boundary Cleanup (2026-03-09)
+
+### Review findings
+- [x] Gap: `docs/ARCHITECTURE.md` still described Cerebro primarily as a security data platform instead of a graph platform with security as the first application.
+- [x] Gap: the current OpenAPI exposes 189 `/api/v1/*` routes, with 61 `/api/v1/graph/*` routes that mix platform primitives, security workflows, and org-intelligence endpoints.
+- [x] Gap: graph platform candidates, security application endpoints, org-intelligence endpoints, and admin/control-plane concerns are interleaved under shared namespaces.
+- [x] Gap: historical drift created duplicate/alias surfaces (`/policy/evaluate`, top-level attack-path APIs, dual access-review APIs, dual sync surfaces).
+- [x] Gap: too many platform-grade endpoints still use weak object contracts (`additionalProperties: true`) and lack consistent envelope/job conventions.
+- [x] Gap: user-facing docs and OpenAPI descriptions still said "security graph" for shared graph substrate APIs.
+
+### Execution plan
+- [x] Produce a concrete platform transition architecture doc:
+  - [x] Inventory current routes by platform, security, org, and admin layers.
+  - [x] Diagnose bad abstractions, duplicates, and security-domain leakage.
+  - [x] Define target namespace structure for `/api/v1/platform`, `/api/v1/security`, `/api/v1/org`, and `/api/v1/admin`.
+  - [x] Define the canonical domain-agnostic platform model for entities, edges, evidence, claims, annotations, decisions, outcomes, actions, provenance, temporal semantics, identity, and schema modules.
+  - [x] Map current security concepts into the generalized platform model.
+  - [x] Provide endpoint reorganization, migration phases, and typed schema proposals.
+- [x] Wire the transition plan into the main architecture docs:
+  - [x] Add `docs/PLATFORM_TRANSITION_ARCHITECTURE.md`.
+  - [x] Update `docs/ARCHITECTURE.md` to describe the platform-first direction and link the transition doc.
+- [x] Reduce security-domain leakage in current user-facing platform contracts:
+  - [x] Normalize shared graph endpoint terminology from "security graph" to "graph platform" in OpenAPI/user-facing graph messaging.
+  - [x] Rename the router comment for shared graph endpoints to reflect platform ownership.
+
+### Follow-on execution backlog
+- [ ] Add new `/api/v1/platform/*` aliases backed by existing graph handlers, then mark legacy `/api/v1/graph/*` routes deprecated in OpenAPI.
+- [ ] Move org-intelligence endpoints (`who-knows`, `recommend-team`, `simulate-reorg`) out of `/api/v1/graph/*` and into `/api/v1/org/*`.
+- [ ] Collapse duplicate access-review surfaces onto `/api/v1/security/access-reviews/*`.
+- [ ] Collapse duplicate policy-evaluation routes onto `/api/v1/security/policy-evaluations`.
+- [ ] Convert provider sync, graph rebuild, attack-path analysis, and large simulation endpoints to explicit async job resources.
+- [ ] Replace `additionalProperties: true` on the highest-value platform endpoints with typed request/response schemas and shared envelopes.
+
 ## Deep Review Cycle 13 - World Model Foundation + Claim Layer + Bitemporal Reasoning (2026-03-09)
 
 ### Review findings

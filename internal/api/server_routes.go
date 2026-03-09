@@ -309,7 +309,7 @@ func (s *Server) setupRoutes() {
 			r.Post("/ingest", s.ingestTelemetry)
 		})
 
-		// Security Graph endpoints
+		// Graph platform endpoints
 		r.Route("/graph", func(r chi.Router) {
 			r.Get("/diff", s.graphDiff)
 			r.Get("/query", s.graphQuery)

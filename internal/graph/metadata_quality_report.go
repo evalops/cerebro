@@ -85,7 +85,7 @@ func BuildGraphMetadataQualityReport(g *Graph, opts GraphMetadataQualityReportOp
 		report.Recommendations = []GraphMetadataRecommendation{{
 			Priority:        "high",
 			Category:        "graph_unavailable",
-			Title:           "Security graph is not initialized",
+			Title:           "Graph platform is not initialized",
 			Detail:          "No metadata quality metrics are available because the graph is nil.",
 			SuggestedAction: "Initialize and populate the graph before requesting metadata quality insights.",
 		}}

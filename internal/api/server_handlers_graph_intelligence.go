@@ -17,13 +17,13 @@ import (
 
 func (s *Server) graphIntelligenceInsights(w http.ResponseWriter, r *http.Request) {
 	if s.app.SecurityGraph == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 
 	engine := s.graphRiskEngine()
 	if engine == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 
@@ -128,7 +128,7 @@ func (s *Server) graphIntelligenceInsights(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) graphIntelligenceQuality(w http.ResponseWriter, r *http.Request) {
 	if s.app.SecurityGraph == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 
@@ -172,7 +172,7 @@ func (s *Server) graphIntelligenceQuality(w http.ResponseWriter, r *http.Request
 
 func (s *Server) graphIntelligenceMetadataQuality(w http.ResponseWriter, r *http.Request) {
 	if s.app.SecurityGraph == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 
@@ -194,7 +194,7 @@ func (s *Server) graphIntelligenceMetadataQuality(w http.ResponseWriter, r *http
 
 func (s *Server) graphIntelligenceClaimConflicts(w http.ResponseWriter, r *http.Request) {
 	if s.app.SecurityGraph == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 
@@ -260,7 +260,7 @@ func (s *Server) graphIntelligenceClaimConflicts(w http.ResponseWriter, r *http.
 
 func (s *Server) graphIntelligenceLeverage(w http.ResponseWriter, r *http.Request) {
 	if s.app.SecurityGraph == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 
@@ -491,12 +491,12 @@ func (s *Server) graphIngestContracts(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) graphIntelligenceWeeklyCalibration(w http.ResponseWriter, r *http.Request) {
 	if s.app.SecurityGraph == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 	engine := s.graphRiskEngine()
 	if engine == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 
@@ -661,7 +661,7 @@ type graphQueryNeighborResult struct {
 
 func (s *Server) graphQuery(w http.ResponseWriter, r *http.Request) {
 	if s.app.SecurityGraph == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 	g := s.app.SecurityGraph

@@ -10,7 +10,7 @@ import (
 
 func (s *Server) orgMeetingInsights(w http.ResponseWriter, r *http.Request) {
 	if s.app.SecurityGraph == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 
@@ -21,7 +21,7 @@ func (s *Server) orgMeetingInsights(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) orgMeetingAnalysis(w http.ResponseWriter, r *http.Request) {
 	if s.app.SecurityGraph == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 
