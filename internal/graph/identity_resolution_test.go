@@ -155,3 +155,50 @@ func TestConfirmIdentityAlias_IsIdempotent(t *testing.T) {
 		t.Fatalf("expected exactly one active alias_of edge, got %d", count)
 	}
 }
+
+func TestConfirmIdentityAlias_RemovesStaleCanonicalLinks(t *testing.T) {
+	g := New()
+	g.AddNode(&Node{ID: "person:alice@example.com", Kind: NodeKindPerson, Name: "Alice"})
+	g.AddNode(&Node{ID: "person:bob@example.com", Kind: NodeKindPerson, Name: "Bob"})
+	g.AddNode(&Node{
+		ID:   "alias:github:shared-handle",
+		Kind: NodeKindIdentityAlias,
+		Name: "shared-handle",
+		Properties: map[string]any{
+			"source_system": "github",
+			"external_id":   "shared-handle",
+			"observed_at":   "2026-03-08T00:00:00Z",
+			"valid_from":    "2026-03-08T00:00:00Z",
+		},
+	})
+
+	g.AddEdge(&Edge{
+		ID:     "alias_of:shared->alice",
+		Source: "alias:github:shared-handle",
+		Target: "person:alice@example.com",
+		Kind:   EdgeKindAliasOf,
+		Effect: EdgeEffectAllow,
+	})
+	g.AddEdge(&Edge{
+		ID:     "alias_of:shared->bob",
+		Source: "alias:github:shared-handle",
+		Target: "person:bob@example.com",
+		Kind:   EdgeKindAliasOf,
+		Effect: EdgeEffectAllow,
+	})
+
+	if err := ConfirmIdentityAlias(g, "alias:github:shared-handle", "person:alice@example.com", "manual", "evt-confirm", temporalNowUTC(), 1); err != nil {
+		t.Fatalf("confirm alias failed: %v", err)
+	}
+
+	links := make([]string, 0)
+	for _, edge := range g.GetOutEdges("alias:github:shared-handle") {
+		if edge == nil || edge.Kind != EdgeKindAliasOf {
+			continue
+		}
+		links = append(links, edge.Target)
+	}
+	if len(links) != 1 || links[0] != "person:alice@example.com" {
+		t.Fatalf("expected one canonical link to alice, got %+v", links)
+	}
+}
