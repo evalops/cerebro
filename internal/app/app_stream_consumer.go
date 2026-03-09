@@ -70,9 +70,6 @@ func (a *App) ensureSecurityGraph() *graph.Graph {
 	if a == nil {
 		return nil
 	}
-	if a.SecurityGraph != nil {
-		return a.SecurityGraph
-	}
 
 	a.securityGraphInitMu.Lock()
 	defer a.securityGraphInitMu.Unlock()
