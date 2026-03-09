@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/evalops/cerebro/internal/auth"
@@ -155,7 +156,116 @@ func (a *App) initHealth() {
 		return nil
 	}))
 
+	a.Health.Register("graph_ontology_slo", a.graphOntologySLOHealthCheck())
+
 	a.Logger.Info("health service initialized")
+}
+
+type graphOntologySLOThresholds struct {
+	FallbackWarn        float64
+	FallbackCritical    float64
+	SchemaValidWarn     float64
+	SchemaValidCritical float64
+}
+
+func defaultGraphOntologySLOThresholds() graphOntologySLOThresholds {
+	return graphOntologySLOThresholds{
+		FallbackWarn:        12,
+		FallbackCritical:    25,
+		SchemaValidWarn:     98,
+		SchemaValidCritical: 92,
+	}
+}
+
+func sanitizeGraphOntologySLOThresholds(raw graphOntologySLOThresholds) graphOntologySLOThresholds {
+	defaults := defaultGraphOntologySLOThresholds()
+	out := raw
+
+	if out.FallbackWarn < 0 || out.FallbackWarn > 100 || out.FallbackWarn != out.FallbackWarn {
+		out.FallbackWarn = defaults.FallbackWarn
+	}
+	if out.FallbackCritical < 0 || out.FallbackCritical > 100 || out.FallbackCritical != out.FallbackCritical {
+		out.FallbackCritical = defaults.FallbackCritical
+	}
+	if out.FallbackCritical < out.FallbackWarn {
+		out.FallbackCritical = out.FallbackWarn
+	}
+
+	if out.SchemaValidWarn < 0 || out.SchemaValidWarn > 100 || out.SchemaValidWarn != out.SchemaValidWarn {
+		out.SchemaValidWarn = defaults.SchemaValidWarn
+	}
+	if out.SchemaValidCritical < 0 || out.SchemaValidCritical > 100 || out.SchemaValidCritical != out.SchemaValidCritical {
+		out.SchemaValidCritical = defaults.SchemaValidCritical
+	}
+	if out.SchemaValidCritical > out.SchemaValidWarn {
+		out.SchemaValidCritical = out.SchemaValidWarn
+	}
+	return out
+}
+
+func (a *App) graphOntologySLOThresholds() graphOntologySLOThresholds {
+	if a == nil || a.Config == nil {
+		return defaultGraphOntologySLOThresholds()
+	}
+	return sanitizeGraphOntologySLOThresholds(graphOntologySLOThresholds{
+		FallbackWarn:        a.Config.GraphOntologyFallbackWarnPct,
+		FallbackCritical:    a.Config.GraphOntologyFallbackCriticalPct,
+		SchemaValidWarn:     a.Config.GraphOntologySchemaValidWarnPct,
+		SchemaValidCritical: a.Config.GraphOntologySchemaValidCriticalPct,
+	})
+}
+
+func (a *App) graphOntologySLOHealthCheck() health.Checker {
+	return func(_ context.Context) health.CheckResult {
+		start := time.Now()
+		result := health.CheckResult{
+			Name:      "graph_ontology_slo",
+			Timestamp: start,
+		}
+
+		if a == nil || a.SecurityGraph == nil {
+			result.Status = health.StatusUnknown
+			result.Message = "security graph not initialized"
+			result.Latency = time.Since(start)
+			return result
+		}
+
+		thresholds := a.graphOntologySLOThresholds()
+		slo := graph.BuildGraphOntologySLO(a.SecurityGraph, time.Now().UTC(), 7)
+		status, message := evaluateGraphOntologySLOStatus(slo, thresholds)
+		result.Status = status
+		result.Message = message
+		result.Latency = time.Since(start)
+		return result
+	}
+}
+
+func evaluateGraphOntologySLOStatus(slo graph.GraphOntologySLO, thresholds graphOntologySLOThresholds) (health.Status, string) {
+	status := health.StatusHealthy
+	issues := make([]string, 0, 2)
+
+	if slo.FallbackActivityPercent >= thresholds.FallbackCritical {
+		status = health.StatusUnhealthy
+		issues = append(issues, fmt.Sprintf("fallback_activity_percent %.1f >= critical %.1f", slo.FallbackActivityPercent, thresholds.FallbackCritical))
+	} else if slo.FallbackActivityPercent >= thresholds.FallbackWarn {
+		status = health.StatusDegraded
+		issues = append(issues, fmt.Sprintf("fallback_activity_percent %.1f >= warn %.1f", slo.FallbackActivityPercent, thresholds.FallbackWarn))
+	}
+
+	if slo.SchemaValidWritePercent <= thresholds.SchemaValidCritical {
+		status = health.StatusUnhealthy
+		issues = append(issues, fmt.Sprintf("schema_valid_write_percent %.1f <= critical %.1f", slo.SchemaValidWritePercent, thresholds.SchemaValidCritical))
+	} else if slo.SchemaValidWritePercent <= thresholds.SchemaValidWarn {
+		if status != health.StatusUnhealthy {
+			status = health.StatusDegraded
+		}
+		issues = append(issues, fmt.Sprintf("schema_valid_write_percent %.1f <= warn %.1f", slo.SchemaValidWritePercent, thresholds.SchemaValidWarn))
+	}
+
+	if len(issues) == 0 {
+		return health.StatusHealthy, fmt.Sprintf("fallback_activity_percent %.1f, schema_valid_write_percent %.1f", slo.FallbackActivityPercent, slo.SchemaValidWritePercent)
+	}
+	return status, strings.Join(issues, "; ")
 }
 
 func (a *App) initLineage() {

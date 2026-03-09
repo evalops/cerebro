@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/evalops/cerebro/internal/graph"
+	"github.com/evalops/cerebro/internal/graphingest"
 )
 
 func (s *Server) graphIntelligenceInsights(w http.ResponseWriter, r *http.Request) {
@@ -254,6 +255,63 @@ func (s *Server) graphIntelligenceLeverage(w http.ResponseWriter, r *http.Reques
 		DecisionStaleAfter:       decisionSLA,
 	})
 	s.json(w, http.StatusOK, report)
+}
+
+func (s *Server) graphIngestHealth(w http.ResponseWriter, r *http.Request) {
+	tailLimit := 25
+	if raw := strings.TrimSpace(r.URL.Query().Get("tail_limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 500 {
+			s.error(w, http.StatusBadRequest, "tail_limit must be between 1 and 500")
+			return
+		}
+		tailLimit = parsed
+	}
+
+	validationMode := string(graphingest.MapperValidationEnforce)
+	deadLetterPath := ""
+	if s.app != nil && s.app.Config != nil {
+		if mode := strings.ToLower(strings.TrimSpace(s.app.Config.GraphEventMapperValidationMode)); mode != "" {
+			validationMode = mode
+		}
+		deadLetterPath = strings.TrimSpace(s.app.Config.GraphEventMapperDeadLetterPath)
+	}
+
+	stats := graphingest.MapperStats{}
+	initialized := false
+	if s.app != nil && s.app.TapEventMapper != nil {
+		initialized = true
+		stats = s.app.TapEventMapper.Stats()
+	}
+
+	deadLetter := graphingest.DeadLetterTailMetrics{
+		Path:      deadLetterPath,
+		TailLimit: tailLimit,
+	}
+	deadLetterError := ""
+	if deadLetterPath != "" {
+		inspected, err := graphingest.InspectDeadLetterFile(deadLetterPath, tailLimit)
+		if err != nil {
+			deadLetterError = err.Error()
+		} else {
+			deadLetter = inspected
+		}
+	}
+
+	response := map[string]any{
+		"checked_at": time.Now().UTC(),
+		"mapper": map[string]any{
+			"initialized":      initialized,
+			"validation_mode":  validationMode,
+			"dead_letter_path": deadLetterPath,
+			"stats":            stats,
+		},
+		"dead_letter": deadLetter,
+	}
+	if deadLetterError != "" {
+		response["dead_letter_error"] = deadLetterError
+	}
+	s.json(w, http.StatusOK, response)
 }
 
 func (s *Server) graphQueryTemplates(w http.ResponseWriter, _ *http.Request) {

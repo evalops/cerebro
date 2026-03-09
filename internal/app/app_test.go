@@ -95,6 +95,27 @@ func TestLoadConfigGraphEventMapperControls(t *testing.T) {
 	}
 }
 
+func TestLoadConfigGraphOntologySLOThresholds(t *testing.T) {
+	t.Setenv("GRAPH_ONTOLOGY_FALLBACK_WARN_PERCENT", "14.5")
+	t.Setenv("GRAPH_ONTOLOGY_FALLBACK_CRITICAL_PERCENT", "31")
+	t.Setenv("GRAPH_ONTOLOGY_SCHEMA_VALID_WARN_PERCENT", "97.2")
+	t.Setenv("GRAPH_ONTOLOGY_SCHEMA_VALID_CRITICAL_PERCENT", "90")
+
+	cfg := LoadConfig()
+	if cfg.GraphOntologyFallbackWarnPct != 14.5 {
+		t.Fatalf("expected fallback warn percent 14.5, got %v", cfg.GraphOntologyFallbackWarnPct)
+	}
+	if cfg.GraphOntologyFallbackCriticalPct != 31 {
+		t.Fatalf("expected fallback critical percent 31, got %v", cfg.GraphOntologyFallbackCriticalPct)
+	}
+	if cfg.GraphOntologySchemaValidWarnPct != 97.2 {
+		t.Fatalf("expected schema valid warn percent 97.2, got %v", cfg.GraphOntologySchemaValidWarnPct)
+	}
+	if cfg.GraphOntologySchemaValidCriticalPct != 90 {
+		t.Fatalf("expected schema valid critical percent 90, got %v", cfg.GraphOntologySchemaValidCriticalPct)
+	}
+}
+
 func TestLoadConfigRetention(t *testing.T) {
 	t.Setenv("CEREBRO_AUDIT_RETENTION_DAYS", "45")
 	t.Setenv("CEREBRO_SESSION_RETENTION_DAYS", "21")

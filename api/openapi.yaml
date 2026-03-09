@@ -2524,6 +2524,35 @@ paths:
         '503':
           description: Graph unavailable
           content: *id001
+  /api/v1/graph/ingest/health:
+    get:
+      tags:
+        - Graph
+      summary: Report graph ingest mapper and DLQ health
+      description: Return TAP mapper runtime counters and bounded dead-letter queue tail metrics.
+      parameters:
+        - name: tail_limit
+          in: query
+          required: false
+          description: Number of dead-letter tail lines to summarize (1-500).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+      responses:
+        '200':
+          description: Graph ingest health report
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid query parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/graph/toxic-combinations:
     get:
       tags:

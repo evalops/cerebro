@@ -47,6 +47,7 @@ Current endpoint:
 - `GET /api/v1/graph/intelligence/insights`
 - `GET /api/v1/graph/intelligence/quality`
 - `GET /api/v1/graph/intelligence/leverage`
+- `GET /api/v1/graph/ingest/health`
 
 Output characteristics:
 - Prioritized `insights[]`
@@ -63,6 +64,12 @@ Quality report characteristics:
 - Temporal metadata completeness and freshness KPIs.
 - Decision/outcome write-back closure rate.
 - Prioritized recommendations with suggested remediation actions.
+
+Ingest health characteristics:
+- Mapper runtime counters (processed, matched, rejected, dead-lettered).
+- Validation mode and dead-letter path visibility.
+- Dead-letter tail distributions by issue code, entity type/kind, mapping name, and event type.
+- Bounded tail inspection via `tail_limit` for low-latency operational checks.
 
 ### 2) Power Query API
 Read-only, bounded graph exploration for analysts and advanced workflows.
@@ -122,6 +129,10 @@ MCP adapter strategy:
 - Keep tool contracts stable and deterministic.
 - Enforce permission boundaries per tool/action.
 - Preserve traceability: every response carries IDs/evidence references.
+
+Operational replay loop:
+- Use `cerebro ingest replay-dead-letter` after mapper/ontology changes to replay rejected events.
+- Command deduplicates by event identity, skips malformed lines, and reports replay vs still-rejected outcomes.
 
 ## Identity Resolution Lifecycle
 - Ingest each provider assertion as `identity_alias`.

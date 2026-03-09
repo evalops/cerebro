@@ -2,10 +2,13 @@ package api
 
 import (
 	"net/http"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/evalops/cerebro/internal/events"
 	"github.com/evalops/cerebro/internal/graph"
+	"github.com/evalops/cerebro/internal/graphingest"
 )
 
 func TestGraphIntelligenceInsightsEndpoint(t *testing.T) {
@@ -264,6 +267,98 @@ func TestGraphIntelligenceLeverageEndpoint_InvalidParams(t *testing.T) {
 	w := do(t, s, http.MethodGet, "/api/v1/graph/intelligence/leverage?identity_suggest_threshold=2", nil)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for invalid identity_suggest_threshold, got %d", w.Code)
+	}
+}
+
+func TestGraphIngestHealthEndpoint(t *testing.T) {
+	s := newTestServer(t)
+	dlqPath := filepath.Join(t.TempDir(), "graph-mapper.dlq.jsonl")
+	s.app.Config.GraphEventMapperValidationMode = "enforce"
+	s.app.Config.GraphEventMapperDeadLetterPath = dlqPath
+
+	mapper, err := graphingest.NewMapperWithOptions(graphingest.MappingConfig{
+		Mappings: []graphingest.EventMapping{
+			{
+				Name:   "invalid_kind",
+				Source: "ensemble.tap.test.invalid",
+				Nodes: []graphingest.NodeMapping{
+					{
+						ID:       "test:entity:1",
+						Kind:     "nonexistent_kind",
+						Name:     "Invalid",
+						Provider: "test",
+					},
+				},
+			},
+		},
+	}, nil, graphingest.MapperOptions{
+		ValidationMode: graphingest.MapperValidationEnforce,
+		DeadLetterPath: dlqPath,
+	})
+	if err != nil {
+		t.Fatalf("new mapper with options failed: %v", err)
+	}
+	s.app.TapEventMapper = mapper
+
+	if _, err := mapper.Apply(s.app.SecurityGraph, events.CloudEvent{
+		ID:     "evt-invalid-1",
+		Type:   "ensemble.tap.test.invalid",
+		Time:   time.Date(2026, 3, 9, 22, 30, 0, 0, time.UTC),
+		Source: "urn:ensemble:tap",
+		Data:   map[string]any{"id": "1"},
+	}); err != nil {
+		t.Fatalf("mapper apply failed: %v", err)
+	}
+
+	w := do(t, s, http.MethodGet, "/api/v1/graph/ingest/health?tail_limit=5", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	body := decodeJSON(t, w)
+
+	mapperBody, ok := body["mapper"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected mapper object, got %#v", body["mapper"])
+	}
+	if initialized, _ := mapperBody["initialized"].(bool); !initialized {
+		t.Fatalf("expected mapper initialized=true, got %#v", mapperBody["initialized"])
+	}
+	if mode, _ := mapperBody["validation_mode"].(string); mode != "enforce" {
+		t.Fatalf("expected enforce validation mode, got %#v", mapperBody["validation_mode"])
+	}
+
+	stats, ok := mapperBody["stats"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected mapper stats object, got %#v", mapperBody["stats"])
+	}
+	if deadLettered, ok := stats["dead_lettered"].(float64); !ok || deadLettered < 1 {
+		t.Fatalf("expected dead_lettered >= 1, got %#v", stats["dead_lettered"])
+	}
+
+	deadLetter, ok := body["dead_letter"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected dead_letter object, got %#v", body["dead_letter"])
+	}
+	if exists, ok := deadLetter["exists"].(bool); !ok || !exists {
+		t.Fatalf("expected dead_letter.exists=true, got %#v", deadLetter["exists"])
+	}
+	if parsed, ok := deadLetter["records_parsed"].(float64); !ok || parsed < 1 {
+		t.Fatalf("expected dead_letter.records_parsed >= 1, got %#v", deadLetter["records_parsed"])
+	}
+	issueCounts, ok := deadLetter["issue_code_counts"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected dead_letter.issue_code_counts object, got %#v", deadLetter["issue_code_counts"])
+	}
+	if _, ok := issueCounts[string(graph.SchemaIssueUnknownNodeKind)]; !ok {
+		t.Fatalf("expected unknown_node_kind issue count, got %#v", issueCounts)
+	}
+}
+
+func TestGraphIngestHealthEndpointInvalidTailLimit(t *testing.T) {
+	s := newTestServer(t)
+	w := do(t, s, http.MethodGet, "/api/v1/graph/ingest/health?tail_limit=0", nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for tail_limit=0, got %d", w.Code)
 	}
 }
 

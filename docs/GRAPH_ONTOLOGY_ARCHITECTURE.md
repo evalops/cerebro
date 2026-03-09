@@ -72,6 +72,8 @@ API handlers, tool writeback handlers, and graph actuation flows should all norm
 - Always rely on mapper-injected temporal/provenance defaults unless the event provides stronger values.
 - Run mapper validation in `enforce` mode by default and dead-letter invalid writes for replay/debugging.
 - Maintain fixture-driven mapper contract tests (`internal/graphingest/testdata/mapper_contracts.json`) so CI catches ontology regressions per source.
+- Monitor mapper runtime counters and DLQ tail health through `GET /api/v1/graph/ingest/health`.
+- Use `cerebro ingest replay-dead-letter` to replay previously rejected events after ontology/mapping fixes.
 
 ## Query and Intelligence Usage
 

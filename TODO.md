@@ -5,6 +5,36 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 7 - Ingest Observability + Replay + Ontology Alerting (2026-03-09)
+
+### Review findings
+- [x] Gap: no dedicated API surface exposed event mapper rejection counters plus dead-letter tail quality.
+- [x] Gap: dead-letter records were difficult to replay after ontology/mapping fixes.
+- [x] Gap: ontology SLO regressions had no explicit health thresholds for automated alerting.
+- [x] Gap: generated config docs skipped float-based env readers, excluding new threshold settings.
+
+### Execution plan
+- [x] Add graph ingest health API:
+  - [x] Register `GET /api/v1/graph/ingest/health`.
+  - [x] Return mapper initialization state, validation mode, dead-letter path, and runtime stats.
+  - [x] Return bounded dead-letter tail metrics (`tail_limit`) with issue/entity/event distributions.
+  - [x] Add handler tests + OpenAPI contract updates.
+- [x] Add dead-letter replay foundations:
+  - [x] Extend dead-letter records with replay-safe event payload metadata (`event_time`, `event_data`, etc.).
+  - [x] Add `StreamDeadLetter(...)` and `InspectDeadLetterFile(...)` helpers with tests.
+  - [x] Add CLI command `cerebro ingest replay-dead-letter` with dedupe, limit controls, and replay outcome summary.
+- [x] Add ontology SLO health thresholds:
+  - [x] Add config/env controls:
+    - [x] `GRAPH_ONTOLOGY_FALLBACK_WARN_PERCENT`
+    - [x] `GRAPH_ONTOLOGY_FALLBACK_CRITICAL_PERCENT`
+    - [x] `GRAPH_ONTOLOGY_SCHEMA_VALID_WARN_PERCENT`
+    - [x] `GRAPH_ONTOLOGY_SCHEMA_VALID_CRITICAL_PERCENT`
+  - [x] Register `graph_ontology_slo` health check with healthy/degraded/unhealthy transitions.
+  - [x] Add focused tests for threshold evaluation and health-check behavior.
+- [x] Improve config doc generation coverage:
+  - [x] Extend config doc generator to include `getEnvFloat`.
+  - [x] Regenerate `docs/CONFIG_ENV_VARS.md`.
+
 ## Deep Review Cycle 6 - Ingestion Hardening + Activity Migration + Ontology SLOs (2026-03-09)
 
 ### Review findings
