@@ -139,6 +139,36 @@ mappings:
         target: 'service:{{data.repository}}'
         kind: targets
         effect: allow
+  - name: github_check_run_completed
+    source: ensemble.tap.github.check_run.completed
+    nodes:
+      - id: 'service:{{data.repository}}'
+        kind: service
+        name: '{{data.repository}}'
+        provider: github
+        properties:
+          service_id: '{{data.repository}}'
+      - id: 'check_run:{{data.repository}}:{{data.check_run_id}}'
+        kind: check_run
+        name: '{{data.check_name}}'
+        provider: github
+        properties:
+          check_run_id: '{{data.check_run_id}}'
+          repository: '{{data.repository}}'
+          check_name: '{{data.check_name}}'
+          status: '{{data.status}}'
+          conclusion: '{{data.conclusion}}'
+          commit_sha: '{{data.commit_sha}}'
+          url: '{{data.url}}'
+    edges:
+      - source: 'check_run:{{data.repository}}:{{data.check_run_id}}'
+        target: 'service:{{data.repository}}'
+        kind: targets
+        effect: allow
+      - source: '{{resolve(data.actor_email)}}'
+        target: 'service:{{data.repository}}'
+        kind: interacted_with
+        effect: allow
   - name: slack_thread_message
     source: ensemble.tap.slack.thread.message_posted
     nodes:
@@ -239,6 +269,37 @@ mappings:
       - source: 'deployment:{{data.service}}:{{data.deploy_id}}'
         target: 'workload:deploy:{{data.service}}:{{data.deploy_id}}'
         kind: based_on
+        effect: allow
+      - source: '{{resolve(data.actor_email)}}'
+        target: 'service:{{data.service}}'
+        kind: interacted_with
+        effect: allow
+  - name: ci_pipeline_completed
+    source: ensemble.tap.ci.pipeline.completed
+    nodes:
+      - id: 'service:{{data.service}}'
+        kind: service
+        name: '{{data.service}}'
+        provider: ci
+        properties:
+          service_id: '{{data.service}}'
+      - id: 'pipeline_run:{{data.service}}:{{data.pipeline_id}}:{{data.run_id}}'
+        kind: pipeline_run
+        name: '{{data.pipeline_name}}'
+        provider: ci
+        properties:
+          pipeline_id: '{{data.pipeline_id}}'
+          run_id: '{{data.run_id}}'
+          status: '{{data.status}}'
+          branch: '{{data.branch}}'
+          commit_sha: '{{data.commit_sha}}'
+          started_at: '{{data.started_at}}'
+          completed_at: '{{data.completed_at}}'
+          service_id: '{{data.service}}'
+    edges:
+      - source: 'pipeline_run:{{data.service}}:{{data.pipeline_id}}:{{data.run_id}}'
+        target: 'service:{{data.service}}'
+        kind: targets
         effect: allow
       - source: '{{resolve(data.actor_email)}}'
         target: 'service:{{data.service}}'

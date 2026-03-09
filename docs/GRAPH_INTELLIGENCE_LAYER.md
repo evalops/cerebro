@@ -18,6 +18,8 @@ See [GRAPH_ONTOLOGY_ARCHITECTURE.md](./GRAPH_ONTOLOGY_ARCHITECTURE.md) for ontol
 - `workload`: runtime execution units (jobs, deploy units, pods, workers).
 - `pull_request`: source-control change proposals with lifecycle state.
 - `deployment_run`: deployment executions linked to services/workloads.
+- `pipeline_run`: CI/CD pipeline executions connected to services.
+- `check_run`: source-control quality gate/check executions.
 - `meeting`: calendar-driven operational coordination events.
 - `document`: living knowledge artifacts and operational runbooks.
 - `communication_thread`: threaded collaboration streams (for example Slack).

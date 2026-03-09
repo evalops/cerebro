@@ -38,6 +38,8 @@ func TestSchemaRegistry_IntelligenceSpineBuiltins(t *testing.T) {
 		NodeKindWorkload,
 		NodeKindPullRequest,
 		NodeKindDeploymentRun,
+		NodeKindPipelineRun,
+		NodeKindCheckRun,
 		NodeKindMeeting,
 		NodeKindDocument,
 		NodeKindThread,
@@ -109,6 +111,36 @@ func TestSchemaRegistry_IntelligenceSpineBuiltins(t *testing.T) {
 	for _, relationship := range []EdgeKind{EdgeKindTargets, EdgeKindBasedOn} {
 		if !containsEdgeKind(incidentDef.Relationships, relationship) {
 			t.Fatalf("expected incident relationship %q, got %#v", relationship, incidentDef.Relationships)
+		}
+	}
+
+	pipelineDef, ok := defByKind[NodeKindPipelineRun]
+	if !ok {
+		t.Fatal("expected pipeline_run definition")
+	}
+	for _, property := range []string{"pipeline_id", "run_id", "status", "service_id", "observed_at", "valid_from"} {
+		if !containsRequiredProperty(pipelineDef.RequiredProperties, property) {
+			t.Fatalf("expected pipeline_run required property %q, got %#v", property, pipelineDef.RequiredProperties)
+		}
+	}
+	for _, relationship := range []EdgeKind{EdgeKindTargets, EdgeKindBasedOn, EdgeKindExecutedBy} {
+		if !containsEdgeKind(pipelineDef.Relationships, relationship) {
+			t.Fatalf("expected pipeline_run relationship %q, got %#v", relationship, pipelineDef.Relationships)
+		}
+	}
+
+	checkRunDef, ok := defByKind[NodeKindCheckRun]
+	if !ok {
+		t.Fatal("expected check_run definition")
+	}
+	for _, property := range []string{"check_run_id", "repository", "check_name", "status", "observed_at", "valid_from"} {
+		if !containsRequiredProperty(checkRunDef.RequiredProperties, property) {
+			t.Fatalf("expected check_run required property %q, got %#v", property, checkRunDef.RequiredProperties)
+		}
+	}
+	for _, relationship := range []EdgeKind{EdgeKindTargets, EdgeKindBasedOn, EdgeKindEvaluates} {
+		if !containsEdgeKind(checkRunDef.Relationships, relationship) {
+			t.Fatalf("expected check_run relationship %q, got %#v", relationship, checkRunDef.Relationships)
 		}
 	}
 

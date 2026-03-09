@@ -5,6 +5,25 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 9 - Ontology Auto-Generation + CI/CD Runtime Ontology Depth (2026-03-09)
+
+### Review findings
+- [x] Gap: graph ontology docs were narrative-only and not machine-regenerated from schema/mappings.
+- [x] Gap: CI lacked a drift check for generated ontology catalog artifacts.
+- [x] Gap: CI/CD ingestion events still collapsed execution semantics and lacked dedicated `pipeline_run` / `check_run` kinds.
+
+### Execution plan
+- [x] Add ontology auto-generation:
+  - [x] Add `scripts/generate_graph_ontology_docs/main.go`.
+  - [x] Generate `docs/GRAPH_ONTOLOGY_AUTOGEN.md` from registered schema + mapper config.
+  - [x] Add `make ontology-docs` and `make ontology-docs-check`.
+  - [x] Add CI job `ontology-docs-drift` to enforce generated doc freshness.
+- [x] Deepen CI/CD ontology:
+  - [x] Add node kinds `pipeline_run` and `check_run` with schema contracts.
+  - [x] Add mappings `github_check_run_completed` and `ci_pipeline_completed`.
+  - [x] Extend schema + mapper contract fixtures/tests for new kinds.
+  - [x] Update ontology architecture/intelligence docs for new operational node kinds.
+
 ## Deep Review Cycle 8 - Source SLOs + Weekly Calibration + Queryable DLQ + Burn-Rate Guardrails (2026-03-09)
 
 ### Review findings
