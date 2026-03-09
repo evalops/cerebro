@@ -4,7 +4,6 @@ Generated from `internal/events.CloudEvent` and `internal/graphingest/mappings.y
 
 - Contract catalog API version: **cerebro.graph.contracts/v1alpha1**
 - Contract catalog kind: **CloudEventMappingContractCatalog**
-- Generated at: **2026-03-09T21:43:57Z**
 - CloudEvent envelope fields: **12**
 - TAP mapping rules: **13**
 - Wildcard event patterns: **1**

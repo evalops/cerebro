@@ -52,7 +52,7 @@ type MappingContract struct {
 type ContractCatalog struct {
 	APIVersion           string                    `json:"apiVersion"`
 	Kind                 string                    `json:"kind"`
-	GeneratedAt          time.Time                 `json:"generated_at"`
+	GeneratedAt          time.Time                 `json:"generated_at,omitempty"`
 	EnvelopeFields       []CloudEventFieldContract `json:"envelope_fields,omitempty"`
 	Mappings             []MappingContract         `json:"mappings,omitempty"`
 	DistinctRequiredData []string                  `json:"distinct_required_data,omitempty"`
@@ -93,9 +93,8 @@ type templateRef struct {
 
 // BuildContractCatalog builds envelope + mapping contract output from one mapping config.
 func BuildContractCatalog(config MappingConfig, now time.Time) ContractCatalog {
-	now = now.UTC()
-	if now.IsZero() {
-		now = time.Now().UTC()
+	if !now.IsZero() {
+		now = now.UTC()
 	}
 	mappings := BuildMappingContracts(config)
 	required := make(map[string]struct{})

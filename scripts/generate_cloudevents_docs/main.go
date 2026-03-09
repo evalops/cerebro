@@ -21,7 +21,7 @@ func main() {
 		fatalf("load default mappings: %v", err)
 	}
 
-	catalog := graphingest.BuildContractCatalog(config, time.Now().UTC())
+	catalog := graphingest.BuildContractCatalog(config, time.Time{})
 	markdown := renderMarkdown(catalog)
 	if err := os.WriteFile(outputMarkdownPath, []byte(markdown), 0o644); err != nil { // #nosec G306 -- generated docs are intended to be repository-readable artifacts.
 		fatalf("write %s: %v", outputMarkdownPath, err)
@@ -49,7 +49,9 @@ func renderMarkdown(catalog graphingest.ContractCatalog) string {
 	b.WriteString("Generated from `internal/events.CloudEvent` and `internal/graphingest/mappings.yaml` via `go run ./scripts/generate_cloudevents_docs/main.go`.\n\n")
 	fmt.Fprintf(&b, "- Contract catalog API version: **%s**\n", escapePipes(catalog.APIVersion))
 	fmt.Fprintf(&b, "- Contract catalog kind: **%s**\n", escapePipes(catalog.Kind))
-	fmt.Fprintf(&b, "- Generated at: **%s**\n", catalog.GeneratedAt.UTC().Format(time.RFC3339))
+	if !catalog.GeneratedAt.IsZero() {
+		fmt.Fprintf(&b, "- Generated at: **%s**\n", catalog.GeneratedAt.UTC().Format(time.RFC3339))
+	}
 	fmt.Fprintf(&b, "- CloudEvent envelope fields: **%d**\n", len(catalog.EnvelopeFields))
 	fmt.Fprintf(&b, "- TAP mapping rules: **%d**\n", len(catalog.Mappings))
 	fmt.Fprintf(&b, "- Wildcard event patterns: **%d**\n", totalWildcards)

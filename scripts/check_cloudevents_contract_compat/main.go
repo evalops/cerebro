@@ -14,7 +14,7 @@ import (
 
 const mappingsPath = "internal/graphingest/mappings.yaml"
 
-var gitRefPattern = regexp.MustCompile(`^[A-Za-z0-9._/\-]+$`)
+var gitRefPattern = regexp.MustCompile(`^[A-Za-z0-9._/\-^~]+$`)
 
 func main() {
 	baseRefFlag := flag.String("base-ref", strings.TrimSpace(os.Getenv("MAPPER_CONTRACT_BASE_REF")), "git ref used as compatibility baseline (for example origin/main)")

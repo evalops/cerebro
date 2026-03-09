@@ -1,7 +1,7 @@
 {
   "apiVersion": "cerebro.graph.contracts/v1alpha1",
   "kind": "CloudEventMappingContractCatalog",
-  "generated_at": "2026-03-09T21:43:57.101659Z",
+  "generated_at": "0001-01-01T00:00:00Z",
   "envelope_fields": [
     {
       "name": "datacontenttype",
