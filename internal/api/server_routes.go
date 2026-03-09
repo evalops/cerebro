@@ -314,6 +314,7 @@ func (s *Server) setupRoutes() {
 			r.Get("/diff", s.graphDiff)
 			r.Get("/stats", s.graphStats)
 			r.Get("/schema", s.getGraphSchema)
+			r.Get("/schema/health", s.getGraphSchemaHealth)
 			r.Get("/who-knows", s.whoKnows)
 			r.Post("/recommend-team", s.recommendTeam)
 			r.Post("/schema/register", s.registerGraphSchema)

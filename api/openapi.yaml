@@ -4707,6 +4707,48 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+  /api/v1/graph/schema/health:
+    get:
+      tags:
+        - Graph
+      summary: Report graph ontology coverage and conformance
+      description: Return schema coverage, validation conformance, runtime validation counters, and schema drift history.
+      parameters:
+        - name: history_limit
+          in: query
+          required: false
+          description: Number of recent schema changes to include (1-200).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+        - name: since_version
+          in: query
+          required: false
+          description: Override schema drift baseline version (must be positive).
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Ontology health report
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid query parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Security graph is not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/graph/schema/register:
     post:
       tags:

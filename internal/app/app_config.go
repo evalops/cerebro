@@ -397,6 +397,7 @@ type Config struct {
 	GraphCrossTenantReplayTTL           time.Duration
 	GraphCrossTenantMinTenants          int
 	GraphCrossTenantMinSupport          int
+	GraphSchemaValidationMode           string
 
 	// Nested provider-aware view (derived from flat env-backed fields)
 	Providers ProviderAwareConfig
@@ -665,6 +666,7 @@ func LoadConfig() *Config {
 		GraphCrossTenantReplayTTL:           getEnvDuration("GRAPH_CROSS_TENANT_REPLAY_TTL", 24*time.Hour),
 		GraphCrossTenantMinTenants:          getEnvInt("GRAPH_CROSS_TENANT_MIN_TENANTS", 2),
 		GraphCrossTenantMinSupport:          getEnvInt("GRAPH_CROSS_TENANT_MIN_SUPPORT", 2),
+		GraphSchemaValidationMode:           getEnv("GRAPH_SCHEMA_VALIDATION_MODE", "warn"),
 	}
 
 	cfg.RefreshProviderAwareConfig()

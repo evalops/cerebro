@@ -71,6 +71,14 @@ func TestLoadConfigCrossTenantIngestControls(t *testing.T) {
 	}
 }
 
+func TestLoadConfigGraphSchemaValidationMode(t *testing.T) {
+	t.Setenv("GRAPH_SCHEMA_VALIDATION_MODE", "enforce")
+	cfg := LoadConfig()
+	if cfg.GraphSchemaValidationMode != "enforce" {
+		t.Fatalf("expected graph schema validation mode enforce, got %q", cfg.GraphSchemaValidationMode)
+	}
+}
+
 func TestLoadConfigRetention(t *testing.T) {
 	t.Setenv("CEREBRO_AUDIT_RETENTION_DAYS", "45")
 	t.Setenv("CEREBRO_SESSION_RETENTION_DAYS", "21")

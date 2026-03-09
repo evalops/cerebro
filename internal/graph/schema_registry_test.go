@@ -117,3 +117,100 @@ func TestSchemaRegistry_InvalidCategory(t *testing.T) {
 		t.Fatal("expected invalid category error")
 	}
 }
+
+func TestSchemaRegistry_Capabilities(t *testing.T) {
+	reg := NewSchemaRegistry()
+
+	if !reg.NodeKindHasCapability(NodeKindDatabase, NodeCapabilitySensitiveData) {
+		t.Fatal("expected database kind to be sensitive-data capable")
+	}
+	if !reg.NodeKindHasCapability(NodeKindRole, NodeCapabilityPrivilegedIdentity) {
+		t.Fatal("expected role kind to be privileged-identity capable")
+	}
+	if reg.NodeKindHasCapability(NodeKindPerson, NodeCapabilityCredentialStore) {
+		t.Fatal("did not expect person kind to be credential-store capable")
+	}
+}
+
+func TestSchemaRegistry_VersionHistoryAndDrift(t *testing.T) {
+	reg := NewSchemaRegistry()
+	start := reg.Version()
+	if start != 1 {
+		t.Fatalf("expected initial schema version 1, got %d", start)
+	}
+
+	kind := NodeKind("test_versioned_entity_v1")
+	if _, err := reg.RegisterNodeKindDefinition(NodeKindDefinition{
+		Kind:       kind,
+		Categories: []NodeKindCategory{NodeCategoryBusiness},
+	}); err != nil {
+		t.Fatalf("register versioned kind: %v", err)
+	}
+
+	if reg.Version() <= start {
+		t.Fatalf("expected schema version to advance, start=%d now=%d", start, reg.Version())
+	}
+
+	drift := reg.DriftSince(start)
+	if len(drift.AddedNodeKinds) == 0 || drift.AddedNodeKinds[0] != kind {
+		t.Fatalf("expected drift to include added node kind %q, got %#v", kind, drift.AddedNodeKinds)
+	}
+	history := reg.History(10)
+	if len(history) < 2 {
+		t.Fatalf("expected builtins + update history entries, got %d", len(history))
+	}
+}
+
+func TestSchemaRegistry_ValidateNodeAndEdge(t *testing.T) {
+	reg := NewSchemaRegistry()
+
+	sourceKind := NodeKind("test_validation_source_v1")
+	targetKind := NodeKind("test_validation_target_v1")
+	if _, err := reg.RegisterNodeKindDefinition(NodeKindDefinition{
+		Kind:               sourceKind,
+		Categories:         []NodeKindCategory{NodeCategoryBusiness},
+		Properties:         map[string]string{"title": "string", "manager_level": "integer"},
+		RequiredProperties: []string{"title"},
+		Relationships:      []EdgeKind{EdgeKindReportsTo},
+	}); err != nil {
+		t.Fatalf("register source kind: %v", err)
+	}
+	if _, err := reg.RegisterNodeKindDefinition(NodeKindDefinition{
+		Kind:       targetKind,
+		Categories: []NodeKindCategory{NodeCategoryBusiness},
+	}); err != nil {
+		t.Fatalf("register target kind: %v", err)
+	}
+
+	node := &Node{ID: "node:1", Kind: sourceKind, Properties: map[string]any{"manager_level": "not-an-int"}}
+	issues := reg.ValidateNode(node)
+	if !hasIssueCode(issues, SchemaIssueMissingRequiredProperty) {
+		t.Fatalf("expected missing required property issue, got %#v", issues)
+	}
+	if !hasIssueCode(issues, SchemaIssueInvalidPropertyType) {
+		t.Fatalf("expected invalid property type issue, got %#v", issues)
+	}
+
+	source := &Node{ID: "node:source", Kind: sourceKind, Properties: map[string]any{"title": "owner"}}
+	target := &Node{ID: "node:target", Kind: targetKind}
+	edge := &Edge{ID: "edge:1", Source: source.ID, Target: target.ID, Kind: EdgeKindCanRead}
+	edgeIssues := reg.ValidateEdge(edge, source, target)
+	if !hasIssueCode(edgeIssues, SchemaIssueRelationshipNotAllowed) {
+		t.Fatalf("expected relationship-not-allowed issue, got %#v", edgeIssues)
+	}
+
+	unknownEdge := &Edge{ID: "edge:2", Source: source.ID, Target: target.ID, Kind: EdgeKind("unknown_kind_v1")}
+	unknownIssues := reg.ValidateEdge(unknownEdge, source, target)
+	if !hasIssueCode(unknownIssues, SchemaIssueUnknownEdgeKind) {
+		t.Fatalf("expected unknown edge kind issue, got %#v", unknownIssues)
+	}
+}
+
+func hasIssueCode(issues []SchemaValidationIssue, code SchemaValidationIssueCode) bool {
+	for _, issue := range issues {
+		if issue.Code == code {
+			return true
+		}
+	}
+	return false
+}

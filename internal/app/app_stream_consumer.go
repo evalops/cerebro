@@ -136,6 +136,7 @@ func (a *App) handleTapCloudEvent(_ context.Context, evt events.CloudEvent) erro
 
 	if a.SecurityGraph == nil {
 		a.SecurityGraph = graph.New()
+		a.configureGraphSchemaValidation(a.SecurityGraph)
 	}
 	a.SecurityGraph.AddNode(node)
 
@@ -186,7 +187,9 @@ type tapSchemaEntityDefinition struct {
 	Kind          string
 	Categories    []graph.NodeKindCategory
 	Properties    map[string]string
+	Required      []string
 	Relationships []graph.EdgeKind
+	Capabilities  []graph.NodeKindCapability
 	Description   string
 }
 
@@ -219,11 +222,13 @@ func (a *App) handleTapSchemaEvent(eventType string, evt events.CloudEvent) erro
 
 	for _, entity := range entities {
 		definition := graph.NodeKindDefinition{
-			Kind:          graph.NodeKind(entity.Kind),
-			Categories:    entity.Categories,
-			Properties:    entity.Properties,
-			Relationships: entity.Relationships,
-			Description:   entity.Description,
+			Kind:               graph.NodeKind(entity.Kind),
+			Categories:         entity.Categories,
+			Properties:         entity.Properties,
+			RequiredProperties: entity.Required,
+			Relationships:      entity.Relationships,
+			Capabilities:       entity.Capabilities,
+			Description:        entity.Description,
 		}
 		if _, err := graph.RegisterNodeKindDefinition(definition); err != nil {
 			if a.Logger != nil {
@@ -308,12 +313,15 @@ func parseTapSchemaEntities(data map[string]any) []tapSchemaEntityDefinition {
 		if kind == "" {
 			continue
 		}
+		rawProperties := firstPresent(entity, "properties", "fields", "schema")
 
 		definition := tapSchemaEntityDefinition{
 			Kind:          kind,
 			Categories:    parseTapSchemaCategories(firstPresent(entity, "categories", "category"), kind),
-			Properties:    parseTapSchemaProperties(firstPresent(entity, "properties", "fields", "schema")),
+			Properties:    parseTapSchemaProperties(rawProperties),
+			Required:      parseTapSchemaRequiredProperties(firstPresent(entity, "required_properties", "required_fields", "required"), rawProperties),
 			Relationships: parseTapSchemaRelationships(firstPresent(entity, "relationships", "edges", "relation_types")),
+			Capabilities:  parseTapSchemaCapabilities(firstPresent(entity, "capabilities", "features")),
 			Description:   strings.TrimSpace(anyToString(firstPresent(entity, "description", "summary"))),
 		}
 		out = append(out, definition)
@@ -410,6 +418,87 @@ func parseTapSchemaProperties(raw any) map[string]string {
 	return properties
 }
 
+func parseTapSchemaRequiredProperties(raw any, schemaRaw any) []string {
+	required := make(map[string]struct{})
+
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		required[value] = struct{}{}
+	}
+
+	switch typed := raw.(type) {
+	case string:
+		for _, part := range strings.Split(typed, ",") {
+			add(part)
+		}
+	case []string:
+		for _, item := range typed {
+			add(item)
+		}
+	case []any:
+		for _, item := range typed {
+			add(anyToString(item))
+		}
+	}
+
+	for key, value := range mapFromAny(schemaRaw) {
+		nested := mapFromAny(value)
+		if len(nested) == 0 {
+			continue
+		}
+		if requiredFlag, ok := firstPresent(nested, "required", "is_required").(bool); ok && requiredFlag {
+			add(key)
+		}
+	}
+
+	return sortedStringSet(required)
+}
+
+func parseTapSchemaCapabilities(raw any) []graph.NodeKindCapability {
+	capabilities := make(map[graph.NodeKindCapability]struct{})
+
+	add := func(value string) {
+		switch strings.ToLower(strings.TrimSpace(value)) {
+		case string(graph.NodeCapabilityInternetExposable):
+			capabilities[graph.NodeCapabilityInternetExposable] = struct{}{}
+		case string(graph.NodeCapabilitySensitiveData):
+			capabilities[graph.NodeCapabilitySensitiveData] = struct{}{}
+		case string(graph.NodeCapabilityPrivilegedIdentity):
+			capabilities[graph.NodeCapabilityPrivilegedIdentity] = struct{}{}
+		case string(graph.NodeCapabilityCredentialStore):
+			capabilities[graph.NodeCapabilityCredentialStore] = struct{}{}
+		}
+	}
+
+	switch typed := raw.(type) {
+	case string:
+		for _, part := range strings.Split(typed, ",") {
+			add(part)
+		}
+	case []string:
+		for _, item := range typed {
+			add(item)
+		}
+	case []any:
+		for _, item := range typed {
+			add(anyToString(item))
+		}
+	}
+
+	if len(capabilities) == 0 {
+		return nil
+	}
+	out := make([]graph.NodeKindCapability, 0, len(capabilities))
+	for capability := range capabilities {
+		out = append(out, capability)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
+}
+
 func parseTapSchemaRelationships(raw any) []graph.EdgeKind {
 	values := make([]graph.EdgeKind, 0)
 	switch typed := raw.(type) {
@@ -491,6 +580,7 @@ func (a *App) handleTapInteractionEvent(eventType string, evt events.CloudEvent)
 
 	if a.SecurityGraph == nil {
 		a.SecurityGraph = graph.New()
+		a.configureGraphSchemaValidation(a.SecurityGraph)
 	}
 
 	for _, participant := range participants {
@@ -784,6 +874,7 @@ func sortedStringSet(values map[string]struct{}) []string {
 func (a *App) handleTapActivityEvent(source, activityType string, evt events.CloudEvent) error {
 	if a.SecurityGraph == nil {
 		a.SecurityGraph = graph.New()
+		a.configureGraphSchemaValidation(a.SecurityGraph)
 	}
 
 	actorID, actorName := parseTapActivityActor(evt.Data["actor"])

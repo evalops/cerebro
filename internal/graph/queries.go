@@ -735,8 +735,8 @@ func detectSensitiveData(node *Node) *SensitiveDataNode {
 		result.ComplianceImpact = append(result.ComplianceImpact, "PCI-DSS")
 	}
 
-	// Check for credentials/secrets
-	if node.Kind == NodeKindSecret {
+	// Check for credentials/secrets via ontology capability.
+	if NodeKindHasCapability(node.Kind, NodeCapabilityCredentialStore) {
 		result.DataTypes = append(result.DataTypes, "credentials")
 	}
 
