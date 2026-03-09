@@ -2316,6 +2316,89 @@ paths:
         '503':
           description: Graph unavailable
           content: *id001
+  /api/v1/graph/rule-discovery/run:
+    post:
+      tags:
+        - Graph
+      summary: Run AI rule discovery
+      description: Generate candidate toxic-combination and policy rules from historical risk signals and outcomes.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphRuleDiscoveryRunRequest'
+      responses:
+        '200':
+          description: Discovered candidate rules
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphRuleDiscoveryCandidatesResponse'
+        '400':
+          description: Invalid request body
+          content: *id001
+        '503':
+          description: Graph unavailable
+          content: *id001
+  /api/v1/graph/rule-discovery/candidates:
+    get:
+      tags:
+        - Graph
+      summary: List discovered rule candidates
+      description: List pending, approved, or rejected AI-generated rule proposals.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Optional candidate status filter (pending_approval, approved, rejected).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Candidate rule proposals
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphRuleDiscoveryCandidatesResponse'
+        '503':
+          description: Graph unavailable
+          content: *id001
+  /api/v1/graph/rule-discovery/candidates/{id}/decision:
+    post:
+      tags:
+        - Graph
+      summary: Approve or reject discovered rule candidate
+      description: Human-in-the-loop approval endpoint for discovered policy and toxic-combination candidates.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Candidate rule ID.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphRuleDiscoveryDecisionRequest'
+      responses:
+        '200':
+          description: Updated candidate rule
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphRuleDiscoveryDecisionResponse'
+        '400':
+          description: Invalid request body
+          content: *id001
+        '404':
+          description: Candidate not found
+          content: *id001
+        '503':
+          description: Graph unavailable
+          content: *id001
   /api/v1/graph/stats:
     get:
       tags:
@@ -5931,6 +6014,48 @@ components:
           items:
             type: object
             additionalProperties: true
+    GraphRuleDiscoveryRunRequest:
+      type: object
+      properties:
+        window_days:
+          type: integer
+        min_detections:
+          type: integer
+        max_candidates:
+          type: integer
+        profile:
+          type: string
+        include_policies:
+          type: boolean
+        include_toxic_combinations:
+          type: boolean
+    GraphRuleDiscoveryCandidatesResponse:
+      type: object
+      properties:
+        count:
+          type: integer
+        candidates:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    GraphRuleDiscoveryDecisionRequest:
+      type: object
+      required:
+        - approve
+      properties:
+        approve:
+          type: boolean
+        reviewer:
+          type: string
+        notes:
+          type: string
+    GraphRuleDiscoveryDecisionResponse:
+      type: object
+      properties:
+        candidate:
+          type: object
+          additionalProperties: true
     ToxicCombinationsResponse:
       type: object
       properties:

@@ -21,6 +21,7 @@ type RiskEngine struct {
 	outcomeEvents   []OutcomeEvent
 	ruleSignals     []RuleObservation
 	factorSignals   []FactorObservation
+	discoveredRules map[string]DiscoveredRuleCandidate
 	signalLimit     int
 	onScoreChange   func(RiskScoreChangedEvent)
 	mu              sync.RWMutex
@@ -38,6 +39,7 @@ func NewRiskEngine(g *Graph) *RiskEngine {
 		outcomeEvents:   make([]OutcomeEvent, 0, 128),
 		ruleSignals:     make([]RuleObservation, 0, 512),
 		factorSignals:   make([]FactorObservation, 0, 1024),
+		discoveredRules: make(map[string]DiscoveredRuleCandidate),
 		signalLimit:     5000,
 	}
 }
