@@ -5,6 +5,36 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 4 - Ontology Depth + Metadata Consistency + Architecture Docs (2026-03-09)
+
+### Review findings
+- [x] Gap: operational event domains were still overusing generic `activity` nodes in declarative mappings.
+- [x] Gap: metadata normalization logic was duplicated across API/tool writeback paths and graph actuation.
+- [x] Gap: ontology architecture guidance was split across implementation and narrative docs without one extension contract.
+- [x] Gap: complex scoring/prioritization logic lacked inline rationale comments for future calibration.
+
+### Execution plan
+- [x] Deepen ontology kinds for operational intelligence:
+  - [x] Add built-in node kinds: `pull_request`, `deployment_run`, `meeting`, `document`, `communication_thread`, `incident`.
+  - [x] Register schema contracts (required properties + relationship allowances).
+  - [x] Extend schema tests to validate registration and required semantics.
+- [x] Improve declarative mapper ontology usage:
+  - [x] Migrate GitHub PR mappings from generic `activity` to `pull_request`.
+  - [x] Add first-class `incident` node linkage in incident timeline mappings.
+  - [x] Migrate deploy mappings to `deployment_run`.
+  - [x] Migrate calendar/doc/slack thread mappings to `meeting`/`document`/`communication_thread`.
+  - [x] Add mapper tests validating new kind outputs.
+- [x] Unify write metadata normalization:
+  - [x] Add `graph.WriteMetadata` + `NormalizeWriteMetadata(...)`.
+  - [x] Refactor API writeback handlers to use shared graph metadata helper.
+  - [x] Refactor app tool writeback handlers to use shared graph metadata helper.
+  - [x] Refactor graph actuation writeback to use shared graph metadata helper.
+  - [x] Add dedicated graph metadata helper tests.
+- [x] Improve maintainability documentation/comments:
+  - [x] Add `docs/GRAPH_ONTOLOGY_ARCHITECTURE.md`.
+  - [x] Cross-link architecture + intelligence docs to ontology architecture.
+  - [x] Add targeted comments for identity queue prioritization and leverage score weighting rationale.
+
 ## Deep Review Cycle 3 - Graph Leverage + Calibration + Actuation (2026-03-09)
 
 ### Review findings

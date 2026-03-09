@@ -154,51 +154,43 @@ func (s *Server) graphWriteObservation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	observedAt, validFrom, validTo, sourceSystem, sourceEventID, confidence := normalizeGraphWriteMetadata(
-		req.ObservedAt,
-		req.ValidFrom,
-		req.ValidTo,
-		req.SourceSystem,
-		req.SourceEventID,
-		req.Confidence,
-	)
+	metadata := graph.NormalizeWriteMetadata(req.ObservedAt, req.ValidFrom, req.ValidTo, req.SourceSystem, req.SourceEventID, req.Confidence, graph.WriteMetadataDefaults{
+		SourceSystem:      "api",
+		SourceEventPrefix: "api",
+		DefaultConfidence: 0.80,
+	})
 
 	observationID := strings.TrimSpace(req.ID)
 	if observationID == "" {
-		observationID = fmt.Sprintf("evidence:observation:%d", observedAt.UnixNano())
+		observationID = fmt.Sprintf("evidence:observation:%d", metadata.ObservedAt.UnixNano())
 	}
 	properties := cloneJSONMap(req.Metadata)
 	properties["evidence_type"] = req.Observation
 	properties["detail"] = firstNonEmpty(req.Summary, req.Observation)
-	applyGraphWriteMetadata(properties, observedAt, validFrom, validTo, sourceSystem, sourceEventID, confidence)
+	metadata.ApplyTo(properties)
 
 	g.AddNode(&graph.Node{
 		ID:         observationID,
 		Kind:       graph.NodeKindEvidence,
 		Name:       firstNonEmpty(req.Observation, req.Summary, observationID),
-		Provider:   sourceSystem,
+		Provider:   metadata.SourceSystem,
 		Properties: properties,
 		Risk:       graph.RiskNone,
 	})
+	edgeProperties := metadata.PropertyMap()
 	g.AddEdge(&graph.Edge{
-		ID:     fmt.Sprintf("%s->%s:%s", observationID, req.EntityID, graph.EdgeKindTargets),
-		Source: observationID,
-		Target: req.EntityID,
-		Kind:   graph.EdgeKindTargets,
-		Effect: graph.EdgeEffectAllow,
-		Properties: map[string]any{
-			"source_system":   sourceSystem,
-			"source_event_id": sourceEventID,
-			"observed_at":     observedAt.Format(time.RFC3339),
-			"valid_from":      validFrom.Format(time.RFC3339),
-			"confidence":      confidence,
-		},
+		ID:         fmt.Sprintf("%s->%s:%s", observationID, req.EntityID, graph.EdgeKindTargets),
+		Source:     observationID,
+		Target:     req.EntityID,
+		Kind:       graph.EdgeKindTargets,
+		Effect:     graph.EdgeEffectAllow,
+		Properties: edgeProperties,
 	})
 
 	s.json(w, http.StatusCreated, map[string]any{
 		"observation_id": observationID,
 		"entity_id":      req.EntityID,
-		"observed_at":    observedAt,
+		"observed_at":    metadata.ObservedAt,
 	})
 }
 
@@ -231,16 +223,13 @@ func (s *Server) graphAnnotateEntity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	observedAt, validFrom, validTo, sourceSystem, sourceEventID, confidence := normalizeGraphWriteMetadata(
-		req.ObservedAt,
-		req.ValidFrom,
-		req.ValidTo,
-		req.SourceSystem,
-		req.SourceEventID,
-		req.Confidence,
-	)
+	metadata := graph.NormalizeWriteMetadata(req.ObservedAt, req.ValidFrom, req.ValidTo, req.SourceSystem, req.SourceEventID, req.Confidence, graph.WriteMetadataDefaults{
+		SourceSystem:      "api",
+		SourceEventPrefix: "api",
+		DefaultConfidence: 0.80,
+	})
 
-	annotationID := fmt.Sprintf("annotation:%s:%d", req.EntityID, observedAt.UnixNano())
+	annotationID := fmt.Sprintf("annotation:%s:%d", req.EntityID, metadata.ObservedAt.UnixNano())
 	properties := cloneJSONMap(entity.Properties)
 	if properties == nil {
 		properties = make(map[string]any)
@@ -250,21 +239,21 @@ func (s *Server) graphAnnotateEntity(w http.ResponseWriter, r *http.Request) {
 		"id":              annotationID,
 		"annotation":      req.Annotation,
 		"tags":            normalizeStringSlice(req.Tags),
-		"source_system":   sourceSystem,
-		"source_event_id": sourceEventID,
-		"observed_at":     observedAt.Format(time.RFC3339),
-		"valid_from":      validFrom.Format(time.RFC3339),
-		"confidence":      confidence,
+		"source_system":   metadata.SourceSystem,
+		"source_event_id": metadata.SourceEventID,
+		"observed_at":     metadata.ObservedAt.Format(time.RFC3339),
+		"valid_from":      metadata.ValidFrom.Format(time.RFC3339),
+		"confidence":      metadata.Confidence,
 	}
-	if validTo != nil {
-		entry["valid_to"] = validTo.Format(time.RFC3339)
+	if metadata.ValidTo != nil {
+		entry["valid_to"] = metadata.ValidTo.Format(time.RFC3339)
 	}
 	if len(req.Metadata) > 0 {
 		entry["metadata"] = cloneJSONMap(req.Metadata)
 	}
 	existing = append(existing, entry)
 	properties["annotations"] = existing
-	applyGraphWriteMetadata(properties, observedAt, validFrom, validTo, sourceSystem, sourceEventID, confidence)
+	metadata.ApplyTo(properties)
 
 	entity.Properties = properties
 	g.AddNode(entity)
@@ -308,88 +297,70 @@ func (s *Server) graphWriteDecision(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	observedAt, validFrom, validTo, sourceSystem, sourceEventID, confidence := normalizeGraphWriteMetadata(
-		req.ObservedAt,
-		req.ValidFrom,
-		req.ValidTo,
-		req.SourceSystem,
-		req.SourceEventID,
-		req.Confidence,
-	)
+	metadata := graph.NormalizeWriteMetadata(req.ObservedAt, req.ValidFrom, req.ValidTo, req.SourceSystem, req.SourceEventID, req.Confidence, graph.WriteMetadataDefaults{
+		SourceSystem:      "api",
+		SourceEventPrefix: "api",
+		DefaultConfidence: 0.80,
+	})
 
 	decisionID := strings.TrimSpace(req.ID)
 	if decisionID == "" {
-		decisionID = fmt.Sprintf("decision:%d", observedAt.UnixNano())
+		decisionID = fmt.Sprintf("decision:%d", metadata.ObservedAt.UnixNano())
 	}
 	properties := cloneJSONMap(req.Metadata)
 	properties["decision_type"] = req.DecisionType
 	properties["status"] = firstNonEmpty(req.Status, "proposed")
-	properties["made_at"] = observedAt.Format(time.RFC3339)
+	properties["made_at"] = metadata.ObservedAt.Format(time.RFC3339)
 	properties["made_by"] = req.MadeBy
 	properties["rationale"] = req.Rationale
-	applyGraphWriteMetadata(properties, observedAt, validFrom, validTo, sourceSystem, sourceEventID, confidence)
+	metadata.ApplyTo(properties)
 
 	g.AddNode(&graph.Node{
 		ID:         decisionID,
 		Kind:       graph.NodeKindDecision,
 		Name:       firstNonEmpty(req.DecisionType, decisionID),
-		Provider:   sourceSystem,
+		Provider:   metadata.SourceSystem,
 		Properties: properties,
 		Risk:       graph.RiskNone,
 	})
 
 	for _, targetID := range targetIDs {
+		edgeProperties := metadata.PropertyMap()
 		g.AddEdge(&graph.Edge{
-			ID:     fmt.Sprintf("%s->%s:%s", decisionID, targetID, graph.EdgeKindTargets),
-			Source: decisionID,
-			Target: targetID,
-			Kind:   graph.EdgeKindTargets,
-			Effect: graph.EdgeEffectAllow,
-			Properties: map[string]any{
-				"source_system":   sourceSystem,
-				"source_event_id": sourceEventID,
-				"observed_at":     observedAt.Format(time.RFC3339),
-				"valid_from":      validFrom.Format(time.RFC3339),
-				"confidence":      confidence,
-			},
+			ID:         fmt.Sprintf("%s->%s:%s", decisionID, targetID, graph.EdgeKindTargets),
+			Source:     decisionID,
+			Target:     targetID,
+			Kind:       graph.EdgeKindTargets,
+			Effect:     graph.EdgeEffectAllow,
+			Properties: edgeProperties,
 		})
 	}
 	for _, evidenceID := range uniqueNormalizedIDs(req.EvidenceIDs) {
 		if _, ok := g.GetNode(evidenceID); !ok {
 			continue
 		}
+		edgeProperties := metadata.PropertyMap()
 		g.AddEdge(&graph.Edge{
-			ID:     fmt.Sprintf("%s->%s:%s", decisionID, evidenceID, graph.EdgeKindBasedOn),
-			Source: decisionID,
-			Target: evidenceID,
-			Kind:   graph.EdgeKindBasedOn,
-			Effect: graph.EdgeEffectAllow,
-			Properties: map[string]any{
-				"source_system":   sourceSystem,
-				"source_event_id": sourceEventID,
-				"observed_at":     observedAt.Format(time.RFC3339),
-				"valid_from":      validFrom.Format(time.RFC3339),
-				"confidence":      confidence,
-			},
+			ID:         fmt.Sprintf("%s->%s:%s", decisionID, evidenceID, graph.EdgeKindBasedOn),
+			Source:     decisionID,
+			Target:     evidenceID,
+			Kind:       graph.EdgeKindBasedOn,
+			Effect:     graph.EdgeEffectAllow,
+			Properties: edgeProperties,
 		})
 	}
 	for _, actionID := range uniqueNormalizedIDs(req.ActionIDs) {
 		if _, ok := g.GetNode(actionID); !ok {
 			continue
 		}
+		edgeProperties := metadata.PropertyMap()
 		g.AddEdge(&graph.Edge{
-			ID:     fmt.Sprintf("%s->%s:%s", decisionID, actionID, graph.EdgeKindExecutedBy),
-			Source: decisionID,
-			Target: actionID,
-			Kind:   graph.EdgeKindExecutedBy,
-			Effect: graph.EdgeEffectAllow,
-			Properties: map[string]any{
-				"source_system":   sourceSystem,
-				"source_event_id": sourceEventID,
-				"observed_at":     observedAt.Format(time.RFC3339),
-				"valid_from":      validFrom.Format(time.RFC3339),
-				"confidence":      confidence,
-			},
+			ID:         fmt.Sprintf("%s->%s:%s", decisionID, actionID, graph.EdgeKindExecutedBy),
+			Source:     decisionID,
+			Target:     actionID,
+			Kind:       graph.EdgeKindExecutedBy,
+			Effect:     graph.EdgeEffectAllow,
+			Properties: edgeProperties,
 		})
 	}
 
@@ -427,46 +398,38 @@ func (s *Server) graphWriteOutcome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	observedAt, validFrom, validTo, sourceSystem, sourceEventID, confidence := normalizeGraphWriteMetadata(
-		req.ObservedAt,
-		req.ValidFrom,
-		req.ValidTo,
-		req.SourceSystem,
-		req.SourceEventID,
-		req.Confidence,
-	)
+	metadata := graph.NormalizeWriteMetadata(req.ObservedAt, req.ValidFrom, req.ValidTo, req.SourceSystem, req.SourceEventID, req.Confidence, graph.WriteMetadataDefaults{
+		SourceSystem:      "api",
+		SourceEventPrefix: "api",
+		DefaultConfidence: 0.80,
+	})
 
 	outcomeID := strings.TrimSpace(req.ID)
 	if outcomeID == "" {
-		outcomeID = fmt.Sprintf("outcome:%d", observedAt.UnixNano())
+		outcomeID = fmt.Sprintf("outcome:%d", metadata.ObservedAt.UnixNano())
 	}
 	properties := cloneJSONMap(req.Metadata)
 	properties["outcome_type"] = req.OutcomeType
 	properties["verdict"] = req.Verdict
 	properties["impact_score"] = req.ImpactScore
-	applyGraphWriteMetadata(properties, observedAt, validFrom, validTo, sourceSystem, sourceEventID, confidence)
+	metadata.ApplyTo(properties)
 
 	g.AddNode(&graph.Node{
 		ID:         outcomeID,
 		Kind:       graph.NodeKindOutcome,
 		Name:       firstNonEmpty(req.OutcomeType, outcomeID),
-		Provider:   sourceSystem,
+		Provider:   metadata.SourceSystem,
 		Properties: properties,
 		Risk:       graph.RiskNone,
 	})
+	evaluatesEdgeProperties := metadata.PropertyMap()
 	g.AddEdge(&graph.Edge{
-		ID:     fmt.Sprintf("%s->%s:%s", outcomeID, req.DecisionID, graph.EdgeKindEvaluates),
-		Source: outcomeID,
-		Target: req.DecisionID,
-		Kind:   graph.EdgeKindEvaluates,
-		Effect: graph.EdgeEffectAllow,
-		Properties: map[string]any{
-			"source_system":   sourceSystem,
-			"source_event_id": sourceEventID,
-			"observed_at":     observedAt.Format(time.RFC3339),
-			"valid_from":      validFrom.Format(time.RFC3339),
-			"confidence":      confidence,
-		},
+		ID:         fmt.Sprintf("%s->%s:%s", outcomeID, req.DecisionID, graph.EdgeKindEvaluates),
+		Source:     outcomeID,
+		Target:     req.DecisionID,
+		Kind:       graph.EdgeKindEvaluates,
+		Effect:     graph.EdgeEffectAllow,
+		Properties: evaluatesEdgeProperties,
 	})
 
 	targetIDs := uniqueNormalizedIDs(req.TargetIDs)
@@ -474,19 +437,14 @@ func (s *Server) graphWriteOutcome(w http.ResponseWriter, r *http.Request) {
 		if _, ok := g.GetNode(targetID); !ok {
 			continue
 		}
+		edgeProperties := metadata.PropertyMap()
 		g.AddEdge(&graph.Edge{
-			ID:     fmt.Sprintf("%s->%s:%s", outcomeID, targetID, graph.EdgeKindTargets),
-			Source: outcomeID,
-			Target: targetID,
-			Kind:   graph.EdgeKindTargets,
-			Effect: graph.EdgeEffectAllow,
-			Properties: map[string]any{
-				"source_system":   sourceSystem,
-				"source_event_id": sourceEventID,
-				"observed_at":     observedAt.Format(time.RFC3339),
-				"valid_from":      validFrom.Format(time.RFC3339),
-				"confidence":      confidence,
-			},
+			ID:         fmt.Sprintf("%s->%s:%s", outcomeID, targetID, graph.EdgeKindTargets),
+			Source:     outcomeID,
+			Target:     targetID,
+			Kind:       graph.EdgeKindTargets,
+			Effect:     graph.EdgeEffectAllow,
+			Properties: edgeProperties,
 		})
 	}
 
@@ -674,53 +632,6 @@ func (s *Server) graphActuateRecommendation(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	s.json(w, http.StatusCreated, result)
-}
-
-func normalizeGraphWriteMetadata(observedAt, validFrom time.Time, validTo *time.Time, sourceSystem, sourceEventID string, confidence float64) (time.Time, time.Time, *time.Time, string, string, float64) {
-	if observedAt.IsZero() {
-		observedAt = time.Now().UTC()
-	}
-	observedAt = observedAt.UTC()
-	if validFrom.IsZero() {
-		validFrom = observedAt
-	}
-	validFrom = validFrom.UTC()
-
-	var validToOut *time.Time
-	if validTo != nil && !validTo.IsZero() {
-		copy := validTo.UTC()
-		validToOut = &copy
-	}
-
-	sourceSystem = strings.ToLower(strings.TrimSpace(sourceSystem))
-	if sourceSystem == "" {
-		sourceSystem = "api"
-	}
-	sourceEventID = strings.TrimSpace(sourceEventID)
-	if sourceEventID == "" {
-		sourceEventID = fmt.Sprintf("api:%d", observedAt.UnixNano())
-	}
-	if confidence <= 0 {
-		confidence = 0.80
-	}
-	if confidence > 1 {
-		confidence = 1
-	}
-	return observedAt, validFrom, validToOut, sourceSystem, sourceEventID, confidence
-}
-
-func applyGraphWriteMetadata(properties map[string]any, observedAt, validFrom time.Time, validTo *time.Time, sourceSystem, sourceEventID string, confidence float64) {
-	if properties == nil {
-		return
-	}
-	properties["source_system"] = sourceSystem
-	properties["source_event_id"] = sourceEventID
-	properties["observed_at"] = observedAt.Format(time.RFC3339)
-	properties["valid_from"] = validFrom.Format(time.RFC3339)
-	if validTo != nil {
-		properties["valid_to"] = validTo.Format(time.RFC3339)
-	}
-	properties["confidence"] = confidence
 }
 
 func cloneJSONMap(value map[string]any) map[string]any {

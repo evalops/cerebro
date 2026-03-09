@@ -194,6 +194,8 @@ func BuildGraphLeverageReport(g *Graph, opts GraphLeverageReportOptions) GraphLe
 	if report.Query.TemplateCount > 0 {
 		queryScore = math.Min(1, float64(report.Query.TemplateCount)/8)
 	}
+	// Weights prioritize foundational graph trust first (quality + identity + ingestion +
+	// freshness), then operational closure and actionability dimensions.
 	report.Summary.LeverageScore = 100 * (0.22*(report.Quality.Summary.MaturityScore/100) +
 		0.14*clampUnit(identityScore) +
 		0.14*clampUnit(report.Ingestion.CoveragePercent/100) +

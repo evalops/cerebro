@@ -242,6 +242,8 @@ func IdentityReviewQueue(g *Graph, opts IdentityReviewQueueOptions) []IdentityRe
 			continue
 		}
 
+		// Queue priority intentionally favors unresolved aliases first, then ambiguity and
+		// recent rejected reviews (which usually indicate identity drift or stale hints).
 		priority := 0.25
 		if unresolved {
 			priority += 0.45

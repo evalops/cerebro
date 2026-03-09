@@ -1,0 +1,112 @@
+# Graph Ontology Architecture
+
+This document describes how Cerebro's graph ontology should be structured and evolved so the graph remains a durable intelligence substrate, not just a collection of one-off entity types.
+
+## Design Goals
+
+- Encode real-world operational domains with explicit node and edge semantics.
+- Keep provenance and temporal metadata uniform across all write paths.
+- Make ingestion breadth additive: new sources should map into existing ontology first.
+- Preserve query stability: higher-level interfaces should target semantic kinds, not source-specific IDs.
+
+## Ontology Layers
+
+### 1) Foundation Layer
+
+Core identity and infrastructure backbone used by most traversals:
+
+- Identity: `person`, `user`, `role`, `group`, `service_account`, `identity_alias`
+- Infra resources: `service`, `workload`, `database`, `bucket`, `secret`, `function`, `network`, `application`
+- Access edges: `can_read`, `can_write`, `can_admin`, `can_assume`, `member_of`, `alias_of`
+
+### 2) Operational Activity Layer
+
+First-class kinds for high-frequency organizational operations:
+
+- `pull_request`
+- `deployment_run`
+- `meeting`
+- `document`
+- `communication_thread`
+- `incident`
+
+These kinds intentionally replace ambiguous "activity-only" modeling for primary operational events.
+
+### 3) Decision Intelligence Layer
+
+Closed-loop reasoning surfaces:
+
+- Nodes: `decision`, `action`, `evidence`, `outcome`
+- Edges: `targets`, `based_on`, `executed_by`, `evaluates`
+
+This layer captures what the organization decided, why, what was executed, and what result occurred.
+
+## Metadata Contract
+
+All graph writes should include the same temporal and provenance fields:
+
+- `source_system`
+- `source_event_id`
+- `observed_at`
+- `valid_from`
+- `valid_to` (optional)
+- `confidence`
+
+To enforce consistency, use the graph-level helper:
+
+- `graph.NormalizeWriteMetadata(...)`
+- `WriteMetadata.ApplyTo(...)`
+- `WriteMetadata.PropertyMap()`
+
+API handlers, tool writeback handlers, and graph actuation flows should all normalize metadata through this contract.
+
+## Ingestion Mapping Strategy
+
+`internal/graphingest/mappings.yaml` should follow these rules:
+
+- Prefer specific ontology kinds when the domain has stable semantics.
+- Keep ID shape deterministic and source-scoped (`pull_request:{repo}:{number}`, `meeting:{id}`, etc.).
+- Use `{{resolve(...)}}` for identity references whenever available.
+- Avoid source-specific edge names when a canonical edge kind already exists.
+- Always rely on mapper-injected temporal/provenance defaults unless the event provides stronger values.
+
+## Query and Intelligence Usage
+
+The query surface should target semantic kinds instead of source formats:
+
+- Example: "all stale `deployment_run` nodes targeting `service:payments`"
+- Example: "all `incident` nodes without recent `evidence` updates"
+
+Intelligence surfaces should use this ontology directly:
+
+- Leverage report domain coverage by kind family (identity, operational activity, closed loop).
+- Calibration/reporting on decision-to-outcome closure segmented by operational kind.
+- Recommendations grounded in missing links between operational events and decisions/outcomes.
+
+## Evolution Rules
+
+When adding a new kind:
+
+1. Add `NodeKind` constant.
+2. Register built-in schema definition with required properties and relationships.
+3. Add or update mapper rules to emit that kind.
+4. Add schema and mapper tests.
+5. Update this doc and `GRAPH_INTELLIGENCE_LAYER.md`.
+
+When adding a new edge:
+
+1. Add `EdgeKind` constant.
+2. Register edge kind in built-ins.
+3. Add relationship allowances on source node definitions.
+4. Add validation tests for allowed/disallowed relationships.
+
+## Review Checklist
+
+Before merging ontology changes, confirm:
+
+- New writes pass schema validation in current mode.
+- Temporal/provenance metadata is present on nodes and edges.
+- Query templates and intelligence outputs still operate on canonical kinds.
+- OpenAPI/tool contracts remain backward compatible where required.
+- Docs and tests are updated alongside code.
+

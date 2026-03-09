@@ -2,6 +2,8 @@
 
 This document defines how Cerebro's graph becomes the organization's intelligence layer: decision-grade, evidence-backed, and action-oriented.
 
+See [GRAPH_ONTOLOGY_ARCHITECTURE.md](./GRAPH_ONTOLOGY_ARCHITECTURE.md) for ontology layering, extension workflow, and metadata contract details.
+
 ## Principles
 - Every insight must be **decision-grade**: include evidence, confidence, coverage, and clear next actions.
 - Every important recommendation should have a **counterfactual** path (what-if simulation).
@@ -14,6 +16,12 @@ This document defines how Cerebro's graph becomes the organization's intelligenc
 - `identity_alias`: provider-scoped external identities and aliases.
 - `service`: durable software/business services.
 - `workload`: runtime execution units (jobs, deploy units, pods, workers).
+- `pull_request`: source-control change proposals with lifecycle state.
+- `deployment_run`: deployment executions linked to services/workloads.
+- `meeting`: calendar-driven operational coordination events.
+- `document`: living knowledge artifacts and operational runbooks.
+- `communication_thread`: threaded collaboration streams (for example Slack).
+- `incident`: incident lifecycle entities for timeline/action correlation.
 - `decision`: explicit organizational decisions.
 - `outcome`: measured outcomes tied back to decisions.
 - `evidence`: observations supporting decisions or risk insights.
