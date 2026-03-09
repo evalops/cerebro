@@ -91,6 +91,39 @@ func TestHandleTapCloudEvent_BuildsBusinessNodeAndEdge(t *testing.T) {
 	}
 }
 
+func TestHandleTapCloudEvent_InvalidCustomMapperPathDoesNotBlockPipeline(t *testing.T) {
+	t.Setenv("GRAPH_EVENT_MAPPING_PATH", "/tmp/non-existent-mapper.yaml")
+
+	a := &App{SecurityGraph: graph.New()}
+	evt := events.CloudEvent{
+		Type: "ensemble.tap.hubspot.contact.updated",
+		Time: time.Date(2026, 3, 6, 12, 0, 0, 0, time.UTC),
+		Data: map[string]interface{}{
+			"entity_id": "contact-1",
+			"snapshot": map[string]interface{}{
+				"name":       "Alice",
+				"company_id": "company-1",
+			},
+		},
+	}
+
+	if err := a.handleTapCloudEvent(context.Background(), evt); err != nil {
+		t.Fatalf("handleTapCloudEvent should fallback without error when mapper path is invalid: %v", err)
+	}
+
+	if _, ok := a.SecurityGraph.GetNode("hubspot:contact:contact-1"); !ok {
+		t.Fatal("expected legacy fallback mapping to continue processing TAP event")
+	}
+
+	mapper, err := a.tapEventMapper()
+	if err != nil {
+		t.Fatalf("expected mapper fallback to default config, got error: %v", err)
+	}
+	if mapper == nil {
+		t.Fatal("expected tap mapper to be initialized from default config fallback")
+	}
+}
+
 func TestHandleTapCloudEvent_AccumulatesCloseDatePushCount(t *testing.T) {
 	a := &App{SecurityGraph: graph.New()}
 	base := time.Date(2026, 3, 6, 12, 0, 0, 0, time.UTC)

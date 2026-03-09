@@ -185,8 +185,17 @@ func (a *App) tapEventMapper() (*graphingest.Mapper, error) {
 		if path != "" {
 			config, err = graphingest.LoadConfigFile(path)
 			if err != nil {
-				a.tapMapperErr = err
-				return
+				if a.Logger != nil {
+					a.Logger.Warn("failed to load custom graph event mapping config; falling back to defaults",
+						"path", path,
+						"error", err,
+					)
+				}
+				config, err = graphingest.LoadDefaultConfig()
+				if err != nil {
+					a.tapMapperErr = fmt.Errorf("load default graph event mapping config after custom config failure: %w", err)
+					return
+				}
 			}
 		} else {
 			config, err = graphingest.LoadDefaultConfig()
@@ -207,7 +216,13 @@ func (a *App) tapEventMapper() (*graphingest.Mapper, error) {
 func (a *App) applyTapDeclarativeMappings(evt events.CloudEvent) (bool, error) {
 	mapper, err := a.tapEventMapper()
 	if err != nil {
-		return false, err
+		if a.Logger != nil {
+			a.Logger.Warn("tap declarative mapping unavailable; using legacy fallback mapping",
+				"event_type", evt.Type,
+				"error", err,
+			)
+		}
+		return false, nil
 	}
 	if mapper == nil {
 		return false, nil
