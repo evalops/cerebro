@@ -197,7 +197,7 @@ func BuildGraphLeverageReport(g *Graph, opts GraphLeverageReportOptions) GraphLe
 		IncludeQueue:     true,
 	})
 	report.Ingestion = buildGraphIngestionCoverage(g)
-	report.Ontology = buildGraphOntologySLO(g, now, 7)
+	report.Ontology = BuildGraphOntologySLO(g, now, 7)
 	report.Temporal = buildGraphTemporalLeverage(g, now, staleAfter, recentWindow)
 	report.ClosedLoop = buildGraphClosedLoopLeverage(g, now, decisionSLA)
 	report.Predictive = buildGraphPredictiveReadiness(g)
@@ -321,6 +321,18 @@ func buildGraphIngestionCoverage(g *Graph) GraphIngestionCoverage {
 	}
 	coverage.CoveragePercent = math.Round(coverage.CoveragePercent*10) / 10
 	return coverage
+}
+
+// BuildGraphOntologySLO returns ontology quality SLO metrics and short trend.
+func BuildGraphOntologySLO(g *Graph, now time.Time, trendDays int) GraphOntologySLO {
+	now = now.UTC()
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	if trendDays <= 0 {
+		trendDays = 7
+	}
+	return buildGraphOntologySLO(g, now, trendDays)
 }
 
 func buildGraphOntologySLO(g *Graph, now time.Time, trendDays int) GraphOntologySLO {
