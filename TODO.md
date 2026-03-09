@@ -5,6 +5,67 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 3 - Graph Leverage + Calibration + Actuation (2026-03-09)
+
+### Review findings
+- [x] Gap: no single leverage surface combining quality, ingestion breadth, identity calibration backlog, temporal freshness, closed-loop execution, and actuation readiness.
+- [x] Gap: no reusable graph query templates endpoint/tool for repeatable investigations.
+- [x] Gap: no identity reviewer loop (`accepted` / `rejected` / `uncertain`) to calibrate alias quality continuously.
+- [x] Gap: no recommendation-to-action writeback interface to connect insight acceptance to executable actions.
+- [x] Gap: declarative mapper breadth too narrow for org intelligence domains (Slack/Jira/CI/Docs/Support/Sales/Calendar).
+
+### Execution plan
+- [x] Add graph leverage report:
+  - [x] `BuildGraphLeverageReport` with weighted leverage score/grade.
+  - [x] Ingestion coverage (`expected` vs `observed` sources + missing list).
+  - [x] Temporal activity coverage + freshness roll-up.
+  - [x] Closed-loop decision/outcome closure + stale decision detection.
+  - [x] Predictive readiness proxy metrics.
+  - [x] Query readiness and actuation readiness sections.
+  - [x] Prioritized recommendations from leverage gaps.
+- [x] Add identity calibration subsystem extensions:
+  - [x] Reviewer decision API (`accepted` / `rejected` / `uncertain`) persisted on alias history.
+  - [x] Queue generation for ambiguous/unresolved aliases.
+  - [x] Calibration report with precision, review coverage, linkage, backlog, per-source breakdown.
+- [x] Add recommendation actuation writeback:
+  - [x] `ActuateRecommendation` graph function.
+  - [x] Action node creation with temporal/provenance metadata.
+  - [x] Target edges and optional decision linkage (`executed_by`).
+- [x] Add graph query template surface:
+  - [x] Built-in template catalog in graph package.
+  - [x] API endpoint and MCP/tool exposure for template retrieval.
+- [x] Expand declarative mapper source breadth:
+  - [x] GitHub PR opened + review submitted.
+  - [x] Slack thread messages.
+  - [x] Jira transitions.
+  - [x] CI deploy completed.
+  - [x] Calendar meeting recorded.
+  - [x] Docs page edited.
+  - [x] Support ticket updated.
+  - [x] Sales call logged.
+- [x] Add API surfaces:
+  - [x] `GET /api/v1/graph/intelligence/leverage`
+  - [x] `GET /api/v1/graph/query/templates`
+  - [x] `POST /api/v1/graph/identity/review`
+  - [x] `GET /api/v1/graph/identity/calibration`
+  - [x] `POST /api/v1/graph/actuate/recommendation`
+- [x] Add tool surfaces:
+  - [x] `cerebro.graph_leverage_report`
+  - [x] `cerebro.graph_query_templates`
+  - [x] `cerebro.identity_review`
+  - [x] `cerebro.identity_calibration`
+  - [x] `cerebro.actuate_recommendation`
+- [x] Update OpenAPI for all new graph leverage/identity/actuation/query-template endpoints.
+- [x] Add/extend tests across graph, mapper, API handlers, and app tools.
+- [x] Validate all CI-equivalent checks locally.
+
+### Validation log
+- [x] `go test ./internal/graph ./internal/graphingest ./internal/api ./internal/app -count=1`
+- [x] `make openapi-check`
+- [x] `go test ./... -count=1`
+- [x] `$(go env GOPATH)/bin/gosec -quiet -severity medium -confidence medium -exclude-generated ./...`
+- [x] `$(go env GOPATH)/bin/golangci-lint run --timeout=15m ./cmd/... ./internal/... ./api/...`
+
 ## Deep Review Cycle 2 - Graph Quality Intelligence (2026-03-09)
 
 ### Review findings

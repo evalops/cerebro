@@ -180,6 +180,93 @@ func TestGraphIntelligenceQualityEndpoint_InvalidParams(t *testing.T) {
 	}
 }
 
+func TestGraphIntelligenceLeverageEndpoint(t *testing.T) {
+	s := newTestServer(t)
+	g := s.app.SecurityGraph
+	now := time.Date(2026, 3, 9, 19, 0, 0, 0, time.UTC)
+
+	g.AddNode(&graph.Node{ID: "person:alice@example.com", Kind: graph.NodeKindPerson, Name: "Alice", Properties: map[string]any{
+		"email":         "alice@example.com",
+		"source_system": "github",
+		"observed_at":   now.Add(-1 * time.Hour).Format(time.RFC3339),
+		"valid_from":    now.Add(-1 * time.Hour).Format(time.RFC3339),
+	}})
+	g.AddNode(&graph.Node{ID: "identity_alias:github:alice", Kind: graph.NodeKindIdentityAlias, Name: "alice", Properties: map[string]any{
+		"source_system": "github",
+		"external_id":   "alice",
+		"email":         "alice@example.com",
+		"observed_at":   now.Add(-1 * time.Hour).Format(time.RFC3339),
+		"valid_from":    now.Add(-1 * time.Hour).Format(time.RFC3339),
+	}})
+	g.AddNode(&graph.Node{ID: "service:payments", Kind: graph.NodeKindService, Name: "Payments", Properties: map[string]any{
+		"service_id":    "payments",
+		"source_system": "ci",
+		"observed_at":   now.Add(-2 * time.Hour).Format(time.RFC3339),
+		"valid_from":    now.Add(-2 * time.Hour).Format(time.RFC3339),
+	}})
+	g.AddNode(&graph.Node{ID: "decision:rollback", Kind: graph.NodeKindDecision, Name: "Rollback", Properties: map[string]any{
+		"decision_type": "rollback",
+		"status":        "approved",
+		"observed_at":   now.Add(-2 * time.Hour).Format(time.RFC3339),
+		"valid_from":    now.Add(-2 * time.Hour).Format(time.RFC3339),
+	}})
+	g.AddNode(&graph.Node{ID: "outcome:rollback", Kind: graph.NodeKindOutcome, Name: "Rollback outcome", Properties: map[string]any{
+		"outcome_type": "deployment_result",
+		"verdict":      "positive",
+		"observed_at":  now.Add(-1 * time.Hour).Format(time.RFC3339),
+		"valid_from":   now.Add(-1 * time.Hour).Format(time.RFC3339),
+	}})
+	g.AddEdge(&graph.Edge{ID: "alias-link", Source: "identity_alias:github:alice", Target: "person:alice@example.com", Kind: graph.EdgeKindAliasOf, Effect: graph.EdgeEffectAllow})
+	g.AddEdge(&graph.Edge{ID: "outcome-evaluates", Source: "outcome:rollback", Target: "decision:rollback", Kind: graph.EdgeKindEvaluates, Effect: graph.EdgeEffectAllow})
+
+	w := do(t, s, http.MethodGet, "/api/v1/graph/intelligence/leverage?identity_queue_limit=10&recent_window_hours=24", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	body := decodeJSON(t, w)
+	summary, ok := body["summary"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected summary object, got %#v", body["summary"])
+	}
+	if _, ok := summary["leverage_score"].(float64); !ok {
+		t.Fatalf("expected leverage_score, got %#v", summary["leverage_score"])
+	}
+	query, ok := body["query"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected query object, got %#v", body["query"])
+	}
+	if count, ok := query["template_count"].(float64); !ok || count < 1 {
+		t.Fatalf("expected query template count >0, got %#v", query["template_count"])
+	}
+}
+
+func TestGraphQueryTemplatesEndpoint(t *testing.T) {
+	s := newTestServer(t)
+
+	w := do(t, s, http.MethodGet, "/api/v1/graph/query/templates", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	body := decodeJSON(t, w)
+	if count, ok := body["count"].(float64); !ok || count < 1 {
+		t.Fatalf("expected template count >0, got %#v", body["count"])
+	}
+	templates, ok := body["templates"].([]any)
+	if !ok || len(templates) == 0 {
+		t.Fatalf("expected templates array, got %#v", body["templates"])
+	}
+}
+
+func TestGraphIntelligenceLeverageEndpoint_InvalidParams(t *testing.T) {
+	s := newTestServer(t)
+
+	w := do(t, s, http.MethodGet, "/api/v1/graph/intelligence/leverage?identity_suggest_threshold=2", nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid identity_suggest_threshold, got %d", w.Code)
+	}
+}
+
 func TestGraphQueryEndpoint_NeighborsAndPaths(t *testing.T) {
 	s := newTestServer(t)
 	g := s.app.SecurityGraph

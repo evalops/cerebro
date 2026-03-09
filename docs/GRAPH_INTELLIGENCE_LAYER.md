@@ -38,6 +38,7 @@ Primary interface for product surfaces and automations.
 Current endpoint:
 - `GET /api/v1/graph/intelligence/insights`
 - `GET /api/v1/graph/intelligence/quality`
+- `GET /api/v1/graph/intelligence/leverage`
 
 Output characteristics:
 - Prioritized `insights[]`
@@ -60,6 +61,7 @@ Read-only, bounded graph exploration for analysts and advanced workflows.
 
 Current endpoint:
 - `GET /api/v1/graph/query`
+- `GET /api/v1/graph/query/templates`
 
 Supported modes:
 - `neighbors` (with direction + limits)
@@ -84,6 +86,9 @@ Current endpoints:
 - `POST /api/v1/graph/write/outcome`
 - `POST /api/v1/graph/identity/resolve`
 - `POST /api/v1/graph/identity/split`
+- `POST /api/v1/graph/identity/review`
+- `GET /api/v1/graph/identity/calibration`
+- `POST /api/v1/graph/actuate/recommendation`
 
 ### 4) Agent/MCP-Ready Tool Surface
 Agent workflows should call a curated tool surface, not raw graph internals.
@@ -91,13 +96,18 @@ Agent workflows should call a curated tool surface, not raw graph internals.
 Current tools:
 - `cerebro.intelligence_report`
 - `cerebro.graph_quality_report`
+- `cerebro.graph_leverage_report`
 - `cerebro.graph_query`
+- `cerebro.graph_query_templates`
 - `cerebro.record_observation`
 - `cerebro.annotate_entity`
 - `cerebro.record_decision`
 - `cerebro.record_outcome`
 - `cerebro.resolve_identity`
 - `cerebro.split_identity`
+- `cerebro.identity_review`
+- `cerebro.identity_calibration`
+- `cerebro.actuate_recommendation`
 
 MCP adapter strategy:
 - Wrap existing tool publisher protocol with MCP transport adapters.
@@ -111,6 +121,21 @@ MCP adapter strategy:
 - Auto-link high-confidence matches via `alias_of`.
 - Return ranked candidates for ambiguous cases.
 - Support split/reversal of incorrect merges (`identity/split`) and re-resolve.
+- Persist reviewer decisions on alias history and expose calibration metrics (`precision`, `review_coverage`, `backlog`) for continuous quality control.
+
+## Unified Leverage Surface
+- `GET /api/v1/graph/intelligence/leverage` and `cerebro.graph_leverage_report` provide one combined operating view across:
+  - ontology/quality maturity
+  - ingestion source breadth and gaps
+  - identity linkage and review calibration
+  - temporal freshness and recent activity coverage
+  - closed-loop decision/outcome execution
+  - predictive readiness and actuation readiness
+- The leverage report includes prioritized recommendations so teams can sequence high-impact remediation work.
+
+## Query Template Surface
+- `GET /api/v1/graph/query/templates` and `cerebro.graph_query_templates` expose reusable investigations for common workflows (blast radius, incident windows, decision-outcome tracing, customer impact paths).
+- Templates are intentionally temporal-capable (`as_of`, `from`, `to`) to keep investigations repeatable and time-bounded.
 
 ## Declarative Ingestion Mapper
 The event mapper provides breadth without one-off ingestion code per source.

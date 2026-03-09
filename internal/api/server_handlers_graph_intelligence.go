@@ -168,6 +168,102 @@ func (s *Server) graphIntelligenceQuality(w http.ResponseWriter, r *http.Request
 	s.json(w, http.StatusOK, report)
 }
 
+func (s *Server) graphIntelligenceLeverage(w http.ResponseWriter, r *http.Request) {
+	if s.app.SecurityGraph == nil {
+		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		return
+	}
+
+	historyLimit := 20
+	if raw := strings.TrimSpace(r.URL.Query().Get("history_limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 200 {
+			s.error(w, http.StatusBadRequest, "history_limit must be between 1 and 200")
+			return
+		}
+		historyLimit = parsed
+	}
+
+	var sinceVersion int64
+	if raw := strings.TrimSpace(r.URL.Query().Get("since_version")); raw != "" {
+		parsed, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || parsed < 1 {
+			s.error(w, http.StatusBadRequest, "since_version must be a positive integer")
+			return
+		}
+		sinceVersion = parsed
+	}
+
+	var staleAfter time.Duration
+	if raw := strings.TrimSpace(r.URL.Query().Get("stale_after_hours")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 8760 {
+			s.error(w, http.StatusBadRequest, "stale_after_hours must be between 1 and 8760")
+			return
+		}
+		staleAfter = time.Duration(parsed) * time.Hour
+	}
+
+	var recentWindow time.Duration
+	if raw := strings.TrimSpace(r.URL.Query().Get("recent_window_hours")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 168 {
+			s.error(w, http.StatusBadRequest, "recent_window_hours must be between 1 and 168")
+			return
+		}
+		recentWindow = time.Duration(parsed) * time.Hour
+	}
+
+	var decisionSLA time.Duration
+	if raw := strings.TrimSpace(r.URL.Query().Get("decision_sla_days")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 365 {
+			s.error(w, http.StatusBadRequest, "decision_sla_days must be between 1 and 365")
+			return
+		}
+		decisionSLA = time.Duration(parsed) * 24 * time.Hour
+	}
+
+	identitySuggestThreshold := 0.55
+	if raw := strings.TrimSpace(r.URL.Query().Get("identity_suggest_threshold")); raw != "" {
+		parsed, err := strconv.ParseFloat(raw, 64)
+		if err != nil || parsed < 0 || parsed > 1 {
+			s.error(w, http.StatusBadRequest, "identity_suggest_threshold must be between 0 and 1")
+			return
+		}
+		identitySuggestThreshold = parsed
+	}
+
+	queueLimit := 25
+	if raw := strings.TrimSpace(r.URL.Query().Get("identity_queue_limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 200 {
+			s.error(w, http.StatusBadRequest, "identity_queue_limit must be between 1 and 200")
+			return
+		}
+		queueLimit = parsed
+	}
+
+	report := graph.BuildGraphLeverageReport(s.app.SecurityGraph, graph.GraphLeverageReportOptions{
+		FreshnessStaleAfter:      staleAfter,
+		SchemaHistoryLimit:       historyLimit,
+		SchemaSinceVersion:       sinceVersion,
+		IdentitySuggestThreshold: identitySuggestThreshold,
+		IdentityQueueLimit:       queueLimit,
+		RecentWindow:             recentWindow,
+		DecisionStaleAfter:       decisionSLA,
+	})
+	s.json(w, http.StatusOK, report)
+}
+
+func (s *Server) graphQueryTemplates(w http.ResponseWriter, _ *http.Request) {
+	templates := graph.DefaultGraphQueryTemplates()
+	s.json(w, http.StatusOK, map[string]any{
+		"templates": templates,
+		"count":     len(templates),
+	})
+}
+
 type graphQueryNeighborResult struct {
 	Direction string      `json:"direction"`
 	Edge      *graph.Edge `json:"edge"`

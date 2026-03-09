@@ -4712,6 +4712,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /api/v1/graph/query/templates:
+    get:
+      tags:
+        - Graph
+      summary: List reusable graph investigation templates
+      description: Return built-in query templates for repeatable analyst and agent investigations.
+      responses:
+        '200':
+          description: Query template catalog
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
   /api/v1/graph/intelligence/insights:
     get:
       tags:
@@ -4842,6 +4856,157 @@ paths:
                 additionalProperties: true
         '400':
           description: Invalid query parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Security graph is not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/graph/intelligence/leverage:
+    get:
+      tags:
+        - Graph
+      summary: Build deep graph leverage intelligence report
+      description: Return a unified leverage report across quality, identity calibration, ingestion breadth, temporal recency, closed-loop outcomes, predictive readiness, query templates, and actuation readiness.
+      parameters:
+        - name: history_limit
+          in: query
+          required: false
+          description: Number of recent schema history entries to include (1-200).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+        - name: since_version
+          in: query
+          required: false
+          description: Optional schema drift baseline version.
+          schema:
+            type: integer
+            minimum: 1
+        - name: stale_after_hours
+          in: query
+          required: false
+          description: Freshness threshold in hours (1-8760).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 8760
+        - name: recent_window_hours
+          in: query
+          required: false
+          description: Recent activity window in hours (1-168).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 168
+        - name: decision_sla_days
+          in: query
+          required: false
+          description: Days before a decision without outcomes is considered stale (1-365).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 365
+        - name: identity_suggest_threshold
+          in: query
+          required: false
+          description: Candidate suggestion threshold for identity review backlog (0-1).
+          schema:
+            type: number
+            minimum: 0
+            maximum: 1
+        - name: identity_queue_limit
+          in: query
+          required: false
+          description: Maximum queue entries returned for identity review backlog (1-200).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+      responses:
+        '200':
+          description: Graph leverage report
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid query parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Security graph is not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/graph/actuate/recommendation:
+    post:
+      tags:
+        - Graph
+      summary: Record one recommendation actuation action
+      description: Create an action node for a recommendation and link it to targets and optional decision context.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id:
+                  type: string
+                recommendation_id:
+                  type: string
+                insight_type:
+                  type: string
+                title:
+                  type: string
+                summary:
+                  type: string
+                decision_id:
+                  type: string
+                target_ids:
+                  type: array
+                  items:
+                    type: string
+                source_system:
+                  type: string
+                source_event_id:
+                  type: string
+                observed_at:
+                  type: string
+                  format: date-time
+                valid_from:
+                  type: string
+                  format: date-time
+                valid_to:
+                  type: string
+                  format: date-time
+                confidence:
+                  type: number
+                auto_generated:
+                  type: boolean
+                metadata:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '201':
+          description: Recommendation actuation recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid request body
           content:
             application/json:
               schema:
@@ -5196,6 +5361,115 @@ paths:
                 additionalProperties: true
         '400':
           description: Invalid identity assertion
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Security graph is not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/graph/identity/review:
+    post:
+      tags:
+        - Graph
+      summary: Record reviewer verdict for one identity candidate
+      description: Apply accepted/rejected/uncertain reviewer decisions and persist identity review history.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - alias_node_id
+                - canonical_node_id
+                - verdict
+              properties:
+                alias_node_id:
+                  type: string
+                canonical_node_id:
+                  type: string
+                verdict:
+                  type: string
+                  enum:
+                    - accepted
+                    - rejected
+                    - uncertain
+                reviewer:
+                  type: string
+                reason:
+                  type: string
+                source_system:
+                  type: string
+                source_event_id:
+                  type: string
+                observed_at:
+                  type: string
+                  format: date-time
+                confidence:
+                  type: number
+      responses:
+        '200':
+          description: Identity review result
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid review payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Security graph is not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/graph/identity/calibration:
+    get:
+      tags:
+        - Graph
+      summary: Report identity resolution calibration and backlog
+      description: Return precision/coverage metrics and optional reviewer queue for identity alias resolution.
+      parameters:
+        - name: include_queue
+          in: query
+          required: false
+          description: Include review queue details in response.
+          schema:
+            type: boolean
+        - name: suggest_threshold
+          in: query
+          required: false
+          description: Candidate score threshold for queue suggestions (0-1).
+          schema:
+            type: number
+            minimum: 0
+            maximum: 1
+        - name: queue_limit
+          in: query
+          required: false
+          description: Max queue entries to include (1-200).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+      responses:
+        '200':
+          description: Identity calibration report
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid query parameter
           content:
             application/json:
               schema:

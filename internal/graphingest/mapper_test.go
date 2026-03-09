@@ -106,7 +106,7 @@ func TestMapperApply_NoMatch(t *testing.T) {
 
 	result, err := mapper.Apply(graph.New(), events.CloudEvent{
 		ID:     "evt-other-1",
-		Type:   "ensemble.tap.github.pull_request.opened",
+		Type:   "ensemble.tap.unknown.unmapped",
 		Time:   time.Now().UTC(),
 		Source: "urn:ensemble:tap",
 		Data:   map[string]any{"repository": "payments-api"},
@@ -116,6 +116,74 @@ func TestMapperApply_NoMatch(t *testing.T) {
 	}
 	if result.Matched {
 		t.Fatalf("expected mapping not to match, got %#v", result)
+	}
+}
+
+func TestMapperApply_SupportTicketUpdated(t *testing.T) {
+	config, err := LoadDefaultConfig()
+	if err != nil {
+		t.Fatalf("load default config failed: %v", err)
+	}
+	g := graph.New()
+	g.AddNode(&graph.Node{
+		ID:   "person:agent@example.com",
+		Kind: graph.NodeKindPerson,
+		Name: "Agent",
+		Properties: map[string]any{
+			"email": "agent@example.com",
+		},
+	})
+
+	mapper, err := NewMapper(config, func(raw string, _ events.CloudEvent) string {
+		raw = strings.ToLower(strings.TrimSpace(raw))
+		if strings.Contains(raw, "@") {
+			return "person:" + raw
+		}
+		return raw
+	})
+	if err != nil {
+		t.Fatalf("new mapper failed: %v", err)
+	}
+
+	now := time.Date(2026, 3, 9, 18, 0, 0, 0, time.UTC)
+	result, err := mapper.Apply(g, events.CloudEvent{
+		ID:     "evt-support-1",
+		Type:   "ensemble.tap.support.ticket.updated",
+		Time:   now,
+		Source: "urn:ensemble:tap",
+		Data: map[string]any{
+			"ticket_id":   "12345",
+			"subject":     "Payment failures",
+			"status":      "open",
+			"priority":    "high",
+			"update_id":   "u-1",
+			"update_type": "comment",
+			"agent_email": "agent@example.com",
+		},
+	})
+	if err != nil {
+		t.Fatalf("mapper apply failed: %v", err)
+	}
+	if !result.Matched {
+		t.Fatalf("expected mapping match, got %#v", result)
+	}
+
+	ticketNode, ok := g.GetNode("ticket:support:12345")
+	if !ok || ticketNode == nil || ticketNode.Kind != graph.NodeKindTicket {
+		t.Fatalf("expected support ticket node, got %#v", ticketNode)
+	}
+	assignmentFound := false
+	for _, edge := range g.GetOutEdges("person:agent@example.com") {
+		if edge == nil {
+			continue
+		}
+		if edge.Kind == graph.EdgeKindAssignedTo && edge.Target == "ticket:support:12345" {
+			assignmentFound = true
+			break
+		}
+	}
+	if !assignmentFound {
+		t.Fatalf("expected assigned_to edge to support ticket, got %#v", g.GetOutEdges("person:agent@example.com"))
 	}
 }
 
