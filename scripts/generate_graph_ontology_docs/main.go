@@ -27,7 +27,7 @@ func main() {
 	}
 
 	content := renderMarkdown(nodeDefs, edgeDefs, mappingConfig)
-	if err := os.WriteFile(outputPath, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(outputPath, []byte(content), 0o644); err != nil { // #nosec G306 -- generated docs are intended to be repository-readable artifacts.
 		fatalf("write %s: %v", outputPath, err)
 	}
 }
