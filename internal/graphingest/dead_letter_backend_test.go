@@ -135,6 +135,64 @@ func TestQueryDeadLetterFileBackend(t *testing.T) {
 	}
 }
 
+func TestQueryDeadLetterSQLiteIssueCodeFilterEscapesLikeWildcards(t *testing.T) {
+	dir := t.TempDir()
+	dlqPath := filepath.Join(dir, "mapper.dlq.db")
+	now := time.Date(2026, 3, 10, 0, 5, 0, 0, time.UTC)
+
+	sink, err := NewDeadLetterSink(dlqPath)
+	if err != nil {
+		t.Fatalf("new dead-letter sink failed: %v", err)
+	}
+
+	literalCode := "issue_%_literal"
+	records := []DeadLetterRecord{
+		{
+			RecordedAt:  now,
+			EventID:     "evt-literal",
+			EventType:   "ensemble.tap.test.invalid",
+			MappingName: "invalid_kind",
+			EntityType:  "node",
+			EntityID:    "node:1",
+			EntityKind:  "unknown",
+			Issues: []graph.SchemaValidationIssue{
+				{Code: graph.SchemaValidationIssueCode(literalCode), Message: "literal code"},
+			},
+		},
+		{
+			RecordedAt:  now.Add(1 * time.Minute),
+			EventID:     "evt-wildcard-match",
+			EventType:   "ensemble.tap.test.invalid",
+			MappingName: "invalid_kind",
+			EntityType:  "node",
+			EntityID:    "node:2",
+			EntityKind:  "unknown",
+			Issues: []graph.SchemaValidationIssue{
+				{Code: graph.SchemaValidationIssueCode("issue_AX_literal"), Message: "should not match"},
+			},
+		},
+	}
+	for _, record := range records {
+		if err := sink.WriteDeadLetter(record); err != nil {
+			t.Fatalf("write dead-letter record failed: %v", err)
+		}
+	}
+
+	query, err := QueryDeadLetter(dlqPath, DeadLetterQueryOptions{
+		Limit:     10,
+		IssueCode: literalCode,
+	})
+	if err != nil {
+		t.Fatalf("query dead-letter failed: %v", err)
+	}
+	if query.Total != 1 {
+		t.Fatalf("expected total=1 for literal wildcard issue code, got %d", query.Total)
+	}
+	if len(query.Records) != 1 || query.Records[0].EventID != "evt-literal" {
+		t.Fatalf("unexpected query records: %#v", query.Records)
+	}
+}
+
 func writeDeadLetterFileFixture(path string, records []DeadLetterRecord) error {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {

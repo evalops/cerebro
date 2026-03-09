@@ -435,10 +435,19 @@ func deadLetterSQLFilters(opts DeadLetterQueryOptions) (string, []any) {
 		args = append(args, opts.EntityKind)
 	}
 	if opts.IssueCode != "" {
-		clauses = append(clauses, "issue_codes LIKE ?")
-		args = append(args, "%,"+opts.IssueCode+",%")
+		clauses = append(clauses, "issue_codes LIKE ? ESCAPE '\\'")
+		args = append(args, "%,"+escapeSQLLikeLiteral(opts.IssueCode)+",%")
 	}
 	return strings.Join(clauses, " AND "), args
+}
+
+func escapeSQLLikeLiteral(value string) string {
+	replacer := strings.NewReplacer(
+		`\`, `\\`,
+		`%`, `\%`,
+		`_`, `\_`,
+	)
+	return replacer.Replace(value)
 }
 
 func queryDeadLetterFile(path string, opts DeadLetterQueryOptions) (DeadLetterQueryResult, error) {
