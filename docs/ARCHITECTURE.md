@@ -4,6 +4,11 @@
 
 Cerebro is a comprehensive security data platform for cloud and SaaS posture management. It combines data ingestion (native sync), storage (Snowflake), policy evaluation (Cedar-style), and intelligent security analysis (AI agents) into a unified platform.
 
+Graph-specific architecture references:
+
+- [Graph Intelligence Layer](./GRAPH_INTELLIGENCE_LAYER.md)
+- [Graph Ontology Architecture](./GRAPH_ONTOLOGY_ARCHITECTURE.md)
+
 ## System Architecture
 
 ```

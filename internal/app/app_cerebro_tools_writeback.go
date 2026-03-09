@@ -46,44 +46,32 @@ func (a *App) toolCerebroRecordObservation(_ context.Context, args json.RawMessa
 		return "", fmt.Errorf("entity not found: %s", req.EntityID)
 	}
 
-	observedAt, validFrom, validTo, sourceSystem, sourceEventID, confidence := normalizeToolGraphWriteMetadata(
-		req.ObservedAt,
-		req.ValidFrom,
-		req.ValidTo,
-		req.SourceSystem,
-		req.SourceEventID,
-		req.Confidence,
-	)
+	metadata := graph.NormalizeWriteMetadata(req.ObservedAt, req.ValidFrom, req.ValidTo, req.SourceSystem, req.SourceEventID, req.Confidence, graph.WriteMetadataDefaults{
+		SourceSystem:      "agent",
+		SourceEventPrefix: "tool",
+		DefaultConfidence: 0.80,
+	})
 
 	observationID := strings.TrimSpace(req.ID)
 	if observationID == "" {
-		observationID = fmt.Sprintf("evidence:observation:%d", observedAt.UnixNano())
+		observationID = fmt.Sprintf("evidence:observation:%d", metadata.ObservedAt.UnixNano())
 	}
 
 	properties := cloneToolJSONMap(req.Metadata)
 	properties["evidence_type"] = req.Observation
 	properties["detail"] = firstNonEmpty(req.Summary, req.Observation)
-	applyToolGraphWriteMetadata(properties, observedAt, validFrom, validTo, sourceSystem, sourceEventID, confidence)
+	metadata.ApplyTo(properties)
 
 	g.AddNode(&graph.Node{
 		ID:         observationID,
 		Kind:       graph.NodeKindEvidence,
 		Name:       firstNonEmpty(req.Observation, req.Summary, observationID),
-		Provider:   sourceSystem,
+		Provider:   metadata.SourceSystem,
 		Properties: properties,
 		Risk:       graph.RiskNone,
 	})
 
-	edgeProperties := map[string]any{
-		"source_system":   sourceSystem,
-		"source_event_id": sourceEventID,
-		"observed_at":     observedAt.Format(time.RFC3339),
-		"valid_from":      validFrom.Format(time.RFC3339),
-		"confidence":      confidence,
-	}
-	if validTo != nil {
-		edgeProperties["valid_to"] = validTo.Format(time.RFC3339)
-	}
+	edgeProperties := metadata.PropertyMap()
 	g.AddEdge(&graph.Edge{
 		ID:         fmt.Sprintf("%s->%s:%s", observationID, req.EntityID, graph.EdgeKindTargets),
 		Source:     observationID,
@@ -96,7 +84,7 @@ func (a *App) toolCerebroRecordObservation(_ context.Context, args json.RawMessa
 	return marshalToolResponse(map[string]any{
 		"observation_id": observationID,
 		"entity_id":      req.EntityID,
-		"observed_at":    observedAt,
+		"observed_at":    metadata.ObservedAt,
 	})
 }
 
@@ -136,37 +124,34 @@ func (a *App) toolCerebroAnnotateEntity(_ context.Context, args json.RawMessage)
 		return "", fmt.Errorf("entity not found: %s", req.EntityID)
 	}
 
-	observedAt, validFrom, validTo, sourceSystem, sourceEventID, confidence := normalizeToolGraphWriteMetadata(
-		req.ObservedAt,
-		req.ValidFrom,
-		req.ValidTo,
-		req.SourceSystem,
-		req.SourceEventID,
-		req.Confidence,
-	)
+	metadata := graph.NormalizeWriteMetadata(req.ObservedAt, req.ValidFrom, req.ValidTo, req.SourceSystem, req.SourceEventID, req.Confidence, graph.WriteMetadataDefaults{
+		SourceSystem:      "agent",
+		SourceEventPrefix: "tool",
+		DefaultConfidence: 0.80,
+	})
 
-	annotationID := fmt.Sprintf("annotation:%s:%d", req.EntityID, observedAt.UnixNano())
+	annotationID := fmt.Sprintf("annotation:%s:%d", req.EntityID, metadata.ObservedAt.UnixNano())
 	properties := cloneToolJSONMap(entity.Properties)
 	existing := toolAnnotationsFromValue(properties["annotations"])
 	entry := map[string]any{
 		"id":              annotationID,
 		"annotation":      req.Annotation,
 		"tags":            normalizeToolStringSlice(req.Tags),
-		"source_system":   sourceSystem,
-		"source_event_id": sourceEventID,
-		"observed_at":     observedAt.Format(time.RFC3339),
-		"valid_from":      validFrom.Format(time.RFC3339),
-		"confidence":      confidence,
+		"source_system":   metadata.SourceSystem,
+		"source_event_id": metadata.SourceEventID,
+		"observed_at":     metadata.ObservedAt.Format(time.RFC3339),
+		"valid_from":      metadata.ValidFrom.Format(time.RFC3339),
+		"confidence":      metadata.Confidence,
 	}
-	if validTo != nil {
-		entry["valid_to"] = validTo.Format(time.RFC3339)
+	if metadata.ValidTo != nil {
+		entry["valid_to"] = metadata.ValidTo.Format(time.RFC3339)
 	}
 	if len(req.Metadata) > 0 {
 		entry["metadata"] = cloneToolJSONMap(req.Metadata)
 	}
 	existing = append(existing, entry)
 	properties["annotations"] = existing
-	applyToolGraphWriteMetadata(properties, observedAt, validFrom, validTo, sourceSystem, sourceEventID, confidence)
+	metadata.ApplyTo(properties)
 
 	entity.Properties = properties
 	g.AddNode(entity)
@@ -223,89 +208,71 @@ func (a *App) toolCerebroRecordDecision(_ context.Context, args json.RawMessage)
 		}
 	}
 
-	observedAt, validFrom, validTo, sourceSystem, sourceEventID, confidence := normalizeToolGraphWriteMetadata(
-		req.ObservedAt,
-		req.ValidFrom,
-		req.ValidTo,
-		req.SourceSystem,
-		req.SourceEventID,
-		req.Confidence,
-	)
+	metadata := graph.NormalizeWriteMetadata(req.ObservedAt, req.ValidFrom, req.ValidTo, req.SourceSystem, req.SourceEventID, req.Confidence, graph.WriteMetadataDefaults{
+		SourceSystem:      "agent",
+		SourceEventPrefix: "tool",
+		DefaultConfidence: 0.80,
+	})
 
 	decisionID := strings.TrimSpace(req.ID)
 	if decisionID == "" {
-		decisionID = fmt.Sprintf("decision:%d", observedAt.UnixNano())
+		decisionID = fmt.Sprintf("decision:%d", metadata.ObservedAt.UnixNano())
 	}
 
 	properties := cloneToolJSONMap(req.Metadata)
 	properties["decision_type"] = req.DecisionType
 	properties["status"] = firstNonEmpty(req.Status, "proposed")
-	properties["made_at"] = observedAt.Format(time.RFC3339)
+	properties["made_at"] = metadata.ObservedAt.Format(time.RFC3339)
 	properties["made_by"] = req.MadeBy
 	properties["rationale"] = req.Rationale
-	applyToolGraphWriteMetadata(properties, observedAt, validFrom, validTo, sourceSystem, sourceEventID, confidence)
+	metadata.ApplyTo(properties)
 
 	g.AddNode(&graph.Node{
 		ID:         decisionID,
 		Kind:       graph.NodeKindDecision,
 		Name:       firstNonEmpty(req.DecisionType, decisionID),
-		Provider:   sourceSystem,
+		Provider:   metadata.SourceSystem,
 		Properties: properties,
 		Risk:       graph.RiskNone,
 	})
 
 	for _, targetID := range targetIDs {
+		edgeProperties := metadata.PropertyMap()
 		g.AddEdge(&graph.Edge{
-			ID:     fmt.Sprintf("%s->%s:%s", decisionID, targetID, graph.EdgeKindTargets),
-			Source: decisionID,
-			Target: targetID,
-			Kind:   graph.EdgeKindTargets,
-			Effect: graph.EdgeEffectAllow,
-			Properties: map[string]any{
-				"source_system":   sourceSystem,
-				"source_event_id": sourceEventID,
-				"observed_at":     observedAt.Format(time.RFC3339),
-				"valid_from":      validFrom.Format(time.RFC3339),
-				"confidence":      confidence,
-			},
+			ID:         fmt.Sprintf("%s->%s:%s", decisionID, targetID, graph.EdgeKindTargets),
+			Source:     decisionID,
+			Target:     targetID,
+			Kind:       graph.EdgeKindTargets,
+			Effect:     graph.EdgeEffectAllow,
+			Properties: edgeProperties,
 		})
 	}
 	for _, evidenceID := range uniqueToolNormalizedIDs(req.EvidenceIDs) {
 		if _, ok := g.GetNode(evidenceID); !ok {
 			continue
 		}
+		edgeProperties := metadata.PropertyMap()
 		g.AddEdge(&graph.Edge{
-			ID:     fmt.Sprintf("%s->%s:%s", decisionID, evidenceID, graph.EdgeKindBasedOn),
-			Source: decisionID,
-			Target: evidenceID,
-			Kind:   graph.EdgeKindBasedOn,
-			Effect: graph.EdgeEffectAllow,
-			Properties: map[string]any{
-				"source_system":   sourceSystem,
-				"source_event_id": sourceEventID,
-				"observed_at":     observedAt.Format(time.RFC3339),
-				"valid_from":      validFrom.Format(time.RFC3339),
-				"confidence":      confidence,
-			},
+			ID:         fmt.Sprintf("%s->%s:%s", decisionID, evidenceID, graph.EdgeKindBasedOn),
+			Source:     decisionID,
+			Target:     evidenceID,
+			Kind:       graph.EdgeKindBasedOn,
+			Effect:     graph.EdgeEffectAllow,
+			Properties: edgeProperties,
 		})
 	}
 	for _, actionID := range uniqueToolNormalizedIDs(req.ActionIDs) {
 		if _, ok := g.GetNode(actionID); !ok {
 			continue
 		}
+		edgeProperties := metadata.PropertyMap()
 		g.AddEdge(&graph.Edge{
-			ID:     fmt.Sprintf("%s->%s:%s", decisionID, actionID, graph.EdgeKindExecutedBy),
-			Source: decisionID,
-			Target: actionID,
-			Kind:   graph.EdgeKindExecutedBy,
-			Effect: graph.EdgeEffectAllow,
-			Properties: map[string]any{
-				"source_system":   sourceSystem,
-				"source_event_id": sourceEventID,
-				"observed_at":     observedAt.Format(time.RFC3339),
-				"valid_from":      validFrom.Format(time.RFC3339),
-				"confidence":      confidence,
-			},
+			ID:         fmt.Sprintf("%s->%s:%s", decisionID, actionID, graph.EdgeKindExecutedBy),
+			Source:     decisionID,
+			Target:     actionID,
+			Kind:       graph.EdgeKindExecutedBy,
+			Effect:     graph.EdgeEffectAllow,
+			Properties: edgeProperties,
 		})
 	}
 
@@ -353,47 +320,39 @@ func (a *App) toolCerebroRecordOutcome(_ context.Context, args json.RawMessage) 
 		return "", fmt.Errorf("decision not found: %s", req.DecisionID)
 	}
 
-	observedAt, validFrom, validTo, sourceSystem, sourceEventID, confidence := normalizeToolGraphWriteMetadata(
-		req.ObservedAt,
-		req.ValidFrom,
-		req.ValidTo,
-		req.SourceSystem,
-		req.SourceEventID,
-		req.Confidence,
-	)
+	metadata := graph.NormalizeWriteMetadata(req.ObservedAt, req.ValidFrom, req.ValidTo, req.SourceSystem, req.SourceEventID, req.Confidence, graph.WriteMetadataDefaults{
+		SourceSystem:      "agent",
+		SourceEventPrefix: "tool",
+		DefaultConfidence: 0.80,
+	})
 
 	outcomeID := strings.TrimSpace(req.ID)
 	if outcomeID == "" {
-		outcomeID = fmt.Sprintf("outcome:%d", observedAt.UnixNano())
+		outcomeID = fmt.Sprintf("outcome:%d", metadata.ObservedAt.UnixNano())
 	}
 
 	properties := cloneToolJSONMap(req.Metadata)
 	properties["outcome_type"] = req.OutcomeType
 	properties["verdict"] = req.Verdict
 	properties["impact_score"] = req.ImpactScore
-	applyToolGraphWriteMetadata(properties, observedAt, validFrom, validTo, sourceSystem, sourceEventID, confidence)
+	metadata.ApplyTo(properties)
 
 	g.AddNode(&graph.Node{
 		ID:         outcomeID,
 		Kind:       graph.NodeKindOutcome,
 		Name:       firstNonEmpty(req.OutcomeType, outcomeID),
-		Provider:   sourceSystem,
+		Provider:   metadata.SourceSystem,
 		Properties: properties,
 		Risk:       graph.RiskNone,
 	})
+	evaluatesEdgeProperties := metadata.PropertyMap()
 	g.AddEdge(&graph.Edge{
-		ID:     fmt.Sprintf("%s->%s:%s", outcomeID, req.DecisionID, graph.EdgeKindEvaluates),
-		Source: outcomeID,
-		Target: req.DecisionID,
-		Kind:   graph.EdgeKindEvaluates,
-		Effect: graph.EdgeEffectAllow,
-		Properties: map[string]any{
-			"source_system":   sourceSystem,
-			"source_event_id": sourceEventID,
-			"observed_at":     observedAt.Format(time.RFC3339),
-			"valid_from":      validFrom.Format(time.RFC3339),
-			"confidence":      confidence,
-		},
+		ID:         fmt.Sprintf("%s->%s:%s", outcomeID, req.DecisionID, graph.EdgeKindEvaluates),
+		Source:     outcomeID,
+		Target:     req.DecisionID,
+		Kind:       graph.EdgeKindEvaluates,
+		Effect:     graph.EdgeEffectAllow,
+		Properties: evaluatesEdgeProperties,
 	})
 
 	targetIDs := uniqueToolNormalizedIDs(req.TargetIDs)
@@ -401,19 +360,14 @@ func (a *App) toolCerebroRecordOutcome(_ context.Context, args json.RawMessage) 
 		if _, ok := g.GetNode(targetID); !ok {
 			continue
 		}
+		edgeProperties := metadata.PropertyMap()
 		g.AddEdge(&graph.Edge{
-			ID:     fmt.Sprintf("%s->%s:%s", outcomeID, targetID, graph.EdgeKindTargets),
-			Source: outcomeID,
-			Target: targetID,
-			Kind:   graph.EdgeKindTargets,
-			Effect: graph.EdgeEffectAllow,
-			Properties: map[string]any{
-				"source_system":   sourceSystem,
-				"source_event_id": sourceEventID,
-				"observed_at":     observedAt.Format(time.RFC3339),
-				"valid_from":      validFrom.Format(time.RFC3339),
-				"confidence":      confidence,
-			},
+			ID:         fmt.Sprintf("%s->%s:%s", outcomeID, targetID, graph.EdgeKindTargets),
+			Source:     outcomeID,
+			Target:     targetID,
+			Kind:       graph.EdgeKindTargets,
+			Effect:     graph.EdgeEffectAllow,
+			Properties: edgeProperties,
 		})
 	}
 
@@ -628,53 +582,6 @@ func (a *App) toolCerebroActuateRecommendation(_ context.Context, args json.RawM
 		return "", err
 	}
 	return marshalToolResponse(result)
-}
-
-func normalizeToolGraphWriteMetadata(observedAt, validFrom time.Time, validTo *time.Time, sourceSystem, sourceEventID string, confidence float64) (time.Time, time.Time, *time.Time, string, string, float64) {
-	if observedAt.IsZero() {
-		observedAt = time.Now().UTC()
-	}
-	observedAt = observedAt.UTC()
-	if validFrom.IsZero() {
-		validFrom = observedAt
-	}
-	validFrom = validFrom.UTC()
-
-	var validToOut *time.Time
-	if validTo != nil && !validTo.IsZero() {
-		copy := validTo.UTC()
-		validToOut = &copy
-	}
-
-	sourceSystem = strings.ToLower(strings.TrimSpace(sourceSystem))
-	if sourceSystem == "" {
-		sourceSystem = "agent"
-	}
-	sourceEventID = strings.TrimSpace(sourceEventID)
-	if sourceEventID == "" {
-		sourceEventID = fmt.Sprintf("tool:%d", observedAt.UnixNano())
-	}
-	if confidence <= 0 {
-		confidence = 0.80
-	}
-	if confidence > 1 {
-		confidence = 1
-	}
-	return observedAt, validFrom, validToOut, sourceSystem, sourceEventID, confidence
-}
-
-func applyToolGraphWriteMetadata(properties map[string]any, observedAt, validFrom time.Time, validTo *time.Time, sourceSystem, sourceEventID string, confidence float64) {
-	if properties == nil {
-		return
-	}
-	properties["source_system"] = sourceSystem
-	properties["source_event_id"] = sourceEventID
-	properties["observed_at"] = observedAt.Format(time.RFC3339)
-	properties["valid_from"] = validFrom.Format(time.RFC3339)
-	if validTo != nil {
-		properties["valid_to"] = validTo.Format(time.RFC3339)
-	}
-	properties["confidence"] = confidence
 }
 
 func cloneToolJSONMap(value map[string]any) map[string]any {

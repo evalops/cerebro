@@ -36,6 +36,12 @@ func TestSchemaRegistry_IntelligenceSpineBuiltins(t *testing.T) {
 		NodeKindIdentityAlias,
 		NodeKindService,
 		NodeKindWorkload,
+		NodeKindPullRequest,
+		NodeKindDeploymentRun,
+		NodeKindMeeting,
+		NodeKindDocument,
+		NodeKindThread,
+		NodeKindIncident,
 		NodeKindDecision,
 		NodeKindOutcome,
 		NodeKindEvidence,
@@ -89,6 +95,21 @@ func TestSchemaRegistry_IntelligenceSpineBuiltins(t *testing.T) {
 	}
 	if !containsEdgeKind(aliasDef.Relationships, EdgeKindAliasOf) {
 		t.Fatalf("expected identity_alias relationship %q, got %#v", EdgeKindAliasOf, aliasDef.Relationships)
+	}
+
+	incidentDef, ok := defByKind[NodeKindIncident]
+	if !ok {
+		t.Fatal("expected incident definition")
+	}
+	for _, property := range []string{"incident_id", "status", "observed_at", "valid_from"} {
+		if !containsRequiredProperty(incidentDef.RequiredProperties, property) {
+			t.Fatalf("expected incident required property %q, got %#v", property, incidentDef.RequiredProperties)
+		}
+	}
+	for _, relationship := range []EdgeKind{EdgeKindTargets, EdgeKindBasedOn} {
+		if !containsEdgeKind(incidentDef.Relationships, relationship) {
+			t.Fatalf("expected incident relationship %q, got %#v", relationship, incidentDef.Relationships)
+		}
 	}
 }
 
