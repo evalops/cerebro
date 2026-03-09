@@ -261,7 +261,6 @@ func (m *Mapper) Apply(g *graph.Graph, evt events.CloudEvent) (ApplyResult, erro
 			continue
 		}
 
-		matchedNames = append(matchedNames, mapping.Name)
 		contract, hasContract := m.contracts[mapping.Name]
 		if hasContract {
 			eventIssues := ValidateEventAgainstMappingContract(evt, mapping, contract)
@@ -285,6 +284,7 @@ func (m *Mapper) Apply(g *graph.Graph, evt events.CloudEvent) (ApplyResult, erro
 				continue
 			}
 		}
+		matchedNames = append(matchedNames, mapping.Name)
 
 		for _, nodeDef := range mapping.Nodes {
 			nodeID := strings.TrimSpace(m.renderTemplate(nodeDef.ID, context, evt))

@@ -544,6 +544,9 @@ func TestMapperApply_EnforceValidationRejectsInvalidEventContract(t *testing.T) 
 	if result.EventsRejected != 1 || result.DeadLettered != 1 {
 		t.Fatalf("expected one rejected/dead-lettered event, got %#v", result)
 	}
+	if result.Matched {
+		t.Fatalf("expected Matched=false when contract validation rejects event, got %#v", result)
+	}
 	if len(result.NodesUpserted) > 0 || len(result.EdgesUpserted) > 0 {
 		t.Fatalf("expected no writes after event-contract rejection, got %#v", result)
 	}

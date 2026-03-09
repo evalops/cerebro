@@ -287,7 +287,7 @@ func buildGraphMetadataRecommendations(report GraphMetadataQualityReport) []Grap
 		)
 	}
 
-	if report.Summary.EnumValidityPercent > 0 && report.Summary.EnumValidityPercent < 99 {
+	if report.Summary.EnumValidityPercent < 99 {
 		priority := "medium"
 		if report.Summary.EnumValidityPercent < 90 {
 			priority = "high"

@@ -77,6 +77,34 @@ func TestBuildGraphMetadataQualityReport_NilGraph(t *testing.T) {
 	}
 }
 
+func TestBuildGraphMetadataQualityReport_EnumZeroStillGeneratesRecommendation(t *testing.T) {
+	now := time.Date(2026, 3, 9, 22, 0, 0, 0, time.UTC)
+	g := New()
+	g.AddNode(&Node{
+		ID:   "deployment:payments:2",
+		Kind: NodeKindDeploymentRun,
+		Name: "Deploy #2",
+		Properties: map[string]any{
+			"deploy_id":       "dep-2",
+			"service_id":      "payments",
+			"environment":     "invalid_env",
+			"status":          "invalid_status",
+			"source_system":   "ci",
+			"source_event_id": "evt-2",
+			"observed_at":     now.Format(time.RFC3339),
+			"valid_from":      now.Format(time.RFC3339),
+		},
+	})
+
+	report := BuildGraphMetadataQualityReport(g, GraphMetadataQualityReportOptions{Now: now, TopKinds: 10})
+	if report.Summary.EnumValidityPercent != 0 {
+		t.Fatalf("expected enum validity 0, got %.1f", report.Summary.EnumValidityPercent)
+	}
+	if !hasMetadataRecommendationCategory(report.Recommendations, "enum_normalization") {
+		t.Fatalf("expected enum_normalization recommendation at 0%% enum validity, got %#v", report.Recommendations)
+	}
+}
+
 func hasMetadataRecommendationCategory(recommendations []GraphMetadataRecommendation, category string) bool {
 	for _, recommendation := range recommendations {
 		if recommendation.Category == category {
