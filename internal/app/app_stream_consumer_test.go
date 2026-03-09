@@ -2,12 +2,46 @@ package app
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/evalops/cerebro/internal/events"
 	"github.com/evalops/cerebro/internal/graph"
 )
+
+func TestEnsureSecurityGraph_ConcurrentInitSingleInstance(t *testing.T) {
+	a := &App{}
+
+	const workers = 32
+	graphs := make(chan *graph.Graph, workers)
+	var wg sync.WaitGroup
+	wg.Add(workers)
+
+	for i := 0; i < workers; i++ {
+		go func() {
+			defer wg.Done()
+			graphs <- a.ensureSecurityGraph()
+		}()
+	}
+
+	wg.Wait()
+	close(graphs)
+
+	var first *graph.Graph
+	for g := range graphs {
+		if g == nil {
+			t.Fatal("expected initialized graph, got nil")
+		}
+		if first == nil {
+			first = g
+			continue
+		}
+		if g != first {
+			t.Fatalf("expected a single graph instance, got %p and %p", first, g)
+		}
+	}
+}
 
 func TestParseTapType(t *testing.T) {
 	system, entity, action := parseTapType("ensemble.tap.stripe.customer.created")

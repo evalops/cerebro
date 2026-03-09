@@ -66,6 +66,24 @@ func (a *App) initTapGraphConsumer(ctx context.Context) {
 	_ = ctx
 }
 
+func (a *App) ensureSecurityGraph() *graph.Graph {
+	if a == nil {
+		return nil
+	}
+	if a.SecurityGraph != nil {
+		return a.SecurityGraph
+	}
+
+	a.securityGraphInitMu.Lock()
+	defer a.securityGraphInitMu.Unlock()
+
+	if a.SecurityGraph == nil {
+		a.SecurityGraph = graph.New()
+		a.configureGraphSchemaValidation(a.SecurityGraph)
+	}
+	return a.SecurityGraph
+}
+
 func (a *App) handleTapCloudEvent(_ context.Context, evt events.CloudEvent) error {
 	eventType := strings.TrimSpace(evt.Type)
 	if eventType == "" {
@@ -104,11 +122,10 @@ func (a *App) handleTapCloudEvent(_ context.Context, evt events.CloudEvent) erro
 
 	kind := mapBusinessEntityKind(entityType)
 	nodeID := fmt.Sprintf("%s:%s:%s", system, entityType, entityID)
+	securityGraph := a.ensureSecurityGraph()
 	existingProperties := map[string]any{}
-	if a.SecurityGraph != nil {
-		if existingNode, ok := a.SecurityGraph.GetNode(nodeID); ok && existingNode != nil && existingNode.Properties != nil {
-			existingProperties = existingNode.Properties
-		}
+	if existingNode, ok := securityGraph.GetNode(nodeID); ok && existingNode != nil && existingNode.Properties != nil {
+		existingProperties = existingNode.Properties
 	}
 
 	properties := map[string]any{
@@ -141,16 +158,12 @@ func (a *App) handleTapCloudEvent(_ context.Context, evt events.CloudEvent) erro
 		Risk:       graph.RiskNone,
 	}
 
-	if a.SecurityGraph == nil {
-		a.SecurityGraph = graph.New()
-		a.configureGraphSchemaValidation(a.SecurityGraph)
-	}
-	a.SecurityGraph.AddNode(node)
+	securityGraph.AddNode(node)
 
 	// Link foreign-key relationships from snapshot data.
 	edges := extractBusinessEdges(system, entityType, nodeID, snapshot)
 	for _, e := range edges {
-		if _, ok := a.SecurityGraph.GetNode(e.Target); !ok {
+		if _, ok := securityGraph.GetNode(e.Target); !ok {
 			targetParts := strings.SplitN(e.Target, ":", 3)
 			targetKind := graph.NodeKindCompany
 			targetProvider := system
@@ -160,7 +173,7 @@ func (a *App) handleTapCloudEvent(_ context.Context, evt events.CloudEvent) erro
 				targetKind = mapBusinessEntityKind(targetParts[1])
 				targetName = targetParts[2]
 			}
-			a.SecurityGraph.AddNode(&graph.Node{
+			securityGraph.AddNode(&graph.Node{
 				ID:       e.Target,
 				Kind:     targetKind,
 				Name:     targetName,
@@ -168,7 +181,7 @@ func (a *App) handleTapCloudEvent(_ context.Context, evt events.CloudEvent) erro
 				Risk:     graph.RiskNone,
 			})
 		}
-		a.SecurityGraph.AddEdge(e)
+		securityGraph.AddEdge(e)
 	}
 
 	return nil
@@ -227,11 +240,8 @@ func (a *App) applyTapDeclarativeMappings(evt events.CloudEvent) (bool, error) {
 	if mapper == nil {
 		return false, nil
 	}
-	if a.SecurityGraph == nil {
-		a.SecurityGraph = graph.New()
-		a.configureGraphSchemaValidation(a.SecurityGraph)
-	}
-	result, err := mapper.Apply(a.SecurityGraph, evt)
+	securityGraph := a.ensureSecurityGraph()
+	result, err := mapper.Apply(securityGraph, evt)
 	if err != nil {
 		return false, err
 	}
@@ -258,9 +268,9 @@ func (a *App) resolveTapMappingIdentity(raw string, evt events.CloudEvent) strin
 	email := strings.ToLower(strings.TrimSpace(raw))
 	if strings.Contains(email, "@") {
 		canonicalID := "person:" + email
-		if a.SecurityGraph != nil {
-			if _, ok := a.SecurityGraph.GetNode(canonicalID); !ok {
-				a.SecurityGraph.AddNode(&graph.Node{
+		if securityGraph := a.ensureSecurityGraph(); securityGraph != nil {
+			if _, ok := securityGraph.GetNode(canonicalID); !ok {
+				securityGraph.AddNode(&graph.Node{
 					ID:       canonicalID,
 					Kind:     graph.NodeKindPerson,
 					Name:     email,
@@ -275,7 +285,7 @@ func (a *App) resolveTapMappingIdentity(raw string, evt events.CloudEvent) strin
 					},
 				})
 			}
-			_, _ = graph.ResolveIdentityAlias(a.SecurityGraph, graph.IdentityAliasAssertion{
+			_, _ = graph.ResolveIdentityAlias(securityGraph, graph.IdentityAliasAssertion{
 				SourceSystem:  firstNonEmpty(sourceSystemFromTapType(evt.Type), "tap"),
 				SourceEventID: strings.TrimSpace(evt.ID),
 				ExternalID:    email,
@@ -709,18 +719,15 @@ func (a *App) handleTapInteractionEvent(eventType string, evt events.CloudEvent)
 		return nil
 	}
 
-	if a.SecurityGraph == nil {
-		a.SecurityGraph = graph.New()
-		a.configureGraphSchemaValidation(a.SecurityGraph)
-	}
+	securityGraph := a.ensureSecurityGraph()
 
 	for _, participant := range participants {
-		a.upsertTapInteractionPersonNode(participant, channel, occurredAt)
+		a.upsertTapInteractionPersonNode(securityGraph, participant, channel, occurredAt)
 	}
 
 	for i := 0; i < len(participants); i++ {
 		for j := i + 1; j < len(participants); j++ {
-			graph.UpsertInteractionEdge(a.SecurityGraph, graph.InteractionEdge{
+			graph.UpsertInteractionEdge(securityGraph, graph.InteractionEdge{
 				SourcePersonID: participants[i].ID,
 				TargetPersonID: participants[j].ID,
 				Channel:        channel,
@@ -891,8 +898,8 @@ func parseTapInteractionWeight(data map[string]any, duration time.Duration) floa
 	return weight
 }
 
-func (a *App) upsertTapInteractionPersonNode(participant tapInteractionParticipant, channel string, occurredAt time.Time) {
-	if a.SecurityGraph == nil {
+func (a *App) upsertTapInteractionPersonNode(securityGraph *graph.Graph, participant tapInteractionParticipant, channel string, occurredAt time.Time) {
+	if securityGraph == nil {
 		return
 	}
 	personID := normalizeTapInteractionPersonID(participant.ID)
@@ -905,7 +912,7 @@ func (a *App) upsertTapInteractionPersonNode(participant tapInteractionParticipa
 	nodeName := strings.TrimSpace(participant.Name)
 	provider := strings.ToLower(strings.TrimSpace(channel))
 
-	if existing, ok := a.SecurityGraph.GetNode(personID); ok && existing != nil {
+	if existing, ok := securityGraph.GetNode(personID); ok && existing != nil {
 		for key, value := range mapFromAny(existing.Properties) {
 			properties[key] = value
 		}
@@ -954,7 +961,7 @@ func (a *App) upsertTapInteractionPersonNode(participant tapInteractionParticipa
 		properties["last_seen"] = occurredAt.UTC().Format(time.RFC3339)
 	}
 
-	a.SecurityGraph.AddNode(&graph.Node{
+	securityGraph.AddNode(&graph.Node{
 		ID:         personID,
 		Kind:       nodeKind,
 		Name:       nodeName,
@@ -1003,10 +1010,7 @@ func sortedStringSet(values map[string]struct{}) []string {
 }
 
 func (a *App) handleTapActivityEvent(source, activityType string, evt events.CloudEvent) error {
-	if a.SecurityGraph == nil {
-		a.SecurityGraph = graph.New()
-		a.configureGraphSchemaValidation(a.SecurityGraph)
-	}
+	securityGraph := a.ensureSecurityGraph()
 
 	actorID, actorName := parseTapActivityActor(evt.Data["actor"])
 	if actorID == "" {
@@ -1049,7 +1053,7 @@ func (a *App) handleTapActivityEvent(source, activityType string, evt events.Clo
 	activityNodeID := fmt.Sprintf("activity:%s:%s:%s", source, activityType, activityID)
 	metadata := mapFromAny(evt.Data["metadata"])
 
-	a.SecurityGraph.AddNode(&graph.Node{
+	securityGraph.AddNode(&graph.Node{
 		ID:       actorNodeID,
 		Kind:     graph.NodeKindUser,
 		Name:     coalesceString(actorName, actorID),
@@ -1060,7 +1064,7 @@ func (a *App) handleTapActivityEvent(source, activityType string, evt events.Clo
 		},
 	})
 
-	a.SecurityGraph.AddNode(&graph.Node{
+	securityGraph.AddNode(&graph.Node{
 		ID:         targetNodeID,
 		Kind:       targetKind,
 		Name:       coalesceString(targetName, targetNodeID),
@@ -1069,7 +1073,7 @@ func (a *App) handleTapActivityEvent(source, activityType string, evt events.Clo
 		Properties: map[string]any{"source_system": source},
 	})
 
-	a.SecurityGraph.AddNode(&graph.Node{
+	securityGraph.AddNode(&graph.Node{
 		ID:       activityNodeID,
 		Kind:     graph.NodeKindActivity,
 		Name:     coalesceString(action, activityType),
@@ -1085,7 +1089,7 @@ func (a *App) handleTapActivityEvent(source, activityType string, evt events.Clo
 		},
 	})
 
-	a.SecurityGraph.AddEdge(&graph.Edge{
+	securityGraph.AddEdge(&graph.Edge{
 		ID:     fmt.Sprintf("%s->%s:%s", actorNodeID, activityNodeID, graph.EdgeKindInteractedWith),
 		Source: actorNodeID,
 		Target: activityNodeID,
@@ -1096,7 +1100,7 @@ func (a *App) handleTapActivityEvent(source, activityType string, evt events.Clo
 			"source_system": source,
 		},
 	})
-	a.SecurityGraph.AddEdge(&graph.Edge{
+	securityGraph.AddEdge(&graph.Edge{
 		ID:     fmt.Sprintf("%s->%s:%s", activityNodeID, targetNodeID, graph.EdgeKindInteractedWith),
 		Source: activityNodeID,
 		Target: targetNodeID,
