@@ -22,6 +22,7 @@ type RiskEngine struct {
 	ruleSignals     []RuleObservation
 	factorSignals   []FactorObservation
 	discoveredRules map[string]DiscoveredRuleCandidate
+	patternLibrary  map[string]*crossTenantPatternAggregate
 	signalLimit     int
 	onScoreChange   func(RiskScoreChangedEvent)
 	mu              sync.RWMutex
@@ -40,6 +41,7 @@ func NewRiskEngine(g *Graph) *RiskEngine {
 		ruleSignals:     make([]RuleObservation, 0, 512),
 		factorSignals:   make([]FactorObservation, 0, 1024),
 		discoveredRules: make(map[string]DiscoveredRuleCandidate),
+		patternLibrary:  make(map[string]*crossTenantPatternAggregate),
 		signalLimit:     5000,
 	}
 }

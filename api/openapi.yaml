@@ -2399,6 +2399,115 @@ paths:
         '503':
           description: Graph unavailable
           content: *id001
+  /api/v1/graph/cross-tenant/patterns/build:
+    post:
+      tags:
+        - Graph
+      summary: Build anonymized tenant pattern samples
+      description: Build privacy-safe structural pattern samples from the current tenant graph and outcome history.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphCrossTenantBuildRequest'
+      responses:
+        '200':
+          description: Anonymized pattern samples
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphCrossTenantSamplesResponse'
+        '400':
+          description: Invalid request body
+          content: *id001
+        '503':
+          description: Graph unavailable
+          content: *id001
+  /api/v1/graph/cross-tenant/patterns/ingest:
+    post:
+      tags:
+        - Graph
+      summary: Ingest anonymized cross-tenant patterns
+      description: Ingest structural graph fingerprints and outcomes from multiple tenants with no PII values.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphCrossTenantIngestRequest'
+      responses:
+        '200':
+          description: Ingest summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphCrossTenantIngestResponse'
+        '400':
+          description: Invalid request body
+          content: *id001
+        '503':
+          description: Graph unavailable
+          content: *id001
+  /api/v1/graph/cross-tenant/patterns:
+    get:
+      tags:
+        - Graph
+      summary: List anonymized cross-tenant patterns
+      description: Return aggregated anonymized pattern/outcome signatures and probabilities.
+      parameters:
+        - name: min_tenants
+          in: query
+          required: false
+          description: Minimum distinct tenant count for returned patterns.
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Cross-tenant patterns
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphCrossTenantPatternsResponse'
+        '400':
+          description: Invalid query parameter
+          content: *id001
+        '503':
+          description: Graph unavailable
+          content: *id001
+  /api/v1/graph/cross-tenant/matches:
+    get:
+      tags:
+        - Graph
+      summary: Match current tenant entities to cross-tenant patterns
+      description: Compare current graph fingerprints to cross-tenant pattern library and return outcome-probability recommendations.
+      parameters:
+        - name: min_probability
+          in: query
+          required: false
+          description: Minimum outcome probability threshold (0-1).
+          schema:
+            type: number
+            format: float
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of matches to return.
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Cross-tenant matches
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphCrossTenantMatchesResponse'
+        '400':
+          description: Invalid query parameter
+          content: *id001
+        '503':
+          description: Graph unavailable
+          content: *id001
   /api/v1/graph/stats:
     get:
       tags:
@@ -6056,6 +6165,82 @@ components:
         candidate:
           type: object
           additionalProperties: true
+    GraphCrossTenantBuildRequest:
+      type: object
+      required:
+        - tenant_id
+      properties:
+        tenant_id:
+          type: string
+        window_days:
+          type: integer
+    GraphCrossTenantSample:
+      type: object
+      properties:
+        tenant_hash:
+          type: string
+        fingerprint:
+          type: string
+        outcome:
+          type: string
+        signals:
+          type: array
+          items:
+            type: string
+        observed_at:
+          type: string
+          format: date-time
+        support:
+          type: integer
+    GraphCrossTenantSamplesResponse:
+      type: object
+      properties:
+        count:
+          type: integer
+        samples:
+          type: array
+          items:
+            $ref: '#/components/schemas/GraphCrossTenantSample'
+    GraphCrossTenantIngestRequest:
+      type: object
+      required:
+        - samples
+      properties:
+        samples:
+          type: array
+          items:
+            $ref: '#/components/schemas/GraphCrossTenantSample'
+    GraphCrossTenantIngestResponse:
+      type: object
+      properties:
+        received:
+          type: integer
+        added:
+          type: integer
+        updated:
+          type: integer
+        skipped:
+          type: integer
+    GraphCrossTenantPatternsResponse:
+      type: object
+      properties:
+        count:
+          type: integer
+        patterns:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    GraphCrossTenantMatchesResponse:
+      type: object
+      properties:
+        count:
+          type: integer
+        matches:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
     ToxicCombinationsResponse:
       type: object
       properties:
