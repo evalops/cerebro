@@ -55,3 +55,243 @@ mappings:
         target: 'evidence:incident:{{data.incident_id}}:{{data.event_id}}'
         kind: based_on
         effect: allow
+  - name: github_pr_opened
+    source: ensemble.tap.github.pull_request.opened
+    nodes:
+      - id: 'service:{{data.repository}}'
+        kind: service
+        name: '{{data.repository}}'
+        provider: github
+        properties:
+          service_id: '{{data.repository}}'
+      - id: 'activity:pr:{{data.repository}}:{{data.number}}'
+        kind: activity
+        name: '{{data.title}}'
+        provider: github
+        properties:
+          activity_type: pull_request
+          action: opened
+          author: '{{data.author}}'
+          author_email: '{{data.author_email}}'
+    edges:
+      - source: '{{resolve(data.author_email)}}'
+        target: 'service:{{data.repository}}'
+        kind: interacted_with
+        effect: allow
+      - source: 'activity:pr:{{data.repository}}:{{data.number}}'
+        target: 'service:{{data.repository}}'
+        kind: targets
+        effect: allow
+  - name: github_pr_review_submitted
+    source: ensemble.tap.github.pull_request.review_submitted
+    nodes:
+      - id: 'service:{{data.repository}}'
+        kind: service
+        name: '{{data.repository}}'
+        provider: github
+        properties:
+          service_id: '{{data.repository}}'
+      - id: 'activity:pr_review:{{data.repository}}:{{data.number}}:{{data.review_id}}'
+        kind: activity
+        name: 'PR review {{data.state}}'
+        provider: github
+        properties:
+          activity_type: pull_request_review
+          review_state: '{{data.state}}'
+          reviewer_email: '{{data.reviewer_email}}'
+    edges:
+      - source: '{{resolve(data.reviewer_email)}}'
+        target: 'service:{{data.repository}}'
+        kind: interacted_with
+        effect: allow
+      - source: 'activity:pr_review:{{data.repository}}:{{data.number}}:{{data.review_id}}'
+        target: 'service:{{data.repository}}'
+        kind: targets
+        effect: allow
+  - name: slack_thread_message
+    source: ensemble.tap.slack.thread.message_posted
+    nodes:
+      - id: 'activity:slack_channel:{{data.channel_id}}'
+        kind: activity
+        name: '{{data.channel_name}}'
+        provider: slack
+        properties:
+          activity_type: slack_channel
+      - id: 'activity:slack_message:{{data.channel_id}}:{{data.message_ts}}'
+        kind: activity
+        name: '{{data.text}}'
+        provider: slack
+        properties:
+          activity_type: slack_message
+          thread_ts: '{{data.thread_ts}}'
+          author_email: '{{data.author_email}}'
+    edges:
+      - source: '{{resolve(data.author_email)}}'
+        target: 'activity:slack_channel:{{data.channel_id}}'
+        kind: interacted_with
+        effect: allow
+      - source: 'activity:slack_message:{{data.channel_id}}:{{data.message_ts}}'
+        target: 'activity:slack_channel:{{data.channel_id}}'
+        kind: targets
+        effect: allow
+  - name: jira_issue_transition
+    source: ensemble.tap.jira.issue.transitioned
+    nodes:
+      - id: 'ticket:jira:{{data.issue_key}}'
+        kind: ticket
+        name: '{{data.summary}}'
+        provider: jira
+        properties:
+          status: '{{data.to_status}}'
+          issue_type: '{{data.issue_type}}'
+          project_key: '{{data.project_key}}'
+      - id: 'action:jira:{{data.issue_key}}:{{data.transition_id}}'
+        kind: action
+        name: 'Transition {{data.from_status}} -> {{data.to_status}}'
+        provider: jira
+        properties:
+          action_type: issue_transition
+          actor_email: '{{data.actor_email}}'
+    edges:
+      - source: 'action:jira:{{data.issue_key}}:{{data.transition_id}}'
+        target: 'ticket:jira:{{data.issue_key}}'
+        kind: targets
+        effect: allow
+      - source: '{{resolve(data.actor_email)}}'
+        target: 'ticket:jira:{{data.issue_key}}'
+        kind: assigned_to
+        effect: allow
+  - name: ci_deploy_completed
+    source: ensemble.tap.ci.deploy.completed
+    nodes:
+      - id: 'service:{{data.service}}'
+        kind: service
+        name: '{{data.service}}'
+        provider: ci
+        properties:
+          service_id: '{{data.service}}'
+      - id: 'workload:deploy:{{data.service}}:{{data.deploy_id}}'
+        kind: workload
+        name: 'Deploy {{data.environment}}'
+        provider: ci
+        properties:
+          environment: '{{data.environment}}'
+          deploy_id: '{{data.deploy_id}}'
+      - id: 'activity:deploy:{{data.service}}:{{data.deploy_id}}'
+        kind: activity
+        name: '{{data.release_version}}'
+        provider: ci
+        properties:
+          activity_type: deploy
+          status: '{{data.status}}'
+    edges:
+      - source: 'service:{{data.service}}'
+        target: 'workload:deploy:{{data.service}}:{{data.deploy_id}}'
+        kind: runs
+        effect: allow
+      - source: 'activity:deploy:{{data.service}}:{{data.deploy_id}}'
+        target: 'service:{{data.service}}'
+        kind: targets
+        effect: allow
+      - source: '{{resolve(data.actor_email)}}'
+        target: 'service:{{data.service}}'
+        kind: interacted_with
+        effect: allow
+  - name: calendar_meeting_recorded
+    source: ensemble.tap.calendar.meeting.recorded
+    nodes:
+      - id: 'activity:meeting:{{data.meeting_id}}'
+        kind: activity
+        name: '{{data.title}}'
+        provider: calendar
+        properties:
+          activity_type: meeting
+          organizer_email: '{{data.organizer_email}}'
+          starts_at: '{{data.starts_at}}'
+          ends_at: '{{data.ends_at}}'
+    edges:
+      - source: '{{resolve(data.organizer_email)}}'
+        target: 'activity:meeting:{{data.meeting_id}}'
+        kind: assigned_to
+        effect: allow
+      - source: 'activity:meeting:{{data.meeting_id}}'
+        target: 'service:{{data.service}}'
+        kind: targets
+        effect: allow
+  - name: docs_page_edited
+    source: ensemble.tap.docs.page.edited
+    nodes:
+      - id: 'activity:doc:{{data.doc_id}}'
+        kind: activity
+        name: '{{data.title}}'
+        provider: docs
+        properties:
+          activity_type: document
+          url: '{{data.url}}'
+      - id: 'evidence:doc_edit:{{data.doc_id}}:{{data.version}}'
+        kind: evidence
+        name: '{{data.change_summary}}'
+        provider: docs
+        properties:
+          evidence_type: doc_edit
+          detail: '{{data.change_summary}}'
+    edges:
+      - source: '{{resolve(data.editor_email)}}'
+        target: 'activity:doc:{{data.doc_id}}'
+        kind: interacted_with
+        effect: allow
+      - source: 'evidence:doc_edit:{{data.doc_id}}:{{data.version}}'
+        target: 'activity:doc:{{data.doc_id}}'
+        kind: based_on
+        effect: allow
+  - name: support_ticket_updated
+    source: ensemble.tap.support.ticket.updated
+    nodes:
+      - id: 'ticket:support:{{data.ticket_id}}'
+        kind: ticket
+        name: '{{data.subject}}'
+        provider: support
+        properties:
+          status: '{{data.status}}'
+          priority: '{{data.priority}}'
+      - id: 'activity:support_update:{{data.ticket_id}}:{{data.update_id}}'
+        kind: activity
+        name: 'Support update {{data.status}}'
+        provider: support
+        properties:
+          activity_type: support_ticket_update
+          update_type: '{{data.update_type}}'
+    edges:
+      - source: 'activity:support_update:{{data.ticket_id}}:{{data.update_id}}'
+        target: 'ticket:support:{{data.ticket_id}}'
+        kind: targets
+        effect: allow
+      - source: '{{resolve(data.agent_email)}}'
+        target: 'ticket:support:{{data.ticket_id}}'
+        kind: assigned_to
+        effect: allow
+  - name: sales_call_logged
+    source: ensemble.tap.sales.call.logged
+    nodes:
+      - id: 'contact:{{data.contact_id}}'
+        kind: contact
+        name: '{{data.contact_name}}'
+        provider: sales
+        properties:
+          email: '{{data.contact_email}}'
+      - id: 'activity:sales_call:{{data.call_id}}'
+        kind: activity
+        name: '{{data.summary}}'
+        provider: sales
+        properties:
+          activity_type: sales_call
+          call_duration_minutes: '{{data.duration_minutes}}'
+    edges:
+      - source: '{{resolve(data.rep_email)}}'
+        target: 'contact:{{data.contact_id}}'
+        kind: interacted_with
+        effect: allow
+      - source: 'activity:sales_call:{{data.call_id}}'
+        target: 'contact:{{data.contact_id}}'
+        kind: targets
+        effect: allow

@@ -132,6 +132,59 @@ func (a *App) cerebroTools() []agents.Tool {
 			Handler: a.toolCerebroGraphQualityReport,
 		},
 		{
+			Name:        "cerebro.graph_leverage_report",
+			Description: "Build a deep graph leverage report across identity, ingestion, temporal, closed-loop, predictive, query, and actuation readiness",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"history_limit": map[string]any{
+						"type":        "integer",
+						"description": "Schema history entries to include (1-200)",
+						"default":     20,
+					},
+					"since_version": map[string]any{
+						"type":        "integer",
+						"description": "Optional schema drift baseline version",
+					},
+					"stale_after_hours": map[string]any{
+						"type":        "integer",
+						"description": "Freshness threshold in hours (1-8760)",
+						"default":     720,
+					},
+					"identity_suggest_threshold": map[string]any{
+						"type":        "number",
+						"description": "Identity candidate suggestion threshold (0-1)",
+						"default":     0.55,
+					},
+					"identity_queue_limit": map[string]any{
+						"type":        "integer",
+						"description": "Max identity review queue entries (1-200)",
+						"default":     25,
+					},
+					"recent_window_hours": map[string]any{
+						"type":        "integer",
+						"description": "Recent activity window in hours (1-168)",
+						"default":     24,
+					},
+					"decision_sla_days": map[string]any{
+						"type":        "integer",
+						"description": "Days before a decision without outcomes is considered stale (1-365)",
+						"default":     14,
+					},
+				},
+			},
+			Handler: a.toolCerebroGraphLeverageReport,
+		},
+		{
+			Name:        "cerebro.graph_query_templates",
+			Description: "List reusable graph investigation templates for analysts and agents",
+			Parameters: map[string]any{
+				"type":       "object",
+				"properties": map[string]any{},
+			},
+			Handler: a.toolCerebroGraphQueryTemplates,
+		},
+		{
 			Name:        "cerebro.record_observation",
 			Description: "Write one evidence observation targeting an entity with provenance and temporal metadata",
 			Parameters: map[string]any{
@@ -263,6 +316,64 @@ func (a *App) cerebroTools() []agents.Tool {
 				"required": []string{"alias_node_id", "canonical_node_id"},
 			},
 			Handler: a.toolCerebroSplitIdentity,
+		},
+		{
+			Name:        "cerebro.identity_review",
+			Description: "Record a human verdict for one alias->canonical identity candidate",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"alias_node_id":     map[string]any{"type": "string"},
+					"canonical_node_id": map[string]any{"type": "string"},
+					"verdict":           map[string]any{"type": "string", "enum": []string{"accepted", "rejected", "uncertain"}},
+					"reviewer":          map[string]any{"type": "string"},
+					"reason":            map[string]any{"type": "string"},
+					"source_system":     map[string]any{"type": "string", "default": "review"},
+					"source_event_id":   map[string]any{"type": "string"},
+					"observed_at":       map[string]any{"type": "string"},
+					"confidence":        map[string]any{"type": "number", "default": 0.95},
+				},
+				"required": []string{"alias_node_id", "canonical_node_id", "verdict"},
+			},
+			Handler: a.toolCerebroIdentityReview,
+		},
+		{
+			Name:        "cerebro.identity_calibration",
+			Description: "Return identity precision/coverage metrics and optional review queue backlog",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"suggest_threshold": map[string]any{"type": "number", "default": 0.55},
+					"queue_limit":       map[string]any{"type": "integer", "default": 25},
+					"include_queue":     map[string]any{"type": "boolean", "default": true},
+				},
+			},
+			Handler: a.toolCerebroIdentityCalibration,
+		},
+		{
+			Name:        "cerebro.actuate_recommendation",
+			Description: "Write one action node from a recommendation and link it to targets and optional decision context",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"id":                map[string]any{"type": "string"},
+					"recommendation_id": map[string]any{"type": "string"},
+					"insight_type":      map[string]any{"type": "string"},
+					"title":             map[string]any{"type": "string"},
+					"summary":           map[string]any{"type": "string"},
+					"decision_id":       map[string]any{"type": "string"},
+					"target_ids":        map[string]any{"type": "array"},
+					"source_system":     map[string]any{"type": "string", "default": "agent"},
+					"source_event_id":   map[string]any{"type": "string"},
+					"observed_at":       map[string]any{"type": "string"},
+					"valid_from":        map[string]any{"type": "string"},
+					"valid_to":          map[string]any{"type": "string"},
+					"confidence":        map[string]any{"type": "number", "default": 0.8},
+					"auto_generated":    map[string]any{"type": "boolean", "default": true},
+					"metadata":          map[string]any{"type": "object"},
+				},
+			},
+			Handler: a.toolCerebroActuateRecommendation,
 		},
 		{
 			Name:             "cerebro.simulate",
@@ -622,6 +733,61 @@ func (a *App) toolCerebroGraphQualityReport(_ context.Context, args json.RawMess
 		FreshnessStaleAfter: time.Duration(staleAfterHours) * time.Hour,
 	})
 	return marshalToolResponse(report)
+}
+
+func (a *App) toolCerebroGraphLeverageReport(_ context.Context, args json.RawMessage) (string, error) {
+	g, err := a.requireSecurityGraph()
+	if err != nil {
+		return "", err
+	}
+
+	var req struct {
+		HistoryLimit             int     `json:"history_limit"`
+		SinceVersion             int64   `json:"since_version"`
+		StaleAfterHours          int     `json:"stale_after_hours"`
+		IdentitySuggestThreshold float64 `json:"identity_suggest_threshold"`
+		IdentityQueueLimit       int     `json:"identity_queue_limit"`
+		RecentWindowHours        int     `json:"recent_window_hours"`
+		DecisionSLADays          int     `json:"decision_sla_days"`
+	}
+	if err := decodeToolArgs(args, &req); err != nil {
+		return "", err
+	}
+	if req.SinceVersion < 0 {
+		return "", fmt.Errorf("since_version must be a positive integer")
+	}
+	if req.IdentitySuggestThreshold < 0 || req.IdentitySuggestThreshold > 1 {
+		return "", fmt.Errorf("identity_suggest_threshold must be between 0 and 1")
+	}
+
+	historyLimit := clampInt(req.HistoryLimit, 20, 1, 200)
+	staleAfterHours := clampInt(req.StaleAfterHours, 720, 1, 8760)
+	queueLimit := clampInt(req.IdentityQueueLimit, 25, 1, 200)
+	recentWindowHours := clampInt(req.RecentWindowHours, 24, 1, 168)
+	decisionSLADays := clampInt(req.DecisionSLADays, 14, 1, 365)
+	suggestThreshold := req.IdentitySuggestThreshold
+	if suggestThreshold == 0 {
+		suggestThreshold = 0.55
+	}
+
+	report := graph.BuildGraphLeverageReport(g, graph.GraphLeverageReportOptions{
+		SchemaHistoryLimit:       historyLimit,
+		SchemaSinceVersion:       req.SinceVersion,
+		FreshnessStaleAfter:      time.Duration(staleAfterHours) * time.Hour,
+		IdentitySuggestThreshold: suggestThreshold,
+		IdentityQueueLimit:       queueLimit,
+		RecentWindow:             time.Duration(recentWindowHours) * time.Hour,
+		DecisionStaleAfter:       time.Duration(decisionSLADays) * 24 * time.Hour,
+	})
+	return marshalToolResponse(report)
+}
+
+func (a *App) toolCerebroGraphQueryTemplates(_ context.Context, _ json.RawMessage) (string, error) {
+	templates := graph.DefaultGraphQueryTemplates()
+	return marshalToolResponse(map[string]any{
+		"templates": templates,
+		"count":     len(templates),
+	})
 }
 
 func buildScenarioSimulationDelta(g *graph.Graph, scenario string, target string, parameters map[string]any) (graph.GraphDelta, error) {

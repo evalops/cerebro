@@ -158,6 +158,114 @@ func TestGraphWriteDecisionOutcomeAndIdentity(t *testing.T) {
 	}
 }
 
+func TestGraphIdentityReviewAndCalibrationEndpoints(t *testing.T) {
+	s := newTestServer(t)
+	g := s.app.SecurityGraph
+
+	g.AddNode(&graph.Node{
+		ID:   "person:alice@example.com",
+		Kind: graph.NodeKindPerson,
+		Name: "Alice",
+		Properties: map[string]any{
+			"email": "alice@example.com",
+		},
+	})
+	g.AddNode(&graph.Node{
+		ID:   "identity_alias:github:alice",
+		Kind: graph.NodeKindIdentityAlias,
+		Name: "alice",
+		Properties: map[string]any{
+			"source_system": "github",
+			"external_id":   "alice",
+			"email":         "alice@example.com",
+			"observed_at":   "2026-03-09T00:00:00Z",
+			"valid_from":    "2026-03-09T00:00:00Z",
+		},
+	})
+
+	review := do(t, s, http.MethodPost, "/api/v1/graph/identity/review", map[string]any{
+		"alias_node_id":     "identity_alias:github:alice",
+		"canonical_node_id": "person:alice@example.com",
+		"verdict":           "accepted",
+		"reviewer":          "analyst@company.com",
+		"reason":            "exact email",
+		"source_system":     "analyst",
+	})
+	if review.Code != http.StatusOK {
+		t.Fatalf("expected 200 for identity review, got %d: %s", review.Code, review.Body.String())
+	}
+	reviewBody := decodeJSON(t, review)
+	if verdict, _ := reviewBody["verdict"].(string); verdict != "accepted" {
+		t.Fatalf("expected accepted verdict, got %+v", reviewBody)
+	}
+
+	calibration := do(t, s, http.MethodGet, "/api/v1/graph/identity/calibration?include_queue=true&queue_limit=10", nil)
+	if calibration.Code != http.StatusOK {
+		t.Fatalf("expected 200 for identity calibration, got %d: %s", calibration.Code, calibration.Body.String())
+	}
+	calibrationBody := decodeJSON(t, calibration)
+	if aliases, ok := calibrationBody["alias_nodes"].(float64); !ok || aliases < 1 {
+		t.Fatalf("expected alias_nodes >=1, got %#v", calibrationBody["alias_nodes"])
+	}
+	if reviewed, ok := calibrationBody["reviewed_aliases"].(float64); !ok || reviewed < 1 {
+		t.Fatalf("expected reviewed_aliases >=1, got %#v", calibrationBody["reviewed_aliases"])
+	}
+}
+
+func TestGraphActuateRecommendationEndpoint(t *testing.T) {
+	s := newTestServer(t)
+	g := s.app.SecurityGraph
+
+	g.AddNode(&graph.Node{
+		ID:   "service:payments",
+		Kind: graph.NodeKindService,
+		Name: "Payments",
+		Properties: map[string]any{
+			"service_id":  "payments",
+			"observed_at": "2026-03-09T00:00:00Z",
+			"valid_from":  "2026-03-09T00:00:00Z",
+		},
+	})
+	g.AddNode(&graph.Node{
+		ID:   "decision:rollback",
+		Kind: graph.NodeKindDecision,
+		Name: "Rollback",
+		Properties: map[string]any{
+			"decision_type": "rollback",
+			"status":        "approved",
+		},
+	})
+
+	actuation := do(t, s, http.MethodPost, "/api/v1/graph/actuate/recommendation", map[string]any{
+		"recommendation_id": "rec-1",
+		"insight_type":      "graph_freshness",
+		"title":             "Increase scanner cadence",
+		"summary":           "Reduce freshness lag on payments",
+		"decision_id":       "decision:rollback",
+		"target_ids":        []string{"service:payments"},
+		"source_system":     "conductor",
+		"auto_generated":    true,
+	})
+	if actuation.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for recommendation actuation, got %d: %s", actuation.Code, actuation.Body.String())
+	}
+	body := decodeJSON(t, actuation)
+	actionID, _ := body["action_id"].(string)
+	if actionID == "" {
+		t.Fatalf("expected action_id, got %#v", body)
+	}
+	if node, ok := g.GetNode(actionID); !ok || node == nil || node.Kind != graph.NodeKindAction {
+		t.Fatalf("expected action node %q to exist, got %#v", actionID, node)
+	}
+
+	invalid := do(t, s, http.MethodPost, "/api/v1/graph/actuate/recommendation", map[string]any{
+		"target_ids": []string{"service:payments"},
+	})
+	if invalid.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid recommendation actuation payload, got %d: %s", invalid.Code, invalid.Body.String())
+	}
+}
+
 func TestGraphWritebackValidationFailures(t *testing.T) {
 	s := newTestServer(t)
 	g := s.app.SecurityGraph

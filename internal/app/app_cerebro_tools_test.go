@@ -213,6 +213,183 @@ func TestCerebroGraphQualityReportToolValidation(t *testing.T) {
 	}
 }
 
+func TestCerebroGraphLeverageAndQueryTemplateTools(t *testing.T) {
+	g := graph.New()
+	now := time.Date(2026, 3, 9, 17, 0, 0, 0, time.UTC)
+	g.AddNode(&graph.Node{
+		ID:   "person:alice@example.com",
+		Kind: graph.NodeKindPerson,
+		Name: "Alice",
+		Properties: map[string]any{
+			"email":         "alice@example.com",
+			"source_system": "github",
+			"observed_at":   now.Add(-1 * time.Hour).Format(time.RFC3339),
+			"valid_from":    now.Add(-1 * time.Hour).Format(time.RFC3339),
+		},
+	})
+	g.AddNode(&graph.Node{
+		ID:   "identity_alias:github:alice",
+		Kind: graph.NodeKindIdentityAlias,
+		Name: "alice",
+		Properties: map[string]any{
+			"source_system": "github",
+			"external_id":   "alice",
+			"email":         "alice@example.com",
+			"observed_at":   now.Add(-1 * time.Hour).Format(time.RFC3339),
+			"valid_from":    now.Add(-1 * time.Hour).Format(time.RFC3339),
+		},
+	})
+	g.AddEdge(&graph.Edge{ID: "alias-link", Source: "identity_alias:github:alice", Target: "person:alice@example.com", Kind: graph.EdgeKindAliasOf, Effect: graph.EdgeEffectAllow, Properties: map[string]any{
+		"observed_at": now.Add(-1 * time.Hour).Format(time.RFC3339),
+		"valid_from":  now.Add(-1 * time.Hour).Format(time.RFC3339),
+	}})
+
+	application := &App{SecurityGraph: g}
+
+	leverageTool := findCerebroTool(application.cerebroTools(), "cerebro.graph_leverage_report")
+	if leverageTool == nil {
+		t.Fatal("expected graph leverage report tool")
+	}
+	leverageResult, err := leverageTool.Handler(context.Background(), json.RawMessage(`{"recent_window_hours":24}`))
+	if err != nil {
+		t.Fatalf("graph leverage tool returned error: %v", err)
+	}
+	var leveragePayload map[string]any
+	if err := json.Unmarshal([]byte(leverageResult), &leveragePayload); err != nil {
+		t.Fatalf("decode leverage payload: %v", err)
+	}
+	summary, ok := leveragePayload["summary"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected summary object, got %#v", leveragePayload["summary"])
+	}
+	if _, ok := summary["leverage_score"].(float64); !ok {
+		t.Fatalf("expected leverage score, got %#v", summary["leverage_score"])
+	}
+
+	templatesTool := findCerebroTool(application.cerebroTools(), "cerebro.graph_query_templates")
+	if templatesTool == nil {
+		t.Fatal("expected graph query templates tool")
+	}
+	templatesResult, err := templatesTool.Handler(context.Background(), json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("graph query templates tool returned error: %v", err)
+	}
+	var templatesPayload map[string]any
+	if err := json.Unmarshal([]byte(templatesResult), &templatesPayload); err != nil {
+		t.Fatalf("decode templates payload: %v", err)
+	}
+	if count, ok := templatesPayload["count"].(float64); !ok || count < 1 {
+		t.Fatalf("expected template count >0, got %#v", templatesPayload["count"])
+	}
+}
+
+func TestCerebroIdentityReviewCalibrationAndActuationTools(t *testing.T) {
+	g := graph.New()
+	g.AddNode(&graph.Node{
+		ID:   "person:alice@example.com",
+		Kind: graph.NodeKindPerson,
+		Name: "Alice",
+		Properties: map[string]any{
+			"email": "alice@example.com",
+		},
+	})
+	g.AddNode(&graph.Node{
+		ID:   "identity_alias:github:alice",
+		Kind: graph.NodeKindIdentityAlias,
+		Name: "alice",
+		Properties: map[string]any{
+			"source_system": "github",
+			"external_id":   "alice",
+			"email":         "alice@example.com",
+			"observed_at":   "2026-03-09T00:00:00Z",
+			"valid_from":    "2026-03-09T00:00:00Z",
+		},
+	})
+	g.AddNode(&graph.Node{
+		ID:   "service:payments",
+		Kind: graph.NodeKindService,
+		Name: "Payments",
+		Properties: map[string]any{
+			"service_id": "payments",
+		},
+	})
+	g.AddNode(&graph.Node{
+		ID:   "decision:rollback",
+		Kind: graph.NodeKindDecision,
+		Name: "Rollback",
+		Properties: map[string]any{
+			"decision_type": "rollback",
+		},
+	})
+
+	application := &App{SecurityGraph: g}
+
+	reviewTool := findCerebroTool(application.cerebroTools(), "cerebro.identity_review")
+	if reviewTool == nil {
+		t.Fatal("expected identity review tool")
+	}
+	reviewResult, err := reviewTool.Handler(context.Background(), json.RawMessage(`{
+		"alias_node_id":"identity_alias:github:alice",
+		"canonical_node_id":"person:alice@example.com",
+		"verdict":"accepted",
+		"reviewer":"analyst@company.com",
+		"reason":"exact email"
+	}`))
+	if err != nil {
+		t.Fatalf("identity_review returned error: %v", err)
+	}
+	var reviewPayload map[string]any
+	if err := json.Unmarshal([]byte(reviewResult), &reviewPayload); err != nil {
+		t.Fatalf("decode review payload: %v", err)
+	}
+	if verdict, _ := reviewPayload["verdict"].(string); verdict != "accepted" {
+		t.Fatalf("expected accepted verdict, got %#v", reviewPayload["verdict"])
+	}
+
+	calibrationTool := findCerebroTool(application.cerebroTools(), "cerebro.identity_calibration")
+	if calibrationTool == nil {
+		t.Fatal("expected identity calibration tool")
+	}
+	calibrationResult, err := calibrationTool.Handler(context.Background(), json.RawMessage(`{"include_queue":true}`))
+	if err != nil {
+		t.Fatalf("identity_calibration returned error: %v", err)
+	}
+	var calibrationPayload map[string]any
+	if err := json.Unmarshal([]byte(calibrationResult), &calibrationPayload); err != nil {
+		t.Fatalf("decode calibration payload: %v", err)
+	}
+	if reviewed, ok := calibrationPayload["reviewed_aliases"].(float64); !ok || reviewed < 1 {
+		t.Fatalf("expected reviewed_aliases >=1, got %#v", calibrationPayload["reviewed_aliases"])
+	}
+
+	actuationTool := findCerebroTool(application.cerebroTools(), "cerebro.actuate_recommendation")
+	if actuationTool == nil {
+		t.Fatal("expected actuate recommendation tool")
+	}
+	actuationResult, err := actuationTool.Handler(context.Background(), json.RawMessage(`{
+		"recommendation_id":"rec-1",
+		"insight_type":"graph_freshness",
+		"title":"Increase scanner cadence",
+		"decision_id":"decision:rollback",
+		"target_ids":["service:payments"],
+		"source_system":"conductor"
+	}`))
+	if err != nil {
+		t.Fatalf("actuate_recommendation returned error: %v", err)
+	}
+	var actuationPayload map[string]any
+	if err := json.Unmarshal([]byte(actuationResult), &actuationPayload); err != nil {
+		t.Fatalf("decode actuation payload: %v", err)
+	}
+	actionID, _ := actuationPayload["action_id"].(string)
+	if actionID == "" {
+		t.Fatalf("expected action_id, got %#v", actuationPayload)
+	}
+	if node, ok := g.GetNode(actionID); !ok || node == nil || node.Kind != graph.NodeKindAction {
+		t.Fatalf("expected action node to exist, got %#v", node)
+	}
+}
+
 func TestCerebroGraphWritebackTools(t *testing.T) {
 	g := graph.New()
 	g.AddNode(&graph.Node{
