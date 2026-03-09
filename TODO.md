@@ -52,4 +52,4 @@ Execution mode: ship incrementally, keep CI green
 - [x] Run `make openapi-check`.
 - [x] Run `go test ./... -count=1`.
 - [x] Run gosec + golangci-lint.
-- [ ] Push branch and monitor CI to completion.
+- [x] Push branch and monitor CI to completion.
