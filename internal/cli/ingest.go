@@ -189,15 +189,6 @@ func replayDeadLetter(opts replayDeadLetterOptions) (replayDeadLetterReport, err
 			return nil
 		}
 		report.EventsProcessed++
-		checkpointSeen[key] = struct{}{}
-		dirtyCheckpoint = true
-		if checkpointPath != "" && report.EventsProcessed%50 == 0 {
-			if err := saveReplayCheckpoint(checkpointPath, path, checkpointSeen); err != nil {
-				return err
-			}
-			report.CheckpointSaved = true
-			dirtyCheckpoint = false
-		}
 
 		evt, hasData := record.ReplayEvent()
 		if !hasData {
@@ -220,6 +211,17 @@ func replayDeadLetter(opts replayDeadLetterOptions) (replayDeadLetterReport, err
 			return nil
 		}
 		report.EventsReplayed++
+		if checkpointPath != "" {
+			checkpointSeen[key] = struct{}{}
+			dirtyCheckpoint = true
+			if len(checkpointSeen)%50 == 0 {
+				if err := saveReplayCheckpoint(checkpointPath, path, checkpointSeen); err != nil {
+					return err
+				}
+				report.CheckpointSaved = true
+				dirtyCheckpoint = false
+			}
+		}
 		return nil
 	})
 	if err != nil {
