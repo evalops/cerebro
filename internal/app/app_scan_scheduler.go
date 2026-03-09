@@ -81,6 +81,7 @@ func (a *App) initScheduler(_ context.Context) {
 				return err
 			}
 			a.SecurityGraph = a.SecurityGraphBuilder.Graph()
+			a.configureGraphSchemaValidation(a.SecurityGraph)
 			meta := a.SecurityGraph.Metadata()
 			a.Logger.Info("security graph rebuilt",
 				"nodes", meta.NodeCount,
@@ -98,6 +99,7 @@ func (a *App) initScheduler(_ context.Context) {
 		}
 
 		a.SecurityGraph = a.SecurityGraphBuilder.Graph()
+		a.configureGraphSchemaValidation(a.SecurityGraph)
 		meta := a.SecurityGraph.Metadata()
 		a.Logger.Info("security graph incrementally updated",
 			"events", summary.EventsProcessed,

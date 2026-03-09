@@ -193,6 +193,7 @@ func (a *App) initSecurityGraph(ctx context.Context) {
 	source := graph.NewSnowflakeSource(a.Snowflake)
 	a.SecurityGraphBuilder = graph.NewBuilder(source, a.Logger)
 	a.SecurityGraph = a.SecurityGraphBuilder.Graph()
+	a.configureGraphSchemaValidation(a.SecurityGraph)
 	a.Propagation = graph.NewPropagationEngine(a.SecurityGraph)
 
 	graphCtx := ctx
@@ -220,6 +221,18 @@ func (a *App) initSecurityGraph(ctx context.Context) {
 		a.emitGraphRebuiltEvent(ctx, meta, meta.BuildDuration)
 		a.emitGraphMutationEvent(ctx, a.SecurityGraphBuilder.LastMutation(), "startup")
 	}()
+}
+
+func (a *App) configureGraphSchemaValidation(g *graph.Graph) {
+	if g == nil {
+		return
+	}
+
+	mode := graph.SchemaValidationWarn
+	if a != nil && a.Config != nil {
+		mode = graph.ParseSchemaValidationMode(a.Config.GraphSchemaValidationMode)
+	}
+	g.SetSchemaValidationMode(mode)
 }
 
 // WaitForGraph blocks until the initial graph build completes (or ctx is cancelled).

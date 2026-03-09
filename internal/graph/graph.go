@@ -31,6 +31,10 @@ type Graph struct {
 	internetNodes    []*Node // Pre-computed internet-facing nodes
 	crownJewels      []*Node // Pre-computed high-value targets
 	indexBuilt       bool
+
+	// Runtime ontology validation behavior and counters.
+	schemaValidationMode  SchemaValidationMode
+	schemaValidationStats SchemaValidationStats
 }
 
 // Metadata contains information about the graph
@@ -45,11 +49,14 @@ type Metadata struct {
 
 // New creates a new empty graph
 func New() *Graph {
+	mode := SchemaValidationWarn
 	return &Graph{
-		nodes:              make(map[string]*Node),
-		outEdges:           make(map[string][]*Edge),
-		inEdges:            make(map[string][]*Edge),
-		blastRadiusVersion: 1,
+		nodes:                 make(map[string]*Node),
+		outEdges:              make(map[string][]*Edge),
+		inEdges:               make(map[string][]*Edge),
+		blastRadiusVersion:    1,
+		schemaValidationMode:  mode,
+		schemaValidationStats: newSchemaValidationStats(mode),
 	}
 }
 
@@ -60,8 +67,9 @@ func (g *Graph) AddNode(node *Node) {
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	g.addNodeLocked(node)
-	g.markGraphChangedLocked()
+	if g.addNodeLocked(node) {
+		g.markGraphChangedLocked()
+	}
 }
 
 // AddNodesBatch adds multiple nodes in a single lock acquisition
@@ -71,13 +79,18 @@ func (g *Graph) AddNodesBatch(nodes []*Node) {
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	changed := false
 	for _, node := range nodes {
 		if node == nil || node.ID == "" {
 			continue
 		}
-		g.addNodeLocked(node)
+		if g.addNodeLocked(node) {
+			changed = true
+		}
 	}
-	g.markGraphChangedLocked()
+	if changed {
+		g.markGraphChangedLocked()
+	}
 }
 
 // AddEdge adds an edge to the graph
@@ -87,8 +100,9 @@ func (g *Graph) AddEdge(edge *Edge) {
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	g.addEdgeLocked(edge)
-	g.markGraphChangedLocked()
+	if g.addEdgeLocked(edge) {
+		g.markGraphChangedLocked()
+	}
 }
 
 // AddEdgesBatch adds multiple edges in a single lock acquisition
@@ -98,13 +112,18 @@ func (g *Graph) AddEdgesBatch(edges []*Edge) {
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	changed := false
 	for _, edge := range edges {
 		if edge == nil || edge.Source == "" || edge.Target == "" {
 			continue
 		}
-		g.addEdgeLocked(edge)
+		if g.addEdgeLocked(edge) {
+			changed = true
+		}
 	}
-	g.markGraphChangedLocked()
+	if changed {
+		g.markGraphChangedLocked()
+	}
 }
 
 // RemoveNode removes a node and all edges touching it.
@@ -473,7 +492,7 @@ func (g *Graph) BuildIndex() {
 
 // isInternetFacing checks if a node is exposed to the internet
 func (g *Graph) isInternetFacing(node *Node) bool {
-	if node.Properties == nil {
+	if node == nil || node.Properties == nil {
 		return false
 	}
 
@@ -488,28 +507,23 @@ func (g *Graph) isInternetFacing(node *Node) bool {
 		return true
 	}
 
-	// Check specific node types
-	switch node.Kind {
-	case NodeKindNetwork:
-		// Load balancers, API gateways, etc are usually network type
-		if nodeType, ok := node.Properties["type"].(string); ok {
-			if nodeType == "load_balancer" || nodeType == "api_gateway" || nodeType == "cdn" {
-				return true
-			}
-		}
-	case NodeKindInstance:
-		if publicIP, ok := node.Properties["public_ip_address"].(string); ok && publicIP != "" {
+	// Extra heuristics only apply to kinds marked as internet-exposable in the ontology.
+	if !NodeKindHasCapability(node.Kind, NodeCapabilityInternetExposable) {
+		return false
+	}
+	if nodeType, ok := node.Properties["type"].(string); ok {
+		if nodeType == "load_balancer" || nodeType == "api_gateway" || nodeType == "cdn" {
 			return true
 		}
-	case NodeKindFunction:
-		// Lambda/Functions with public URL
-		if funcURL, ok := node.Properties["function_url"].(string); ok && funcURL != "" {
-			return true
-		}
-	case NodeKindBucket:
-		if public, ok := node.Properties["public_access_block_enabled"].(bool); ok && !public {
-			return true
-		}
+	}
+	if publicIP, ok := node.Properties["public_ip_address"].(string); ok && publicIP != "" {
+		return true
+	}
+	if funcURL, ok := node.Properties["function_url"].(string); ok && funcURL != "" {
+		return true
+	}
+	if public, ok := node.Properties["public_access_block_enabled"].(bool); ok && !public {
+		return true
 	}
 
 	return false
@@ -517,6 +531,10 @@ func (g *Graph) isInternetFacing(node *Node) bool {
 
 // isCrownJewel checks if a node is a high-value target
 func (g *Graph) isCrownJewel(node *Node) bool {
+	if node == nil {
+		return false
+	}
+
 	// High criticality
 	if node.Risk == RiskCritical || node.Risk == RiskHigh {
 		return true
@@ -533,19 +551,16 @@ func (g *Graph) isCrownJewel(node *Node) bool {
 		}
 	}
 
-	// High-value node kinds
-	switch node.Kind {
-	case NodeKindDatabase, NodeKindSecret, NodeKindBucket:
-		// Check if contains PII/sensitive data
+	// Use schema capabilities instead of hardcoded kind checks.
+	if NodeKindHasCapability(node.Kind, NodeCapabilitySensitiveData) {
 		if containsPII, ok := node.Properties["contains_pii"].(bool); ok && containsPII {
 			return true
 		}
-		// Production databases/buckets
 		if env, ok := node.Properties["environment"].(string); ok && env == "production" {
 			return true
 		}
-	case NodeKindRole, NodeKindServiceAccount:
-		// Admin roles
+	}
+	if NodeKindHasCapability(node.Kind, NodeCapabilityPrivilegedIdentity) {
 		if admin, ok := node.Properties["is_admin"].(bool); ok && admin {
 			return true
 		}
@@ -711,7 +726,11 @@ func (g *Graph) GetResourceNodesByARNPrefix(prefix string) []*Node {
 	return g.indexByARNPrefix[prefix]
 }
 
-func (g *Graph) addNodeLocked(node *Node) {
+func (g *Graph) addNodeLocked(node *Node) bool {
+	if !g.applyNodeSchemaValidationLocked(node) {
+		return false
+	}
+
 	now := temporalNowUTC()
 	if existing, ok := g.nodes[node.ID]; ok && existing != nil {
 		if existing.CreatedAt.IsZero() {
@@ -749,9 +768,14 @@ func (g *Graph) addNodeLocked(node *Node) {
 	node.DeletedAt = nil
 	g.appendNodePropertiesHistoryLocked(node, node.UpdatedAt)
 	g.nodes[node.ID] = node
+	return true
 }
 
-func (g *Graph) addEdgeLocked(edge *Edge) {
+func (g *Graph) addEdgeLocked(edge *Edge) bool {
+	if !g.applyEdgeSchemaValidationLocked(edge) {
+		return false
+	}
+
 	now := temporalNowUTC()
 	if edge.CreatedAt.IsZero() {
 		edge.CreatedAt = now
@@ -762,6 +786,7 @@ func (g *Graph) addEdgeLocked(edge *Edge) {
 	edge.DeletedAt = nil
 	g.outEdges[edge.Source] = append(g.outEdges[edge.Source], edge)
 	g.inEdges[edge.Target] = append(g.inEdges[edge.Target], edge)
+	return true
 }
 
 func (g *Graph) activeEdgesForNodeLocked(edges []*Edge) []*Edge {
