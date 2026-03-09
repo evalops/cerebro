@@ -5,6 +5,50 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 13 - World Model Foundation + Claim Layer + Bitemporal Reasoning (2026-03-09)
+
+### Review findings
+- [x] Gap: the graph modeled entities and operational events well, but did not model facts as first-class claims.
+- [x] Gap: provenance existed, but there was no durable `source` abstraction to separate “who asserted this” from the write path that stored it.
+- [x] Gap: temporal semantics were fact-time heavy (`observed_at`, `valid_from`, `valid_to`) but lacked system-time fields for “when Cerebro learned this.”
+- [x] Gap: no API write path existed for a proper claim/assertion workflow.
+- [x] Gap: no intelligence surface existed for contradiction detection, unsupported claims, or sourceless claims.
+- [x] Gap: ingest/runtime metadata normalization did not stamp bitemporal fields on declarative mapper writes.
+- [x] Gap: architecture docs described ontology depth, but not the claim-first world-model target state.
+
+### Execution plan
+- [x] Add world-model ontology primitives:
+  - [x] Add node kinds: `claim`, `source`, `observation`.
+  - [x] Add edge kinds: `asserted_by`, `supports`, `refutes`, `supersedes`, `contradicts`.
+  - [x] Register built-in schema contracts and required relationships for the new kinds.
+- [x] Extend metadata contract to bitemporal writes:
+  - [x] Add `recorded_at`, `transaction_from`, `transaction_to` to `graph.WriteMetadata`.
+  - [x] Extend `NormalizeWriteMetadata(...)` defaults and property emission.
+  - [x] Extend metadata profiles and timestamp validation to cover new fields.
+- [x] Add bitemporal graph reads:
+  - [x] Add `GetAllNodesBitemporal(...)`.
+  - [x] Add `GetOutEdgesBitemporal(...)` / `GetInEdgesBitemporal(...)`.
+  - [x] Add `SubgraphBitemporal(...)`.
+- [x] Add first-class claim write flow:
+  - [x] Add `graph.ClaimWriteRequest` / `graph.WriteClaim(...)`.
+  - [x] Link claims to subjects, objects, sources, evidence, and superseding/supporting/refuting claims.
+  - [x] Validate referenced entities before writes.
+- [x] Add claim intelligence surface:
+  - [x] Add `BuildClaimConflictReport(...)`.
+  - [x] Detect contradictory active claims by `subject_id` + `predicate`.
+  - [x] Track unsupported, sourceless, and stale-claim counts.
+- [x] Expose runtime APIs:
+  - [x] Add `POST /api/v1/graph/write/claim`.
+  - [x] Add `GET /api/v1/graph/intelligence/claim-conflicts`.
+  - [x] Add handler tests and route coverage.
+- [x] Bring ingest up to the new metadata contract:
+  - [x] Stamp `recorded_at` and `transaction_from` during declarative mapper writes.
+  - [x] Extend mapper contract tests to assert bitemporal metadata presence.
+  - [x] Normalize malformed fact-time inputs into safe metadata defaults rather than silently dropping writes.
+- [x] Update architecture docs:
+  - [x] Add `docs/GRAPH_WORLD_MODEL_ARCHITECTURE.md`.
+  - [x] Update ontology/intelligence/architecture docs to describe the claim-first substrate.
+
 ## Deep Review Cycle 12 - Contract Versioning + Runtime Event Validation + Generated Schema Catalogs (2026-03-09)
 
 ### Review findings (external-pattern driven)

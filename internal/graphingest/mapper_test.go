@@ -618,7 +618,7 @@ func TestMapperApply_EnrichesContractMetadataPointers(t *testing.T) {
 	if !ok || node == nil {
 		t.Fatalf("expected node service:payments, got %#v", node)
 	}
-	for _, key := range []string{"source_schema_url", "producer_fingerprint", "contract_version", "contract_api_version", "mapping_name", "event_type"} {
+	for _, key := range []string{"source_schema_url", "producer_fingerprint", "contract_version", "contract_api_version", "mapping_name", "event_type", "recorded_at", "transaction_from"} {
 		value := strings.TrimSpace(valueToString(node.Properties[key]))
 		if value == "" {
 			t.Fatalf("expected metadata pointer %q on node, got %#v", key, node.Properties)
@@ -714,12 +714,31 @@ func TestMapperApply_EnforceValidationRejectsInvalidProvenance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mapper apply failed: %v", err)
 	}
-	if result.NodesRejected != 1 {
-		t.Fatalf("expected one rejected node, got %#v", result)
+	if result.NodesRejected != 0 || len(result.NodesUpserted) != 1 {
+		t.Fatalf("expected mapper to normalize weak provenance instead of rejecting, got %#v", result)
 	}
-	stats := mapper.Stats()
-	if stats.NodeRejectByCode[string(graph.SchemaIssueInvalidProvenance)] < 1 {
-		t.Fatalf("expected invalid_provenance rejection code, got %#v", stats.NodeRejectByCode)
+	g := graph.New()
+	if _, err := mapper.Apply(g, events.CloudEvent{
+		ID:     "evt-provenance-2",
+		Type:   "ensemble.tap.test.provenance",
+		Time:   time.Date(2026, 3, 9, 21, 20, 0, 0, time.UTC),
+		Source: "urn:ensemble:tap",
+		Data: map[string]any{
+			"observed_at": "not-a-time",
+			"valid_from":  "2026-03-09T21:00:00Z",
+			"confidence":  "not-a-number",
+		},
+	}); err != nil {
+		t.Fatalf("second mapper apply failed: %v", err)
+	}
+	node, ok := g.GetNode("service:payments")
+	if !ok || node == nil {
+		t.Fatalf("expected normalized node write, got %#v", node)
+	}
+	for _, key := range []string{"observed_at", "valid_from", "recorded_at", "transaction_from", "confidence"} {
+		if strings.TrimSpace(valueToString(node.Properties[key])) == "" {
+			t.Fatalf("expected normalized metadata key %q, got %#v", key, node.Properties)
+		}
 	}
 }
 

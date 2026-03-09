@@ -126,9 +126,14 @@ Cerebro application:
 - Added compatibility checker script (`scripts/check_cloudevents_contract_compat/main.go`) for required-key and enum-tightening changes.
 - Added API endpoint `GET /api/v1/graph/ingest/contracts` to expose generated contracts at runtime.
 - Added mapper metadata enrichment pointers (`source_schema_url`, `producer_fingerprint`, `contract_version`, `contract_api_version`).
+- Added first-class world-model ontology nodes (`claim`, `source`, `observation`) and contradiction/support edges.
+- Added bitemporal write metadata (`recorded_at`, `transaction_from`, `transaction_to`) plus bitemporal graph views.
+- Added claim writeback and contradiction intelligence endpoints (`POST /api/v1/graph/write/claim`, `GET /api/v1/graph/intelligence/claim-conflicts`).
 
 ## Next Moves
 
 1. Add CI gate for metadata-profile coverage on high-volume kinds (threshold-based failure).
 2. Add explicit enum normalization maps per source domain in mappings (`dataEnums` + coercion maps).
 3. Add JSON Schema draft-level validation for generated mapping data schemas in CI (Ajv or equivalent).
+4. Add relationship reification for ownership, employment, contracts, and access grants so high-value edges gain lifecycle + evidence semantics.
+5. Add human adjudication queues for contradictory claims, duplicate entities, and source-trust calibration.

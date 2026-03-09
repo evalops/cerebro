@@ -43,6 +43,15 @@ Closed-loop reasoning surfaces:
 
 This layer captures what the organization decided, why, what was executed, and what result occurred.
 
+### 4) World-Model Knowledge Layer
+
+First-class truth and contradiction handling:
+
+- Nodes: `claim`, `source`, `observation`, `evidence`
+- Edges: `asserted_by`, `based_on`, `supports`, `refutes`, `supersedes`, `contradicts`
+
+This layer separates entities from assertions about those entities so Cerebro can retain provenance, disagreement, and correction history without flattening everything into one mutable node state.
+
 ## Metadata Contract
 
 All graph writes should include the same temporal and provenance fields:
@@ -52,6 +61,9 @@ All graph writes should include the same temporal and provenance fields:
 - `observed_at`
 - `valid_from`
 - `valid_to` (optional)
+- `recorded_at`
+- `transaction_from`
+- `transaction_to` (optional)
 - `confidence`
 
 To enforce consistency, use the graph-level helper:
@@ -70,6 +82,7 @@ Generated ontology snapshot:
 - `docs/CLOUDEVENTS_CONTRACTS.json` for machine-readable event/mapping contracts and per-mapping generated data schemas.
 - `go run ./scripts/check_cloudevents_contract_compat/main.go` to enforce required-key/enum compatibility with versioning discipline.
 - External benchmark references: `docs/GRAPH_ONTOLOGY_EXTERNAL_PATTERNS.md`
+- World-model target state and implemented claim substrate: `docs/GRAPH_WORLD_MODEL_ARCHITECTURE.md`
 
 ## Ingestion Mapping Strategy
 
@@ -96,6 +109,7 @@ The query surface should target semantic kinds instead of source formats:
 Intelligence surfaces should use this ontology directly:
 
 - Leverage report domain coverage by kind family (identity, operational activity, closed loop).
+- Claim conflict intelligence over `subject_id` + `predicate` groups with source/evidence supportability checks.
 - Calibration/reporting on decision-to-outcome closure segmented by operational kind.
 - Recommendations grounded in missing links between operational events and decisions/outcomes.
 

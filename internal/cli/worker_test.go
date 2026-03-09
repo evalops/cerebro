@@ -52,6 +52,8 @@ func (p *testWorkerProvider) Test(context.Context) error { return nil }
 func (p *testWorkerProvider) Schema() []providerregistry.TableSchema { return nil }
 
 func TestSyncConfiguredProviderSources_SkipsNativeProviders(t *testing.T) {
+	t.Setenv(envCLIExecutionMode, string(cliExecutionModeDirect))
+
 	registry := providerregistry.NewRegistry()
 	native := &testWorkerProvider{name: "azure"}
 	other := &testWorkerProvider{name: "okta"}
@@ -79,6 +81,8 @@ func TestSyncConfiguredProviderSources_SkipsNativeProviders(t *testing.T) {
 }
 
 func TestSyncConfiguredProviderSources_CollectsErrorsWithoutFailing(t *testing.T) {
+	t.Setenv(envCLIExecutionMode, string(cliExecutionModeDirect))
+
 	registry := providerregistry.NewRegistry()
 	failing := &testWorkerProvider{name: "github", err: errors.New("boom")}
 	success := &testWorkerProvider{name: "okta"}

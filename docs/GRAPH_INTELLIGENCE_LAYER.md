@@ -27,6 +27,9 @@ See [GRAPH_ONTOLOGY_ARCHITECTURE.md](./GRAPH_ONTOLOGY_ARCHITECTURE.md) for ontol
 - `decision`: explicit organizational decisions.
 - `outcome`: measured outcomes tied back to decisions.
 - `evidence`: observations supporting decisions or risk insights.
+- `observation`: lower-level raw observations before or alongside curated evidence.
+- `source`: first-class claim/assertion origin entities.
+- `claim`: durable assertions about subjects, relationships, and values.
 - `action`: interventions and operational steps.
 
 ### Edge kinds
@@ -37,8 +40,13 @@ See [GRAPH_ONTOLOGY_ARCHITECTURE.md](./GRAPH_ONTOLOGY_ARCHITECTURE.md) for ontol
 - `based_on`: decision relationship to supporting evidence.
 - `executed_by`: decision relationship to implementation action.
 - `evaluates`: outcome relationship back to decision/action.
+- `asserted_by`: claim relationship to its source.
+- `supports`: supporting-claim relationship.
+- `refutes`: contradictory-claim relationship.
+- `supersedes`: correction/replacement relationship for stale or withdrawn claims.
+- `contradicts`: explicit contradiction relationship when retained as graph state.
 
-All write surfaces must populate provenance and temporal metadata (`source_system`, `source_event_id`, `observed_at`, `valid_from`, optional `valid_to`, `confidence`) so ontology conformance and temporal traversal remain consistent.
+All write surfaces must populate provenance and temporal metadata (`source_system`, `source_event_id`, `observed_at`, `valid_from`, optional `valid_to`, `recorded_at`, `transaction_from`, optional `transaction_to`, `confidence`) so ontology conformance and bitemporal traversal remain consistent.
 
 CloudEvents and mapper contracts are generated in `docs/CLOUDEVENTS_AUTOGEN.md` and `docs/CLOUDEVENTS_CONTRACTS.json` to keep event envelope, mapping versions, and generated data schemas explicit.
 
@@ -51,6 +59,7 @@ Current endpoint:
 - `GET /api/v1/graph/intelligence/insights`
 - `GET /api/v1/graph/intelligence/quality`
 - `GET /api/v1/graph/intelligence/metadata-quality`
+- `GET /api/v1/graph/intelligence/claim-conflicts`
 - `GET /api/v1/graph/intelligence/leverage`
 - `GET /api/v1/graph/ingest/health`
 - `GET /api/v1/graph/ingest/contracts`
@@ -76,6 +85,12 @@ Metadata quality report characteristics:
 - Required metadata key coverage.
 - RFC3339 timestamp validity and enum normalization quality.
 - Per-kind missing required keys and invalid metadata distributions.
+
+Claim conflict report characteristics:
+- Contradictory active claims grouped by `subject_id` + `predicate`.
+- Source-backed versus sourceless claim counts.
+- Evidence-backed versus unsupported claim counts.
+- Optional bitemporal slice using `valid_at` and `recorded_at`.
 
 Ingest health characteristics:
 - Mapper runtime counters (processed, matched, rejected, dead-lettered).
@@ -108,6 +123,7 @@ Graph intelligence compounds only when decisions and outcomes write back.
 
 Current endpoints:
 - `POST /api/v1/graph/write/observation`
+- `POST /api/v1/graph/write/claim`
 - `POST /api/v1/graph/write/annotation`
 - `POST /api/v1/graph/write/decision`
 - `POST /api/v1/graph/write/outcome`
@@ -194,6 +210,7 @@ edges:
 
 ## Temporal Semantics
 - Graph supports point-in-time and windowed traversal through node/edge `valid_from`/`valid_to` and observation timestamps.
+- Claim and source layers also support system-time traversal through `recorded_at`/`transaction_from`/`transaction_to`.
 - Query endpoints and tools can scope reads with `as_of` or `from`/`to`.
 - Intelligence confidence is down-weighted when graph freshness degrades.
 

@@ -257,6 +257,108 @@ func TestGraphIntelligenceMetadataQualityEndpoint_InvalidParams(t *testing.T) {
 	}
 }
 
+func TestGraphIntelligenceClaimConflictsEndpoint(t *testing.T) {
+	s := newTestServer(t)
+	g := s.app.SecurityGraph
+
+	g.AddNode(&graph.Node{
+		ID:   "service:payments",
+		Kind: graph.NodeKindService,
+		Name: "Payments",
+		Properties: map[string]any{
+			"service_id":    "payments",
+			"source_system": "cmdb",
+			"observed_at":   "2026-03-09T00:00:00Z",
+			"valid_from":    "2026-03-09T00:00:00Z",
+		},
+	})
+	g.AddNode(&graph.Node{
+		ID:   "evidence:doc:1",
+		Kind: graph.NodeKindEvidence,
+		Name: "Doc 1",
+		Properties: map[string]any{
+			"evidence_type": "document",
+			"source_system": "docs",
+			"observed_at":   "2026-03-09T00:00:00Z",
+			"valid_from":    "2026-03-09T00:00:00Z",
+		},
+	})
+	g.AddNode(&graph.Node{
+		ID:   "evidence:doc:2",
+		Kind: graph.NodeKindEvidence,
+		Name: "Doc 2",
+		Properties: map[string]any{
+			"evidence_type": "document",
+			"source_system": "docs",
+			"observed_at":   "2026-03-09T00:00:00Z",
+			"valid_from":    "2026-03-09T00:00:00Z",
+		},
+	})
+
+	if _, err := graph.WriteClaim(g, graph.ClaimWriteRequest{
+		ID:           "claim:tier:1",
+		SubjectID:    "service:payments",
+		Predicate:    "service_tier",
+		ObjectValue:  "tier1",
+		EvidenceIDs:  []string{"evidence:doc:1"},
+		SourceID:     "source:cmdb:1",
+		SourceName:   "CMDB",
+		SourceType:   "system",
+		SourceSystem: "api",
+	}); err != nil {
+		t.Fatalf("write claim 1: %v", err)
+	}
+	if _, err := graph.WriteClaim(g, graph.ClaimWriteRequest{
+		ID:           "claim:tier:2",
+		SubjectID:    "service:payments",
+		Predicate:    "service_tier",
+		ObjectValue:  "tier0",
+		EvidenceIDs:  []string{"evidence:doc:2"},
+		SourceID:     "source:sheet:1",
+		SourceName:   "Ops Sheet",
+		SourceType:   "document",
+		SourceSystem: "api",
+	}); err != nil {
+		t.Fatalf("write claim 2: %v", err)
+	}
+
+	w := do(t, s, http.MethodGet, "/api/v1/graph/intelligence/claim-conflicts?max_conflicts=10&stale_after_hours=24", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	body := decodeJSON(t, w)
+	summary, ok := body["summary"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected summary object, got %#v", body["summary"])
+	}
+	if groups, ok := summary["conflict_groups"].(float64); !ok || int(groups) != 1 {
+		t.Fatalf("expected one conflict group, got %#v", summary["conflict_groups"])
+	}
+	conflicts, ok := body["conflicts"].([]any)
+	if !ok || len(conflicts) != 1 {
+		t.Fatalf("expected one conflict, got %#v", body["conflicts"])
+	}
+}
+
+func TestGraphIntelligenceClaimConflictsEndpoint_InvalidParams(t *testing.T) {
+	s := newTestServer(t)
+
+	w := do(t, s, http.MethodGet, "/api/v1/graph/intelligence/claim-conflicts?max_conflicts=0", nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for max_conflicts=0, got %d", w.Code)
+	}
+
+	w = do(t, s, http.MethodGet, "/api/v1/graph/intelligence/claim-conflicts?include_resolved=maybe", nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid include_resolved, got %d", w.Code)
+	}
+
+	w = do(t, s, http.MethodGet, "/api/v1/graph/intelligence/claim-conflicts?valid_at=nope", nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid valid_at, got %d", w.Code)
+	}
+}
+
 func TestGraphIntelligenceLeverageEndpoint(t *testing.T) {
 	s := newTestServer(t)
 	g := s.app.SecurityGraph

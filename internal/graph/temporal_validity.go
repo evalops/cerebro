@@ -52,6 +52,27 @@ func (g *Graph) GetAllNodesAt(at time.Time) []*Node {
 	return nodes
 }
 
+// GetAllNodesBitemporal returns nodes active for both fact time and recorded time.
+func (g *Graph) GetAllNodesBitemporal(validAt, recordedAt time.Time) []*Node {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	if validAt.IsZero() {
+		validAt = temporalNowUTC()
+	}
+	if recordedAt.IsZero() {
+		recordedAt = temporalNowUTC()
+	}
+
+	nodes := make([]*Node, 0, len(g.nodes))
+	for _, node := range g.nodes {
+		if g.nodeVisibleAtLocked(node, validAt, recordedAt) {
+			nodes = append(nodes, node)
+		}
+	}
+	return nodes
+}
+
 // SubgraphAt builds one graph view with nodes and edges active at one timestamp.
 func (g *Graph) SubgraphAt(at time.Time) *Graph {
 	if g == nil {
@@ -68,6 +89,41 @@ func (g *Graph) SubgraphAt(at time.Time) *Graph {
 	}
 	for _, node := range out.GetAllNodes() {
 		for _, edge := range g.GetOutEdgesAt(node.ID, at) {
+			if edge == nil {
+				continue
+			}
+			if _, ok := out.GetNode(edge.Source); !ok {
+				continue
+			}
+			if _, ok := out.GetNode(edge.Target); !ok {
+				continue
+			}
+			out.AddEdge(cloneEdge(edge))
+		}
+	}
+	return out
+}
+
+// SubgraphBitemporal builds one graph view filtered by fact time and recorded time.
+func (g *Graph) SubgraphBitemporal(validAt, recordedAt time.Time) *Graph {
+	if g == nil {
+		return nil
+	}
+	if validAt.IsZero() {
+		validAt = temporalNowUTC()
+	}
+	if recordedAt.IsZero() {
+		recordedAt = temporalNowUTC()
+	}
+
+	out := New()
+	out.SetSchemaValidationMode(g.SchemaValidationMode())
+
+	for _, node := range g.GetAllNodesBitemporal(validAt, recordedAt) {
+		out.AddNode(cloneNode(node))
+	}
+	for _, node := range out.GetAllNodes() {
+		for _, edge := range g.GetOutEdgesBitemporal(node.ID, validAt, recordedAt) {
 			if edge == nil {
 				continue
 			}
@@ -180,6 +236,20 @@ func (g *Graph) Freshness(now time.Time, staleAfter time.Duration) FreshnessMetr
 	return metrics
 }
 
+// GetOutEdgesBitemporal returns outgoing edges active for both fact time and recorded time.
+func (g *Graph) GetOutEdgesBitemporal(nodeID string, validAt, recordedAt time.Time) []*Edge {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.activeEdgesBitemporalForNodeLocked(g.outEdges[nodeID], validAt, recordedAt)
+}
+
+// GetInEdgesBitemporal returns incoming edges active for both fact time and recorded time.
+func (g *Graph) GetInEdgesBitemporal(nodeID string, validAt, recordedAt time.Time) []*Edge {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.activeEdgesBitemporalForNodeLocked(g.inEdges[nodeID], validAt, recordedAt)
+}
+
 func percentile(sorted []float64, p float64) float64 {
 	if len(sorted) == 0 {
 		return 0
@@ -218,12 +288,42 @@ func (g *Graph) activeEdgesAtForNodeLocked(edges []*Edge, at time.Time) []*Edge 
 	return active
 }
 
+func (g *Graph) activeEdgesBitemporalForNodeLocked(edges []*Edge, validAt, recordedAt time.Time) []*Edge {
+	if len(edges) == 0 {
+		return nil
+	}
+	if validAt.IsZero() {
+		validAt = temporalNowUTC()
+	}
+	if recordedAt.IsZero() {
+		recordedAt = temporalNowUTC()
+	}
+
+	active := make([]*Edge, 0, len(edges))
+	for _, edge := range edges {
+		if !g.edgeVisibleAtLocked(edge, validAt, recordedAt) {
+			continue
+		}
+		active = append(active, edge)
+	}
+	return active
+}
+
 func (g *Graph) nodeActiveAtLocked(node *Node, at time.Time) bool {
 	if node == nil || node.DeletedAt != nil {
 		return false
 	}
 	start, end := temporalBounds(node.Properties, node.CreatedAt, node.DeletedAt)
 	return temporalContains(start, end, at)
+}
+
+func (g *Graph) nodeVisibleAtLocked(node *Node, validAt, recordedAt time.Time) bool {
+	if node == nil || node.DeletedAt != nil {
+		return false
+	}
+	validStart, validEnd := temporalBounds(node.Properties, node.CreatedAt, node.DeletedAt)
+	recordedStart, recordedEnd := recordedBounds(node.Properties, node.CreatedAt, node.DeletedAt)
+	return temporalContains(validStart, validEnd, validAt) && temporalContains(recordedStart, recordedEnd, recordedAt)
 }
 
 func (g *Graph) edgeActiveAtLocked(edge *Edge, at time.Time) bool {
@@ -240,6 +340,23 @@ func (g *Graph) edgeActiveAtLocked(edge *Edge, at time.Time) bool {
 	}
 	start, end := temporalBounds(edge.Properties, edge.CreatedAt, edge.DeletedAt)
 	return temporalContains(start, end, at)
+}
+
+func (g *Graph) edgeVisibleAtLocked(edge *Edge, validAt, recordedAt time.Time) bool {
+	if edge == nil || edge.DeletedAt != nil {
+		return false
+	}
+	source, ok := g.nodes[edge.Source]
+	if !ok || !g.nodeVisibleAtLocked(source, validAt, recordedAt) {
+		return false
+	}
+	target, ok := g.nodes[edge.Target]
+	if !ok || !g.nodeVisibleAtLocked(target, validAt, recordedAt) {
+		return false
+	}
+	validStart, validEnd := temporalBounds(edge.Properties, edge.CreatedAt, edge.DeletedAt)
+	recordedStart, recordedEnd := recordedBounds(edge.Properties, edge.CreatedAt, edge.DeletedAt)
+	return temporalContains(validStart, validEnd, validAt) && temporalContains(recordedStart, recordedEnd, recordedAt)
 }
 
 func (g *Graph) nodeIntersectsWindowLocked(node *Node, from, to time.Time) bool {
@@ -285,6 +402,33 @@ func temporalBounds(properties map[string]any, createdAt time.Time, deletedAt *t
 			if ts, ok := temporalPropertyTime(properties, "expires_at"); ok {
 				end = ts
 			}
+		}
+	}
+	if start.IsZero() {
+		start = createdAt.UTC()
+	}
+	if deletedAt != nil && !deletedAt.IsZero() {
+		if end.IsZero() || deletedAt.UTC().Before(end) {
+			end = deletedAt.UTC()
+		}
+	}
+	return start.UTC(), end.UTC()
+}
+
+func recordedBounds(properties map[string]any, createdAt time.Time, deletedAt *time.Time) (time.Time, time.Time) {
+	var start time.Time
+	var end time.Time
+	if properties != nil {
+		if ts, ok := temporalPropertyTime(properties, "transaction_from"); ok {
+			start = ts
+		}
+		if start.IsZero() {
+			if ts, ok := temporalPropertyTime(properties, "recorded_at"); ok {
+				start = ts
+			}
+		}
+		if ts, ok := temporalPropertyTime(properties, "transaction_to"); ok {
+			end = ts
 		}
 	}
 	if start.IsZero() {

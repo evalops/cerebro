@@ -192,6 +192,72 @@ func (s *Server) graphIntelligenceMetadataQuality(w http.ResponseWriter, r *http
 	s.json(w, http.StatusOK, report)
 }
 
+func (s *Server) graphIntelligenceClaimConflicts(w http.ResponseWriter, r *http.Request) {
+	if s.app.SecurityGraph == nil {
+		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		return
+	}
+
+	maxConflicts := 25
+	if raw := strings.TrimSpace(r.URL.Query().Get("max_conflicts")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 200 {
+			s.error(w, http.StatusBadRequest, "max_conflicts must be between 1 and 200")
+			return
+		}
+		maxConflicts = parsed
+	}
+
+	includeResolved := false
+	if raw := strings.TrimSpace(r.URL.Query().Get("include_resolved")); raw != "" {
+		parsed, err := strconv.ParseBool(raw)
+		if err != nil {
+			s.error(w, http.StatusBadRequest, "include_resolved must be a boolean")
+			return
+		}
+		includeResolved = parsed
+	}
+
+	var staleAfter time.Duration
+	if raw := strings.TrimSpace(r.URL.Query().Get("stale_after_hours")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 8760 {
+			s.error(w, http.StatusBadRequest, "stale_after_hours must be between 1 and 8760")
+			return
+		}
+		staleAfter = time.Duration(parsed) * time.Hour
+	}
+
+	var validAt time.Time
+	if raw := strings.TrimSpace(r.URL.Query().Get("valid_at")); raw != "" {
+		parsed, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			s.error(w, http.StatusBadRequest, "valid_at must be RFC3339")
+			return
+		}
+		validAt = parsed
+	}
+
+	var recordedAt time.Time
+	if raw := strings.TrimSpace(r.URL.Query().Get("recorded_at")); raw != "" {
+		parsed, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			s.error(w, http.StatusBadRequest, "recorded_at must be RFC3339")
+			return
+		}
+		recordedAt = parsed
+	}
+
+	report := graph.BuildClaimConflictReport(s.app.SecurityGraph, graph.ClaimConflictReportOptions{
+		ValidAt:         validAt,
+		RecordedAt:      recordedAt,
+		MaxConflicts:    maxConflicts,
+		IncludeResolved: includeResolved,
+		StaleAfter:      staleAfter,
+	})
+	s.json(w, http.StatusOK, report)
+}
+
 func (s *Server) graphIntelligenceLeverage(w http.ResponseWriter, r *http.Request) {
 	if s.app.SecurityGraph == nil {
 		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
