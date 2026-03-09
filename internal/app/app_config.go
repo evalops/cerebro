@@ -316,6 +316,11 @@ type Config struct {
 	NATSConsumerAckWait      time.Duration
 	NATSConsumerFetchTimeout time.Duration
 
+	// Event alert routing to Ensemble channels/DMs
+	AlertRouterEnabled      bool
+	AlertRouterConfigPath   string
+	AlertRouterNotifyPrefix string
+
 	// Remote tool proxy for AI agents (Ensemble tools via NATS request/reply)
 	AgentRemoteToolsEnabled         bool
 	AgentRemoteToolsManifestSubject string
@@ -592,6 +597,9 @@ func LoadConfig() *Config {
 		NATSConsumerBatchSize:              getEnvInt("NATS_CONSUMER_BATCH_SIZE", 50),
 		NATSConsumerAckWait:                getEnvDuration("NATS_CONSUMER_ACK_WAIT", 30*time.Second),
 		NATSConsumerFetchTimeout:           getEnvDuration("NATS_CONSUMER_FETCH_TIMEOUT", 2*time.Second),
+		AlertRouterEnabled:                 getEnvBool("ALERT_ROUTER_ENABLED", true),
+		AlertRouterConfigPath:              getEnv("ALERT_ROUTER_CONFIG_PATH", ""),
+		AlertRouterNotifyPrefix:            getEnv("ALERT_ROUTER_NOTIFY_PREFIX", "ensemble.notify"),
 		AgentRemoteToolsEnabled:            getEnvBool("AGENT_REMOTE_TOOLS_ENABLED", false),
 		AgentRemoteToolsManifestSubject:    getEnv("AGENT_REMOTE_TOOLS_MANIFEST_SUBJECT", "ensemble.tools.manifest"),
 		AgentRemoteToolsRequestPrefix:      getEnv("AGENT_REMOTE_TOOLS_REQUEST_PREFIX", "ensemble.tools.request"),

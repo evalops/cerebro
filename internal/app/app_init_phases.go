@@ -88,6 +88,7 @@ func (a *App) initPhase2b(ctx context.Context) error {
 		return fmt.Errorf("phase 2b init failed: %w", err)
 	}
 	a.startEventRemediation(ctx)
+	a.startEventAlertRouting(ctx)
 	return nil
 }
 

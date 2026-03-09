@@ -100,6 +100,7 @@ type App struct {
 	Providers     *providers.Registry
 	Webhooks      *webhooks.Service
 	TapConsumer   *events.Consumer
+	AlertRouter   *events.AlertRouter
 	RemoteTools   *agents.RemoteToolProvider
 	ToolPublisher *agents.ToolPublisher
 	Notifications *notifications.Manager

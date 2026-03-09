@@ -242,6 +242,11 @@ func (a *App) Close() error {
 			errs = append(errs, fmt.Errorf("tool publisher: %w", err))
 		}
 	}
+	if a.AlertRouter != nil {
+		if err := a.AlertRouter.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("alert router: %w", err))
+		}
+	}
 
 	// Close findings store if it implements io.Closer (e.g., SQLiteStore)
 	if closer, ok := a.Findings.(interface{ Close() error }); ok {
