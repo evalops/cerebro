@@ -6,7 +6,29 @@ This document defines how Cerebro's graph becomes the organization's intelligenc
 - Every insight must be **decision-grade**: include evidence, confidence, coverage, and clear next actions.
 - Every important recommendation should have a **counterfactual** path (what-if simulation).
 - Query interfaces must serve both deterministic systems and agentic workflows.
-- Confidence is not static: it must be adjusted by ontology coverage, schema conformance, and realized outcomes.
+- Confidence is not static: it must be adjusted by ontology coverage, schema conformance, recency freshness, and realized outcomes.
+
+## Canonical Ontology Spine
+
+### Node kinds
+- `identity_alias`: provider-scoped external identities and aliases.
+- `service`: durable software/business services.
+- `workload`: runtime execution units (jobs, deploy units, pods, workers).
+- `decision`: explicit organizational decisions.
+- `outcome`: measured outcomes tied back to decisions.
+- `evidence`: observations supporting decisions or risk insights.
+- `action`: interventions and operational steps.
+
+### Edge kinds
+- `alias_of`: alias identity to canonical identity.
+- `runs`: service to workload runtime relationship.
+- `depends_on`: service/workload dependency relationship.
+- `targets`: decision/action/evidence/outcome targeting relationship.
+- `based_on`: decision relationship to supporting evidence.
+- `executed_by`: decision relationship to implementation action.
+- `evaluates`: outcome relationship back to decision/action.
+
+All write surfaces must populate provenance and temporal metadata (`source_system`, `source_event_id`, `observed_at`, `valid_from`, optional `valid_to`, `confidence`) so ontology conformance and temporal traversal remain consistent.
 
 ## Query Interfaces
 
@@ -20,6 +42,7 @@ Output characteristics:
 - Prioritized `insights[]`
 - `evidence[]` for each insight
 - `confidence` and `coverage`
+- `freshness` metrics and recency-sensitive confidence weighting
 - Optional `counterfactual` simulation previews
 - Embedded ontology health and outcome calibration context
 
@@ -33,22 +56,84 @@ Supported modes:
 - `neighbors` (with direction + limits)
 - `paths` (k-shortest paths with max depth)
 
+Temporal scope:
+- `as_of` (point-in-time graph view)
+- `from` + `to` (windowed graph view)
+
 Guardrails:
 - Hard caps on `limit`, `k`, and `max_depth`
 - Strict mode validation
 - Explain metadata in responses
 
-### 3) Agent/MCP-Ready Tool Surface
+### 3) Write-Back API Surface
+Graph intelligence compounds only when decisions and outcomes write back.
+
+Current endpoints:
+- `POST /api/v1/graph/write/observation`
+- `POST /api/v1/graph/write/annotation`
+- `POST /api/v1/graph/write/decision`
+- `POST /api/v1/graph/write/outcome`
+- `POST /api/v1/graph/identity/resolve`
+- `POST /api/v1/graph/identity/split`
+
+### 4) Agent/MCP-Ready Tool Surface
 Agent workflows should call a curated tool surface, not raw graph internals.
 
-Current tool:
+Current tools:
 - `cerebro.intelligence_report`
+- `cerebro.graph_query`
+- `cerebro.record_observation`
+- `cerebro.annotate_entity`
+- `cerebro.record_decision`
+- `cerebro.record_outcome`
+- `cerebro.resolve_identity`
+- `cerebro.split_identity`
 
 MCP adapter strategy:
 - Wrap existing tool publisher protocol with MCP transport adapters.
 - Keep tool contracts stable and deterministic.
 - Enforce permission boundaries per tool/action.
 - Preserve traceability: every response carries IDs/evidence references.
+
+## Identity Resolution Lifecycle
+- Ingest each provider assertion as `identity_alias`.
+- Score candidates using deterministic matches (email/id joins) plus heuristics (name similarity and hints).
+- Auto-link high-confidence matches via `alias_of`.
+- Return ranked candidates for ambiguous cases.
+- Support split/reversal of incorrect merges (`identity/split`) and re-resolve.
+
+## Declarative Ingestion Mapper
+The event mapper provides breadth without one-off ingestion code per source.
+
+Core contract:
+- Source selector (exact or wildcard event types).
+- Node upsert templates.
+- Edge upsert templates.
+- Runtime identity canonicalization via `{{resolve(...)}}`.
+
+Example:
+
+```yaml
+source: ensemble.tap.github.pull_request.merged
+nodes:
+  - id: "service:{{data.repository}}"
+    kind: service
+edges:
+  - source: "{{resolve(data.merged_by_email)}}"
+    target: "service:{{data.repository}}"
+    kind: interacted_with
+```
+
+## Temporal Semantics
+- Graph supports point-in-time and windowed traversal through node/edge `valid_from`/`valid_to` and observation timestamps.
+- Query endpoints and tools can scope reads with `as_of` or `from`/`to`.
+- Intelligence confidence is down-weighted when graph freshness degrades.
+
+## Closed-Loop Intelligence Model
+- Agents and APIs write observations, annotations, decisions, and outcomes.
+- Outcomes evaluate prior decisions and feed calibration loops.
+- Identity resolution and ingestion updates improve future graph context.
+- Every write strengthens the next intelligence report.
 
 ## Expansion Priorities
 

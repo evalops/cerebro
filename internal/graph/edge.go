@@ -10,6 +10,7 @@ const (
 	EdgeKindCanAssume  EdgeKind = "can_assume"
 	EdgeKindMemberOf   EdgeKind = "member_of"
 	EdgeKindResolvesTo EdgeKind = "resolves_to"
+	EdgeKindAliasOf    EdgeKind = "alias_of"
 	EdgeKindReportsTo  EdgeKind = "reports_to"
 
 	// Identity -> Resource (permissions)
@@ -20,6 +21,8 @@ const (
 
 	// Resource -> Resource
 	EdgeKindConnectsTo EdgeKind = "connects_to"
+	EdgeKindRuns       EdgeKind = "runs"
+	EdgeKindDependsOn  EdgeKind = "depends_on"
 
 	// Internet -> Resource
 	EdgeKindExposedTo EdgeKind = "exposed_to"
@@ -41,6 +44,10 @@ const (
 	EdgeKindRefers         EdgeKind = "refers"
 	EdgeKindInteractedWith EdgeKind = "interacted_with"
 	EdgeKindLocatedIn      EdgeKind = "located_in"
+	EdgeKindTargets        EdgeKind = "targets"
+	EdgeKindBasedOn        EdgeKind = "based_on"
+	EdgeKindExecutedBy     EdgeKind = "executed_by"
+	EdgeKindEvaluates      EdgeKind = "evaluates"
 )
 
 // EdgeEffect represents whether an edge allows or denies access

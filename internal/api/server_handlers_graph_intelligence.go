@@ -136,6 +136,43 @@ func (s *Server) graphQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	g := s.app.SecurityGraph
+	queryGraph := g
+
+	var asOf time.Time
+	asOfRaw := strings.TrimSpace(r.URL.Query().Get("as_of"))
+	if asOfRaw != "" {
+		parsed, err := time.Parse(time.RFC3339, asOfRaw)
+		if err != nil {
+			s.error(w, http.StatusBadRequest, "as_of must be RFC3339")
+			return
+		}
+		asOf = parsed.UTC()
+		queryGraph = g.SubgraphAt(asOf)
+	}
+
+	var from time.Time
+	var to time.Time
+	fromRaw := strings.TrimSpace(r.URL.Query().Get("from"))
+	toRaw := strings.TrimSpace(r.URL.Query().Get("to"))
+	if fromRaw != "" || toRaw != "" {
+		if fromRaw == "" || toRaw == "" {
+			s.error(w, http.StatusBadRequest, "both from and to query parameters are required (RFC3339)")
+			return
+		}
+		parsedFrom, err := time.Parse(time.RFC3339, fromRaw)
+		if err != nil {
+			s.error(w, http.StatusBadRequest, "from must be RFC3339")
+			return
+		}
+		parsedTo, err := time.Parse(time.RFC3339, toRaw)
+		if err != nil {
+			s.error(w, http.StatusBadRequest, "to must be RFC3339")
+			return
+		}
+		from = parsedFrom.UTC()
+		to = parsedTo.UTC()
+		queryGraph = g.SubgraphBetween(from, to)
+	}
 
 	mode := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("mode")))
 	if mode == "" {
@@ -147,22 +184,31 @@ func (s *Server) graphQuery(w http.ResponseWriter, r *http.Request) {
 		s.error(w, http.StatusBadRequest, "node_id is required")
 		return
 	}
-	if _, ok := g.GetNode(nodeID); !ok {
-		s.error(w, http.StatusNotFound, fmt.Sprintf("node not found: %s", nodeID))
+	if _, ok := queryGraph.GetNode(nodeID); !ok {
+		s.error(w, http.StatusNotFound, fmt.Sprintf("node not found in selected scope: %s", nodeID))
 		return
+	}
+
+	temporalScope := map[string]any{}
+	if !asOf.IsZero() {
+		temporalScope["as_of"] = asOf
+	}
+	if !from.IsZero() || !to.IsZero() {
+		temporalScope["from"] = from
+		temporalScope["to"] = to
 	}
 
 	switch mode {
 	case "neighbors":
-		s.graphQueryNeighbors(w, r, g, nodeID)
+		s.graphQueryNeighbors(w, r, queryGraph, nodeID, temporalScope)
 	case "paths", "path":
-		s.graphQueryPaths(w, r, g, nodeID)
+		s.graphQueryPaths(w, r, queryGraph, nodeID, temporalScope)
 	default:
 		s.error(w, http.StatusBadRequest, "mode must be one of neighbors, paths")
 	}
 }
 
-func (s *Server) graphQueryNeighbors(w http.ResponseWriter, r *http.Request, g *graph.Graph, nodeID string) {
+func (s *Server) graphQueryNeighbors(w http.ResponseWriter, r *http.Request, g *graph.Graph, nodeID string, temporalScope map[string]any) {
 	direction := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("direction")))
 	if direction == "" {
 		direction = "both"
@@ -221,6 +267,7 @@ func (s *Server) graphQueryNeighbors(w http.ResponseWriter, r *http.Request, g *
 		"mode":      "neighbors",
 		"node_id":   nodeID,
 		"direction": direction,
+		"temporal":  temporalScope,
 		"total":     total,
 		"count":     len(results),
 		"limit":     limit,
@@ -228,12 +275,12 @@ func (s *Server) graphQueryNeighbors(w http.ResponseWriter, r *http.Request, g *
 		"neighbors": results,
 		"explain": map[string]any{
 			"edge_scan_count": edgesScanned,
-			"guardrails":      []string{"limit<=200", "mode=neighbors", "direction in|out|both"},
+			"guardrails":      []string{"limit<=200", "mode=neighbors", "direction in|out|both", "as_of RFC3339", "from/to RFC3339"},
 		},
 	})
 }
 
-func (s *Server) graphQueryPaths(w http.ResponseWriter, r *http.Request, g *graph.Graph, nodeID string) {
+func (s *Server) graphQueryPaths(w http.ResponseWriter, r *http.Request, g *graph.Graph, nodeID string, temporalScope map[string]any) {
 	targetID := strings.TrimSpace(r.URL.Query().Get("target_id"))
 	if targetID == "" {
 		s.error(w, http.StatusBadRequest, "target_id is required for paths mode")
@@ -278,13 +325,14 @@ func (s *Server) graphQueryPaths(w http.ResponseWriter, r *http.Request, g *grap
 		"mode":      "paths",
 		"source_id": nodeID,
 		"target_id": targetID,
+		"temporal":  temporalScope,
 		"k":         k,
 		"max_depth": maxDepth,
 		"count":     len(paths),
 		"paths":     paths,
 		"explain": map[string]any{
 			"path_step_count": pathsExamined,
-			"guardrails":      []string{"k<=10", "max_depth<=12", "mode=paths"},
+			"guardrails":      []string{"k<=10", "max_depth<=12", "mode=paths", "as_of RFC3339", "from/to RFC3339"},
 		},
 	})
 }

@@ -4665,6 +4665,27 @@ paths:
             type: integer
             minimum: 1
             maximum: 12
+        - name: as_of
+          in: query
+          required: false
+          description: Optional RFC3339 point-in-time scope for nodes/edges active at a single timestamp.
+          schema:
+            type: string
+            format: date-time
+        - name: from
+          in: query
+          required: false
+          description: Optional RFC3339 temporal window start (requires to).
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          description: Optional RFC3339 temporal window end (requires from).
+          schema:
+            type: string
+            format: date-time
       responses:
         '200':
           description: Query result payload
@@ -4771,6 +4792,409 @@ paths:
                 $ref: '#/components/schemas/Error'
         '404':
           description: Snapshots not found for temporal diff parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Security graph is not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/graph/write/observation:
+    post:
+      tags:
+        - Graph
+      summary: Record an evidence observation
+      description: Create an evidence node and connect it to a target entity with provenance and temporal metadata.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - entity_id
+                - observation
+              properties:
+                id:
+                  type: string
+                entity_id:
+                  type: string
+                observation:
+                  type: string
+                summary:
+                  type: string
+                source_system:
+                  type: string
+                source_event_id:
+                  type: string
+                observed_at:
+                  type: string
+                  format: date-time
+                valid_from:
+                  type: string
+                  format: date-time
+                valid_to:
+                  type: string
+                  format: date-time
+                confidence:
+                  type: number
+                metadata:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '201':
+          description: Observation recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Target entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Security graph is not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/graph/write/annotation:
+    post:
+      tags:
+        - Graph
+      summary: Append an annotation to an entity
+      description: Append analyst or agent annotations to one graph entity with provenance and temporal metadata.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - entity_id
+                - annotation
+              properties:
+                entity_id:
+                  type: string
+                annotation:
+                  type: string
+                tags:
+                  type: array
+                  items:
+                    type: string
+                source_system:
+                  type: string
+                source_event_id:
+                  type: string
+                observed_at:
+                  type: string
+                  format: date-time
+                valid_from:
+                  type: string
+                  format: date-time
+                valid_to:
+                  type: string
+                  format: date-time
+                confidence:
+                  type: number
+                metadata:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '201':
+          description: Annotation recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Security graph is not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/graph/write/decision:
+    post:
+      tags:
+        - Graph
+      summary: Record a decision node with linked targets and evidence
+      description: Create a decision node and connect it to targets, evidence, and actions.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - decision_type
+                - target_ids
+              properties:
+                id:
+                  type: string
+                decision_type:
+                  type: string
+                status:
+                  type: string
+                made_by:
+                  type: string
+                rationale:
+                  type: string
+                target_ids:
+                  type: array
+                  items:
+                    type: string
+                evidence_ids:
+                  type: array
+                  items:
+                    type: string
+                action_ids:
+                  type: array
+                  items:
+                    type: string
+                source_system:
+                  type: string
+                source_event_id:
+                  type: string
+                observed_at:
+                  type: string
+                  format: date-time
+                valid_from:
+                  type: string
+                  format: date-time
+                valid_to:
+                  type: string
+                  format: date-time
+                confidence:
+                  type: number
+                metadata:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '201':
+          description: Decision recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: One or more target entities were not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Security graph is not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/graph/write/outcome:
+    post:
+      tags:
+        - Graph
+      summary: Record a decision outcome
+      description: Create an outcome node linked to a decision and optional impacted targets.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - decision_id
+                - outcome_type
+                - verdict
+              properties:
+                id:
+                  type: string
+                decision_id:
+                  type: string
+                outcome_type:
+                  type: string
+                verdict:
+                  type: string
+                impact_score:
+                  type: number
+                target_ids:
+                  type: array
+                  items:
+                    type: string
+                source_system:
+                  type: string
+                source_event_id:
+                  type: string
+                observed_at:
+                  type: string
+                  format: date-time
+                valid_from:
+                  type: string
+                  format: date-time
+                valid_to:
+                  type: string
+                  format: date-time
+                confidence:
+                  type: number
+                metadata:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '201':
+          description: Outcome recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Referenced decision was not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Security graph is not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/graph/identity/resolve:
+    post:
+      tags:
+        - Graph
+      summary: Resolve one external alias against canonical identities
+      description: Upsert one identity alias assertion, score candidate canonical identities, and auto-link when confidence thresholds are met.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - source_system
+                - external_id
+              properties:
+                alias_id:
+                  type: string
+                source_system:
+                  type: string
+                source_event_id:
+                  type: string
+                external_id:
+                  type: string
+                alias_type:
+                  type: string
+                canonical_hint:
+                  type: string
+                email:
+                  type: string
+                name:
+                  type: string
+                observed_at:
+                  type: string
+                  format: date-time
+                confidence:
+                  type: number
+                auto_link_threshold:
+                  type: number
+                suggest_threshold:
+                  type: number
+      responses:
+        '200':
+          description: Identity resolution result
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid identity assertion
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Security graph is not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/graph/identity/split:
+    post:
+      tags:
+        - Graph
+      summary: Remove one alias-to-canonical identity link
+      description: Reverse one incorrect alias merge by removing an alias_of edge.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - alias_node_id
+                - canonical_node_id
+              properties:
+                alias_node_id:
+                  type: string
+                canonical_node_id:
+                  type: string
+                reason:
+                  type: string
+                source_system:
+                  type: string
+                source_event_id:
+                  type: string
+                observed_at:
+                  type: string
+                  format: date-time
+      responses:
+        '200':
+          description: Identity split result
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid split payload
           content:
             application/json:
               schema:

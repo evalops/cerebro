@@ -111,6 +111,92 @@ func TestGraphQueryEndpoint_NeighborsAndPaths(t *testing.T) {
 	}
 }
 
+func TestGraphQueryEndpoint_TemporalScope(t *testing.T) {
+	s := newTestServer(t)
+	g := s.app.SecurityGraph
+
+	g.AddNode(&graph.Node{
+		ID:   "user:alice",
+		Kind: graph.NodeKindUser,
+		Name: "Alice",
+		Properties: map[string]any{
+			"observed_at": "2026-03-01T00:00:00Z",
+			"valid_from":  "2026-03-01T00:00:00Z",
+		},
+	})
+	g.AddNode(&graph.Node{
+		ID:   "role:admin",
+		Kind: graph.NodeKindRole,
+		Name: "Admin",
+		Properties: map[string]any{
+			"observed_at": "2026-03-01T00:00:00Z",
+			"valid_from":  "2026-03-01T00:00:00Z",
+			"valid_to":    "2026-03-05T00:00:00Z",
+		},
+	})
+	g.AddNode(&graph.Node{
+		ID:   "db:prod",
+		Kind: graph.NodeKindDatabase,
+		Name: "Prod",
+		Properties: map[string]any{
+			"observed_at": "2026-03-01T00:00:00Z",
+			"valid_from":  "2026-03-01T00:00:00Z",
+		},
+		Risk: graph.RiskCritical,
+	})
+	g.AddEdge(&graph.Edge{
+		ID:     "alice-admin",
+		Source: "user:alice",
+		Target: "role:admin",
+		Kind:   graph.EdgeKindCanAssume,
+		Effect: graph.EdgeEffectAllow,
+		Properties: map[string]any{
+			"observed_at": "2026-03-01T00:00:00Z",
+			"valid_from":  "2026-03-01T00:00:00Z",
+			"valid_to":    "2026-03-05T00:00:00Z",
+		},
+	})
+	g.AddEdge(&graph.Edge{
+		ID:     "admin-db",
+		Source: "role:admin",
+		Target: "db:prod",
+		Kind:   graph.EdgeKindCanRead,
+		Effect: graph.EdgeEffectAllow,
+		Properties: map[string]any{
+			"observed_at": "2026-03-01T00:00:00Z",
+			"valid_from":  "2026-03-01T00:00:00Z",
+			"valid_to":    "2026-03-05T00:00:00Z",
+		},
+	})
+
+	asOfActive := do(t, s, http.MethodGet, "/api/v1/graph/query?mode=neighbors&node_id=user:alice&direction=out&as_of=2026-03-04T00:00:00Z", nil)
+	if asOfActive.Code != http.StatusOK {
+		t.Fatalf("expected 200 for as_of active query, got %d: %s", asOfActive.Code, asOfActive.Body.String())
+	}
+	activeBody := decodeJSON(t, asOfActive)
+	if count, ok := activeBody["count"].(float64); !ok || count < 1 {
+		t.Fatalf("expected active neighbors count >=1, got %#v", activeBody["count"])
+	}
+
+	asOfExpired := do(t, s, http.MethodGet, "/api/v1/graph/query?mode=neighbors&node_id=user:alice&direction=out&as_of=2026-03-08T00:00:00Z", nil)
+	if asOfExpired.Code != http.StatusOK {
+		t.Fatalf("expected 200 for expired as_of query, got %d: %s", asOfExpired.Code, asOfExpired.Body.String())
+	}
+	expiredBody := decodeJSON(t, asOfExpired)
+	if count, ok := expiredBody["count"].(float64); !ok || count != 0 {
+		t.Fatalf("expected expired neighbors count 0, got %#v", expiredBody["count"])
+	}
+
+	windowed := do(t, s, http.MethodGet, "/api/v1/graph/query?mode=paths&node_id=user:alice&target_id=db:prod&from=2026-03-01T00:00:00Z&to=2026-03-06T00:00:00Z", nil)
+	if windowed.Code != http.StatusOK {
+		t.Fatalf("expected 200 for windowed query, got %d: %s", windowed.Code, windowed.Body.String())
+	}
+	windowedBody := decodeJSON(t, windowed)
+	if count, ok := windowedBody["count"].(float64); !ok || count < 1 {
+		t.Fatalf("expected at least one path in window, got %#v", windowedBody["count"])
+	}
+}
+
 func TestGraphQueryEndpoint_InvalidParams(t *testing.T) {
 	s := newTestServer(t)
 	g := s.app.SecurityGraph
@@ -134,5 +220,15 @@ func TestGraphQueryEndpoint_InvalidParams(t *testing.T) {
 	w = do(t, s, http.MethodGet, "/api/v1/graph/query?mode=neighbors&node_id=user:missing", nil)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("expected 404 for missing node, got %d", w.Code)
+	}
+
+	w = do(t, s, http.MethodGet, "/api/v1/graph/query?mode=neighbors&node_id=user:alice&as_of=not-a-time", nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid as_of, got %d", w.Code)
+	}
+
+	w = do(t, s, http.MethodGet, "/api/v1/graph/query?mode=neighbors&node_id=user:alice&from=2026-03-01T00:00:00Z", nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 when from is missing to, got %d", w.Code)
 	}
 }

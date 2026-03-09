@@ -1,55 +1,114 @@
-# Graph Intelligence Layer TODO
+# Cerebro Intelligence Layer Execution TODO
 
-Last updated: 2026-03-08 (America/Los_Angeles)
+Last updated: 2026-03-09 (America/Los_Angeles)
 Owner: @haasonsaas
-Execution mode: ship incrementally, keep CI green
+Mode: implement in full, keep CI green
+Status: executed end-to-end via PR workflow
 
-## Phase 1 - Decision-grade intelligence outputs
-- [x] Define execution plan and success criteria in-repo.
-- [x] Implement `DecisionInsight` schema with evidence, confidence, and coverage fields.
-- [x] Generate prioritized insights from risk, ontology health, and outcome feedback.
-- [x] Add optional counterfactual previews (simulate likely high-impact fixes).
-- [x] Add tests for deterministic ordering and stable insight IDs.
+## Phase 0 - Ground rules and acceptance criteria
+- [x] Every new node/edge written by new APIs/tools includes provenance and temporal metadata (`source_system`, `source_event_id`, `observed_at`, `valid_from`, optional `valid_to`, `confidence`).
+- [x] New surfaces are covered by tests (graph + api + app tool tests).
+- [x] OpenAPI updated for all new HTTP endpoints/params.
+- [x] CI-equivalent checks pass locally.
 
-## Phase 2 - Query interfaces (future-proof)
-- [x] Add deterministic API endpoint: `GET /api/v1/graph/intelligence/insights`.
-- [x] Add power query API endpoint: `GET /api/v1/graph/query` (neighbors + k-shortest paths).
-- [x] Add guardrails (limits, max depth, bounded k, strict query validation).
-- [x] Add OpenAPI contracts for both endpoints.
-- [x] Add API tests for success + invalid input paths.
+## Phase 1 - Ontology spine expansion
+- [x] Add canonical node kinds:
+  - [x] `identity_alias`
+  - [x] `service`
+  - [x] `workload`
+  - [x] `decision`
+  - [x] `outcome`
+  - [x] `evidence`
+  - [x] `action`
+- [x] Add canonical edge kinds:
+  - [x] `alias_of`
+  - [x] `runs`
+  - [x] `depends_on`
+  - [x] `targets`
+  - [x] `based_on`
+  - [x] `executed_by`
+  - [x] `evaluates`
+- [x] Register built-in schema definitions for new kinds with required properties and relationship contracts.
+- [x] Add/extend schema tests to assert built-ins and relationship allowances.
 
-## Phase 3 - Agent/MCP-ready interface
-- [x] Add `cerebro.intelligence_report` tool in agent tool manifest.
-- [x] Ensure payloads align with deterministic API semantics.
-- [x] Add tool tests (happy path + invalid args).
-- [x] Document MCP adapter strategy over existing tool publisher protocol.
+## Phase 2 - Identity resolution subsystem (first-class)
+- [x] Add graph identity resolution engine with deterministic + heuristic scoring.
+- [x] Implement alias assertion ingestion:
+  - [x] Upsert `identity_alias` nodes.
+  - [x] Emit `alias_of` edges with confidence and reason metadata.
+- [x] Add merge candidate report output with scored candidates and reasons.
+- [x] Add reversible split operation to remove/disable incorrect alias links.
+- [x] Add graph tests:
+  - [x] deterministic match by normalized email
+  - [x] heuristic match fallback
+  - [x] merge confirmation
+  - [x] split reversal
 
-## Phase 4 - Ontology and outcome loop hardening
-- [x] Extend schema health report with actionable recommendations (coverage/conformance/drift).
-- [x] Feed ontology health into intelligence insights as first-class evidence.
-- [x] Include calibration/feedback signals from realized outcomes in confidence scoring.
-- [x] Add tests validating ontology debt surfaces in top insights.
+## Phase 3 - Declarative event-to-graph mapping
+- [x] Add a YAML-backed mapping engine for event-to-node/edge upserts.
+- [x] Support template expansion:
+  - [x] `{{field.path}}`
+  - [x] `{{resolve(field.path)}}` for identity canonicalization
+- [x] Add default mapping config file for at least:
+  - [x] PR merge event -> person/service contribution edges
+  - [x] Incident/ticket event -> action/evidence edges
+- [x] Integrate mapper into TAP cloud event handling before legacy fallback mapping.
+- [x] Add mapper + integration tests.
 
-## Phase 5 - Expand graph into org intelligence layer
-- [x] Publish deep expansion roadmap doc (data domains, provenance, freshness, ownership).
-- [x] Define next ingestion priorities:
-  - [x] Control-plane + runtime join keys for end-to-end blast radius.
-  - [x] Identity resolution graph (human/service/workload lifecycle joins).
-  - [x] Collaboration graph enrichments (code/review/incident/meeting/calendar/chat).
-  - [x] Business topology graph (customers, revenue flows, critical journeys, SLAs).
-- [x] Define confidence model upgrades:
-  - [x] Coverage-aware confidence penalties.
-  - [x] Evidence recency weighting.
-  - [x] Outcome-calibrated signal reliability weights.
-- [x] Define write-back loop:
-  - [x] Decision capture (accepted/rejected remediation, reason).
-  - [x] Post-remediation verification tasks.
-  - [x] Continuous model recalibration.
+## Phase 4 - Continuous temporal semantics
+- [x] Add time-window aware graph filters/helpers for nodes/edges (`as_of`, `from`, `to`).
+- [x] Extend graph query API and tool surfaces to accept temporal parameters.
+- [x] Ensure neighbors/paths queries are time-scoped when temporal params are supplied.
+- [x] Add freshness metrics and recency weighting into intelligence confidence.
+- [x] Add tests for:
+  - [x] temporal edge visibility at `as_of`
+  - [x] window filtering
+  - [x] confidence recency penalty behavior
 
-## Validation and delivery
-- [x] `gofmt` all changed files.
+## Phase 5 - Agent + API write-back surfaces
+- [x] Add API endpoints under `/api/v1/graph`:
+  - [x] `POST /write/observation`
+  - [x] `POST /write/annotation`
+  - [x] `POST /write/decision`
+  - [x] `POST /write/outcome`
+  - [x] `POST /identity/resolve`
+  - [x] `POST /identity/split`
+- [x] Add MCP tools:
+  - [x] `cerebro.record_observation`
+  - [x] `cerebro.annotate_entity`
+  - [x] `cerebro.record_decision`
+  - [x] `cerebro.record_outcome`
+  - [x] `cerebro.resolve_identity`
+  - [x] `cerebro.split_identity`
+- [x] Ensure all write surfaces enforce required provenance + temporal metadata defaults.
+- [x] Add API and tool tests for happy path + validation failures.
+
+## Phase 6 - Documentation and contracts
+- [x] Update graph intelligence doc with:
+  - [x] canonical ontology spine
+  - [x] identity resolution lifecycle
+  - [x] declarative mapper format
+  - [x] temporal semantics
+  - [x] write-back loop model
+- [x] Update OpenAPI for all new endpoints and params.
+
+## Phase 7 - Validation and ship
+- [x] `goimports`/`gofmt` all changed files.
 - [x] Run targeted tests for graph/api/app changes.
 - [x] Run `make openapi-check`.
 - [x] Run `go test ./... -count=1`.
 - [x] Run gosec + golangci-lint.
-- [x] Push branch and monitor CI to completion.
+- [x] Push to remote and verify CI status.
+- [x] Mark every TODO item complete.
+
+## Validation log
+- [x] `go test ./internal/graph ./internal/graphingest ./internal/api ./internal/app -count=1`
+- [x] `make openapi-check`
+- [x] `go test ./... -count=1`
+- [x] `$(go env GOPATH)/bin/gosec -quiet -severity medium -confidence medium -exclude-generated ./...`
+- [x] `$(go env GOPATH)/bin/golangci-lint run --timeout=15m ./cmd/... ./internal/... ./api/...`
+
+## Finalization record
+- [x] Committed implementation and fixes on `codex/graph-intelligence-layer-exec`.
+- [x] Pushed branch and validated GitHub Actions run `22841427603` for `ae2df0c8954e0501607d61ae5b5e6660879b5efa`.
+- [x] Merged PR [#108](https://github.com/evalops/cerebro/pull/108) into `main`.

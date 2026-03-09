@@ -2,12 +2,46 @@ package app
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/evalops/cerebro/internal/events"
 	"github.com/evalops/cerebro/internal/graph"
 )
+
+func TestEnsureSecurityGraph_ConcurrentInitSingleInstance(t *testing.T) {
+	a := &App{}
+
+	const workers = 32
+	graphs := make(chan *graph.Graph, workers)
+	var wg sync.WaitGroup
+	wg.Add(workers)
+
+	for i := 0; i < workers; i++ {
+		go func() {
+			defer wg.Done()
+			graphs <- a.ensureSecurityGraph()
+		}()
+	}
+
+	wg.Wait()
+	close(graphs)
+
+	var first *graph.Graph
+	for g := range graphs {
+		if g == nil {
+			t.Fatal("expected initialized graph, got nil")
+		}
+		if first == nil {
+			first = g
+			continue
+		}
+		if g != first {
+			t.Fatalf("expected a single graph instance, got %p and %p", first, g)
+		}
+	}
+}
 
 func TestParseTapType(t *testing.T) {
 	system, entity, action := parseTapType("ensemble.tap.stripe.customer.created")
@@ -88,6 +122,39 @@ func TestHandleTapCloudEvent_BuildsBusinessNodeAndEdge(t *testing.T) {
 	}
 	if edges[0].Kind != graph.EdgeKindWorksAt {
 		t.Fatalf("expected edge kind %q, got %q", graph.EdgeKindWorksAt, edges[0].Kind)
+	}
+}
+
+func TestHandleTapCloudEvent_InvalidCustomMapperPathDoesNotBlockPipeline(t *testing.T) {
+	t.Setenv("GRAPH_EVENT_MAPPING_PATH", "/tmp/non-existent-mapper.yaml")
+
+	a := &App{SecurityGraph: graph.New()}
+	evt := events.CloudEvent{
+		Type: "ensemble.tap.hubspot.contact.updated",
+		Time: time.Date(2026, 3, 6, 12, 0, 0, 0, time.UTC),
+		Data: map[string]interface{}{
+			"entity_id": "contact-1",
+			"snapshot": map[string]interface{}{
+				"name":       "Alice",
+				"company_id": "company-1",
+			},
+		},
+	}
+
+	if err := a.handleTapCloudEvent(context.Background(), evt); err != nil {
+		t.Fatalf("handleTapCloudEvent should fallback without error when mapper path is invalid: %v", err)
+	}
+
+	if _, ok := a.SecurityGraph.GetNode("hubspot:contact:contact-1"); !ok {
+		t.Fatal("expected legacy fallback mapping to continue processing TAP event")
+	}
+
+	mapper, err := a.tapEventMapper()
+	if err != nil {
+		t.Fatalf("expected mapper fallback to default config, got error: %v", err)
+	}
+	if mapper == nil {
+		t.Fatal("expected tap mapper to be initialized from default config fallback")
 	}
 }
 

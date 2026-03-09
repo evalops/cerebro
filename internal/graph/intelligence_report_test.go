@@ -3,6 +3,7 @@ package graph
 import (
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestBuildIntelligenceReport(t *testing.T) {
@@ -121,5 +122,67 @@ func TestBuildIntelligenceReport_DeterministicInsightOrderAndIDs(t *testing.T) {
 	}
 	if !reflect.DeepEqual(idsA, idsB) {
 		t.Fatalf("expected deterministic insight ID order, got %v vs %v", idsA, idsB)
+	}
+}
+
+func TestBuildIntelligenceReport_FreshnessPenalizesConfidence(t *testing.T) {
+	now := time.Date(2026, 3, 8, 22, 0, 0, 0, time.UTC)
+
+	fresh := New()
+	fresh.AddNode(&Node{ID: "service:fresh", Kind: NodeKindService, Name: "Fresh", Properties: map[string]any{
+		"service_id":  "fresh",
+		"observed_at": now.Add(-2 * time.Hour).Format(time.RFC3339),
+		"valid_from":  now.Add(-2 * time.Hour).Format(time.RFC3339),
+	}})
+	fresh.AddNode(&Node{ID: "db:fresh", Kind: NodeKindDatabase, Name: "Fresh DB", Risk: RiskCritical, Properties: map[string]any{
+		"observed_at": now.Add(-2 * time.Hour).Format(time.RFC3339),
+		"valid_from":  now.Add(-2 * time.Hour).Format(time.RFC3339),
+	}})
+	fresh.AddEdge(&Edge{ID: "fresh-edge", Source: "service:fresh", Target: "db:fresh", Kind: EdgeKindTargets, Effect: EdgeEffectAllow, Properties: map[string]any{
+		"observed_at": now.Add(-2 * time.Hour).Format(time.RFC3339),
+		"valid_from":  now.Add(-2 * time.Hour).Format(time.RFC3339),
+	}})
+
+	stale := New()
+	stale.AddNode(&Node{ID: "service:stale", Kind: NodeKindService, Name: "Stale", Properties: map[string]any{
+		"service_id":  "stale",
+		"observed_at": now.Add(-45 * 24 * time.Hour).Format(time.RFC3339),
+		"valid_from":  now.Add(-45 * 24 * time.Hour).Format(time.RFC3339),
+	}})
+	stale.AddNode(&Node{ID: "db:stale", Kind: NodeKindDatabase, Name: "Stale DB", Risk: RiskCritical, Properties: map[string]any{
+		"observed_at": now.Add(-45 * 24 * time.Hour).Format(time.RFC3339),
+		"valid_from":  now.Add(-45 * 24 * time.Hour).Format(time.RFC3339),
+	}})
+	stale.AddEdge(&Edge{ID: "stale-edge", Source: "service:stale", Target: "db:stale", Kind: EdgeKindTargets, Effect: EdgeEffectAllow, Properties: map[string]any{
+		"observed_at": now.Add(-45 * 24 * time.Hour).Format(time.RFC3339),
+		"valid_from":  now.Add(-45 * 24 * time.Hour).Format(time.RFC3339),
+	}})
+
+	freshReport := BuildIntelligenceReport(fresh, NewRiskEngine(fresh), IntelligenceReportOptions{
+		EntityID:              "db:fresh",
+		IncludeCounterfactual: false,
+		MaxInsights:           8,
+		FreshnessStaleAfter:   7 * 24 * time.Hour,
+	})
+	staleReport := BuildIntelligenceReport(stale, NewRiskEngine(stale), IntelligenceReportOptions{
+		EntityID:              "db:stale",
+		IncludeCounterfactual: false,
+		MaxInsights:           8,
+		FreshnessStaleAfter:   7 * 24 * time.Hour,
+	})
+
+	if staleReport.Confidence >= freshReport.Confidence {
+		t.Fatalf("expected stale confidence (%f) to be lower than fresh confidence (%f)", staleReport.Confidence, freshReport.Confidence)
+	}
+
+	foundFreshnessInsight := false
+	for _, insight := range staleReport.Insights {
+		if insight.Type == "graph_freshness" {
+			foundFreshnessInsight = true
+			break
+		}
+	}
+	if !foundFreshnessInsight {
+		t.Fatalf("expected graph_freshness insight in stale report, got %#v", staleReport.Insights)
 	}
 }
