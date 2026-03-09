@@ -2,7 +2,7 @@
 
 Generated from `internal/app/app_config.go` (`LoadConfig`) via `go run ./scripts/generate_config_docs/main.go`.
 
-Total variables: **258**
+Total variables: **261**
 
 | Variable | Reader(s) | Default(s) | Config Field(s) |
 |---|---|---|---|
@@ -16,6 +16,9 @@ Total variables: **258**
 | `AGENT_TOOL_PUBLISHER_MANIFEST_SUBJECT` | `getEnv` | `"cerebro.tools.manifest"` | `AgentToolPublisherManifestSubject` |
 | `AGENT_TOOL_PUBLISHER_REQUEST_PREFIX` | `getEnv` | `"cerebro.tools.request"` | `AgentToolPublisherRequestPrefix` |
 | `AGENT_TOOL_PUBLISHER_REQUEST_TIMEOUT` | `getEnvDuration` | `30 * time.Second` | `AgentToolPublisherRequestTimeout` |
+| `ALERT_ROUTER_CONFIG_PATH` | `getEnv` | `""` | `AlertRouterConfigPath` |
+| `ALERT_ROUTER_ENABLED` | `getEnvBool` | `true` | `AlertRouterEnabled` |
+| `ALERT_ROUTER_NOTIFY_PREFIX` | `getEnv` | `"ensemble.notify"` | `AlertRouterNotifyPrefix` |
 | `ANTHROPIC_API_KEY` | `getEnv` | `""` | `AnthropicAPIKey` |
 | `API_AUTH_ENABLED` | `getEnvBool` | `len(apiKeys) > 0` | `-` |
 | `API_CORS_ALLOWED_ORIGINS` | `getEnv` | `""` | `CORSAllowedOrigins` |
