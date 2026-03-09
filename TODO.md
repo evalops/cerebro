@@ -9,7 +9,7 @@ Execution mode: ship incrementally, keep CI green
 - [x] Implement `DecisionInsight` schema with evidence, confidence, and coverage fields.
 - [x] Generate prioritized insights from risk, ontology health, and outcome feedback.
 - [x] Add optional counterfactual previews (simulate likely high-impact fixes).
-- [ ] Add tests for deterministic ordering and stable insight IDs.
+- [x] Add tests for deterministic ordering and stable insight IDs.
 
 ## Phase 2 - Query interfaces (future-proof)
 - [x] Add deterministic API endpoint: `GET /api/v1/graph/intelligence/insights`.
@@ -32,16 +32,16 @@ Execution mode: ship incrementally, keep CI green
 
 ## Phase 5 - Expand graph into org intelligence layer
 - [x] Publish deep expansion roadmap doc (data domains, provenance, freshness, ownership).
-- [ ] Define next ingestion priorities:
+- [x] Define next ingestion priorities:
   - [x] Control-plane + runtime join keys for end-to-end blast radius.
   - [x] Identity resolution graph (human/service/workload lifecycle joins).
   - [x] Collaboration graph enrichments (code/review/incident/meeting/calendar/chat).
   - [x] Business topology graph (customers, revenue flows, critical journeys, SLAs).
-- [ ] Define confidence model upgrades:
+- [x] Define confidence model upgrades:
   - [x] Coverage-aware confidence penalties.
   - [x] Evidence recency weighting.
   - [x] Outcome-calibrated signal reliability weights.
-- [ ] Define write-back loop:
+- [x] Define write-back loop:
   - [x] Decision capture (accepted/rejected remediation, reason).
   - [x] Post-remediation verification tasks.
   - [x] Continuous model recalibration.

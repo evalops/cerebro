@@ -1,6 +1,9 @@
 package graph
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestBuildIntelligenceReport(t *testing.T) {
 	g := New()
@@ -81,5 +84,42 @@ func TestBuildIntelligenceReport_TemporalDiffInsight(t *testing.T) {
 	}
 	if !foundTemporal {
 		t.Fatalf("expected temporal_drift insight, got %#v", report.Insights)
+	}
+}
+
+func TestBuildIntelligenceReport_DeterministicInsightOrderAndIDs(t *testing.T) {
+	g := New()
+	g.AddNode(&Node{ID: "user:alice", Kind: NodeKindUser, Name: "Alice"})
+	g.AddNode(&Node{ID: "role:admin", Kind: NodeKindRole, Name: "Admin"})
+	g.AddNode(&Node{ID: "db:prod", Kind: NodeKindDatabase, Name: "Prod DB", Risk: RiskCritical})
+	g.AddEdge(&Edge{ID: "alice-admin", Source: "user:alice", Target: "role:admin", Kind: EdgeKindCanAssume, Effect: EdgeEffectAllow})
+	g.AddEdge(&Edge{ID: "admin-db", Source: "role:admin", Target: "db:prod", Kind: EdgeKindCanRead, Effect: EdgeEffectAllow})
+
+	opts := IntelligenceReportOptions{
+		EntityID:              "db:prod",
+		SchemaHistoryLimit:    20,
+		IncludeCounterfactual: false,
+		MaxInsights:           8,
+	}
+
+	reportA := BuildIntelligenceReport(g, NewRiskEngine(g), opts)
+	reportB := BuildIntelligenceReport(g, NewRiskEngine(g), opts)
+
+	idsA := make([]string, 0, len(reportA.Insights))
+	idsB := make([]string, 0, len(reportB.Insights))
+	for _, insight := range reportA.Insights {
+		if insight.ID == "" {
+			t.Fatalf("expected non-empty insight ID in reportA: %#v", reportA.Insights)
+		}
+		idsA = append(idsA, insight.ID)
+	}
+	for _, insight := range reportB.Insights {
+		if insight.ID == "" {
+			t.Fatalf("expected non-empty insight ID in reportB: %#v", reportB.Insights)
+		}
+		idsB = append(idsB, insight.ID)
+	}
+	if !reflect.DeepEqual(idsA, idsB) {
+		t.Fatalf("expected deterministic insight ID order, got %v vs %v", idsA, idsB)
 	}
 }
