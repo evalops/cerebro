@@ -2,7 +2,7 @@
 
 Generated from `internal/app/app_config.go` (`LoadConfig`) via `go run ./scripts/generate_config_docs/main.go`.
 
-Total variables: **261**
+Total variables: **267**
 
 | Variable | Reader(s) | Default(s) | Config Field(s) |
 |---|---|---|---|
@@ -91,6 +91,12 @@ Total variables: **261**
 | `GOOGLE_WORKSPACE_CREDENTIALS_JSON` | `getEnv` | `""` | `GoogleWorkspaceCredentialsJSON` |
 | `GOOGLE_WORKSPACE_DOMAIN` | `getEnv` | `""` | `GoogleWorkspaceDomain` |
 | `GOOGLE_WORKSPACE_IMPERSONATOR_EMAIL` | `getEnv` | `""` | `GoogleWorkspaceImpersonatorEmail` |
+| `GRAPH_CROSS_TENANT_MIN_SUPPORT` | `getEnvInt` | `2` | `GraphCrossTenantMinSupport` |
+| `GRAPH_CROSS_TENANT_MIN_TENANTS` | `getEnvInt` | `2` | `GraphCrossTenantMinTenants` |
+| `GRAPH_CROSS_TENANT_REPLAY_TTL` | `getEnvDuration` | `24 * time.Hour` | `GraphCrossTenantReplayTTL` |
+| `GRAPH_CROSS_TENANT_REQUIRE_SIGNED_INGEST` | `getEnvBool` | `false` | `GraphCrossTenantRequireSignedIngest` |
+| `GRAPH_CROSS_TENANT_SIGNATURE_MAX_SKEW` | `getEnvDuration` | `5 * time.Minute` | `GraphCrossTenantSignatureSkew` |
+| `GRAPH_CROSS_TENANT_SIGNING_KEY` | `getEnv` | `""` | `GraphCrossTenantSigningKey` |
 | `INTUNE_CLIENT_ID` | `getEnv` | `""` | `IntuneClientID` |
 | `INTUNE_CLIENT_SECRET` | `getEnv` | `""` | `IntuneClientSecret` |
 | `INTUNE_TENANT_ID` | `getEnv` | `""` | `IntuneTenantID` |
