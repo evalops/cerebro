@@ -241,7 +241,7 @@ func buildSchemaRecommendations(report SchemaHealthReport) []SchemaRecommendatio
 		)
 	}
 
-	if report.NodeConformancePercent < 95 || report.EdgeConformancePercent < 95 {
+	if (report.Nodes.Total > 0 && report.NodeConformancePercent < 95) || (report.Edges.Total > 0 && report.EdgeConformancePercent < 95) {
 		add(
 			"medium",
 			"conformance",

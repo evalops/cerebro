@@ -39,3 +39,14 @@ func TestAnalyzeSchemaHealth_Recommendations(t *testing.T) {
 		t.Fatalf("expected required_properties recommendation, got %#v", report.Recommendations)
 	}
 }
+
+func TestAnalyzeSchemaHealth_EmptyGraphSkipsConformanceRecommendation(t *testing.T) {
+	g := New()
+	report := AnalyzeSchemaHealth(g, 20, 0)
+
+	for _, recommendation := range report.Recommendations {
+		if recommendation.Category == "conformance" {
+			t.Fatalf("did not expect conformance recommendation for empty graph: %#v", recommendation)
+		}
+	}
+}
