@@ -121,8 +121,11 @@ func ConfirmIdentityAlias(g *Graph, aliasNodeID, canonicalNodeID, sourceSystem, 
 	confidence = clampUnit(confidence)
 
 	for _, edge := range g.GetOutEdges(aliasNodeID) {
-		if edge == nil || edge.Kind != EdgeKindAliasOf || edge.Target == canonicalNodeID {
+		if edge == nil || edge.Kind != EdgeKindAliasOf {
 			continue
+		}
+		if edge.Target == canonicalNodeID {
+			return nil
 		}
 		_ = g.RemoveEdge(aliasNodeID, edge.Target, EdgeKindAliasOf)
 	}

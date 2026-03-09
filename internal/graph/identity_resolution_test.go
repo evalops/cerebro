@@ -120,3 +120,38 @@ func TestSplitIdentityAlias_RemovesAliasLink(t *testing.T) {
 		}
 	}
 }
+
+func TestConfirmIdentityAlias_IsIdempotent(t *testing.T) {
+	g := New()
+	g.AddNode(&Node{ID: "person:alice@example.com", Kind: NodeKindPerson, Name: "Alice"})
+	g.AddNode(&Node{
+		ID:   "alias:github:alice-handle",
+		Kind: NodeKindIdentityAlias,
+		Name: "alice-handle",
+		Properties: map[string]any{
+			"source_system": "github",
+			"external_id":   "alice-handle",
+			"observed_at":   "2026-03-08T00:00:00Z",
+			"valid_from":    "2026-03-08T00:00:00Z",
+		},
+	})
+
+	for i := 0; i < 2; i++ {
+		if err := ConfirmIdentityAlias(g, "alias:github:alice-handle", "person:alice@example.com", "manual", "evt-confirm", temporalNowUTC(), 1); err != nil {
+			t.Fatalf("confirm alias failed: %v", err)
+		}
+	}
+
+	count := 0
+	for _, edge := range g.GetOutEdges("alias:github:alice-handle") {
+		if edge == nil {
+			continue
+		}
+		if edge.Kind == EdgeKindAliasOf && edge.Target == "person:alice@example.com" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected exactly one active alias_of edge, got %d", count)
+	}
+}
