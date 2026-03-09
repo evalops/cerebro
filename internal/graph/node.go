@@ -12,11 +12,14 @@ const (
 	// Identity nodes
 	NodeKindUser           NodeKind = "user"
 	NodeKindPerson         NodeKind = "person"
+	NodeKindIdentityAlias  NodeKind = "identity_alias"
 	NodeKindRole           NodeKind = "role"
 	NodeKindGroup          NodeKind = "group"
 	NodeKindServiceAccount NodeKind = "service_account"
 
 	// Resource nodes
+	NodeKindService     NodeKind = "service"
+	NodeKindWorkload    NodeKind = "workload"
 	NodeKindBucket      NodeKind = "bucket"
 	NodeKindInstance    NodeKind = "instance"
 	NodeKindDatabase    NodeKind = "database"
@@ -56,6 +59,10 @@ const (
 	NodeKindTicket       NodeKind = "ticket"
 	NodeKindLead         NodeKind = "lead"
 	NodeKindActivity     NodeKind = "activity"
+	NodeKindDecision     NodeKind = "decision"
+	NodeKindOutcome      NodeKind = "outcome"
+	NodeKindEvidence     NodeKind = "evidence"
+	NodeKindAction       NodeKind = "action"
 	NodeKindDepartment   NodeKind = "department"
 	NodeKindLocation     NodeKind = "location"
 )

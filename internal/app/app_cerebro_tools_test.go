@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -137,6 +138,252 @@ func TestCerebroIntelligenceReportTool(t *testing.T) {
 	insights, ok := payload["insights"].([]any)
 	if !ok || len(insights) == 0 {
 		t.Fatalf("expected insights, got %#v", payload["insights"])
+	}
+}
+
+func TestCerebroGraphWritebackTools(t *testing.T) {
+	g := graph.New()
+	g.AddNode(&graph.Node{
+		ID:   "service:payments",
+		Kind: graph.NodeKindService,
+		Name: "Payments",
+		Properties: map[string]any{
+			"service_id":  "payments",
+			"observed_at": "2026-03-08T00:00:00Z",
+			"valid_from":  "2026-03-08T00:00:00Z",
+		},
+	})
+	g.AddNode(&graph.Node{
+		ID:   "person:alice@example.com",
+		Kind: graph.NodeKindPerson,
+		Name: "Alice",
+		Properties: map[string]any{
+			"email": "alice@example.com",
+		},
+	})
+	g.AddNode(&graph.Node{
+		ID:   "action:rollback",
+		Kind: graph.NodeKindAction,
+		Name: "Rollback",
+		Properties: map[string]any{
+			"action_type": "rollback",
+			"status":      "pending",
+			"observed_at": "2026-03-08T00:00:00Z",
+			"valid_from":  "2026-03-08T00:00:00Z",
+		},
+	})
+
+	application := &App{SecurityGraph: g}
+
+	recordObservation := findCerebroTool(application.cerebroTools(), "cerebro.record_observation")
+	if recordObservation == nil {
+		t.Fatal("expected cerebro.record_observation tool")
+	}
+	observationPayload, err := recordObservation.Handler(context.Background(), json.RawMessage(`{
+		"entity_id":"service:payments",
+		"observation":"deploy_risk_increase",
+		"summary":"Error rate increased after deploy"
+	}`))
+	if err != nil {
+		t.Fatalf("record_observation returned error: %v", err)
+	}
+	var observationBody map[string]any
+	if err := json.Unmarshal([]byte(observationPayload), &observationBody); err != nil {
+		t.Fatalf("decode observation payload: %v", err)
+	}
+	observationID, _ := observationBody["observation_id"].(string)
+	if observationID == "" {
+		t.Fatalf("expected observation_id, got %#v", observationBody)
+	}
+	observationNode, ok := g.GetNode(observationID)
+	if !ok || observationNode == nil {
+		t.Fatalf("expected observation node %q", observationID)
+	}
+	if observationNode.Kind != graph.NodeKindEvidence {
+		t.Fatalf("expected evidence node, got %q", observationNode.Kind)
+	}
+	if stringValue(observationNode.Properties["source_system"]) != "agent" {
+		t.Fatalf("expected default source_system=agent, got %#v", observationNode.Properties["source_system"])
+	}
+
+	annotateEntity := findCerebroTool(application.cerebroTools(), "cerebro.annotate_entity")
+	if annotateEntity == nil {
+		t.Fatal("expected cerebro.annotate_entity tool")
+	}
+	if _, err := annotateEntity.Handler(context.Background(), json.RawMessage(`{
+		"entity_id":"service:payments",
+		"annotation":"Rollback candidate if p95 latency increases",
+		"tags":["incident","latency","incident"],
+		"source_system":"analyst"
+	}`)); err != nil {
+		t.Fatalf("annotate_entity returned error: %v", err)
+	}
+	serviceNode, _ := g.GetNode("service:payments")
+	if serviceNode == nil {
+		t.Fatal("expected service node")
+	}
+	annotations, ok := serviceNode.Properties["annotations"].([]map[string]any)
+	if !ok {
+		if raw, rawOK := serviceNode.Properties["annotations"].([]any); !rawOK || len(raw) == 0 {
+			t.Fatalf("expected annotations, got %#v", serviceNode.Properties["annotations"])
+		}
+	}
+	if ok && len(annotations) == 0 {
+		t.Fatalf("expected annotations, got %#v", annotations)
+	}
+
+	recordDecision := findCerebroTool(application.cerebroTools(), "cerebro.record_decision")
+	if recordDecision == nil {
+		t.Fatal("expected cerebro.record_decision tool")
+	}
+	decisionPayload, err := recordDecision.Handler(context.Background(), json.RawMessage(fmt.Sprintf(`{
+		"decision_type":"rollback",
+		"status":"approved",
+		"made_by":"person:alice@example.com",
+		"rationale":"error budget burn exceeded threshold",
+		"target_ids":["service:payments"],
+		"evidence_ids":["%s"],
+		"action_ids":["action:rollback"]
+	}`, observationID)))
+	if err != nil {
+		t.Fatalf("record_decision returned error: %v", err)
+	}
+	var decisionBody map[string]any
+	if err := json.Unmarshal([]byte(decisionPayload), &decisionBody); err != nil {
+		t.Fatalf("decode decision payload: %v", err)
+	}
+	decisionID, _ := decisionBody["decision_id"].(string)
+	if decisionID == "" {
+		t.Fatalf("expected decision_id, got %#v", decisionBody)
+	}
+	if decisionNode, ok := g.GetNode(decisionID); !ok || decisionNode == nil {
+		t.Fatalf("expected decision node %q", decisionID)
+	}
+
+	recordOutcome := findCerebroTool(application.cerebroTools(), "cerebro.record_outcome")
+	if recordOutcome == nil {
+		t.Fatal("expected cerebro.record_outcome tool")
+	}
+	outcomePayload, err := recordOutcome.Handler(context.Background(), json.RawMessage(fmt.Sprintf(`{
+		"decision_id":"%s",
+		"outcome_type":"deployment_result",
+		"verdict":"positive",
+		"impact_score":0.72,
+		"target_ids":["service:payments"]
+	}`, decisionID)))
+	if err != nil {
+		t.Fatalf("record_outcome returned error: %v", err)
+	}
+	var outcomeBody map[string]any
+	if err := json.Unmarshal([]byte(outcomePayload), &outcomeBody); err != nil {
+		t.Fatalf("decode outcome payload: %v", err)
+	}
+	outcomeID, _ := outcomeBody["outcome_id"].(string)
+	if outcomeID == "" {
+		t.Fatalf("expected outcome_id, got %#v", outcomeBody)
+	}
+	if outcomeNode, ok := g.GetNode(outcomeID); !ok || outcomeNode == nil || outcomeNode.Kind != graph.NodeKindOutcome {
+		t.Fatalf("expected outcome node %q, got %#v", outcomeID, outcomeNode)
+	}
+
+	resolveIdentity := findCerebroTool(application.cerebroTools(), "cerebro.resolve_identity")
+	if resolveIdentity == nil {
+		t.Fatal("expected cerebro.resolve_identity tool")
+	}
+	resolvePayload, err := resolveIdentity.Handler(context.Background(), json.RawMessage(`{
+		"source_system":"github",
+		"external_id":"alice-handle",
+		"email":"alice@example.com",
+		"name":"Alice"
+	}`))
+	if err != nil {
+		t.Fatalf("resolve_identity returned error: %v", err)
+	}
+	var resolveBody map[string]any
+	if err := json.Unmarshal([]byte(resolvePayload), &resolveBody); err != nil {
+		t.Fatalf("decode resolve payload: %v", err)
+	}
+	aliasID, _ := resolveBody["alias_node_id"].(string)
+	if aliasID == "" {
+		t.Fatalf("expected alias_node_id, got %#v", resolveBody)
+	}
+	if aliasNode, ok := g.GetNode(aliasID); !ok || aliasNode == nil || aliasNode.Kind != graph.NodeKindIdentityAlias {
+		t.Fatalf("expected identity_alias node %q, got %#v", aliasID, aliasNode)
+	}
+
+	splitIdentity := findCerebroTool(application.cerebroTools(), "cerebro.split_identity")
+	if splitIdentity == nil {
+		t.Fatal("expected cerebro.split_identity tool")
+	}
+	splitPayload, err := splitIdentity.Handler(context.Background(), json.RawMessage(fmt.Sprintf(`{
+		"alias_node_id":"%s",
+		"canonical_node_id":"person:alice@example.com",
+		"reason":"manual correction"
+	}`, aliasID)))
+	if err != nil {
+		t.Fatalf("split_identity returned error: %v", err)
+	}
+	var splitBody map[string]any
+	if err := json.Unmarshal([]byte(splitPayload), &splitBody); err != nil {
+		t.Fatalf("decode split payload: %v", err)
+	}
+	if removed, ok := splitBody["removed"].(bool); !ok || !removed {
+		t.Fatalf("expected removed=true, got %#v", splitBody)
+	}
+}
+
+func TestCerebroGraphWritebackToolsValidation(t *testing.T) {
+	g := graph.New()
+	g.AddNode(&graph.Node{
+		ID:   "service:payments",
+		Kind: graph.NodeKindService,
+		Name: "Payments",
+		Properties: map[string]any{
+			"service_id":  "payments",
+			"observed_at": "2026-03-08T00:00:00Z",
+			"valid_from":  "2026-03-08T00:00:00Z",
+		},
+	})
+	application := &App{SecurityGraph: g}
+
+	recordObservation := findCerebroTool(application.cerebroTools(), "cerebro.record_observation")
+	if recordObservation == nil {
+		t.Fatal("expected cerebro.record_observation tool")
+	}
+	if _, err := recordObservation.Handler(context.Background(), json.RawMessage(`{"observation":"x"}`)); err == nil {
+		t.Fatal("expected entity_id validation error")
+	}
+
+	recordDecision := findCerebroTool(application.cerebroTools(), "cerebro.record_decision")
+	if recordDecision == nil {
+		t.Fatal("expected cerebro.record_decision tool")
+	}
+	if _, err := recordDecision.Handler(context.Background(), json.RawMessage(`{"decision_type":"rollback","target_ids":["service:missing"]}`)); err == nil {
+		t.Fatal("expected target not found error")
+	}
+
+	recordOutcome := findCerebroTool(application.cerebroTools(), "cerebro.record_outcome")
+	if recordOutcome == nil {
+		t.Fatal("expected cerebro.record_outcome tool")
+	}
+	if _, err := recordOutcome.Handler(context.Background(), json.RawMessage(`{"decision_id":"decision:missing","outcome_type":"result","verdict":"positive"}`)); err == nil {
+		t.Fatal("expected decision not found error")
+	}
+
+	resolveIdentity := findCerebroTool(application.cerebroTools(), "cerebro.resolve_identity")
+	if resolveIdentity == nil {
+		t.Fatal("expected cerebro.resolve_identity tool")
+	}
+	if _, err := resolveIdentity.Handler(context.Background(), json.RawMessage(`{"external_id":"alice-handle"}`)); err == nil {
+		t.Fatal("expected source_system validation error")
+	}
+
+	splitIdentity := findCerebroTool(application.cerebroTools(), "cerebro.split_identity")
+	if splitIdentity == nil {
+		t.Fatal("expected cerebro.split_identity tool")
+	}
+	if _, err := splitIdentity.Handler(context.Background(), json.RawMessage(`{"alias_node_id":"alias:github:alice"}`)); err == nil {
+		t.Fatal("expected canonical_node_id validation error")
 	}
 }
 

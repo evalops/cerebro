@@ -16,6 +16,7 @@ const (
 type IntelligenceReportOptions struct {
 	EntityID              string
 	OutcomeWindow         time.Duration
+	FreshnessStaleAfter   time.Duration
 	SchemaHistoryLimit    int
 	SchemaSinceVersion    int64
 	MaxInsights           int
@@ -68,6 +69,7 @@ type IntelligenceReport struct {
 	RiskLevel       RiskLevel             `json:"risk_level"`
 	Coverage        float64               `json:"coverage"`
 	Confidence      float64               `json:"confidence"`
+	Freshness       FreshnessMetrics      `json:"freshness"`
 	SchemaHealth    SchemaHealthReport    `json:"schema_health"`
 	OutcomeFeedback OutcomeFeedbackReport `json:"outcome_feedback"`
 	Insights        []DecisionInsight     `json:"insights,omitempty"`
@@ -106,6 +108,12 @@ func BuildIntelligenceReport(g *Graph, engine *RiskEngine, opts IntelligenceRepo
 
 	report.SchemaHealth = AnalyzeSchemaHealth(g, historyLimit, opts.SchemaSinceVersion)
 	report.Coverage = clampUnit((report.SchemaHealth.NodeKindCoveragePercent + report.SchemaHealth.EdgeKindCoveragePercent) / 200)
+	staleAfter := opts.FreshnessStaleAfter
+	if staleAfter <= 0 {
+		staleAfter = defaultFreshnessStaleAfter
+	}
+	report.Freshness = g.Freshness(report.GeneratedAt, staleAfter)
+	report.Scope["freshness_stale_after_hours"] = int(staleAfter.Hours())
 
 	if engine == nil {
 		engine = NewRiskEngine(g)
@@ -118,7 +126,7 @@ func BuildIntelligenceReport(g *Graph, engine *RiskEngine, opts IntelligenceRepo
 	}
 
 	report.OutcomeFeedback = engine.OutcomeFeedback(window, "")
-	report.Confidence = intelligenceBaseConfidence(report.SchemaHealth, report.OutcomeFeedback)
+	report.Confidence = intelligenceBaseConfidence(report.SchemaHealth, report.OutcomeFeedback, report.Freshness)
 	report.Scope["schema_version"] = report.SchemaHealth.SchemaVersion
 
 	insights := make([]DecisionInsight, 0, maxInsights)
@@ -156,6 +164,14 @@ func BuildIntelligenceReport(g *Graph, engine *RiskEngine, opts IntelligenceRepo
 			outcomeInsight.Priority = priority
 			priority++
 			insights = append(insights, outcomeInsight)
+		}
+	}
+
+	if len(insights) < maxInsights {
+		if freshnessInsight, ok := buildFreshnessInsight(report.Freshness, report.Coverage, report.Confidence); ok {
+			freshnessInsight.Priority = priority
+			priority++
+			insights = append(insights, freshnessInsight)
 		}
 	}
 
@@ -544,7 +560,50 @@ func buildTemporalDriftInsight(diff *GraphDiff, coverage float64, baseConfidence
 	}, true
 }
 
-func intelligenceBaseConfidence(schema SchemaHealthReport, feedback OutcomeFeedbackReport) float64 {
+func buildFreshnessInsight(freshness FreshnessMetrics, coverage float64, baseConfidence float64) (DecisionInsight, bool) {
+	if freshness.TotalNodes == 0 || freshness.StaleNodes == 0 {
+		return DecisionInsight{}, false
+	}
+	staleRatio := float64(freshness.StaleNodes) / math.Max(1, float64(freshness.TotalNodes))
+	severity := SeverityLow
+	if staleRatio >= 0.20 {
+		severity = SeverityMedium
+	}
+	if staleRatio >= 0.50 {
+		severity = SeverityHigh
+	}
+
+	return DecisionInsight{
+		ID:         "graph-freshness",
+		Type:       "graph_freshness",
+		Severity:   severity,
+		Title:      "Graph freshness is degrading confidence",
+		Summary:    fmt.Sprintf("%d/%d node(s) are stale; freshness is %.1f%%.", freshness.StaleNodes, freshness.TotalNodes, freshness.FreshnessPercent),
+		Confidence: clampUnit(baseConfidence * (1 - math.Min(0.4, staleRatio))),
+		Coverage:   coverage,
+		Evidence: []IntelligenceEvidence{
+			{
+				Kind:  "freshness",
+				Title: "Observed-at recency",
+				Value: map[string]any{
+					"total_nodes":         freshness.TotalNodes,
+					"nodes_with_observed": freshness.NodesWithObserved,
+					"fresh_nodes":         freshness.FreshNodes,
+					"stale_nodes":         freshness.StaleNodes,
+					"freshness_percent":   freshness.FreshnessPercent,
+					"median_age_hours":    freshness.MedianAgeHours,
+					"p95_age_hours":       freshness.P95AgeHours,
+				},
+			},
+		},
+		SuggestedActions: []string{
+			"Prioritize ingestion refresh for stale high-criticality entities.",
+			"Add observed_at/valid_from metadata to feeds missing temporal context.",
+		},
+	}, true
+}
+
+func intelligenceBaseConfidence(schema SchemaHealthReport, feedback OutcomeFeedbackReport, freshness FreshnessMetrics) float64 {
 	coverage := clampUnit((schema.NodeKindCoveragePercent + schema.EdgeKindCoveragePercent) / 200)
 	conformance := clampUnit((schema.NodeConformancePercent + schema.EdgeConformancePercent) / 200)
 	confidence := 0.35 + coverage*0.35 + conformance*0.20
@@ -559,6 +618,10 @@ func intelligenceBaseConfidence(schema SchemaHealthReport, feedback OutcomeFeedb
 
 	if schema.ValidationMode == SchemaValidationEnforce {
 		confidence += 0.05
+	}
+	if freshness.TotalNodes > 0 {
+		freshnessWeight := clampUnit(freshness.FreshnessPercent / 100)
+		confidence = (confidence * 0.85) + (freshnessWeight * 0.15)
 	}
 	return clampUnit(confidence)
 }

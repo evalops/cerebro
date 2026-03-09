@@ -1,0 +1,57 @@
+mappings:
+  - name: github_pr_merged
+    source: ensemble.tap.github.pull_request.merged
+    nodes:
+      - id: 'service:{{data.repository}}'
+        kind: service
+        name: '{{data.repository}}'
+        provider: github
+        properties:
+          service_id: '{{data.repository}}'
+          criticality: medium
+      - id: 'activity:pr:{{data.repository}}:{{data.number}}'
+        kind: activity
+        name: '{{data.title}}'
+        provider: github
+        properties:
+          activity_type: pull_request
+          action: merged
+          merged_by: '{{data.merged_by}}'
+          merged_by_email: '{{data.merged_by_email}}'
+    edges:
+      - source: '{{resolve(data.merged_by_email)}}'
+        target: 'service:{{data.repository}}'
+        kind: interacted_with
+        effect: allow
+      - source: 'activity:pr:{{data.repository}}:{{data.number}}'
+        target: 'service:{{data.repository}}'
+        kind: targets
+        effect: allow
+  - name: incident_timeline_event
+    source: ensemble.tap.incident.timeline.*
+    nodes:
+      - id: 'action:incident:{{data.incident_id}}:{{data.event_id}}'
+        kind: action
+        name: '{{data.title}}'
+        provider: incident
+        properties:
+          action_type: '{{data.event_type}}'
+          status: '{{data.status}}'
+          performed_at: '{{data.performed_at}}'
+          actor_id: '{{resolve(data.actor_email)}}'
+      - id: 'evidence:incident:{{data.incident_id}}:{{data.event_id}}'
+        kind: evidence
+        name: '{{data.summary}}'
+        provider: incident
+        properties:
+          evidence_type: incident_timeline
+          detail: '{{data.summary}}'
+    edges:
+      - source: 'action:incident:{{data.incident_id}}:{{data.event_id}}'
+        target: 'service:{{data.service}}'
+        kind: targets
+        effect: allow
+      - source: 'action:incident:{{data.incident_id}}:{{data.event_id}}'
+        target: 'evidence:incident:{{data.incident_id}}:{{data.event_id}}'
+        kind: based_on
+        effect: allow

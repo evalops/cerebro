@@ -1,0 +1,403 @@
+package graphingest
+
+import (
+	_ "embed"
+	"fmt"
+	"os"
+	"path"
+	"regexp"
+	"sort"
+	"strings"
+	"time"
+
+	"gopkg.in/yaml.v3"
+
+	"github.com/evalops/cerebro/internal/events"
+	"github.com/evalops/cerebro/internal/graph"
+)
+
+//go:embed mappings.yaml
+var defaultMappingsYAML []byte
+
+var templatePattern = regexp.MustCompile(`{{\s*([^{}]+)\s*}}`)
+
+type IdentityResolver func(raw string, evt events.CloudEvent) string
+
+type MappingConfig struct {
+	Mappings []EventMapping `json:"mappings" yaml:"mappings"`
+}
+
+type EventMapping struct {
+	Name   string        `json:"name" yaml:"name"`
+	Source string        `json:"source" yaml:"source"`
+	Nodes  []NodeMapping `json:"nodes" yaml:"nodes"`
+	Edges  []EdgeMapping `json:"edges" yaml:"edges"`
+}
+
+type NodeMapping struct {
+	ID         string         `json:"id" yaml:"id"`
+	Kind       string         `json:"kind" yaml:"kind"`
+	Name       string         `json:"name" yaml:"name"`
+	Provider   string         `json:"provider" yaml:"provider"`
+	Risk       string         `json:"risk" yaml:"risk"`
+	Properties map[string]any `json:"properties" yaml:"properties"`
+}
+
+type EdgeMapping struct {
+	ID         string         `json:"id" yaml:"id"`
+	Source     string         `json:"source" yaml:"source"`
+	Target     string         `json:"target" yaml:"target"`
+	Kind       string         `json:"kind" yaml:"kind"`
+	Effect     string         `json:"effect" yaml:"effect"`
+	Properties map[string]any `json:"properties" yaml:"properties"`
+}
+
+type ApplyResult struct {
+	Matched       bool     `json:"matched"`
+	MappingNames  []string `json:"mapping_names,omitempty"`
+	NodesUpserted []string `json:"nodes_upserted,omitempty"`
+	EdgesUpserted []string `json:"edges_upserted,omitempty"`
+}
+
+type Mapper struct {
+	config   MappingConfig
+	resolver IdentityResolver
+}
+
+func LoadDefaultConfig() (MappingConfig, error) {
+	return ParseConfig(defaultMappingsYAML)
+}
+
+func LoadConfigFile(path string) (MappingConfig, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return MappingConfig{}, fmt.Errorf("path is required")
+	}
+	payload, err := os.ReadFile(path) // #nosec G304 -- operator-configured mapping path
+	if err != nil {
+		return MappingConfig{}, fmt.Errorf("read mapping config %s: %w", path, err)
+	}
+	return ParseConfig(payload)
+}
+
+func ParseConfig(payload []byte) (MappingConfig, error) {
+	var config MappingConfig
+	if err := yaml.Unmarshal(payload, &config); err != nil {
+		return MappingConfig{}, fmt.Errorf("decode mapping config: %w", err)
+	}
+	if len(config.Mappings) == 0 {
+		return MappingConfig{}, fmt.Errorf("mapping config requires at least one mapping")
+	}
+	for idx := range config.Mappings {
+		mapping := &config.Mappings[idx]
+		mapping.Name = strings.TrimSpace(mapping.Name)
+		mapping.Source = strings.TrimSpace(mapping.Source)
+		if mapping.Name == "" {
+			mapping.Name = fmt.Sprintf("mapping_%d", idx+1)
+		}
+		if mapping.Source == "" {
+			return MappingConfig{}, fmt.Errorf("mapping %q requires source", mapping.Name)
+		}
+	}
+	return config, nil
+}
+
+func NewMapper(config MappingConfig, resolver IdentityResolver) (*Mapper, error) {
+	if len(config.Mappings) == 0 {
+		return nil, fmt.Errorf("mapper requires at least one mapping")
+	}
+	return &Mapper{
+		config:   config,
+		resolver: resolver,
+	}, nil
+}
+
+func (m *Mapper) Apply(g *graph.Graph, evt events.CloudEvent) (ApplyResult, error) {
+	if g == nil {
+		return ApplyResult{}, fmt.Errorf("graph is required")
+	}
+
+	context := eventContext(evt)
+	matchedNames := make([]string, 0)
+	nodesUpserted := make([]string, 0)
+	edgesUpserted := make([]string, 0)
+
+	for _, mapping := range m.config.Mappings {
+		if !mappingMatchesSource(mapping.Source, evt.Type) {
+			continue
+		}
+
+		matchedNames = append(matchedNames, mapping.Name)
+		for _, nodeDef := range mapping.Nodes {
+			nodeID := strings.TrimSpace(m.renderTemplate(nodeDef.ID, context, evt))
+			if nodeID == "" {
+				continue
+			}
+			nodeKind := graph.NodeKind(strings.ToLower(strings.TrimSpace(m.renderTemplate(nodeDef.Kind, context, evt))))
+			if nodeKind == "" {
+				continue
+			}
+			nodeName := strings.TrimSpace(m.renderTemplate(nodeDef.Name, context, evt))
+			if nodeName == "" {
+				nodeName = nodeID
+			}
+			provider := strings.TrimSpace(m.renderTemplate(nodeDef.Provider, context, evt))
+			if provider == "" {
+				provider = sourceSystemFromEvent(evt)
+			}
+			properties := m.renderProperties(nodeDef.Properties, context, evt)
+			ensureTemporalAndProvenance(properties, evt)
+
+			g.AddNode(&graph.Node{
+				ID:         nodeID,
+				Kind:       nodeKind,
+				Name:       nodeName,
+				Provider:   provider,
+				Properties: properties,
+				Risk:       parseRiskLevel(nodeDef.Risk),
+			})
+			nodesUpserted = append(nodesUpserted, nodeID)
+		}
+
+		for _, edgeDef := range mapping.Edges {
+			source := strings.TrimSpace(m.renderTemplate(edgeDef.Source, context, evt))
+			target := strings.TrimSpace(m.renderTemplate(edgeDef.Target, context, evt))
+			if source == "" || target == "" {
+				continue
+			}
+			kind := graph.EdgeKind(strings.ToLower(strings.TrimSpace(m.renderTemplate(edgeDef.Kind, context, evt))))
+			if kind == "" {
+				continue
+			}
+			effect := parseEdgeEffect(edgeDef.Effect)
+			properties := m.renderProperties(edgeDef.Properties, context, evt)
+			ensureTemporalAndProvenance(properties, evt)
+
+			edgeID := strings.TrimSpace(m.renderTemplate(edgeDef.ID, context, evt))
+			if edgeID == "" {
+				edgeID = fmt.Sprintf("%s:%s->%s", kind, source, target)
+			}
+			g.AddEdge(&graph.Edge{
+				ID:         edgeID,
+				Source:     source,
+				Target:     target,
+				Kind:       kind,
+				Effect:     effect,
+				Properties: properties,
+				Risk:       graph.RiskNone,
+			})
+			edgesUpserted = append(edgesUpserted, edgeID)
+		}
+	}
+
+	sort.Strings(matchedNames)
+	sort.Strings(nodesUpserted)
+	sort.Strings(edgesUpserted)
+	return ApplyResult{
+		Matched:       len(matchedNames) > 0,
+		MappingNames:  matchedNames,
+		NodesUpserted: nodesUpserted,
+		EdgesUpserted: edgesUpserted,
+	}, nil
+}
+
+func (m *Mapper) renderProperties(raw map[string]any, context map[string]any, evt events.CloudEvent) map[string]any {
+	if len(raw) == 0 {
+		return map[string]any{}
+	}
+	out := make(map[string]any, len(raw))
+	for key, value := range raw {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		switch typed := value.(type) {
+		case string:
+			out[key] = m.renderTemplate(typed, context, evt)
+		default:
+			out[key] = typed
+		}
+	}
+	return out
+}
+
+func (m *Mapper) renderTemplate(input string, context map[string]any, evt events.CloudEvent) string {
+	input = strings.TrimSpace(input)
+	if input == "" || !strings.Contains(input, "{{") {
+		return input
+	}
+
+	return templatePattern.ReplaceAllStringFunc(input, func(segment string) string {
+		matches := templatePattern.FindStringSubmatch(segment)
+		if len(matches) != 2 {
+			return ""
+		}
+		expression := strings.TrimSpace(matches[1])
+		if expression == "" {
+			return ""
+		}
+		if strings.HasPrefix(expression, "resolve(") && strings.HasSuffix(expression, ")") {
+			argument := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(expression, "resolve("), ")"))
+			raw := valueToString(contextValue(context, argument))
+			if m.resolver == nil {
+				return raw
+			}
+			resolved := strings.TrimSpace(m.resolver(raw, evt))
+			if resolved == "" {
+				return raw
+			}
+			return resolved
+		}
+		return valueToString(contextValue(context, expression))
+	})
+}
+
+func eventContext(evt events.CloudEvent) map[string]any {
+	return map[string]any{
+		"id":        evt.ID,
+		"source":    evt.Source,
+		"type":      evt.Type,
+		"subject":   evt.Subject,
+		"time":      evt.Time.UTC().Format(time.RFC3339),
+		"tenant_id": evt.TenantID,
+		"data":      evt.Data,
+	}
+}
+
+func contextValue(context map[string]any, pathExpr string) any {
+	pathExpr = strings.TrimSpace(pathExpr)
+	if pathExpr == "" {
+		return ""
+	}
+	segments := strings.Split(pathExpr, ".")
+	value := lookupPath(context, segments)
+	if value != nil {
+		return value
+	}
+	if _, hasData := context["data"]; hasData && len(segments) > 0 && segments[0] != "data" {
+		withData := append([]string{"data"}, segments...)
+		if value = lookupPath(context, withData); value != nil {
+			return value
+		}
+	}
+	return ""
+}
+
+func lookupPath(root map[string]any, segments []string) any {
+	var current any = root
+	for _, segment := range segments {
+		segment = strings.TrimSpace(segment)
+		if segment == "" {
+			return nil
+		}
+		switch typed := current.(type) {
+		case map[string]any:
+			next, ok := typed[segment]
+			if !ok {
+				return nil
+			}
+			current = next
+		default:
+			return nil
+		}
+	}
+	return current
+}
+
+func mappingMatchesSource(pattern, eventType string) bool {
+	pattern = strings.TrimSpace(pattern)
+	eventType = strings.TrimSpace(eventType)
+	if pattern == "" || eventType == "" {
+		return false
+	}
+	if pattern == eventType {
+		return true
+	}
+	matched, err := path.Match(pattern, eventType)
+	if err != nil {
+		return pattern == eventType
+	}
+	return matched
+}
+
+func ensureTemporalAndProvenance(properties map[string]any, evt events.CloudEvent) {
+	if properties == nil {
+		return
+	}
+
+	sourceSystem := firstNonEmptyString(
+		valueToString(properties["source_system"]),
+		sourceSystemFromEvent(evt),
+		"tap",
+	)
+	sourceEventID := firstNonEmptyString(valueToString(properties["source_event_id"]), evt.ID)
+	observedAt := firstNonEmptyString(valueToString(properties["observed_at"]), evt.Time.UTC().Format(time.RFC3339))
+	validFrom := firstNonEmptyString(valueToString(properties["valid_from"]), observedAt)
+
+	properties["source_system"] = sourceSystem
+	properties["source_event_id"] = sourceEventID
+	properties["observed_at"] = observedAt
+	properties["valid_from"] = validFrom
+	if _, ok := properties["confidence"]; !ok {
+		properties["confidence"] = 0.80
+	}
+}
+
+func sourceSystemFromEvent(evt events.CloudEvent) string {
+	parts := strings.Split(strings.TrimSpace(evt.Type), ".")
+	if len(parts) >= 3 {
+		return strings.ToLower(strings.TrimSpace(parts[2]))
+	}
+	source := strings.ToLower(strings.TrimSpace(evt.Source))
+	source = strings.TrimPrefix(source, "urn:")
+	return firstNonEmptyString(source, "tap")
+}
+
+func parseRiskLevel(raw string) graph.RiskLevel {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case string(graph.RiskCritical):
+		return graph.RiskCritical
+	case string(graph.RiskHigh):
+		return graph.RiskHigh
+	case string(graph.RiskMedium):
+		return graph.RiskMedium
+	case string(graph.RiskLow):
+		return graph.RiskLow
+	default:
+		return graph.RiskNone
+	}
+}
+
+func parseEdgeEffect(raw string) graph.EdgeEffect {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case string(graph.EdgeEffectDeny):
+		return graph.EdgeEffectDeny
+	default:
+		return graph.EdgeEffectAllow
+	}
+}
+
+func valueToString(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case []byte:
+		return string(typed)
+	case fmt.Stringer:
+		return typed.String()
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64, bool:
+		return fmt.Sprintf("%v", typed)
+	default:
+		return ""
+	}
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}

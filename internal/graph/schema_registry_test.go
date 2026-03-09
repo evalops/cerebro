@@ -29,6 +29,69 @@ func TestSchemaRegistry_BuiltinsAvailable(t *testing.T) {
 	}
 }
 
+func TestSchemaRegistry_IntelligenceSpineBuiltins(t *testing.T) {
+	reg := GlobalSchemaRegistry()
+
+	requiredNodeKinds := []NodeKind{
+		NodeKindIdentityAlias,
+		NodeKindService,
+		NodeKindWorkload,
+		NodeKindDecision,
+		NodeKindOutcome,
+		NodeKindEvidence,
+		NodeKindAction,
+	}
+	for _, kind := range requiredNodeKinds {
+		if !reg.IsNodeKindRegistered(kind) {
+			t.Fatalf("expected builtin node kind %q to be registered", kind)
+		}
+	}
+
+	requiredEdgeKinds := []EdgeKind{
+		EdgeKindAliasOf,
+		EdgeKindRuns,
+		EdgeKindDependsOn,
+		EdgeKindTargets,
+		EdgeKindBasedOn,
+		EdgeKindExecutedBy,
+		EdgeKindEvaluates,
+	}
+	for _, kind := range requiredEdgeKinds {
+		if !reg.IsEdgeKindRegistered(kind) {
+			t.Fatalf("expected builtin edge kind %q to be registered", kind)
+		}
+	}
+
+	nodeDefs := reg.ListNodeKinds()
+	defByKind := make(map[NodeKind]NodeKindDefinition, len(nodeDefs))
+	for _, def := range nodeDefs {
+		defByKind[def.Kind] = def
+	}
+
+	decisionDef, ok := defByKind[NodeKindDecision]
+	if !ok {
+		t.Fatal("expected decision definition")
+	}
+	for _, property := range []string{"decision_type", "status", "made_at", "observed_at", "valid_from"} {
+		if !containsRequiredProperty(decisionDef.RequiredProperties, property) {
+			t.Fatalf("expected decision required property %q, got %#v", property, decisionDef.RequiredProperties)
+		}
+	}
+	for _, relationship := range []EdgeKind{EdgeKindTargets, EdgeKindBasedOn, EdgeKindExecutedBy} {
+		if !containsEdgeKind(decisionDef.Relationships, relationship) {
+			t.Fatalf("expected decision relationship %q, got %#v", relationship, decisionDef.Relationships)
+		}
+	}
+
+	aliasDef, ok := defByKind[NodeKindIdentityAlias]
+	if !ok {
+		t.Fatal("expected identity_alias definition")
+	}
+	if !containsEdgeKind(aliasDef.Relationships, EdgeKindAliasOf) {
+		t.Fatalf("expected identity_alias relationship %q, got %#v", EdgeKindAliasOf, aliasDef.Relationships)
+	}
+}
+
 func TestSchemaRegistry_RegisterDynamicNodeKind(t *testing.T) {
 	kind := NodeKind("test_dynamic_employee_v1")
 	def, err := RegisterNodeKindDefinition(NodeKindDefinition{
@@ -209,6 +272,24 @@ func TestSchemaRegistry_ValidateNodeAndEdge(t *testing.T) {
 func hasIssueCode(issues []SchemaValidationIssue, code SchemaValidationIssueCode) bool {
 	for _, issue := range issues {
 		if issue.Code == code {
+			return true
+		}
+	}
+	return false
+}
+
+func containsEdgeKind(values []EdgeKind, target EdgeKind) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func containsRequiredProperty(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
 			return true
 		}
 	}

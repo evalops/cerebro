@@ -51,6 +51,7 @@ import (
 	"github.com/evalops/cerebro/internal/events"
 	"github.com/evalops/cerebro/internal/findings"
 	"github.com/evalops/cerebro/internal/graph"
+	"github.com/evalops/cerebro/internal/graphingest"
 	"github.com/evalops/cerebro/internal/health"
 	"github.com/evalops/cerebro/internal/identity"
 	"github.com/evalops/cerebro/internal/lineage"
@@ -93,18 +94,19 @@ type App struct {
 	Cache     *cache.PolicyCache
 
 	// Feature services
-	Agents        *agents.AgentRegistry
-	Ticketing     *ticketing.Service
-	Identity      *identity.Service
-	AttackPath    *attackpath.Graph
-	Providers     *providers.Registry
-	Webhooks      *webhooks.Service
-	TapConsumer   *events.Consumer
-	AlertRouter   *events.AlertRouter
-	RemoteTools   *agents.RemoteToolProvider
-	ToolPublisher *agents.ToolPublisher
-	Notifications *notifications.Manager
-	Scheduler     *scheduler.Scheduler
+	Agents         *agents.AgentRegistry
+	Ticketing      *ticketing.Service
+	Identity       *identity.Service
+	AttackPath     *attackpath.Graph
+	Providers      *providers.Registry
+	Webhooks       *webhooks.Service
+	TapConsumer    *events.Consumer
+	AlertRouter    *events.AlertRouter
+	TapEventMapper *graphingest.Mapper
+	RemoteTools    *agents.RemoteToolProvider
+	ToolPublisher  *agents.ToolPublisher
+	Notifications  *notifications.Manager
+	Scheduler      *scheduler.Scheduler
 
 	// Repositories (for Snowflake persistence)
 	FindingsRepo        *snowflake.FindingRepository
@@ -140,6 +142,8 @@ type App struct {
 	traceShutdown        func(context.Context) error
 	secretsReloadCancel  context.CancelFunc
 	secretsReloadWG      sync.WaitGroup
+	tapMapperOnce        sync.Once
+	tapMapperErr         error
 	reloadMu             sync.Mutex
 	apiKeys              atomic.Value // map[string]string
 	secretsLoader        secretsLoader

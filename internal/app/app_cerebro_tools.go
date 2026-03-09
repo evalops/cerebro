@@ -108,6 +108,139 @@ func (a *App) cerebroTools() []agents.Tool {
 			Handler: a.toolCerebroIntelligenceReport,
 		},
 		{
+			Name:        "cerebro.record_observation",
+			Description: "Write one evidence observation targeting an entity with provenance and temporal metadata",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"id":              map[string]any{"type": "string"},
+					"entity_id":       map[string]any{"type": "string"},
+					"observation":     map[string]any{"type": "string"},
+					"summary":         map[string]any{"type": "string"},
+					"source_system":   map[string]any{"type": "string", "default": "agent"},
+					"source_event_id": map[string]any{"type": "string"},
+					"observed_at":     map[string]any{"type": "string"},
+					"valid_from":      map[string]any{"type": "string"},
+					"valid_to":        map[string]any{"type": "string"},
+					"confidence":      map[string]any{"type": "number", "default": 0.8},
+					"metadata":        map[string]any{"type": "object"},
+				},
+				"required": []string{"entity_id", "observation"},
+			},
+			Handler: a.toolCerebroRecordObservation,
+		},
+		{
+			Name:        "cerebro.annotate_entity",
+			Description: "Append analyst/agent annotations to one entity with provenance metadata",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"entity_id":       map[string]any{"type": "string"},
+					"annotation":      map[string]any{"type": "string"},
+					"tags":            map[string]any{"type": "array"},
+					"source_system":   map[string]any{"type": "string", "default": "agent"},
+					"source_event_id": map[string]any{"type": "string"},
+					"observed_at":     map[string]any{"type": "string"},
+					"valid_from":      map[string]any{"type": "string"},
+					"valid_to":        map[string]any{"type": "string"},
+					"confidence":      map[string]any{"type": "number", "default": 0.8},
+					"metadata":        map[string]any{"type": "object"},
+				},
+				"required": []string{"entity_id", "annotation"},
+			},
+			Handler: a.toolCerebroAnnotateEntity,
+		},
+		{
+			Name:        "cerebro.record_decision",
+			Description: "Write one decision node and connect it to targets/evidence/actions",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"id":              map[string]any{"type": "string"},
+					"decision_type":   map[string]any{"type": "string"},
+					"status":          map[string]any{"type": "string", "default": "proposed"},
+					"made_by":         map[string]any{"type": "string"},
+					"rationale":       map[string]any{"type": "string"},
+					"target_ids":      map[string]any{"type": "array"},
+					"evidence_ids":    map[string]any{"type": "array"},
+					"action_ids":      map[string]any{"type": "array"},
+					"source_system":   map[string]any{"type": "string", "default": "agent"},
+					"source_event_id": map[string]any{"type": "string"},
+					"observed_at":     map[string]any{"type": "string"},
+					"valid_from":      map[string]any{"type": "string"},
+					"valid_to":        map[string]any{"type": "string"},
+					"confidence":      map[string]any{"type": "number", "default": 0.8},
+					"metadata":        map[string]any{"type": "object"},
+				},
+				"required": []string{"decision_type", "target_ids"},
+			},
+			Handler: a.toolCerebroRecordDecision,
+		},
+		{
+			Name:        "cerebro.record_outcome",
+			Description: "Write one outcome node and connect it back to decision + impacted targets",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"id":              map[string]any{"type": "string"},
+					"decision_id":     map[string]any{"type": "string"},
+					"outcome_type":    map[string]any{"type": "string"},
+					"verdict":         map[string]any{"type": "string"},
+					"impact_score":    map[string]any{"type": "number"},
+					"target_ids":      map[string]any{"type": "array"},
+					"source_system":   map[string]any{"type": "string", "default": "agent"},
+					"source_event_id": map[string]any{"type": "string"},
+					"observed_at":     map[string]any{"type": "string"},
+					"valid_from":      map[string]any{"type": "string"},
+					"valid_to":        map[string]any{"type": "string"},
+					"confidence":      map[string]any{"type": "number", "default": 0.8},
+					"metadata":        map[string]any{"type": "object"},
+				},
+				"required": []string{"decision_id", "outcome_type", "verdict"},
+			},
+			Handler: a.toolCerebroRecordOutcome,
+		},
+		{
+			Name:        "cerebro.resolve_identity",
+			Description: "Resolve one external alias to canonical identity nodes with confidence scoring",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"alias_id":            map[string]any{"type": "string"},
+					"source_system":       map[string]any{"type": "string"},
+					"source_event_id":     map[string]any{"type": "string"},
+					"external_id":         map[string]any{"type": "string"},
+					"alias_type":          map[string]any{"type": "string"},
+					"canonical_hint":      map[string]any{"type": "string"},
+					"email":               map[string]any{"type": "string"},
+					"name":                map[string]any{"type": "string"},
+					"observed_at":         map[string]any{"type": "string"},
+					"confidence":          map[string]any{"type": "number"},
+					"auto_link_threshold": map[string]any{"type": "number"},
+					"suggest_threshold":   map[string]any{"type": "number"},
+				},
+				"required": []string{"source_system", "external_id"},
+			},
+			Handler: a.toolCerebroResolveIdentity,
+		},
+		{
+			Name:        "cerebro.split_identity",
+			Description: "Remove one alias->canonical identity link to reverse an incorrect merge",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"alias_node_id":     map[string]any{"type": "string"},
+					"canonical_node_id": map[string]any{"type": "string"},
+					"reason":            map[string]any{"type": "string"},
+					"source_system":     map[string]any{"type": "string", "default": "agent"},
+					"source_event_id":   map[string]any{"type": "string"},
+					"observed_at":       map[string]any{"type": "string"},
+				},
+				"required": []string{"alias_node_id", "canonical_node_id"},
+			},
+			Handler: a.toolCerebroSplitIdentity,
+		},
+		{
 			Name:             "cerebro.simulate",
 			Description:      "Run a hypothetical graph simulation for proposed node/edge mutations",
 			RequiresApproval: requiresSimApproval,
@@ -169,6 +302,9 @@ func (a *App) cerebroTools() []agents.Tool {
 					"limit":     map[string]any{"type": "integer", "default": 25},
 					"k":         map[string]any{"type": "integer", "default": 3},
 					"max_depth": map[string]any{"type": "integer", "default": 6},
+					"as_of":     map[string]any{"type": "string", "description": "Optional RFC3339 point-in-time scope"},
+					"from":      map[string]any{"type": "string", "description": "Optional RFC3339 temporal window start (requires to)"},
+					"to":        map[string]any{"type": "string", "description": "Optional RFC3339 temporal window end (requires from)"},
 				},
 				"required": []string{"node_id"},
 			},
@@ -219,6 +355,9 @@ type cerebroGraphQueryRequest struct {
 	Limit     int    `json:"limit"`
 	K         int    `json:"k"`
 	MaxDepth  int    `json:"max_depth"`
+	AsOf      string `json:"as_of"`
+	From      string `json:"from"`
+	To        string `json:"to"`
 }
 
 func (a *App) toolCerebroSimulate(_ context.Context, args json.RawMessage) (string, error) {
@@ -1012,21 +1151,54 @@ func (a *App) toolCerebroGraphQuery(_ context.Context, args json.RawMessage) (st
 	if req.NodeID == "" {
 		return "", fmt.Errorf("node_id is required")
 	}
-	if _, ok := g.GetNode(req.NodeID); !ok {
-		return "", fmt.Errorf("node not found: %s", req.NodeID)
+
+	queryGraph := g
+	temporalScope := map[string]any{}
+
+	asOfRaw := strings.TrimSpace(req.AsOf)
+	if asOfRaw != "" {
+		asOf, err := time.Parse(time.RFC3339, asOfRaw)
+		if err != nil {
+			return "", fmt.Errorf("as_of must be RFC3339")
+		}
+		temporalScope["as_of"] = asOf.UTC()
+		queryGraph = g.SubgraphAt(asOf.UTC())
+	}
+
+	fromRaw := strings.TrimSpace(req.From)
+	toRaw := strings.TrimSpace(req.To)
+	if fromRaw != "" || toRaw != "" {
+		if fromRaw == "" || toRaw == "" {
+			return "", fmt.Errorf("both from and to are required when specifying a temporal window")
+		}
+		from, err := time.Parse(time.RFC3339, fromRaw)
+		if err != nil {
+			return "", fmt.Errorf("from must be RFC3339")
+		}
+		to, err := time.Parse(time.RFC3339, toRaw)
+		if err != nil {
+			return "", fmt.Errorf("to must be RFC3339")
+		}
+		temporalScope["from"] = from.UTC()
+		temporalScope["to"] = to.UTC()
+		queryGraph = g.SubgraphBetween(from.UTC(), to.UTC())
+	}
+
+	if _, ok := queryGraph.GetNode(req.NodeID); !ok {
+		return "", fmt.Errorf("node not found in selected scope: %s", req.NodeID)
 	}
 
 	switch req.Mode {
 	case "neighbors":
-		return a.runNeighborsQuery(g, req)
+		return a.runNeighborsQuery(queryGraph, req, temporalScope)
 	case "paths", "path":
-		return a.runPathsQuery(g, req)
+		return a.runPathsQuery(queryGraph, req, temporalScope)
 	default:
 		return "", fmt.Errorf("unsupported mode: %s", req.Mode)
 	}
 }
 
-func (a *App) runNeighborsQuery(g *graph.Graph, req cerebroGraphQueryRequest) (string, error) {
+func (a *App) runNeighborsQuery(g *graph.Graph, req cerebroGraphQueryRequest, temporalScope map[string]any) (string, error) {
 	direction := strings.ToLower(strings.TrimSpace(req.Direction))
 	if direction == "" {
 		direction = "both"
@@ -1086,6 +1258,7 @@ func (a *App) runNeighborsQuery(g *graph.Graph, req cerebroGraphQueryRequest) (s
 		"mode":      "neighbors",
 		"node_id":   req.NodeID,
 		"direction": direction,
+		"temporal":  temporalScope,
 		"total":     total,
 		"count":     len(results),
 		"limit":     limit,
@@ -1094,7 +1267,7 @@ func (a *App) runNeighborsQuery(g *graph.Graph, req cerebroGraphQueryRequest) (s
 	})
 }
 
-func (a *App) runPathsQuery(g *graph.Graph, req cerebroGraphQueryRequest) (string, error) {
+func (a *App) runPathsQuery(g *graph.Graph, req cerebroGraphQueryRequest, temporalScope map[string]any) (string, error) {
 	if req.TargetID == "" {
 		return "", fmt.Errorf("target_id is required for paths mode")
 	}
@@ -1112,6 +1285,7 @@ func (a *App) runPathsQuery(g *graph.Graph, req cerebroGraphQueryRequest) (strin
 		"mode":      "paths",
 		"source_id": req.NodeID,
 		"target_id": req.TargetID,
+		"temporal":  temporalScope,
 		"k":         k,
 		"max_depth": maxDepth,
 		"count":     len(paths),

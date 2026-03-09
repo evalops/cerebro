@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/evalops/cerebro/internal/events"
 	"github.com/evalops/cerebro/internal/graph"
+	"github.com/evalops/cerebro/internal/graphingest"
 )
 
 func (a *App) initTapGraphConsumer(ctx context.Context) {
@@ -77,6 +79,11 @@ func (a *App) handleTapCloudEvent(_ context.Context, evt events.CloudEvent) erro
 	}
 	if isTapInteractionType(eventType) {
 		return a.handleTapInteractionEvent(eventType, evt)
+	}
+	if mapped, err := a.applyTapDeclarativeMappings(evt); err != nil {
+		return err
+	} else if mapped {
+		return nil
 	}
 
 	system, entityType, action := parseTapType(eventType)
@@ -165,6 +172,115 @@ func (a *App) handleTapCloudEvent(_ context.Context, evt events.CloudEvent) erro
 	}
 
 	return nil
+}
+
+func (a *App) tapEventMapper() (*graphingest.Mapper, error) {
+	if a == nil {
+		return nil, fmt.Errorf("app is required")
+	}
+	a.tapMapperOnce.Do(func() {
+		path := strings.TrimSpace(os.Getenv("GRAPH_EVENT_MAPPING_PATH"))
+		var config graphingest.MappingConfig
+		var err error
+		if path != "" {
+			config, err = graphingest.LoadConfigFile(path)
+			if err != nil {
+				a.tapMapperErr = err
+				return
+			}
+		} else {
+			config, err = graphingest.LoadDefaultConfig()
+			if err != nil {
+				a.tapMapperErr = err
+				return
+			}
+		}
+
+		a.TapEventMapper, a.tapMapperErr = graphingest.NewMapper(config, a.resolveTapMappingIdentity)
+	})
+	if a.tapMapperErr != nil {
+		return nil, a.tapMapperErr
+	}
+	return a.TapEventMapper, nil
+}
+
+func (a *App) applyTapDeclarativeMappings(evt events.CloudEvent) (bool, error) {
+	mapper, err := a.tapEventMapper()
+	if err != nil {
+		return false, err
+	}
+	if mapper == nil {
+		return false, nil
+	}
+	if a.SecurityGraph == nil {
+		a.SecurityGraph = graph.New()
+		a.configureGraphSchemaValidation(a.SecurityGraph)
+	}
+	result, err := mapper.Apply(a.SecurityGraph, evt)
+	if err != nil {
+		return false, err
+	}
+	if result.Matched && a.Logger != nil {
+		a.Logger.Info("applied declarative tap graph mappings",
+			"event_type", evt.Type,
+			"mappings", result.MappingNames,
+			"nodes", len(result.NodesUpserted),
+			"edges", len(result.EdgesUpserted),
+		)
+	}
+	return result.Matched, nil
+}
+
+func (a *App) resolveTapMappingIdentity(raw string, evt events.CloudEvent) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if strings.Contains(raw, ":") {
+		return raw
+	}
+
+	email := strings.ToLower(strings.TrimSpace(raw))
+	if strings.Contains(email, "@") {
+		canonicalID := "person:" + email
+		if a.SecurityGraph != nil {
+			if _, ok := a.SecurityGraph.GetNode(canonicalID); !ok {
+				a.SecurityGraph.AddNode(&graph.Node{
+					ID:       canonicalID,
+					Kind:     graph.NodeKindPerson,
+					Name:     email,
+					Provider: "org",
+					Properties: map[string]any{
+						"email":           email,
+						"source_system":   firstNonEmpty(sourceSystemFromTapType(evt.Type), "tap"),
+						"source_event_id": evt.ID,
+						"observed_at":     evt.Time.UTC().Format(time.RFC3339),
+						"valid_from":      evt.Time.UTC().Format(time.RFC3339),
+						"confidence":      0.80,
+					},
+				})
+			}
+			_, _ = graph.ResolveIdentityAlias(a.SecurityGraph, graph.IdentityAliasAssertion{
+				SourceSystem:  firstNonEmpty(sourceSystemFromTapType(evt.Type), "tap"),
+				SourceEventID: strings.TrimSpace(evt.ID),
+				ExternalID:    email,
+				Email:         email,
+				CanonicalHint: canonicalID,
+				ObservedAt:    evt.Time.UTC(),
+				Confidence:    0.95,
+			}, graph.IdentityResolutionOptions{})
+		}
+		return canonicalID
+	}
+	return raw
+}
+
+func sourceSystemFromTapType(eventType string) string {
+	parts := strings.Split(strings.TrimSpace(eventType), ".")
+	if len(parts) >= 3 {
+		return strings.ToLower(strings.TrimSpace(parts[2]))
+	}
+	return ""
 }
 
 func parseTapType(eventType string) (system string, entityType string, action string) {
