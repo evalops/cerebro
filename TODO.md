@@ -31,9 +31,8 @@ Status: executed end-to-end via PR workflow
     - [x] `GRAPH_ONTOLOGY_SCHEMA_VALID_CRITICAL_PERCENT`
   - [x] Register `graph_ontology_slo` health check with healthy/degraded/unhealthy transitions.
   - [x] Add focused tests for threshold evaluation and health-check behavior.
-- [x] Improve config doc generation coverage:
-  - [x] Extend config doc generator to include `getEnvFloat`.
-  - [x] Regenerate `docs/CONFIG_ENV_VARS.md`.
+- [x] Refresh generated config env var docs:
+  - [x] Regenerate `docs/CONFIG_ENV_VARS.md` to keep CI drift checks green.
 
 ## Deep Review Cycle 6 - Ingestion Hardening + Activity Migration + Ontology SLOs (2026-03-09)
 

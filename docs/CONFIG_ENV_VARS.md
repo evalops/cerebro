@@ -2,7 +2,7 @@
 
 Generated from `internal/app/app_config.go` (`LoadConfig`) via `go run ./scripts/generate_config_docs/main.go`.
 
-Total variables: **276**
+Total variables: **271**
 
 | Variable | Reader(s) | Default(s) | Config Field(s) |
 |---|---|---|---|
@@ -42,7 +42,6 @@ Total variables: **276**
 | `CEREBRO_OTEL_EXPORTER_OTLP_HEADERS` | `getEnv` | `getEnv("OTEL_EXPORTER_OTLP_HEADERS", "")` | `TracingOTLPHeaders` |
 | `CEREBRO_OTEL_EXPORTER_OTLP_INSECURE` | `getEnvBool` | `getEnvBool("OTEL_EXPORTER_OTLP_INSECURE", false)` | `TracingOTLPInsecure` |
 | `CEREBRO_OTEL_EXPORT_TIMEOUT` | `getEnvDuration` | `5 * time.Second` | `TracingExportTimeout` |
-| `CEREBRO_OTEL_SAMPLE_RATIO` | `getEnvFloat` | `1.0` | `TracingSampleRatio` |
 | `CEREBRO_OTEL_SERVICE_NAME` | `getEnv` | `"cerebro"` | `TracingServiceName` |
 | `CEREBRO_RETENTION_JOB_INTERVAL` | `getEnvDuration` | `24 * time.Hour` | `RetentionJobInterval` |
 | `CEREBRO_SECRETS_RELOAD_INTERVAL` | `getEnvDuration` | `0` | `SecretsReloadInterval` |
@@ -101,10 +100,6 @@ Total variables: **276**
 | `GRAPH_EVENT_MAPPER_DEAD_LETTER_PATH` | `getEnv` | `filepath.Join(findings.DefaultFilePath(), "graph-event-mapper.dlq.jsonl")` | `GraphEventMapperDeadLetterPath` |
 | `GRAPH_EVENT_MAPPER_VALIDATION_MODE` | `getEnv` | `"enforce"` | `GraphEventMapperValidationMode` |
 | `GRAPH_MIGRATE_LEGACY_ACTIVITY_ON_START` | `getEnvBool` | `false` | `GraphMigrateLegacyActivityOnStart` |
-| `GRAPH_ONTOLOGY_FALLBACK_CRITICAL_PERCENT` | `getEnvFloat` | `25` | `GraphOntologyFallbackCriticalPct` |
-| `GRAPH_ONTOLOGY_FALLBACK_WARN_PERCENT` | `getEnvFloat` | `12` | `GraphOntologyFallbackWarnPct` |
-| `GRAPH_ONTOLOGY_SCHEMA_VALID_CRITICAL_PERCENT` | `getEnvFloat` | `92` | `GraphOntologySchemaValidCriticalPct` |
-| `GRAPH_ONTOLOGY_SCHEMA_VALID_WARN_PERCENT` | `getEnvFloat` | `98` | `GraphOntologySchemaValidWarnPct` |
 | `GRAPH_SCHEMA_VALIDATION_MODE` | `getEnv` | `"warn"` | `GraphSchemaValidationMode` |
 | `INTUNE_CLIENT_ID` | `getEnv` | `""` | `IntuneClientID` |
 | `INTUNE_CLIENT_SECRET` | `getEnv` | `""` | `IntuneClientSecret` |
