@@ -49,6 +49,30 @@ func TestEvaluateGraphOntologySLOStatus(t *testing.T) {
 	}
 }
 
+func TestEvaluateGraphOntologySLOStatus_BurnRateDegraded(t *testing.T) {
+	thresholds := graphOntologySLOThresholds{
+		FallbackWarn:        12,
+		FallbackCritical:    25,
+		SchemaValidWarn:     98,
+		SchemaValidCritical: 92,
+	}
+	status, msg := evaluateGraphOntologySLOStatus(graph.GraphOntologySLO{
+		FallbackActivityPercent: 10,
+		SchemaValidWritePercent: 99,
+		Trend: []graph.GraphOntologySLOPoint{
+			{Date: "2026-03-07", FallbackActivityPercent: 24, SchemaValidWritePercent: 99, Samples: 20},
+			{Date: "2026-03-08", FallbackActivityPercent: 24, SchemaValidWritePercent: 99, Samples: 20},
+			{Date: "2026-03-09", FallbackActivityPercent: 24, SchemaValidWritePercent: 99, Samples: 20},
+		},
+	}, thresholds)
+	if status != health.StatusDegraded {
+		t.Fatalf("expected degraded due to burn rate, got %s (%s)", status, msg)
+	}
+	if !strings.Contains(msg, "burn_rate") {
+		t.Fatalf("expected burn-rate message, got %q", msg)
+	}
+}
+
 func TestGraphOntologySLOHealthCheck(t *testing.T) {
 	g := graph.New()
 	now := time.Date(2026, 3, 9, 10, 0, 0, 0, time.UTC)
