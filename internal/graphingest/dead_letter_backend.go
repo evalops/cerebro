@@ -1,6 +1,7 @@
 package graphingest
 
 import (
+	"container/heap"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -452,13 +453,23 @@ func escapeSQLLikeLiteral(value string) string {
 
 func queryDeadLetterFile(path string, opts DeadLetterQueryOptions) (DeadLetterQueryResult, error) {
 	result := DeadLetterQueryResult{Limit: opts.Limit, Offset: opts.Offset}
-	matches := make([]DeadLetterRecord, 0, opts.Limit)
+	maxKeep := opts.Limit
+	if opts.Offset > 0 {
+		const maxIntValue = int(^uint(0) >> 1)
+		if opts.Offset >= maxIntValue-maxKeep {
+			maxKeep = maxIntValue
+		} else {
+			maxKeep += opts.Offset
+		}
+	}
+	pager := &deadLetterTopKPager{maxKeep: maxKeep}
+	heap.Init(pager)
 	_, err := StreamDeadLetter(path, func(record DeadLetterRecord) error {
 		if !deadLetterRecordMatches(record, opts) {
 			return nil
 		}
 		result.Total++
-		matches = append(matches, record)
+		pager.push(record)
 		return nil
 	})
 	if err != nil {
@@ -467,20 +478,87 @@ func queryDeadLetterFile(path string, opts DeadLetterQueryOptions) (DeadLetterQu
 		}
 		return DeadLetterQueryResult{}, err
 	}
-	sort.SliceStable(matches, func(i, j int) bool {
-		if matches[i].RecordedAt.Equal(matches[j].RecordedAt) {
-			return matches[i].EventID > matches[j].EventID
-		}
-		return matches[i].RecordedAt.After(matches[j].RecordedAt)
-	})
-	if opts.Offset < len(matches) {
+	records := pager.sortedDescending()
+	if opts.Offset < len(records) {
 		end := opts.Offset + opts.Limit
-		if end > len(matches) {
-			end = len(matches)
+		if end > len(records) {
+			end = len(records)
 		}
-		result.Records = matches[opts.Offset:end]
+		result.Records = records[opts.Offset:end]
 	}
 	return result, nil
+}
+
+func deadLetterRecordMoreRecent(a, b DeadLetterRecord) bool {
+	if a.RecordedAt.Equal(b.RecordedAt) {
+		return a.EventID > b.EventID
+	}
+	return a.RecordedAt.After(b.RecordedAt)
+}
+
+type deadLetterTopKPager struct {
+	items   []DeadLetterRecord
+	maxKeep int
+}
+
+func (p deadLetterTopKPager) Len() int {
+	return len(p.items)
+}
+
+func (p deadLetterTopKPager) Less(i, j int) bool {
+	if p.items[i].RecordedAt.Equal(p.items[j].RecordedAt) {
+		return p.items[i].EventID < p.items[j].EventID
+	}
+	return p.items[i].RecordedAt.Before(p.items[j].RecordedAt)
+}
+
+func (p deadLetterTopKPager) Swap(i, j int) {
+	p.items[i], p.items[j] = p.items[j], p.items[i]
+}
+
+func (p *deadLetterTopKPager) Push(x any) {
+	record, _ := x.(DeadLetterRecord)
+	p.items = append(p.items, record)
+}
+
+func (p *deadLetterTopKPager) Pop() any {
+	last := len(p.items) - 1
+	if last < 0 {
+		return DeadLetterRecord{}
+	}
+	record := p.items[last]
+	p.items = p.items[:last]
+	return record
+}
+
+func (p *deadLetterTopKPager) push(record DeadLetterRecord) {
+	if p == nil || p.maxKeep <= 0 {
+		return
+	}
+	if p.Len() < p.maxKeep {
+		heap.Push(p, record)
+		return
+	}
+	if p.Len() == 0 {
+		return
+	}
+	oldest := p.items[0]
+	if deadLetterRecordMoreRecent(record, oldest) {
+		heap.Pop(p)
+		heap.Push(p, record)
+	}
+}
+
+func (p *deadLetterTopKPager) sortedDescending() []DeadLetterRecord {
+	if p == nil || len(p.items) == 0 {
+		return nil
+	}
+	records := make([]DeadLetterRecord, len(p.items))
+	copy(records, p.items)
+	sort.SliceStable(records, func(i, j int) bool {
+		return deadLetterRecordMoreRecent(records[i], records[j])
+	})
+	return records
 }
 
 func deadLetterRecordMatches(record DeadLetterRecord, opts DeadLetterQueryOptions) bool {

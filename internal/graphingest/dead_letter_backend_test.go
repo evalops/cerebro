@@ -193,6 +193,74 @@ func TestQueryDeadLetterSQLiteIssueCodeFilterEscapesLikeWildcards(t *testing.T) 
 	}
 }
 
+func TestQueryDeadLetterFileBackendPaginationOrder(t *testing.T) {
+	dir := t.TempDir()
+	dlqPath := filepath.Join(dir, "mapper.dlq.jsonl")
+	now := time.Date(2026, 3, 10, 0, 15, 0, 0, time.UTC)
+	if err := writeDeadLetterFileFixture(dlqPath, []DeadLetterRecord{
+		{
+			RecordedAt:  now.Add(2 * time.Minute),
+			EventID:     "evt-1",
+			EventType:   "ensemble.tap.alpha",
+			MappingName: "map-a",
+			EntityType:  "node",
+			EntityKind:  "service",
+		},
+		{
+			RecordedAt:  now.Add(4 * time.Minute),
+			EventID:     "evt-2",
+			EventType:   "ensemble.tap.alpha",
+			MappingName: "map-a",
+			EntityType:  "node",
+			EntityKind:  "service",
+		},
+		{
+			RecordedAt:  now.Add(1 * time.Minute),
+			EventID:     "evt-3",
+			EventType:   "ensemble.tap.alpha",
+			MappingName: "map-a",
+			EntityType:  "node",
+			EntityKind:  "service",
+		},
+		{
+			RecordedAt:  now.Add(3 * time.Minute),
+			EventID:     "evt-4",
+			EventType:   "ensemble.tap.alpha",
+			MappingName: "map-a",
+			EntityType:  "node",
+			EntityKind:  "service",
+		},
+		{
+			RecordedAt:  now,
+			EventID:     "evt-5",
+			EventType:   "ensemble.tap.alpha",
+			MappingName: "map-a",
+			EntityType:  "node",
+			EntityKind:  "service",
+		},
+	}); err != nil {
+		t.Fatalf("write file fixture failed: %v", err)
+	}
+
+	result, err := QueryDeadLetter(dlqPath, DeadLetterQueryOptions{
+		Limit:     2,
+		Offset:    1,
+		EventType: "ensemble.tap.alpha",
+	})
+	if err != nil {
+		t.Fatalf("query dead-letter file failed: %v", err)
+	}
+	if result.Total != 5 {
+		t.Fatalf("expected total=5, got %d", result.Total)
+	}
+	if len(result.Records) != 2 {
+		t.Fatalf("expected 2 records, got %#v", result.Records)
+	}
+	if result.Records[0].EventID != "evt-4" || result.Records[1].EventID != "evt-1" {
+		t.Fatalf("unexpected page order: %#v", result.Records)
+	}
+}
+
 func writeDeadLetterFileFixture(path string, records []DeadLetterRecord) error {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
