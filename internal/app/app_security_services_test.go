@@ -113,3 +113,20 @@ func TestGraphOntologySLOHealthCheckWithoutGraph(t *testing.T) {
 		t.Fatalf("expected unknown when graph is missing, got %s", result.Status)
 	}
 }
+
+func TestBurnRatesFastWindowUsesCurrentSnapshot(t *testing.T) {
+	trend := []graph.GraphOntologySLOPoint{
+		{Date: "2026-03-08", FallbackActivityPercent: 12, SchemaValidWritePercent: 97, Samples: 20},
+		{Date: "2026-03-09", FallbackActivityPercent: 12, SchemaValidWritePercent: 97, Samples: 20},
+	}
+
+	fastHigher, _ := burnRatesForHigherIsWorse(20, 10, 30, trend)
+	if fastHigher != 0.5 {
+		t.Fatalf("expected higher-is-worse fast burn from current snapshot, got %.4f", fastHigher)
+	}
+
+	fastLower, _ := burnRatesForLowerIsWorse(90, 98, 92, trend)
+	if fastLower != (8.0 / 6.0) {
+		t.Fatalf("expected lower-is-worse fast burn from current snapshot, got %.4f", fastLower)
+	}
+}

@@ -302,9 +302,6 @@ func burnRatesForHigherIsWorse(current, warn, critical float64, trend []graph.Gr
 		return 0, 0
 	}
 	fastValue := current
-	if len(trend) > 0 {
-		fastValue = trend[len(trend)-1].FallbackActivityPercent
-	}
 	slowValue := current
 	if len(trend) > 0 {
 		sum := 0.0
@@ -329,9 +326,6 @@ func burnRatesForLowerIsWorse(current, warn, critical float64, trend []graph.Gra
 		return 0, 0
 	}
 	fastValue := current
-	if len(trend) > 0 {
-		fastValue = trend[len(trend)-1].SchemaValidWritePercent
-	}
 	slowValue := current
 	if len(trend) > 0 {
 		sum := 0.0
