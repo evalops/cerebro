@@ -377,21 +377,44 @@ func TestBuildReportSectionResultsTracksActualPayloadContract(t *testing.T) {
 				EnvelopeKind:   "summary",
 				EnvelopeSchema: "PlatformSummaryEnvelope",
 			},
+			{
+				Key:            "timeseries",
+				Title:          "Timeseries",
+				Kind:           "timeseries_summary",
+				EnvelopeKind:   "timeseries",
+				EnvelopeSchema: "PlatformTimeseriesEnvelope",
+			},
 		},
 	}
 	result := map[string]any{
 		"summary": map[string]any{
 			"headline": "Healthy graph",
-			"measures": []any{map[string]any{"id": "coverage", "value": 98.2}},
+			"measures": []map[string]any{{
+				"id":         "coverage",
+				"label":      "Coverage",
+				"value_type": "number",
+				"value":      98.2,
+			}},
 		},
 		"raw_scope": map[string]any{
 			"entity_id": "service:payments",
 		},
+		"timeseries": map[string]any{
+			"points": []map[string]any{{
+				"timestamp": "not-a-time",
+				"values": []map[string]any{{
+					"id":         "coverage",
+					"label":      "Coverage",
+					"value_type": "number",
+					"value":      98.2,
+				}},
+			}},
+		},
 	}
 
 	sections := BuildReportSectionResults(definition, result, nil)
-	if len(sections) != 2 {
-		t.Fatalf("expected two sections, got %d", len(sections))
+	if len(sections) != 3 {
+		t.Fatalf("expected three sections, got %d", len(sections))
 	}
 	if got := sections[0].PayloadSchema; got != "PlatformSummaryEnvelope" {
 		t.Fatalf("expected typed summary payload schema, got %q", got)
@@ -404,6 +427,12 @@ func TestBuildReportSectionResultsTracksActualPayloadContract(t *testing.T) {
 	}
 	if sections[1].PayloadStrict {
 		t.Fatalf("expected raw scope payload to remain non-strict, got %+v", sections[1])
+	}
+	if got := sections[2].PayloadSchema; got != "PlatformFlexibleObjectValue" {
+		t.Fatalf("expected invalid nested timeseries payload to fall back to flexible object contract, got %q", got)
+	}
+	if sections[2].PayloadStrict {
+		t.Fatalf("expected invalid nested timeseries payload to remain non-strict, got %+v", sections[2])
 	}
 }
 

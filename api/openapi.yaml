@@ -5340,49 +5340,39 @@ paths:
               schema:
                 type: string
       security: []
-  /api/v1/graph/diff:
-    get:
+  /api/v1/platform/graph/diffs:
+    post:
       tags:
-        - Graph
-      summary: Compare graph snapshots by timestamp
-      description: Return the structural diff between two graph snapshots identified by RFC3339 timestamps.
-      parameters:
-        - name: from
-          in: query
-          required: true
-          description: RFC3339 timestamp for the starting snapshot.
-          schema:
-            type: string
-            format: date-time
-        - name: to
-          in: query
-          required: true
-          description: RFC3339 timestamp for the ending snapshot.
-          schema:
-            type: string
-            format: date-time
+        - Platform
+      summary: Build a typed diff between two graph snapshot resources
+      description: Compare two materialized graph snapshot artifacts by stable snapshot IDs instead of timestamp probing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlatformGraphDiffRequest'
       responses:
         '200':
-          description: Graph diff result
+          description: Graph snapshot diff resource
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/PlatformGraphSnapshotDiffRecord'
         '400':
-          description: Invalid query parameters
+          description: Invalid request body
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
         '404':
-          description: No snapshots available for the requested timestamps
+          description: One or both graph snapshots were not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-        '500':
-          description: Failed to compute graph diff
+        '409':
+          description: One or both graph snapshots are not materialized and cannot be diffed
           content:
             application/json:
               schema:
@@ -5596,6 +5586,65 @@ paths:
                 $ref: '#/components/schemas/PlatformGraphSnapshotRecord'
         '404':
           description: Graph snapshot not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/platform/graph/snapshots/{snapshot_id}/ancestry:
+    get:
+      tags:
+        - Platform
+      summary: Get ordered ancestry for one graph snapshot resource
+      parameters:
+        - name: snapshot_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Graph snapshot ancestry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformGraphSnapshotAncestry'
+        '404':
+          description: Graph snapshot not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/platform/graph/snapshots/{snapshot_id}/diffs/{other_snapshot_id}:
+    get:
+      tags:
+        - Platform
+      summary: Get a typed diff between two graph snapshot resources
+      parameters:
+        - name: snapshot_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: other_snapshot_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Graph snapshot diff resource
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformGraphSnapshotDiffRecord'
+        '404':
+          description: One or both graph snapshots were not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: One or both graph snapshots are not materialized and cannot be diffed
           content:
             application/json:
               schema:
@@ -11153,8 +11202,20 @@ components:
         built_at:
           type: string
           format: date-time
+        captured_at:
+          type: string
+          format: date-time
         current:
           type: boolean
+        materialized:
+          type: boolean
+        diffable:
+          type: boolean
+        storage_class:
+          type: string
+        byte_size:
+          type: integer
+          format: int64
         node_count:
           type: integer
         edge_count:
@@ -11191,6 +11252,24 @@ components:
           format: date-time
       required:
         - id
+    PlatformGraphSnapshotReference:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        built_at:
+          type: string
+          format: date-time
+        captured_at:
+          type: string
+          format: date-time
+        current:
+          type: boolean
+        diffable:
+          type: boolean
+      required:
+        - id
     PlatformGraphSnapshotCollection:
       type: object
       additionalProperties: false
@@ -11208,6 +11287,148 @@ components:
         - generated_at
         - count
         - snapshots
+    PlatformGraphSnapshotAncestry:
+      type: object
+      additionalProperties: false
+      properties:
+        snapshot_id:
+          type: string
+        position:
+          type: integer
+        count:
+          type: integer
+        previous:
+          $ref: '#/components/schemas/PlatformGraphSnapshotReference'
+        next:
+          $ref: '#/components/schemas/PlatformGraphSnapshotReference'
+        ancestors:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformGraphSnapshotReference'
+        descendants:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformGraphSnapshotReference'
+      required:
+        - snapshot_id
+        - position
+        - count
+    PlatformGraphDiffRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        from_snapshot_id:
+          type: string
+        to_snapshot_id:
+          type: string
+      required:
+        - from_snapshot_id
+        - to_snapshot_id
+    PlatformGraphNodeChange:
+      type: object
+      additionalProperties: false
+      properties:
+        node_id:
+          type: string
+        before:
+          type: object
+          additionalProperties: true
+        after:
+          type: object
+          additionalProperties: true
+        changed_keys:
+          type: array
+          items:
+            type: string
+      required:
+        - node_id
+        - before
+        - after
+        - changed_keys
+    PlatformGraphDiff:
+      type: object
+      additionalProperties: false
+      properties:
+        from_version:
+          type: string
+        to_version:
+          type: string
+        from_timestamp:
+          type: string
+          format: date-time
+        to_timestamp:
+          type: string
+          format: date-time
+        nodes_added:
+          type: array
+          items:
+            $ref: '#/components/schemas/GraphNode'
+        nodes_removed:
+          type: array
+          items:
+            $ref: '#/components/schemas/GraphNode'
+        nodes_modified:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformGraphNodeChange'
+        edges_added:
+          type: array
+          items:
+            $ref: '#/components/schemas/GraphEdge'
+        edges_removed:
+          type: array
+          items:
+            $ref: '#/components/schemas/GraphEdge'
+      required:
+        - nodes_added
+        - nodes_removed
+        - nodes_modified
+        - edges_added
+        - edges_removed
+    PlatformGraphSnapshotDiffSummary:
+      type: object
+      additionalProperties: false
+      properties:
+        nodes_added:
+          type: integer
+        nodes_removed:
+          type: integer
+        nodes_modified:
+          type: integer
+        edges_added:
+          type: integer
+        edges_removed:
+          type: integer
+      required:
+        - nodes_added
+        - nodes_removed
+        - nodes_modified
+        - edges_added
+        - edges_removed
+    PlatformGraphSnapshotDiffRecord:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        generated_at:
+          type: string
+          format: date-time
+        from:
+          $ref: '#/components/schemas/PlatformGraphSnapshotReference'
+        to:
+          $ref: '#/components/schemas/PlatformGraphSnapshotReference'
+        summary:
+          $ref: '#/components/schemas/PlatformGraphSnapshotDiffSummary'
+        diff:
+          $ref: '#/components/schemas/PlatformGraphDiff'
+      required:
+        - id
+        - generated_at
+        - from
+        - to
+        - summary
+        - diff
     SecurityAttackPathJobRequest:
       type: object
       additionalProperties: false
