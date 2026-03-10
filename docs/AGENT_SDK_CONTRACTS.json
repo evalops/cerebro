@@ -686,6 +686,39 @@
       "execution_kind": "direct_tool"
     },
     {
+      "id": "cerebro_graph_simulate",
+      "version": "1.0.0",
+      "tool_name": "cerebro.simulate",
+      "sdk_method": "graph_simulate",
+      "title": "Graph Mutation Simulation",
+      "description": "Run a hypothetical graph simulation for proposed node/edge mutations",
+      "category": "enforcement",
+      "required_permission": "sdk.enforcement.run",
+      "input_schema": {
+        "properties": {
+          "edges": {
+            "description": "Edge mutations in graph.GraphDelta format",
+            "type": "array"
+          },
+          "mutations": {
+            "description": "Optional shorthand mutations (add_node/remove_node/modify_node/add_edge/remove_edge)",
+            "type": "array"
+          },
+          "nodes": {
+            "description": "Node mutations in graph.GraphDelta format",
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "example_input": {
+        "edges": [],
+        "mutations": [],
+        "nodes": []
+      },
+      "execution_kind": "direct_tool"
+    },
+    {
       "id": "cerebro_identity_calibration",
       "version": "1.0.0",
       "tool_name": "cerebro.identity_calibration",
@@ -1248,7 +1281,7 @@
     },
     {
       "id": "cerebro_simulate",
-      "version": "1.0.0",
+      "version": "2.0.0",
       "tool_name": "simulate",
       "sdk_method": "simulate",
       "title": "Scenario Simulation",
@@ -1299,39 +1332,6 @@
         "requester": "requester",
         "scenario": "customer_churn",
         "target": "service:payments"
-      },
-      "execution_kind": "direct_tool"
-    },
-    {
-      "id": "cerebro_simulate",
-      "version": "1.0.0",
-      "tool_name": "cerebro.simulate",
-      "sdk_method": "simulate",
-      "title": "Simulate",
-      "description": "Run a hypothetical graph simulation for proposed node/edge mutations",
-      "category": "query",
-      "required_permission": "sdk.enforcement.run",
-      "input_schema": {
-        "properties": {
-          "edges": {
-            "description": "Edge mutations in graph.GraphDelta format",
-            "type": "array"
-          },
-          "mutations": {
-            "description": "Optional shorthand mutations (add_node/remove_node/modify_node/add_edge/remove_edge)",
-            "type": "array"
-          },
-          "nodes": {
-            "description": "Node mutations in graph.GraphDelta format",
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
-      "example_input": {
-        "edges": [],
-        "mutations": [],
-        "nodes": []
       },
       "execution_kind": "direct_tool"
     },
@@ -1472,6 +1472,11 @@
       "name": "notifications/progress",
       "kind": "notification",
       "description": "Server-initiated progress notifications for long-running report executions"
+    },
+    {
+      "name": "notifications/report_section",
+      "kind": "notification",
+      "description": "Server-initiated section payload notifications for durable report executions"
     }
   ]
 }

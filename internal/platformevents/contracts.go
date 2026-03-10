@@ -351,6 +351,31 @@ func LifecycleContracts() []LifecycleEventContract {
 			},
 		),
 		buildContract(
+			webhooks.EventPlatformReportSectionEmitted,
+			"Report section payload emitted on the shared platform intelligence layer.",
+			[]fieldSpec{
+				{name: "run_id", kind: "string"},
+				{name: "report_id", kind: "string"},
+				{name: "section_key", kind: "string"},
+				{name: "sequence", kind: "integer"},
+				{name: "emitted_at", kind: "string", format: "date-time"},
+				{name: "status_url", kind: "string"},
+			},
+			[]fieldSpec{
+				{name: "status", kind: "string"},
+				{name: "progress_percent", kind: "integer"},
+				{name: "envelope_kind", kind: "string"},
+				{name: "content_type", kind: "string"},
+				{name: "item_count", kind: "integer"},
+				{name: "field_count", kind: "integer"},
+				{name: "field_keys", kind: "array", itemKind: "string"},
+				{name: "measure_ids", kind: "array", itemKind: "string"},
+				{name: "snapshot_id", kind: "string"},
+				{name: "tenant_id", kind: "string"},
+				{name: "traceparent", kind: "string"},
+			},
+		),
+		buildContract(
 			webhooks.EventPlatformReportSnapshotMaterialized,
 			"Report snapshot materialized on the shared platform intelligence layer.",
 			[]fieldSpec{

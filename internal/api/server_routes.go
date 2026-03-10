@@ -33,6 +33,7 @@ func (s *Server) setupMiddleware() {
 			Window:             s.app.Config.RateLimitWindow,
 			Enabled:            true,
 			CredentialProvider: s.app.APICredentialsSnapshot,
+			CredentialLookup:   s.app.LookupAPICredential,
 			TrustedProxyCIDRs:  s.app.Config.RateLimitTrustedProxies,
 		}
 		s.rateLimiter = NewRateLimiter(rlCfg)
@@ -45,11 +46,13 @@ func (s *Server) setupMiddleware() {
 
 	if s.app.Config.APIAuthEnabled {
 		s.router.Use(APIKeyAuth(AuthConfig{
-			Enabled:            true,
-			APIKeys:            s.app.Config.APIKeys,
-			APIKeyProvider:     s.app.APIKeysSnapshot,
-			Credentials:        s.app.Config.APICredentials,
-			CredentialProvider: s.app.APICredentialsSnapshot,
+			Enabled:              true,
+			APIKeys:              s.app.Config.APIKeys,
+			APIKeyProvider:       s.app.APIKeysSnapshot,
+			Credentials:          s.app.Config.APICredentials,
+			CredentialProvider:   s.app.APICredentialsSnapshot,
+			CredentialLookup:     s.app.LookupAPICredential,
+			AuthorizationServers: append([]string(nil), s.app.Config.APIAuthorizationServers...),
 		}))
 	}
 
@@ -65,6 +68,7 @@ func (s *Server) setupRoutes() {
 	s.router.Get("/metrics", s.metrics)
 	s.router.Get("/openapi.yaml", s.openAPISpec)
 	s.router.Get("/docs", s.swaggerUI)
+	s.router.Get("/.well-known/oauth-protected-resource", s.agentSDKProtectedResourceMetadata)
 
 	s.router.Route("/api/v1", func(r chi.Router) {
 		// Query endpoints
@@ -249,6 +253,13 @@ func (s *Server) setupRoutes() {
 		r.Route("/admin", func(r chi.Router) {
 			r.Get("/health", s.adminHealth)
 			r.Get("/sync/status", s.syncStatus)
+			r.Route("/agent-sdk", func(r chi.Router) {
+				r.Get("/credentials", s.listAdminAgentSDKCredentials)
+				r.Post("/credentials", s.createAdminAgentSDKCredential)
+				r.Get("/credentials/{credential_id}", s.getAdminAgentSDKCredential)
+				r.Post("/credentials/{credential_id}:rotate", s.rotateAdminAgentSDKCredential)
+				r.Post("/credentials/{credential_id}:revoke", s.revokeAdminAgentSDKCredential)
+			})
 		})
 
 		// Threat Intelligence endpoints
@@ -358,6 +369,7 @@ func (s *Server) setupRoutes() {
 				r.Get("/reports/{id}/runs/report_run:{run_id:[A-Za-z0-9-]+}", s.getPlatformIntelligenceReportRun)
 				r.Get("/reports/{id}/runs/report_run:{run_id:[A-Za-z0-9-]+}/attempts", s.listPlatformIntelligenceReportRunAttempts)
 				r.Get("/reports/{id}/runs/report_run:{run_id:[A-Za-z0-9-]+}/events", s.listPlatformIntelligenceReportRunEvents)
+				r.Get("/reports/{id}/runs/report_run:{run_id:[A-Za-z0-9-]+}/stream", s.streamPlatformIntelligenceReportRun)
 				r.Get("/insights", s.graphIntelligenceInsights)
 				r.Get("/quality", s.graphIntelligenceQuality)
 				r.Get("/metadata-quality", s.graphIntelligenceMetadataQuality)

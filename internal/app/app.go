@@ -43,6 +43,7 @@ import (
 	"time"
 
 	"github.com/evalops/cerebro/internal/agents"
+	"github.com/evalops/cerebro/internal/apiauth"
 	"github.com/evalops/cerebro/internal/attackpath"
 	"github.com/evalops/cerebro/internal/auth"
 	"github.com/evalops/cerebro/internal/cache"
@@ -148,6 +149,7 @@ type App struct {
 	reloadMu             sync.Mutex
 	apiKeys              atomic.Value // map[string]string
 	apiCredentials       atomic.Value // map[string]apiauth.Credential
+	apiCredentialStore   *apiauth.ManagedCredentialStore
 	secretsLoader        secretsLoader
 
 	// Cached table list from Snowflake (shared by graph builder + policy coverage)
@@ -178,7 +180,11 @@ func NewWithOptions(ctx context.Context, opts ...Option) (*App, error) {
 	}
 	cfg.RefreshProviderAwareConfig()
 
-	if cfg.APIAuthEnabled && len(cfg.APIKeys) == 0 {
+	managedCredentialStore := apiauth.NewManagedCredentialStore(cfg.APICredentialStateFile)
+	if err := managedCredentialStore.Load(); err != nil {
+		return nil, fmt.Errorf("load managed api credential state: %w", err)
+	}
+	if cfg.APIAuthEnabled && len(cfg.APIKeys) == 0 && len(managedCredentialStore.List()) == 0 {
 		return nil, fmt.Errorf("api auth enabled but no API_KEYS configured")
 	}
 
@@ -192,6 +198,7 @@ func NewWithOptions(ctx context.Context, opts ...Option) (*App, error) {
 		Logger: logger,
 	}
 	app.secretsLoader = options.secretsLoader
+	app.apiCredentialStore = managedCredentialStore
 	if len(cfg.APICredentials) > 0 || len(cfg.APIKeys) == 0 {
 		app.setAPICredentials(cfg.APICredentials)
 	} else {

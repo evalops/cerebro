@@ -421,6 +421,10 @@ func permissionImplies(granted, requested string) bool {
 	return false
 }
 
+func PermissionImplies(granted, requested string) bool {
+	return permissionImplies(granted, requested)
+}
+
 func permissionImplications() map[string][]string {
 	return map[string][]string{
 		"findings:read":              {"security.findings.read", "security.incidents.read", "security.identity.read", "security.threat.read"},

@@ -4256,6 +4256,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /.well-known/oauth-protected-resource:
+    get:
+      tags:
+        - AgentSDK
+      summary: Describe the protected Agent SDK resource
+      description: Return OAuth protected-resource metadata for Agent SDK and MCP clients, including supported scopes and authorization servers.
+      responses:
+        '200':
+          description: Protected resource metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSDKProtectedResourceMetadata'
   /api/v1/agent-sdk/tools:
     get:
       tags:
@@ -4741,6 +4754,138 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentSDKMCPResponse'
+  /api/v1/admin/agent-sdk/credentials:
+    get:
+      tags:
+        - Admin
+      summary: List Agent SDK credentials
+      description: Return static and managed Agent SDK credentials with stable IDs, scopes, and lifecycle metadata.
+      responses:
+        '200':
+          description: Agent SDK credential collection
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSDKManagedCredentialCollection'
+    post:
+      tags:
+        - Admin
+      summary: Create an Agent SDK credential
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminAgentSDKCredentialCreateRequest'
+      responses:
+        '201':
+          description: Managed Agent SDK credential created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSDKManagedCredentialSecretResponse'
+        '400':
+          description: Invalid credential request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/admin/agent-sdk/credentials/{credential_id}:
+    get:
+      tags:
+        - Admin
+      summary: Get one Agent SDK credential
+      parameters:
+        - name: credential_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Agent SDK credential
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSDKManagedCredential'
+        '404':
+          description: Credential not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/admin/agent-sdk/credentials/{credential_id}:rotate:
+    post:
+      tags:
+        - Admin
+      summary: Rotate an Agent SDK credential
+      parameters:
+        - name: credential_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminAgentSDKCredentialRotateRequest'
+      responses:
+        '200':
+          description: Agent SDK credential rotated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSDKManagedCredentialSecretResponse'
+        '400':
+          description: Invalid rotate request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Credential not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/admin/agent-sdk/credentials/{credential_id}:revoke:
+    post:
+      tags:
+        - Admin
+      summary: Revoke an Agent SDK credential
+      parameters:
+        - name: credential_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminAgentSDKCredentialRevokeRequest'
+      responses:
+        '200':
+          description: Agent SDK credential revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSDKManagedCredential'
+        '400':
+          description: Invalid revoke request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Credential not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/threatintel/feeds:
     get:
       tags:
@@ -5798,6 +5943,36 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlatformReportRunEventCollection'
+        '404':
+          description: Report run not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/platform/intelligence/reports/{id}/runs/{run_id}/stream:
+    get:
+      tags:
+        - Platform
+      summary: Stream one platform intelligence report run
+      description: Open a server-sent event stream for durable report-run lifecycle and section-emission notifications.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: run_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Report-run SSE stream. Each `data:` payload conforms to `PlatformReportStreamEvent`.
+          content:
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/PlatformReportStreamEvent'
         '404':
           description: Report run not found
           content:
@@ -9765,6 +9940,156 @@ components:
         params:
           type: object
           additionalProperties: true
+    AgentSDKProtectedResourceMetadata:
+      type: object
+      additionalProperties: false
+      properties:
+        resource:
+          type: string
+        authorization_servers:
+          type: array
+          items:
+            type: string
+        scopes_supported:
+          type: array
+          items:
+            type: string
+        bearer_methods_supported:
+          type: array
+          items:
+            type: string
+        resource_documentation:
+          type: string
+        agent_sdk_endpoint:
+          type: string
+        mcp_endpoint:
+          type: string
+        mcp_protocol_version:
+          type: string
+      required:
+        - resource
+    AgentSDKManagedCredential:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        user_id:
+          type: string
+        kind:
+          type: string
+        surface:
+          type: string
+        client_id:
+          type: string
+        scopes:
+          type: array
+          items:
+            type: string
+        rate_limit_bucket:
+          type: string
+        tenant_id:
+          type: string
+        enabled:
+          type: boolean
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        managed:
+          type: boolean
+        mutable:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        rotated_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        revocation_reason:
+          type: string
+        secret_preview:
+          type: string
+      required:
+        - id
+        - enabled
+        - managed
+        - mutable
+    AgentSDKManagedCredentialCollection:
+      type: object
+      additionalProperties: false
+      properties:
+        count:
+          type: integer
+        credentials:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentSDKManagedCredential'
+      required:
+        - count
+        - credentials
+    AgentSDKManagedCredentialSecretResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        credential:
+          $ref: '#/components/schemas/AgentSDKManagedCredential'
+        api_key:
+          type: string
+      required:
+        - credential
+        - api_key
+    AdminAgentSDKCredentialCreateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        user_id:
+          type: string
+        kind:
+          type: string
+        surface:
+          type: string
+        client_id:
+          type: string
+        scopes:
+          type: array
+          items:
+            type: string
+        rate_limit_bucket:
+          type: string
+        tenant_id:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+    AdminAgentSDKCredentialRotateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        reason:
+          type: string
+    AdminAgentSDKCredentialRevokeRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        reason:
+          type: string
     PlatformClaimWriteRequest:
       type: object
       required:
@@ -10085,6 +10410,26 @@ components:
         - title
         - kind
         - present
+    PlatformReportSectionEmission:
+      type: object
+      additionalProperties: false
+      properties:
+        sequence:
+          type: integer
+        emitted_at:
+          type: string
+          format: date-time
+        progress_percent:
+          type: integer
+        section:
+          $ref: '#/components/schemas/PlatformReportSectionResult'
+        payload:
+          type: object
+          additionalProperties: true
+      required:
+        - sequence
+        - emitted_at
+        - section
     PlatformReportSnapshot:
       type: object
       additionalProperties: false
@@ -10384,6 +10729,35 @@ components:
         - run_id
         - count
         - events
+    PlatformReportStreamEvent:
+      type: object
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+        run_id:
+          type: string
+        report_id:
+          type: string
+        status:
+          type: string
+        event_type:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        progress:
+          type: integer
+        data:
+          type: object
+          additionalProperties: true
+        section:
+          $ref: '#/components/schemas/PlatformReportSectionEmission'
+      required:
+        - type
+        - run_id
+        - report_id
+        - timestamp
     SecurityAttackPathJobRequest:
       type: object
       additionalProperties: false

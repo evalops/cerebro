@@ -122,6 +122,16 @@ Structured credentials are the durable model for SDK consumers because they prov
 - rate-limit bucketing without coupling to raw secret values
 - request attribution that can be propagated into graph writes and report-run events
 
+Managed Agent SDK credentials now live behind an explicit admin control surface:
+
+- `GET /api/v1/admin/agent-sdk/credentials`
+- `POST /api/v1/admin/agent-sdk/credentials`
+- `GET /api/v1/admin/agent-sdk/credentials/{credential_id}`
+- `POST /api/v1/admin/agent-sdk/credentials/{credential_id}:rotate`
+- `POST /api/v1/admin/agent-sdk/credentials/{credential_id}:revoke`
+
+This keeps raw key material out of config-only workflows and makes scoped rotation/revocation auditable.
+
 Agent SDK write surfaces enrich request metadata before delegating to platform handlers:
 
 - `sdk_client_id`
@@ -147,6 +157,7 @@ Both are backed by the same catalog and should stay behaviorally aligned.
 - typed REST and MCP both resolve to the same durable `ReportRun` substrate
 - async execution returns a stable status resource instead of an ad hoc task blob
 - MCP progress is emitted as `notifications/progress` bound to the same report-run lifecycle
+- section completion and section payload emissions are streamed over both MCP (`notifications/report_section`) and platform SSE (`/api/v1/platform/intelligence/reports/{id}/runs/report_run:{run_id}/stream`)
 
 ## Contract Governance
 
@@ -158,6 +169,42 @@ The Agent SDK surface now has explicit machine-readable governance:
 - `make agent-sdk-docs-check` and `make agent-sdk-contract-compat` are wired into CI
 
 This keeps public tool IDs, MCP resources, and execution semantics from drifting silently across transports.
+
+## OAuth Resource Metadata
+
+Agent SDK and MCP clients can now discover protected-resource metadata at:
+
+- `GET /.well-known/oauth-protected-resource`
+
+The response advertises:
+
+- resource base URL
+- configured authorization servers
+- supported `sdk.*` scopes
+- bearer transport method
+- Agent SDK and MCP endpoint URLs
+- MCP protocol version
+
+This gives external SDK consumers one stable place to discover auth metadata without hard-coding Cerebro-specific headers or scope lists.
+
+## Generated External SDK Packages
+
+The generated contract catalog now produces language package surfaces directly in-repo:
+
+- `sdk/go/cerebro`
+- `sdk/python/cerebro_sdk`
+- `sdk/typescript`
+
+Generation is deterministic through:
+
+- `go run ./scripts/generate_agent_sdk_packages/main.go`
+- `make agent-sdk-packages-check`
+
+Validation now includes:
+
+- Go compile check for the generated package
+- Python module syntax check plus `pyproject.toml` parse check
+- TypeScript compile check via `tsc --noEmit`
 
 ## Current MCP Contract Basis
 
@@ -173,16 +220,19 @@ The implemented MCP transport is aligned to the official Model Context Protocol 
 - typed HTTP wrappers for the core SDK methods
 - MCP JSON-RPC + SSE compatibility layer
 - progress notifications for long-running report executions
+- section-level report notifications and SSE report-run streams
 - generated Agent SDK contract docs + compatibility checks
 - structured SDK credential support with stable attribution fields
+- admin-managed scoped credential lifecycle and OAuth protected-resource metadata
 - in-repo Go client bindings for tool discovery/call, report execution, and MCP transport
+- generated external Go/Python/TypeScript SDK packages
 - schema/resources for node kinds, edge kinds, tool catalog, report catalog, and generated SDK catalog
 - dedicated `sdk.*` RBAC scopes
 
 ## Follow-On Tracks
 
-1. External Go/Python/TypeScript SDK packaging from the generated contract catalog and OpenAPI surface.
-2. Section-level streaming for long-running reports and simulations, not just run-level progress notifications.
-3. SDK-client provisioning UX, scoped key rotation, and per-tool/per-tenant limit policies.
-4. `.well-known/oauth-protected-resource` and richer MCP auth metadata.
+1. Generated package publishing workflow, semantic versioning, and changelog emission from compatibility diffs.
+2. Section-level cache/attempt/backoff telemetry plus streaming for simulation-heavy tools beyond report runs.
+3. SDK-client usage analytics, approval-pressure reporting, and per-tool/per-tenant throttling policies.
+4. Signed request support and richer OAuth discovery metadata per tool/resource.
 5. Generated framework adapters for LangChain, CrewAI, OpenAI Agents, and Vercel AI SDK.

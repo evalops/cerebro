@@ -36,6 +36,8 @@ type Server struct {
 	platformReportRuns       map[string]*graph.ReportRun
 	platformReportStore      *graph.ReportRunStore
 	platformReportSaveMu     sync.Mutex
+	platformReportStreamMu   sync.RWMutex
+	platformReportStreams    map[string]map[chan platformReportStreamMessage]struct{}
 	agentSDKMCPSessionMu     sync.RWMutex
 	agentSDKMCPSessions      map[string]*agentSDKMCPSession
 	agentSDKReportProgressMu sync.RWMutex
@@ -58,6 +60,7 @@ func NewServer(application *app.App) *Server {
 		platformJobs:           make(map[string]*platformJob),
 		platformReportHandlers: make(map[string]http.HandlerFunc),
 		platformReportRuns:     make(map[string]*graph.ReportRun),
+		platformReportStreams:  make(map[string]map[chan platformReportStreamMessage]struct{}),
 		agentSDKMCPSessions:    make(map[string]*agentSDKMCPSession),
 		agentSDKReportProgress: make(map[string]agentSDKReportProgressSubscription),
 	}

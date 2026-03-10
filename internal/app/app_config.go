@@ -391,6 +391,8 @@ type Config struct {
 	APIAuthEnabled                      bool
 	APIKeys                             map[string]string
 	APICredentials                      map[string]apiauth.Credential
+	APICredentialStateFile              string
+	APIAuthorizationServers             []string
 	SecretsReloadInterval               time.Duration
 	RBACStateFile                       string
 	PlatformReportRunStateFile          string
@@ -681,6 +683,8 @@ func LoadConfig() *Config {
 		APIAuthEnabled:                      apiAuthEnabled,
 		APIKeys:                             apiKeys,
 		APICredentials:                      apiCredentials,
+		APICredentialStateFile:              getEnv("API_CREDENTIAL_STATE_FILE", filepath.Join(".cerebro", "api-credentials", "state.json")),
+		APIAuthorizationServers:             splitCSV(getEnv("API_AUTHORIZATION_SERVERS", "")),
 		SecretsReloadInterval:               getEnvDuration("CEREBRO_SECRETS_RELOAD_INTERVAL", 0),
 		RBACStateFile:                       getEnv("RBAC_STATE_FILE", ""),
 		PlatformReportRunStateFile:          getEnv("PLATFORM_REPORT_RUN_STATE_FILE", filepath.Join(".cerebro", "report-runs", "state.json")),

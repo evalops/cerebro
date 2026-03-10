@@ -2,6 +2,7 @@ package apiauth
 
 import (
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -16,6 +17,7 @@ type Credential struct {
 	Kind            string            `json:"kind,omitempty"`
 	Surface         string            `json:"surface,omitempty"`
 	ClientID        string            `json:"client_id,omitempty"`
+	Scopes          []string          `json:"scopes,omitempty"`
 	RateLimitBucket string            `json:"rate_limit_bucket,omitempty"`
 	TenantID        string            `json:"tenant_id,omitempty"`
 	Enabled         bool              `json:"enabled"`
@@ -30,6 +32,7 @@ type CredentialConfig struct {
 	Kind            string            `json:"kind,omitempty"`
 	Surface         string            `json:"surface,omitempty"`
 	ClientID        string            `json:"client_id,omitempty"`
+	Scopes          []string          `json:"scopes,omitempty"`
 	RateLimitBucket string            `json:"rate_limit_bucket,omitempty"`
 	TenantID        string            `json:"tenant_id,omitempty"`
 	Enabled         *bool             `json:"enabled,omitempty"`
@@ -77,6 +80,7 @@ func CredentialFromConfig(cfg CredentialConfig) Credential {
 		Kind:            firstNonEmpty(strings.TrimSpace(cfg.Kind), "api_key"),
 		Surface:         strings.TrimSpace(cfg.Surface),
 		ClientID:        strings.TrimSpace(cfg.ClientID),
+		Scopes:          normalizeScopes(cfg.Scopes),
 		RateLimitBucket: strings.TrimSpace(cfg.RateLimitBucket),
 		TenantID:        strings.TrimSpace(cfg.TenantID),
 		Enabled:         enabled,
@@ -101,6 +105,7 @@ func DefaultCredentialForAPIKey(key, userID string) Credential {
 		Name:            id,
 		UserID:          strings.TrimSpace(userID),
 		Kind:            "api_key",
+		Scopes:          nil,
 		Enabled:         true,
 		RateLimitBucket: id,
 	}
@@ -131,6 +136,7 @@ func CloneCredentials(credentials map[string]Credential) map[string]Credential {
 	cloned := make(map[string]Credential, len(credentials))
 	for key, credential := range credentials {
 		credential.Metadata = cloneStringMap(credential.Metadata)
+		credential.Scopes = append([]string(nil), credential.Scopes...)
 		cloned[key] = credential
 	}
 	return cloned
@@ -147,6 +153,8 @@ func EqualCredentials(a, b map[string]Credential) bool {
 		}
 		left.Metadata = cloneStringMap(left.Metadata)
 		right.Metadata = cloneStringMap(right.Metadata)
+		left.Scopes = append([]string(nil), left.Scopes...)
+		right.Scopes = append([]string(nil), right.Scopes...)
 		leftJSON, err := json.Marshal(left)
 		if err != nil {
 			return false
@@ -171,6 +179,22 @@ func SortedKeys(credentials map[string]Credential) []string {
 	return keys
 }
 
+func LookupCredential(credentials map[string]Credential, key string) (Credential, bool) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return Credential{}, false
+	}
+	for candidate, credential := range credentials {
+		if subtle.ConstantTimeCompare([]byte(candidate), []byte(key)) == 1 {
+			if !credential.Enabled {
+				return Credential{}, false
+			}
+			return credential, true
+		}
+	}
+	return Credential{}, false
+}
+
 func cloneStringMap(values map[string]string) map[string]string {
 	if len(values) == 0 {
 		return nil
@@ -180,6 +204,27 @@ func cloneStringMap(values map[string]string) map[string]string {
 		cloned[key] = value
 	}
 	return cloned
+}
+
+func normalizeScopes(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	normalized := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		normalized = append(normalized, value)
+	}
+	sort.Strings(normalized)
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
 }
 
 func firstNonEmpty(values ...string) string {

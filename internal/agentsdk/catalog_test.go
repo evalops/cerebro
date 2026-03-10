@@ -60,3 +60,19 @@ func TestBuildCatalogOmitsGeneratedAtWhenZero(t *testing.T) {
 		t.Fatalf("expected zero generated_at when zero time is provided, got %v", catalog.GeneratedAt)
 	}
 }
+
+func TestBuildToolCatalogAssignsDistinctContractIDsForSimulationTools(t *testing.T) {
+	catalog := BuildToolCatalog([]agents.Tool{
+		{Name: "simulate", Description: "scenario simulate"},
+		{Name: "cerebro.simulate", Description: "graph simulate"},
+	})
+	if len(catalog) != 2 {
+		t.Fatalf("expected 2 tools, got %d", len(catalog))
+	}
+	if catalog[0].ID == catalog[1].ID {
+		t.Fatalf("expected distinct tool ids, got duplicate %q", catalog[0].ID)
+	}
+	if catalog[0].SDKMethod == catalog[1].SDKMethod {
+		t.Fatalf("expected distinct sdk methods, got duplicate %q", catalog[0].SDKMethod)
+	}
+}

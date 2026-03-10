@@ -251,6 +251,7 @@ func (s *Server) agentSDKMCPStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("Mcp-Session-Id", sessionID)
+	w.Header().Set("MCP-Protocol-Version", agentSDKMCPProtocolVersion)
 	w.WriteHeader(http.StatusOK)
 
 	payload, _ := json.Marshal(map[string]any{
@@ -289,6 +290,7 @@ func (s *Server) agentSDKMCP(w http.ResponseWriter, r *http.Request) {
 		sessionID = uuid.NewString()
 	}
 	w.Header().Set("Mcp-Session-Id", sessionID)
+	w.Header().Set("MCP-Protocol-Version", agentSDKMCPProtocolVersion)
 
 	var req agentSDKMCPRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -394,7 +396,13 @@ func (s *Server) agentSDKHasPermission(ctx context.Context, permission string) b
 	if strings.TrimSpace(permission) == "" {
 		return true
 	}
-	if s == nil || s.app == nil || s.app.RBAC == nil || s.app.Config == nil || !s.app.Config.APIAuthEnabled {
+	if !credentialAllowsPermission(GetAPICredentialScopes(ctx), permission) {
+		return false
+	}
+	if s == nil || s.app == nil || s.app.Config == nil || !s.app.Config.APIAuthEnabled {
+		return true
+	}
+	if s.app.RBAC == nil {
 		return true
 	}
 	userID := GetUserID(ctx)
@@ -598,6 +606,7 @@ func (s *Server) readAgentSDKResource(r *http.Request, uri string) (agentSDKReso
 
 func (s *Server) writeAgentSDKMCPResponse(w http.ResponseWriter, resp agentSDKMCPResponse) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("MCP-Protocol-Version", agentSDKMCPProtocolVersion)
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(resp)
 }
