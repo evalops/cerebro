@@ -4368,7 +4368,8 @@ paths:
     post:
       tags:
         - AgentSDK
-      summary: Generate intelligence report
+      summary: Execute one platform intelligence report through the Agent SDK
+      description: Start a durable platform report run from the Agent SDK surface with optional async execution and report-run status tracking.
       requestBody:
         required: false
         content:
@@ -4376,18 +4377,36 @@ paths:
             schema:
               $ref: '#/components/schemas/AgentSDKReportRequest'
       responses:
-        '200':
-          description: Intelligence report
+        '201':
+          description: Synchronous report run created and completed
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/IntelligenceReport'
+                $ref: '#/components/schemas/PlatformReportRun'
+        '202':
+          description: Asynchronous report run accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformReportRun'
         '400':
           description: Invalid report request
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '404':
+          description: Report definition not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Report execution failed after run creation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformReportRun'
   /api/v1/agent-sdk/quality:
     get:
       tags:
@@ -9303,6 +9322,8 @@ components:
       properties:
         id:
           type: string
+        version:
+          type: string
         tool_name:
           type: string
         sdk_method:
@@ -9322,8 +9343,19 @@ components:
         input_schema:
           type: object
           additionalProperties: true
+        example_input:
+          type: object
+          additionalProperties: true
         requires_approval:
           type: boolean
+        execution_kind:
+          type: string
+        supports_async:
+          type: boolean
+        supports_progress:
+          type: boolean
+        status_resource:
+          type: string
     AgentSDKToolInvokeResponse:
       type: object
       additionalProperties: false
@@ -9347,6 +9379,20 @@ components:
         http_method:
           type: string
         http_path:
+          type: string
+        execution_kind:
+          type: string
+        supports_async:
+          type: boolean
+        supports_progress:
+          type: boolean
+        status_resource:
+          type: string
+        api_credential_id:
+          type: string
+        api_client_id:
+          type: string
+        traceparent:
           type: string
     AgentSDKContextCard:
       type: object
@@ -9401,16 +9447,21 @@ components:
       type: object
       additionalProperties: false
       properties:
-        entity_id:
+        report_id:
           type: string
-        window_days:
-          type: integer
-        history_limit:
-          type: integer
-        include_counterfactual:
+        execution_mode:
+          type: string
+          enum:
+            - sync
+            - async
+        materialize_result:
           type: boolean
-        max_insights:
-          type: integer
+        parameters:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformReportParameterValue'
+        retry_policy:
+          $ref: '#/components/schemas/PlatformReportRetryPolicy'
     AgentSDKQueryTemplatesResponse:
       type: object
       additionalProperties: false
@@ -9709,6 +9760,11 @@ components:
           additionalProperties: true
         error:
           $ref: '#/components/schemas/AgentSDKMCPError'
+        method:
+          type: string
+        params:
+          type: object
+          additionalProperties: true
     PlatformClaimWriteRequest:
       type: object
       required:

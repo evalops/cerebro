@@ -1,8 +1,10 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/evalops/cerebro/internal/telemetry"
 	"go.opentelemetry.io/otel/attribute"
@@ -23,6 +25,10 @@ func TracingMiddleware(next http.Handler) http.Handler {
 				attribute.String("url.path", req.URL.Path),
 			),
 		)
+		if traceparent := strings.TrimSpace(req.Header.Get("traceparent")); traceparent != "" {
+			ctx = context.WithValue(ctx, contextKeyTraceparent, traceparent)
+			span.SetAttributes(attribute.String("traceparent", traceparent))
+		}
 		defer span.End()
 
 		req = req.WithContext(ctx)

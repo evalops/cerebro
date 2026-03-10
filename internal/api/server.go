@@ -20,22 +20,26 @@ import (
 
 // Server is the fully wired API server
 type Server struct {
-	app                    *app.App
-	router                 *chi.Mux
-	auditLogger            auditLogWriter
-	rateLimiter            *RateLimiter
-	riskEngineMu           sync.Mutex
-	riskEngine             *graph.RiskEngine
-	riskEngineSource       *graph.Graph
-	crossTenantReplayMu    sync.Mutex
-	crossTenantReplay      map[string]time.Time
-	platformJobMu          sync.RWMutex
-	platformJobs           map[string]*platformJob
-	platformReportHandlers map[string]http.HandlerFunc
-	platformReportRunMu    sync.RWMutex
-	platformReportRuns     map[string]*graph.ReportRun
-	platformReportStore    *graph.ReportRunStore
-	platformReportSaveMu   sync.Mutex
+	app                      *app.App
+	router                   *chi.Mux
+	auditLogger              auditLogWriter
+	rateLimiter              *RateLimiter
+	riskEngineMu             sync.Mutex
+	riskEngine               *graph.RiskEngine
+	riskEngineSource         *graph.Graph
+	crossTenantReplayMu      sync.Mutex
+	crossTenantReplay        map[string]time.Time
+	platformJobMu            sync.RWMutex
+	platformJobs             map[string]*platformJob
+	platformReportHandlers   map[string]http.HandlerFunc
+	platformReportRunMu      sync.RWMutex
+	platformReportRuns       map[string]*graph.ReportRun
+	platformReportStore      *graph.ReportRunStore
+	platformReportSaveMu     sync.Mutex
+	agentSDKMCPSessionMu     sync.RWMutex
+	agentSDKMCPSessions      map[string]*agentSDKMCPSession
+	agentSDKReportProgressMu sync.RWMutex
+	agentSDKReportProgress   map[string]agentSDKReportProgressSubscription
 }
 
 type auditLogWriter interface {
@@ -54,6 +58,8 @@ func NewServer(application *app.App) *Server {
 		platformJobs:           make(map[string]*platformJob),
 		platformReportHandlers: make(map[string]http.HandlerFunc),
 		platformReportRuns:     make(map[string]*graph.ReportRun),
+		agentSDKMCPSessions:    make(map[string]*agentSDKMCPSession),
+		agentSDKReportProgress: make(map[string]agentSDKReportProgressSubscription),
 	}
 	if cfg := application.Config; cfg != nil {
 		s.platformReportStore = graph.NewReportRunStore(cfg.PlatformReportRunStateFile, cfg.PlatformReportSnapshotPath)

@@ -220,6 +220,12 @@ Gateway surfaces:
 - MCP JSON-RPC + SSE: `/api/v1/mcp`
 
 See [AGENT_SDK_GATEWAY_ARCHITECTURE.md](./AGENT_SDK_GATEWAY_ARCHITECTURE.md) for the public IDs, permission model, and transport contract details.
+Generated SDK catalogs live in [AGENT_SDK_AUTOGEN.md](./AGENT_SDK_AUTOGEN.md) and [AGENT_SDK_CONTRACTS.json](./AGENT_SDK_CONTRACTS.json).
+
+SDK execution/attribution rule:
+- `cerebro_report` should resolve to durable `ReportRun` resources regardless of whether it is called over typed REST, generic tool invoke, or MCP.
+- SDK credentials should carry stable client/credential IDs so report runs, lifecycle events, and graph writes retain consistent attribution without depending on raw API secrets.
+- MCP progress notifications should bind to the same durable report-run lifecycle instead of inventing transport-local progress state.
 
 Operational replay loop:
 - Use `cerebro ingest replay-dead-letter` after mapper/ontology changes to replay rejected events.

@@ -13,6 +13,11 @@ Expose one curated Cerebro tool registry through multiple transports:
 
 The shared registry lives in `internal/app` via `App.AgentSDKTools()`. API, MCP, and NATS all consume the same tool definitions.
 
+Generated contract artifacts:
+
+- `docs/AGENT_SDK_AUTOGEN.md`
+- `docs/AGENT_SDK_CONTRACTS.json`
+
 ## Design Rules
 
 - One canonical tool catalog, many transports.
@@ -61,9 +66,11 @@ Implemented MCP methods:
 
 Implemented MCP resources:
 
+- `cerebro://agent-sdk/catalog`
 - `cerebro://schema/node-kinds`
 - `cerebro://schema/edge-kinds`
 - `cerebro://tools/catalog`
+- `cerebro://reports/catalog`
 
 ## Public Tool IDs
 
@@ -101,6 +108,32 @@ Two checks matter:
 1. route-level RBAC gates access to the namespace
 2. generic invoke and MCP perform per-tool permission checks so `sdk.invoke` is not a privilege bypass
 
+## Credential and Attribution Model
+
+The gateway now supports two API credential forms:
+
+- legacy `API_KEYS` for simple key -> user mapping
+- structured `API_CREDENTIALS_JSON` for stable credential IDs, client IDs, rate buckets, names, and kinds
+
+Structured credentials are the durable model for SDK consumers because they provide:
+
+- stable `api_credential_id` and `api_client_id`
+- credential kind/name for audit and routing
+- rate-limit bucketing without coupling to raw secret values
+- request attribution that can be propagated into graph writes and report-run events
+
+Agent SDK write surfaces enrich request metadata before delegating to platform handlers:
+
+- `sdk_client_id`
+- `api_credential_id`
+- `api_credential_kind`
+- `api_credential_name`
+- `traceparent`
+- `agent_sdk_tool_id`
+- `agent_sdk_surface`
+
+This keeps the platform write path canonical while preserving SDK-specific attribution.
+
 ## Transport Boundary
 
 Typed HTTP wrappers are for frameworks that want stable REST contracts.
@@ -108,6 +141,23 @@ Typed HTTP wrappers are for frameworks that want stable REST contracts.
 Generic tool discovery/call and MCP are for frameworks that want dynamic discovery and JSON Schema driven execution.
 
 Both are backed by the same catalog and should stay behaviorally aligned.
+
+`cerebro_report` is the main proof point for this boundary:
+
+- typed REST and MCP both resolve to the same durable `ReportRun` substrate
+- async execution returns a stable status resource instead of an ad hoc task blob
+- MCP progress is emitted as `notifications/progress` bound to the same report-run lifecycle
+
+## Contract Governance
+
+The Agent SDK surface now has explicit machine-readable governance:
+
+- `docs/AGENT_SDK_CONTRACTS.json` is the canonical generated catalog
+- `docs/AGENT_SDK_AUTOGEN.md` is the human-readable projection of the same source
+- `go run ./scripts/check_agent_sdk_contract_compat/main.go` enforces non-breaking catalog evolution
+- `make agent-sdk-docs-check` and `make agent-sdk-contract-compat` are wired into CI
+
+This keeps public tool IDs, MCP resources, and execution semantics from drifting silently across transports.
 
 ## Current MCP Contract Basis
 
@@ -122,13 +172,17 @@ The implemented MCP transport is aligned to the official Model Context Protocol 
 - HTTP discovery + generic invoke
 - typed HTTP wrappers for the core SDK methods
 - MCP JSON-RPC + SSE compatibility layer
-- schema resources for node/edge kinds and tool catalog
+- progress notifications for long-running report executions
+- generated Agent SDK contract docs + compatibility checks
+- structured SDK credential support with stable attribution fields
+- in-repo Go client bindings for tool discovery/call, report execution, and MCP transport
+- schema/resources for node kinds, edge kinds, tool catalog, report catalog, and generated SDK catalog
 - dedicated `sdk.*` RBAC scopes
 
 ## Follow-On Tracks
 
-1. Generated Go/Python/TypeScript SDKs from OpenAPI + tool catalog.
-2. MCP progress notifications and long-running streaming for reports/simulations.
-3. SDK-client specific API key provisioning, rate limits, and attribution.
+1. External Go/Python/TypeScript SDK packaging from the generated contract catalog and OpenAPI surface.
+2. Section-level streaming for long-running reports and simulations, not just run-level progress notifications.
+3. SDK-client provisioning UX, scoped key rotation, and per-tool/per-tenant limit policies.
 4. `.well-known/oauth-protected-resource` and richer MCP auth metadata.
 5. Generated framework adapters for LangChain, CrewAI, OpenAI Agents, and Vercel AI SDK.

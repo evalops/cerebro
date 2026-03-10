@@ -8,6 +8,8 @@ Graph-specific architecture references:
 
 - [Graph Intelligence Layer](./GRAPH_INTELLIGENCE_LAYER.md)
 - [Agent SDK Gateway Architecture](./AGENT_SDK_GATEWAY_ARCHITECTURE.md)
+- [Agent SDK Auto-Generated Contract Catalog](./AGENT_SDK_AUTOGEN.md)
+- [Agent SDK Machine-Readable Contract Catalog](./AGENT_SDK_CONTRACTS.json)
 - [Graph Report Extensibility Research](./GRAPH_REPORT_EXTENSIBILITY_RESEARCH.md)
 - [Graph Ontology Architecture](./GRAPH_ONTOLOGY_ARCHITECTURE.md)
 - [Graph World Model Architecture](./GRAPH_WORLD_MODEL_ARCHITECTURE.md)
@@ -25,6 +27,7 @@ The current implementation still reflects historical security-first packaging, e
 
 - platform capabilities: graph query, ontology/schema, ingest contracts, evidence/claim/decision/action/outcome writes, identity resolution, simulation, actuation, and intelligence quality/calibration
 - application capabilities: security/CSPM, org intelligence, compliance, runtime detection/response, and future verticals
+- transport/client capabilities: typed REST, MCP, webhooks, and generated SDK contracts layered over the same shared platform primitives
 
 See [PLATFORM_TRANSITION_ARCHITECTURE.md](./PLATFORM_TRANSITION_ARCHITECTURE.md) for the concrete endpoint inventory, boundary diagnosis, migration matrix, and schema proposals that define this transition.
 

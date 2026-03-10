@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/evalops/cerebro/internal/agents"
+	"github.com/evalops/cerebro/internal/apiauth"
 	"github.com/evalops/cerebro/internal/snowflake"
 )
 
@@ -30,24 +31,27 @@ func cloneStringMap(values map[string]string) map[string]string {
 	return cloned
 }
 
-func equalStringMap(a, b map[string]string) bool {
-	if len(a) != len(b) {
-		return false
+func credentialsFromAPIKeys(keys map[string]string) map[string]apiauth.Credential {
+	credentials := make(map[string]apiauth.Credential, len(keys))
+	for key, userID := range keys {
+		credentials[key] = apiauth.DefaultCredentialForAPIKey(key, userID)
 	}
-	for key, valueA := range a {
-		if valueB, ok := b[key]; !ok || valueA != valueB {
-			return false
-		}
+	return credentials
+}
+
+func (a *App) setAPICredentials(credentials map[string]apiauth.Credential) {
+	cloned := apiauth.CloneCredentials(credentials)
+	derivedKeys := apiauth.CredentialsToUserMap(cloned)
+	a.apiCredentials.Store(cloned)
+	a.apiKeys.Store(cloneStringMap(derivedKeys))
+	if a.Config != nil {
+		a.Config.APICredentials = cloned
+		a.Config.APIKeys = cloneStringMap(derivedKeys)
 	}
-	return true
 }
 
 func (a *App) setAPIKeys(keys map[string]string) {
-	cloned := cloneStringMap(keys)
-	a.apiKeys.Store(cloned)
-	if a.Config != nil {
-		a.Config.APIKeys = cloned
-	}
+	a.setAPICredentials(credentialsFromAPIKeys(keys))
 }
 
 // APIKeysSnapshot returns the current API key map used by auth middleware.
@@ -64,6 +68,22 @@ func (a *App) APIKeysSnapshot() map[string]string {
 		return map[string]string{}
 	}
 	return cloneStringMap(keys)
+}
+
+// APICredentialsSnapshot returns the current structured API credential map.
+func (a *App) APICredentialsSnapshot() map[string]apiauth.Credential {
+	if a == nil {
+		return map[string]apiauth.Credential{}
+	}
+	current := a.apiCredentials.Load()
+	if current == nil {
+		return map[string]apiauth.Credential{}
+	}
+	credentials, ok := current.(map[string]apiauth.Credential)
+	if !ok {
+		return map[string]apiauth.Credential{}
+	}
+	return apiauth.CloneCredentials(credentials)
 }
 
 func (a *App) startSecretsReloader(parent context.Context) {
@@ -130,19 +150,23 @@ func (a *App) ReloadSecrets(ctx context.Context) error {
 	if next == nil {
 		return fmt.Errorf("reload config is nil")
 	}
+	if len(next.APICredentials) == 0 && len(next.APIKeys) > 0 {
+		next.APICredentials = credentialsFromAPIKeys(next.APIKeys)
+		next.APIKeys = apiauth.CredentialsToUserMap(next.APICredentials)
+	}
 
 	current := a.Config
 	if current == nil {
-		a.setAPIKeys(next.APIKeys)
+		a.setAPICredentials(next.APICredentials)
 		a.Config = next
 		return nil
 	}
 
-	apiKeysChanged := !equalStringMap(a.APIKeysSnapshot(), next.APIKeys)
+	apiCredentialsChanged := !apiauth.EqualCredentials(a.APICredentialsSnapshot(), next.APICredentials)
 	snowflakeChanged := snowflakeCredentialsChanged(current, next)
 	providersChanged := providerConfigsChanged(current, next)
 
-	if !apiKeysChanged && !snowflakeChanged && !providersChanged {
+	if !apiCredentialsChanged && !snowflakeChanged && !providersChanged {
 		return nil
 	}
 
@@ -163,20 +187,23 @@ func (a *App) ReloadSecrets(ctx context.Context) error {
 		})
 	}
 
-	if apiKeysChanged {
-		a.setAPIKeys(next.APIKeys)
+	if apiCredentialsChanged {
+		a.setAPICredentials(next.APICredentials)
+		next.APICredentials = a.APICredentialsSnapshot()
 		next.APIKeys = a.APIKeysSnapshot()
 		a.logSecretRotation(ctx, "api_keys_reloaded", map[string]interface{}{
-			"key_count": len(next.APIKeys),
+			"key_count":        len(next.APIKeys),
+			"credential_count": len(next.APICredentials),
 		})
 	} else {
+		next.APICredentials = a.APICredentialsSnapshot()
 		next.APIKeys = a.APIKeysSnapshot()
 	}
 
 	a.Config = next
 	if a.Logger != nil {
 		a.Logger.Info("secret reload completed",
-			"api_keys_changed", apiKeysChanged,
+			"api_credentials_changed", apiCredentialsChanged,
 			"snowflake_changed", snowflakeChanged,
 			"providers_changed", providersChanged,
 		)

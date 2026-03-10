@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/evalops/cerebro/internal/apiauth"
 	"github.com/evalops/cerebro/internal/auth"
 )
 
@@ -30,15 +31,22 @@ func writeJSONError(w http.ResponseWriter, status int, code, message string) {
 type contextKey string
 
 const (
-	contextKeyAPIKey contextKey = "api_key"
-	contextKeyUserID contextKey = "user_id"
-	contextKeyTenant contextKey = "tenant_id"
+	contextKeyAPIKey         contextKey = "api_key"
+	contextKeyUserID         contextKey = "user_id"
+	contextKeyTenant         contextKey = "tenant_id"
+	contextKeyCredentialID   contextKey = "api_credential_id"
+	contextKeyCredentialKind contextKey = "api_credential_kind"
+	contextKeyCredentialName contextKey = "api_credential_name"
+	contextKeyClientID       contextKey = "api_client_id"
+	contextKeyTraceparent    contextKey = "traceparent"
 )
 
 type AuthConfig struct {
-	APIKeys        map[string]string        // key -> user_id mapping
-	APIKeyProvider func() map[string]string // optional dynamic key source
-	Enabled        bool
+	APIKeys            map[string]string             // key -> user_id mapping
+	APIKeyProvider     func() map[string]string      // optional dynamic key source
+	Credentials        map[string]apiauth.Credential // key -> credential mapping
+	CredentialProvider func() map[string]apiauth.Credential
+	Enabled            bool
 }
 
 func APIKeyAuth(cfg AuthConfig) func(http.Handler) http.Handler {
@@ -71,22 +79,42 @@ func APIKeyAuth(cfg AuthConfig) func(http.Handler) http.Handler {
 				return
 			}
 
-			keys := cfg.APIKeys
-			if cfg.APIKeyProvider != nil {
-				dynamicKeys := cfg.APIKeyProvider()
-				if len(dynamicKeys) > 0 || len(keys) == 0 {
-					keys = dynamicKeys
+			credentials := cfg.Credentials
+			if cfg.CredentialProvider != nil {
+				dynamicCredentials := cfg.CredentialProvider()
+				if len(dynamicCredentials) > 0 || len(credentials) == 0 {
+					credentials = dynamicCredentials
+				}
+			}
+			if len(credentials) == 0 {
+				keys := cfg.APIKeys
+				if cfg.APIKeyProvider != nil {
+					dynamicKeys := cfg.APIKeyProvider()
+					if len(dynamicKeys) > 0 || len(keys) == 0 {
+						keys = dynamicKeys
+					}
+				}
+				credentials = make(map[string]apiauth.Credential, len(keys))
+				for key, userID := range keys {
+					credentials[key] = apiauth.DefaultCredentialForAPIKey(key, userID)
 				}
 			}
 
-			userID, valid := validateAPIKey(keys, apiKey)
+			credential, valid := validateAPICredential(credentials, apiKey)
 			if !valid {
 				writeJSONError(w, http.StatusUnauthorized, "invalid_api_key", "API key is invalid or expired")
 				return
 			}
 
 			ctx := context.WithValue(r.Context(), contextKeyAPIKey, apiKey)
-			ctx = context.WithValue(ctx, contextKeyUserID, userID)
+			ctx = context.WithValue(ctx, contextKeyUserID, credential.UserID)
+			ctx = context.WithValue(ctx, contextKeyCredentialID, credential.ID)
+			ctx = context.WithValue(ctx, contextKeyCredentialKind, credential.Kind)
+			ctx = context.WithValue(ctx, contextKeyCredentialName, credential.Name)
+			ctx = context.WithValue(ctx, contextKeyClientID, credential.ClientID)
+			if traceparent := strings.TrimSpace(r.Header.Get("traceparent")); traceparent != "" {
+				ctx = context.WithValue(ctx, contextKeyTraceparent, traceparent)
+			}
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -152,13 +180,16 @@ func bearerTokenFromAuthorization(raw string) (string, bool, error) {
 	return parts[1], true, nil
 }
 
-func validateAPIKey(keys map[string]string, key string) (string, bool) {
-	for k, userID := range keys {
-		if subtle.ConstantTimeCompare([]byte(k), []byte(key)) == 1 {
-			return userID, true
+func validateAPICredential(credentials map[string]apiauth.Credential, key string) (apiauth.Credential, bool) {
+	for candidate, credential := range credentials {
+		if subtle.ConstantTimeCompare([]byte(candidate), []byte(key)) == 1 {
+			if !credential.Enabled {
+				return apiauth.Credential{}, false
+			}
+			return credential, true
 		}
 	}
-	return "", false
+	return apiauth.Credential{}, false
 }
 
 func GetUserID(ctx context.Context) string {
@@ -181,6 +212,51 @@ func GetAPIKey(ctx context.Context) string {
 
 func GetTenantID(ctx context.Context) string {
 	if v := ctx.Value(contextKeyTenant); v != nil {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
+func GetAPICredentialID(ctx context.Context) string {
+	if v := ctx.Value(contextKeyCredentialID); v != nil {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
+func GetAPICredentialKind(ctx context.Context) string {
+	if v := ctx.Value(contextKeyCredentialKind); v != nil {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
+func GetAPICredentialName(ctx context.Context) string {
+	if v := ctx.Value(contextKeyCredentialName); v != nil {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
+func GetAPIClientID(ctx context.Context) string {
+	if v := ctx.Value(contextKeyClientID); v != nil {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
+func GetTraceparent(ctx context.Context) string {
+	if v := ctx.Value(contextKeyTraceparent); v != nil {
 		if s, ok := v.(string); ok {
 			return s
 		}

@@ -1,4 +1,4 @@
-.PHONY: build run test sync clean dev serve policy-list docker-build trivy-db security-scan security-scan-built security-scan-source vendor vendor-check oss-audit openapi-check openapi-sync config-docs config-docs-check ontology-docs ontology-docs-check cloudevents-docs cloudevents-docs-check cloudevents-contract-compat report-contract-docs report-contract-docs-check report-contract-compat platform-up platform-down platform-logs platform-smoke hooks
+.PHONY: build run test sync clean dev serve policy-list docker-build trivy-db security-scan security-scan-built security-scan-source vendor vendor-check oss-audit openapi-check openapi-sync config-docs config-docs-check ontology-docs ontology-docs-check cloudevents-docs cloudevents-docs-check cloudevents-contract-compat report-contract-docs report-contract-docs-check report-contract-compat agent-sdk-docs agent-sdk-docs-check agent-sdk-contract-compat platform-up platform-down platform-logs platform-smoke hooks
 
 # Version info
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -164,6 +164,15 @@ report-contract-docs-check: report-contract-docs
 
 report-contract-compat:
 	go run ./scripts/check_report_contract_compat/main.go
+
+agent-sdk-docs:
+	go run ./scripts/generate_agent_sdk_docs/main.go
+
+agent-sdk-docs-check: agent-sdk-docs
+	git diff --exit-code -- docs/AGENT_SDK_AUTOGEN.md docs/AGENT_SDK_CONTRACTS.json
+
+agent-sdk-contract-compat:
+	go run ./scripts/check_agent_sdk_contract_compat/main.go
 
 # Docker run
 docker-run:
