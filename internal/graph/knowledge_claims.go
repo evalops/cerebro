@@ -196,6 +196,21 @@ func WriteClaim(g *Graph, req ClaimWriteRequest) (ClaimWriteResult, error) {
 	if request.ObjectValue != "" {
 		properties["object_value"] = request.ObjectValue
 	}
+	if request.SourceName != "" {
+		properties["source_name"] = request.SourceName
+	}
+	if request.SourceType != "" {
+		properties["source_type"] = request.SourceType
+	}
+	if request.SourceURL != "" {
+		properties["source_url"] = request.SourceURL
+	}
+	if request.TrustTier != "" {
+		properties["source_trust_tier"] = request.TrustTier
+	}
+	if request.ReliabilityScore > 0 {
+		properties["source_reliability_score"] = request.ReliabilityScore
+	}
 	metadata.ApplyTo(properties)
 
 	g.AddNode(&Node{
@@ -228,7 +243,7 @@ func WriteClaim(g *Graph, req ClaimWriteRequest) (ClaimWriteResult, error) {
 	}
 
 	sourceID := ""
-	if request.SourceID != "" || request.SourceName != "" || request.SourceType != "" || request.SourceURL != "" || request.TrustTier != "" || request.ReliabilityScore > 0 {
+	if request.SourceID != "" || request.SourceName != "" || request.SourceType != "" {
 		sourceID = firstNonEmpty(request.SourceID, buildSourceNodeID(request.SourceType, request.SourceName))
 		sourceProperties := map[string]any{
 			"source_type":       firstNonEmpty(request.SourceType, "system"),

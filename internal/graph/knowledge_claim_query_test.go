@@ -212,15 +212,18 @@ func TestWriteClaimDoesNotCreateSyntheticSourceWithoutAttribution(t *testing.T) 
 	g.AddNode(&Node{ID: "person:alice@example.com", Kind: NodeKindPerson, Name: "Alice", Properties: cloneAnyMap(baseProperties)})
 
 	result, err := WriteClaim(g, ClaimWriteRequest{
-		ID:              "claim:payments:owner:alice",
-		SubjectID:       "service:payments",
-		Predicate:       "owner",
-		ObjectID:        "person:alice@example.com",
-		SourceSystem:    "api",
-		ObservedAt:      time.Date(2026, 3, 9, 12, 0, 0, 0, time.UTC),
-		ValidFrom:       time.Date(2026, 3, 9, 12, 0, 0, 0, time.UTC),
-		RecordedAt:      time.Date(2026, 3, 9, 12, 0, 0, 0, time.UTC),
-		TransactionFrom: time.Date(2026, 3, 9, 12, 0, 0, 0, time.UTC),
+		ID:               "claim:payments:owner:alice",
+		SubjectID:        "service:payments",
+		Predicate:        "owner",
+		ObjectID:         "person:alice@example.com",
+		SourceSystem:     "api",
+		SourceURL:        "https://docs.example.com/claims/payments-owner",
+		TrustTier:        "authoritative",
+		ReliabilityScore: 0.91,
+		ObservedAt:       time.Date(2026, 3, 9, 12, 0, 0, 0, time.UTC),
+		ValidFrom:        time.Date(2026, 3, 9, 12, 0, 0, 0, time.UTC),
+		RecordedAt:       time.Date(2026, 3, 9, 12, 0, 0, 0, time.UTC),
+		TransactionFrom:  time.Date(2026, 3, 9, 12, 0, 0, 0, time.UTC),
 	})
 	if err != nil {
 		t.Fatalf("write claim: %v", err)
@@ -234,5 +237,14 @@ func TestWriteClaimDoesNotCreateSyntheticSourceWithoutAttribution(t *testing.T) 
 	}
 	if record.Derived.SourceBacked || !record.Derived.Sourceless {
 		t.Fatalf("expected sourceless derived state without explicit attribution, got %+v", record.Derived)
+	}
+	if record.Metadata["source_url"] != "https://docs.example.com/claims/payments-owner" {
+		t.Fatalf("expected source_url metadata to stay on claim, got %#v", record.Metadata)
+	}
+	if record.Metadata["source_trust_tier"] != "authoritative" {
+		t.Fatalf("expected source_trust_tier metadata to stay on claim, got %#v", record.Metadata)
+	}
+	if record.Metadata["source_reliability_score"] != 0.91 {
+		t.Fatalf("expected source_reliability_score metadata to stay on claim, got %#v", record.Metadata)
 	}
 }
