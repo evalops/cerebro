@@ -197,6 +197,43 @@ func TestBuildReportSectionResultsIncludesLineageAndTruncationSignals(t *testing
 	}
 }
 
+func TestBuildReportSectionLineageExpandsTransitiveClaimRefs(t *testing.T) {
+	g := New()
+	g.AddNode(&Node{ID: "claim:root", Kind: NodeKindClaim, Name: "Root claim"})
+	g.AddNode(&Node{ID: "claim:prior", Kind: NodeKindClaim, Name: "Prior claim"})
+	g.AddNode(&Node{ID: "claim:support", Kind: NodeKindClaim, Name: "Supporting claim"})
+	g.AddNode(&Node{ID: "evidence:root", Kind: NodeKindEvidence, Name: "Root evidence"})
+	g.AddNode(&Node{ID: "evidence:prior", Kind: NodeKindEvidence, Name: "Prior evidence"})
+	g.AddNode(&Node{ID: "evidence:support", Kind: NodeKindEvidence, Name: "Supporting evidence"})
+	g.AddNode(&Node{ID: "source:root", Kind: NodeKindSource, Name: "Root source"})
+	g.AddNode(&Node{ID: "source:prior", Kind: NodeKindSource, Name: "Prior source"})
+	g.AddNode(&Node{ID: "source:support", Kind: NodeKindSource, Name: "Supporting source"})
+	g.AddEdge(&Edge{ID: "root-based-on", Source: "claim:root", Target: "evidence:root", Kind: EdgeKindBasedOn})
+	g.AddEdge(&Edge{ID: "root-asserted-by", Source: "claim:root", Target: "source:root", Kind: EdgeKindAssertedBy})
+	g.AddEdge(&Edge{ID: "root-supersedes", Source: "claim:root", Target: "claim:prior", Kind: EdgeKindSupersedes})
+	g.AddEdge(&Edge{ID: "prior-based-on", Source: "claim:prior", Target: "evidence:prior", Kind: EdgeKindBasedOn})
+	g.AddEdge(&Edge{ID: "prior-asserted-by", Source: "claim:prior", Target: "source:prior", Kind: EdgeKindAssertedBy})
+	g.AddEdge(&Edge{ID: "support-refutes", Source: "claim:support", Target: "claim:prior", Kind: EdgeKindRefutes})
+	g.AddEdge(&Edge{ID: "support-based-on", Source: "claim:support", Target: "evidence:support", Kind: EdgeKindBasedOn})
+	g.AddEdge(&Edge{ID: "support-asserted-by", Source: "claim:support", Target: "source:support", Kind: EdgeKindAssertedBy})
+
+	lineage := BuildReportSectionLineage(g, map[string]any{
+		"claim_ids": []any{"claim:root"},
+	})
+	if lineage == nil {
+		t.Fatal("expected lineage metadata")
+	}
+	if lineage.ClaimCount != 3 {
+		t.Fatalf("expected claim_count=3, got %+v", lineage)
+	}
+	if lineage.EvidenceCount != 3 {
+		t.Fatalf("expected evidence_count=3, got %+v", lineage)
+	}
+	if lineage.SourceCount != 3 {
+		t.Fatalf("expected source_count=3, got %+v", lineage)
+	}
+}
+
 func TestReportRunAttemptAndEventCollections(t *testing.T) {
 	run := &ReportRun{
 		ID:            "report_run:test",

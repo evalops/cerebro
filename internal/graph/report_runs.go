@@ -634,29 +634,74 @@ func expandReportSectionClaimRefs(g *Graph, acc *reportSectionLineageAccumulator
 	if g == nil || acc == nil || len(acc.claims) == 0 {
 		return
 	}
-	claimIDs := make([]string, 0, len(acc.claims))
+	queue := make([]string, 0, len(acc.claims))
+	visited := make(map[string]struct{}, len(acc.claims))
 	for claimID := range acc.claims {
-		claimIDs = append(claimIDs, claimID)
+		queue = append(queue, claimID)
 	}
-	for _, claimID := range claimIDs {
+	for len(queue) > 0 {
+		claimID := queue[0]
+		queue = queue[1:]
+		if _, ok := visited[claimID]; ok {
+			continue
+		}
+		visited[claimID] = struct{}{}
+
 		for _, edge := range g.GetOutEdges(claimID) {
-			if edge == nil || strings.TrimSpace(edge.Target) == "" {
+			reportSectionExpandClaimEdge(g, acc, edge, &queue)
+		}
+		for _, edge := range g.GetInEdges(claimID) {
+			if edge == nil || strings.TrimSpace(edge.Source) == "" {
 				continue
 			}
-			targetNode, ok := g.GetNode(edge.Target)
-			if !ok || targetNode == nil {
+			sourceNode, ok := g.GetNode(edge.Source)
+			if !ok || sourceNode == nil || sourceNode.Kind != NodeKindClaim {
 				continue
 			}
-			acc.referenced[targetNode.ID] = struct{}{}
-			switch targetNode.Kind {
-			case NodeKindEvidence, NodeKindObservation:
-				acc.evidence[targetNode.ID] = struct{}{}
-			case NodeKindSource:
-				acc.sources[targetNode.ID] = struct{}{}
-			case NodeKindClaim:
-				acc.claims[targetNode.ID] = struct{}{}
+			if !reportSectionClaimTraversalEdge(edge.Kind) {
+				continue
+			}
+			acc.referenced[sourceNode.ID] = struct{}{}
+			if _, ok := acc.claims[sourceNode.ID]; !ok {
+				acc.claims[sourceNode.ID] = struct{}{}
+				queue = append(queue, sourceNode.ID)
 			}
 		}
+	}
+}
+
+func reportSectionExpandClaimEdge(g *Graph, acc *reportSectionLineageAccumulator, edge *Edge, queue *[]string) {
+	if g == nil || acc == nil || edge == nil || strings.TrimSpace(edge.Target) == "" {
+		return
+	}
+	targetNode, ok := g.GetNode(edge.Target)
+	if !ok || targetNode == nil {
+		return
+	}
+	acc.referenced[targetNode.ID] = struct{}{}
+	switch targetNode.Kind {
+	case NodeKindEvidence, NodeKindObservation:
+		acc.evidence[targetNode.ID] = struct{}{}
+	case NodeKindSource:
+		acc.sources[targetNode.ID] = struct{}{}
+	case NodeKindClaim:
+		if !reportSectionClaimTraversalEdge(edge.Kind) {
+			return
+		}
+		if _, ok := acc.claims[targetNode.ID]; ok {
+			return
+		}
+		acc.claims[targetNode.ID] = struct{}{}
+		*queue = append(*queue, targetNode.ID)
+	}
+}
+
+func reportSectionClaimTraversalEdge(kind EdgeKind) bool {
+	switch kind {
+	case EdgeKindSupports, EdgeKindRefutes, EdgeKindSupersedes:
+		return true
+	default:
+		return false
 	}
 }
 
