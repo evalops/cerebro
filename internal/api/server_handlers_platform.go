@@ -1723,6 +1723,23 @@ func (s *Server) clonePlatformReportRunsLocked() map[string]*graph.ReportRun {
 	return cloned
 }
 
+func (s *Server) platformReportRunSnapshotMap() map[string]*graph.ReportRun {
+	s.platformReportRunMu.RLock()
+	defer s.platformReportRunMu.RUnlock()
+	return s.clonePlatformReportRunsLocked()
+}
+
+func (s *Server) platformGraphSnapshotRecords() map[string]*graph.GraphSnapshotRecord {
+	collection := graph.GraphSnapshotCollectionSnapshot(s.app.SecurityGraph, s.platformReportRunSnapshotMap(), time.Now().UTC())
+	records := make(map[string]*graph.GraphSnapshotRecord, collection.Count)
+	for i := range collection.Snapshots {
+		record := collection.Snapshots[i]
+		copy := record
+		records[record.ID] = &copy
+	}
+	return records
+}
+
 func (s *Server) platformGraphSnapshotCollection() graph.GraphSnapshotCollection {
 	return graph.GraphSnapshotCollectionFromRecords(s.platformGraphSnapshotRecords(), time.Now().UTC())
 }

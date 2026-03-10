@@ -50,6 +50,11 @@ func GraphSnapshotCollectionSnapshot(g *Graph, runs map[string]*ReportRun, now t
 			accumulateGraphSnapshotRecord(records, run.Snapshot.Lineage, run.ReportID, run.Snapshot.GeneratedAt, true)
 		}
 	}
+	return GraphSnapshotCollectionFromRecords(records, now)
+}
+
+// GraphSnapshotCollectionFromRecords normalizes a graph snapshot record map into a stable collection payload.
+func GraphSnapshotCollectionFromRecords(records map[string]*GraphSnapshotRecord, now time.Time) GraphSnapshotCollection {
 	snapshots := make([]GraphSnapshotRecord, 0, len(records))
 	for _, record := range records {
 		if record == nil || strings.TrimSpace(record.ID) == "" {
