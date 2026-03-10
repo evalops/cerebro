@@ -212,6 +212,7 @@ func Methods() []MethodDefinition {
 		{Name: "resources/list", Kind: "request", Description: "List readable Agent SDK resources"},
 		{Name: "resources/read", Kind: "request", Description: "Read one Agent SDK resource payload"},
 		{Name: "notifications/progress", Kind: "notification", Description: "Server-initiated progress notifications for long-running report executions"},
+		{Name: "notifications/report_section", Kind: "notification", Description: "Server-initiated section payload notifications for durable report executions"},
 	}
 	return methods
 }
@@ -404,12 +405,20 @@ func lookupToolContractOverride(name string) (toolContractOverride, bool) {
 		},
 		"simulate": {
 			ID:                 "cerebro_simulate",
-			Version:            "1.0.0",
+			Version:            "2.0.0",
 			SDKMethod:          "simulate",
 			Title:              "Scenario Simulation",
 			Category:           "enforcement",
 			HTTPMethod:         "POST",
 			HTTPPath:           "/api/v1/agent-sdk/simulate",
+			RequiredPermission: "sdk.enforcement.run",
+		},
+		"cerebro.simulate": {
+			ID:                 "cerebro_graph_simulate",
+			Version:            "1.0.0",
+			SDKMethod:          "graph_simulate",
+			Title:              "Graph Mutation Simulation",
+			Category:           "enforcement",
 			RequiredPermission: "sdk.enforcement.run",
 		},
 		"cerebro.record_observation": {

@@ -2,7 +2,7 @@
 
 Generated from `internal/app/app_config.go` (`LoadConfig`) via `go run ./scripts/generate_config_docs/main.go`.
 
-Total variables: **274**
+Total variables: **276**
 
 | Variable | Reader(s) | Default(s) | Config Field(s) |
 |---|---|---|---|
@@ -20,9 +20,11 @@ Total variables: **274**
 | `ALERT_ROUTER_ENABLED` | `getEnvBool` | `true` | `AlertRouterEnabled` |
 | `ALERT_ROUTER_NOTIFY_PREFIX` | `getEnv` | `"ensemble.notify"` | `AlertRouterNotifyPrefix` |
 | `ANTHROPIC_API_KEY` | `getEnv` | `""` | `AnthropicAPIKey` |
+| `API_AUTHORIZATION_SERVERS` | `getEnv` | `""` | `APIAuthorizationServers` |
 | `API_AUTH_ENABLED` | `getEnvBool` | `len(apiKeys) > 0` | `-` |
 | `API_CORS_ALLOWED_ORIGINS` | `getEnv` | `""` | `CORSAllowedOrigins` |
 | `API_CREDENTIALS_JSON` | `getEnv` | `""` | `-` |
+| `API_CREDENTIAL_STATE_FILE` | `getEnv` | `filepath.Join(".cerebro", "api-credentials", "state.json")` | `APICredentialStateFile` |
 | `API_KEYS` | `getEnv` | `""` | `-` |
 | `API_PORT` | `getEnvInt` | `8080` | `Port` |
 | `AUTH0_CLIENT_ID` | `getEnv` | `""` | `Auth0ClientID` |

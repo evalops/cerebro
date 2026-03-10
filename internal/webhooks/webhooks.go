@@ -159,6 +159,7 @@ const (
 	EventPlatformReportRunCompleted         EventType = "platform.report_run.completed"
 	EventPlatformReportRunFailed            EventType = "platform.report_run.failed"
 	EventPlatformReportRunCanceled          EventType = "platform.report_run.canceled"
+	EventPlatformReportSectionEmitted       EventType = "platform.report_run.section_emitted"
 	EventPlatformReportSnapshotMaterialized EventType = "platform.report_snapshot.materialized"
 )
 
@@ -201,6 +202,7 @@ var defaultEventTypes = []EventType{
 	EventPlatformReportRunCompleted,
 	EventPlatformReportRunFailed,
 	EventPlatformReportRunCanceled,
+	EventPlatformReportSectionEmitted,
 	EventPlatformReportSnapshotMaterialized,
 }
 
@@ -437,6 +439,7 @@ func isValidEventType(e EventType) bool {
 		EventPlatformClaimWritten, EventPlatformDecisionRecorded, EventPlatformOutcomeRecorded,
 		EventPlatformActionRecorded, EventPlatformReportRunQueued, EventPlatformReportRunStarted,
 		EventPlatformReportRunCompleted, EventPlatformReportRunFailed, EventPlatformReportRunCanceled,
+		EventPlatformReportSectionEmitted,
 		EventPlatformReportSnapshotMaterialized:
 		return true
 	default:

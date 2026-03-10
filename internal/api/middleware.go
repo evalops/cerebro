@@ -31,22 +31,25 @@ func writeJSONError(w http.ResponseWriter, status int, code, message string) {
 type contextKey string
 
 const (
-	contextKeyAPIKey         contextKey = "api_key"
-	contextKeyUserID         contextKey = "user_id"
-	contextKeyTenant         contextKey = "tenant_id"
-	contextKeyCredentialID   contextKey = "api_credential_id"
-	contextKeyCredentialKind contextKey = "api_credential_kind"
-	contextKeyCredentialName contextKey = "api_credential_name"
-	contextKeyClientID       contextKey = "api_client_id"
-	contextKeyTraceparent    contextKey = "traceparent"
+	contextKeyAPIKey           contextKey = "api_key"
+	contextKeyUserID           contextKey = "user_id"
+	contextKeyTenant           contextKey = "tenant_id"
+	contextKeyCredentialID     contextKey = "api_credential_id"
+	contextKeyCredentialKind   contextKey = "api_credential_kind"
+	contextKeyCredentialName   contextKey = "api_credential_name"
+	contextKeyCredentialScopes contextKey = "api_credential_scopes"
+	contextKeyClientID         contextKey = "api_client_id"
+	contextKeyTraceparent      contextKey = "traceparent"
 )
 
 type AuthConfig struct {
-	APIKeys            map[string]string             // key -> user_id mapping
-	APIKeyProvider     func() map[string]string      // optional dynamic key source
-	Credentials        map[string]apiauth.Credential // key -> credential mapping
-	CredentialProvider func() map[string]apiauth.Credential
-	Enabled            bool
+	APIKeys              map[string]string             // key -> user_id mapping
+	APIKeyProvider       func() map[string]string      // optional dynamic key source
+	Credentials          map[string]apiauth.Credential // key -> credential mapping
+	CredentialProvider   func() map[string]apiauth.Credential
+	CredentialLookup     func(string) (apiauth.Credential, bool)
+	AuthorizationServers []string
+	Enabled              bool
 }
 
 func APIKeyAuth(cfg AuthConfig) func(http.Handler) http.Handler {
@@ -66,43 +69,22 @@ func APIKeyAuth(cfg AuthConfig) func(http.Handler) http.Handler {
 			if err != nil {
 				switch {
 				case errors.Is(err, errMalformedAuthorizationHeader):
-					writeJSONError(w, http.StatusUnauthorized, "invalid_authorization_header", "Authorization header must use the format 'Bearer <token>'")
+					writeAPIAuthError(w, r, http.StatusUnauthorized, "invalid_authorization_header", "Authorization header must use the format 'Bearer <token>'")
 				case errors.Is(err, errConflictingAPICredentials):
-					writeJSONError(w, http.StatusUnauthorized, "conflicting_api_credentials", "Authorization and X-API-Key credentials must match when both are provided")
+					writeAPIAuthError(w, r, http.StatusUnauthorized, "conflicting_api_credentials", "Authorization and X-API-Key credentials must match when both are provided")
 				default:
-					writeJSONError(w, http.StatusUnauthorized, "invalid_api_key", "API key is invalid or expired")
+					writeAPIAuthError(w, r, http.StatusUnauthorized, "invalid_api_key", "API key is invalid or expired")
 				}
 				return
 			}
 			if apiKey == "" {
-				writeJSONError(w, http.StatusUnauthorized, "missing_api_key", "API key is required")
+				writeAPIAuthError(w, r, http.StatusUnauthorized, "missing_api_key", "API key is required")
 				return
 			}
 
-			credentials := cfg.Credentials
-			if cfg.CredentialProvider != nil {
-				dynamicCredentials := cfg.CredentialProvider()
-				if len(dynamicCredentials) > 0 || len(credentials) == 0 {
-					credentials = dynamicCredentials
-				}
-			}
-			if len(credentials) == 0 {
-				keys := cfg.APIKeys
-				if cfg.APIKeyProvider != nil {
-					dynamicKeys := cfg.APIKeyProvider()
-					if len(dynamicKeys) > 0 || len(keys) == 0 {
-						keys = dynamicKeys
-					}
-				}
-				credentials = make(map[string]apiauth.Credential, len(keys))
-				for key, userID := range keys {
-					credentials[key] = apiauth.DefaultCredentialForAPIKey(key, userID)
-				}
-			}
-
-			credential, valid := validateAPICredential(credentials, apiKey)
+			credential, valid := lookupAuthCredential(cfg, apiKey)
 			if !valid {
-				writeJSONError(w, http.StatusUnauthorized, "invalid_api_key", "API key is invalid or expired")
+				writeAPIAuthError(w, r, http.StatusUnauthorized, "invalid_api_key", "API key is invalid or expired")
 				return
 			}
 
@@ -111,6 +93,7 @@ func APIKeyAuth(cfg AuthConfig) func(http.Handler) http.Handler {
 			ctx = context.WithValue(ctx, contextKeyCredentialID, credential.ID)
 			ctx = context.WithValue(ctx, contextKeyCredentialKind, credential.Kind)
 			ctx = context.WithValue(ctx, contextKeyCredentialName, credential.Name)
+			ctx = context.WithValue(ctx, contextKeyCredentialScopes, append([]string(nil), credential.Scopes...))
 			ctx = context.WithValue(ctx, contextKeyClientID, credential.ClientID)
 			if traceparent := strings.TrimSpace(r.Header.Get("traceparent")); traceparent != "" {
 				ctx = context.WithValue(ctx, contextKeyTraceparent, traceparent)
@@ -180,16 +163,36 @@ func bearerTokenFromAuthorization(raw string) (string, bool, error) {
 	return parts[1], true, nil
 }
 
-func validateAPICredential(credentials map[string]apiauth.Credential, key string) (apiauth.Credential, bool) {
-	for candidate, credential := range credentials {
-		if subtle.ConstantTimeCompare([]byte(candidate), []byte(key)) == 1 {
-			if !credential.Enabled {
-				return apiauth.Credential{}, false
-			}
+func lookupAuthCredential(cfg AuthConfig, key string) (apiauth.Credential, bool) {
+	if cfg.CredentialLookup != nil {
+		if credential, ok := cfg.CredentialLookup(key); ok {
 			return credential, true
 		}
 	}
-	return apiauth.Credential{}, false
+
+	credentials := cfg.Credentials
+	if cfg.CredentialProvider != nil {
+		dynamicCredentials := cfg.CredentialProvider()
+		if len(dynamicCredentials) > 0 || len(credentials) == 0 {
+			credentials = dynamicCredentials
+		}
+	}
+	if len(credentials) > 0 {
+		return apiauth.LookupCredential(credentials, key)
+	}
+
+	keys := cfg.APIKeys
+	if cfg.APIKeyProvider != nil {
+		dynamicKeys := cfg.APIKeyProvider()
+		if len(dynamicKeys) > 0 || len(keys) == 0 {
+			keys = dynamicKeys
+		}
+	}
+	credentials = make(map[string]apiauth.Credential, len(keys))
+	for candidate, userID := range keys {
+		credentials[candidate] = apiauth.DefaultCredentialForAPIKey(candidate, userID)
+	}
+	return apiauth.LookupCredential(credentials, key)
 }
 
 func GetUserID(ctx context.Context) string {
@@ -244,6 +247,15 @@ func GetAPICredentialName(ctx context.Context) string {
 		}
 	}
 	return ""
+}
+
+func GetAPICredentialScopes(ctx context.Context) []string {
+	if v := ctx.Value(contextKeyCredentialScopes); v != nil {
+		if scopes, ok := v.([]string); ok {
+			return append([]string(nil), scopes...)
+		}
+	}
+	return nil
 }
 
 func GetAPIClientID(ctx context.Context) string {
@@ -311,6 +323,10 @@ func RBACMiddleware(rbac *auth.RBAC) func(http.Handler) http.Handler {
 					"insufficient permissions: requires "+requiredPerm)
 				return
 			}
+			if !credentialAllowsPermission(GetAPICredentialScopes(r.Context()), requiredPerm) {
+				writeCredentialScopeError(w, r, requiredPerm)
+				return
+			}
 
 			next.ServeHTTP(w, r)
 		})
@@ -321,7 +337,8 @@ func isPublicEndpoint(path string) bool {
 	return path == "/health" || path == "/ready" ||
 		path == "/metrics" ||
 		path == "/docs" ||
-		path == "/openapi.yaml"
+		path == "/openapi.yaml" ||
+		path == "/.well-known/oauth-protected-resource"
 }
 
 func isRateLimitBypassEndpoint(path string) bool {
@@ -336,6 +353,8 @@ func routePermission(method, path string) string {
 	isExport := strings.Contains(path, "/export")
 
 	switch {
+	case strings.HasPrefix(path, "/api/v1/admin/agent-sdk/credentials"):
+		return "sdk.admin"
 	case strings.HasPrefix(path, "/api/v1/agent-sdk/tools"):
 		if strings.HasSuffix(path, ":call") || strings.HasSuffix(path, "/call") {
 			return "sdk.invoke"
@@ -524,6 +543,69 @@ func routePermission(method, path string) string {
 	default:
 		return ""
 	}
+}
+
+func credentialAllowsPermission(scopes []string, requiredPermission string) bool {
+	requiredPermission = strings.TrimSpace(requiredPermission)
+	if requiredPermission == "" {
+		return true
+	}
+	if len(scopes) == 0 {
+		return true
+	}
+	for _, scope := range scopes {
+		if auth.PermissionImplies(scope, requiredPermission) {
+			return true
+		}
+	}
+	return false
+}
+
+func writeCredentialScopeError(w http.ResponseWriter, r *http.Request, requiredPermission string) {
+	if requiresProtectedResourceMetadata(r.URL.Path) {
+		w.Header().Set("WWW-Authenticate", buildProtectedResourceChallenge(r, "", requiredPermission))
+	}
+	writeJSONError(w, http.StatusForbidden, "insufficient_scope", "credential scope does not allow "+strings.TrimSpace(requiredPermission))
+}
+
+func writeAPIAuthError(w http.ResponseWriter, r *http.Request, status int, code, message string) {
+	if requiresProtectedResourceMetadata(r.URL.Path) {
+		w.Header().Set("WWW-Authenticate", buildProtectedResourceChallenge(r, "", ""))
+	}
+	writeJSONError(w, status, code, message)
+}
+
+func requiresProtectedResourceMetadata(path string) bool {
+	return strings.HasPrefix(path, "/api/v1/agent-sdk") || strings.HasPrefix(path, "/api/v1/mcp")
+}
+
+func buildProtectedResourceChallenge(r *http.Request, realm, requiredScope string) string {
+	parts := make([]string, 0, 4)
+	if scope := strings.TrimSpace(requiredScope); scope != "" {
+		parts = append(parts, `error="insufficient_scope"`, `scope="`+scope+`"`)
+	}
+	if realm = strings.TrimSpace(realm); realm != "" {
+		parts = append(parts, `realm="`+realm+`"`)
+	} else {
+		parts = append(parts, `realm="cerebro-agent-sdk"`)
+	}
+	parts = append(parts, `resource_metadata="`+protectedResourceMetadataURL(r)+`"`)
+	return "Bearer " + strings.Join(parts, ", ")
+}
+
+func protectedResourceMetadataURL(r *http.Request) string {
+	scheme := "http"
+	if r != nil {
+		if strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https") {
+			scheme = "https"
+		} else if r.TLS != nil {
+			scheme = "https"
+		}
+		if host := strings.TrimSpace(r.Host); host != "" {
+			return scheme + "://" + host + "/.well-known/oauth-protected-resource"
+		}
+	}
+	return "/.well-known/oauth-protected-resource"
 }
 
 // CORS middleware

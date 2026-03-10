@@ -127,6 +127,49 @@ func (s *Server) emitAgentSDKReportProgress(run *graph.ReportRun) {
 	}
 }
 
+func (s *Server) emitAgentSDKReportSection(run *graph.ReportRun, section graph.ReportSectionEmission) {
+	if run == nil {
+		return
+	}
+	s.agentSDKReportProgressMu.RLock()
+	subscription, ok := s.agentSDKReportProgress[run.ID]
+	s.agentSDKReportProgressMu.RUnlock()
+	if !ok {
+		return
+	}
+	emission := graph.CloneReportSectionEmissions([]graph.ReportSectionEmission{section})[0]
+	s.emitAgentSDKMCPNotification(subscription.SessionID, agentSDKMCPResponse{
+		JSONRPC: "2.0",
+		Method:  "notifications/report_section",
+		Params: map[string]any{
+			"progressToken": subscription.ProgressToken,
+			"progress":      emission.ProgressPercent,
+			"run_id":        run.ID,
+			"report_id":     run.ReportID,
+			"status_url":    run.StatusURL,
+			"section":       emission,
+		},
+	})
+	s.emitAgentSDKMCPNotification(subscription.SessionID, agentSDKMCPResponse{
+		JSONRPC: "2.0",
+		Method:  "notifications/progress",
+		Params: map[string]any{
+			"progressToken": subscription.ProgressToken,
+			"progress":      emission.ProgressPercent,
+			"total":         100,
+			"message":       "section:" + emission.Section.Key,
+			"data": map[string]any{
+				"run_id":           run.ID,
+				"report_id":        run.ReportID,
+				"status_url":       run.StatusURL,
+				"section_key":      emission.Section.Key,
+				"envelope_kind":    emission.Section.EnvelopeKind,
+				"progress_percent": emission.ProgressPercent,
+			},
+		},
+	})
+}
+
 func reportRunProgress(status string) (int, string) {
 	switch strings.TrimSpace(status) {
 	case graph.ReportRunStatusQueued:

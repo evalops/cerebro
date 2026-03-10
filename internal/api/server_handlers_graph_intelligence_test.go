@@ -1,10 +1,13 @@
 package api
 
 import (
+	"bufio"
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -424,9 +427,6 @@ func TestPlatformIntelligenceReportRunSync(t *testing.T) {
 	if got := body["attempt_count"]; got != float64(1) {
 		t.Fatalf("expected attempt_count=1, got %#v", got)
 	}
-	if got := body["event_count"]; got != float64(4) {
-		t.Fatalf("expected event_count=4, got %#v", got)
-	}
 	statusURL, _ := body["status_url"].(string)
 	if statusURL == "" {
 		t.Fatalf("expected status_url, got %#v", body["status_url"])
@@ -444,6 +444,10 @@ func TestPlatformIntelligenceReportRunSync(t *testing.T) {
 	}
 	if fieldKeys, ok := firstSection["field_keys"].([]any); !ok || len(fieldKeys) == 0 {
 		t.Fatalf("expected field key capture, got %#v", firstSection["field_keys"])
+	}
+	expectedEventCount := 4 + len(sections)
+	if got := body["event_count"]; got != float64(expectedEventCount) {
+		t.Fatalf("expected event_count=%d, got %#v", expectedEventCount, got)
 	}
 
 	runResp := do(t, s, http.MethodGet, statusURL, nil)
@@ -493,12 +497,12 @@ func TestPlatformIntelligenceReportRunSync(t *testing.T) {
 		t.Fatalf("expected 200 for events lookup, got %d: %s", eventsResp.Code, eventsResp.Body.String())
 	}
 	eventsBody := decodeJSON(t, eventsResp)
-	if got := eventsBody["count"]; got != float64(4) {
-		t.Fatalf("expected four lifecycle events, got %#v", got)
+	if got := eventsBody["count"]; got != float64(expectedEventCount) {
+		t.Fatalf("expected %d report events, got %#v", expectedEventCount, got)
 	}
 	events, ok := eventsBody["events"].([]any)
-	if !ok || len(events) != 4 {
-		t.Fatalf("expected four event entries, got %#v", eventsBody["events"])
+	if !ok || len(events) != expectedEventCount {
+		t.Fatalf("expected %d event entries, got %#v", expectedEventCount, eventsBody["events"])
 	}
 	firstEvent, ok := events[0].(map[string]any)
 	if !ok {
@@ -513,6 +517,19 @@ func TestPlatformIntelligenceReportRunSync(t *testing.T) {
 	}
 	if got := lastEvent["type"]; got != string(webhooks.EventPlatformReportRunCompleted) {
 		t.Fatalf("expected completed event last, got %#v", got)
+	}
+	sectionEvents := 0
+	for _, raw := range events {
+		event, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if event["type"] == string(webhooks.EventPlatformReportSectionEmitted) {
+			sectionEvents++
+		}
+	}
+	if sectionEvents != len(sections) {
+		t.Fatalf("expected %d section_emitted events, got %d", len(sections), sectionEvents)
 	}
 
 	listResp := do(t, s, http.MethodGet, "/api/v1/platform/intelligence/reports/quality/runs", nil)
@@ -584,8 +601,13 @@ func TestPlatformIntelligenceReportRunAsync(t *testing.T) {
 	if got := runBody["attempt_count"]; got != float64(1) {
 		t.Fatalf("expected one attempt, got %#v", got)
 	}
-	if got := runBody["event_count"]; got != float64(4) {
-		t.Fatalf("expected four lifecycle events, got %#v", got)
+	sections, ok := runBody["sections"].([]any)
+	if !ok || len(sections) == 0 {
+		t.Fatalf("expected async section summaries, got %#v", runBody["sections"])
+	}
+	expectedEventCount := 4 + len(sections)
+	if got := runBody["event_count"]; got != float64(expectedEventCount) {
+		t.Fatalf("expected %d report events, got %#v", expectedEventCount, got)
 	}
 
 	attemptsResp := do(t, s, http.MethodGet, statusURL+"/attempts", nil)
@@ -615,6 +637,76 @@ func TestPlatformIntelligenceReportRunAsync(t *testing.T) {
 	jobBody := decodeJSON(t, jobResp)
 	if got := jobBody["status"]; got != "succeeded" {
 		t.Fatalf("expected job succeeded, got %#v", got)
+	}
+}
+
+func TestPlatformIntelligenceReportRunStreamEmitsSections(t *testing.T) {
+	s := newTestServer(t)
+	original := s.platformReportHandlers["quality"]
+	s.platformReportHandlers["quality"] = func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(75 * time.Millisecond)
+		original(w, r)
+	}
+	server := httptest.NewServer(s)
+	defer server.Close()
+
+	createResp := doAuthenticatedHTTP(t, server.URL, http.MethodPost, "/api/v1/platform/intelligence/reports/quality/runs", map[string]any{
+		"execution_mode": "async",
+	}, nil)
+	if createResp.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 for async run create, got %d: %s", createResp.Code, createResp.Body.String())
+	}
+	createBody := decodeJSON(t, createResp)
+	statusURL, _ := createBody["status_url"].(string)
+	if statusURL == "" {
+		t.Fatalf("expected status_url, got %#v", createBody["status_url"])
+	}
+
+	streamCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req, err := http.NewRequestWithContext(streamCtx, http.MethodGet, server.URL+statusURL+"/stream", nil)
+	if err != nil {
+		t.Fatalf("build report stream request: %v", err)
+	}
+	resp, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatalf("open report stream: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	sectionCh := make(chan string, 1)
+	go func() {
+		scanner := bufio.NewScanner(resp.Body)
+		var eventName string
+		var payload strings.Builder
+		for scanner.Scan() {
+			line := scanner.Text()
+			switch {
+			case strings.HasPrefix(line, "event: "):
+				eventName = strings.TrimPrefix(line, "event: ")
+			case strings.HasPrefix(line, "data: "):
+				payload.WriteString(strings.TrimPrefix(line, "data: "))
+			case line == "":
+				if eventName == "section" {
+					sectionCh <- payload.String()
+					return
+				}
+				eventName = ""
+				payload.Reset()
+			}
+		}
+	}()
+
+	select {
+	case payload := <-sectionCh:
+		if !strings.Contains(payload, "\"type\":\"section\"") {
+			t.Fatalf("expected section stream payload, got %s", payload)
+		}
+		if !strings.Contains(payload, "\"section\"") {
+			t.Fatalf("expected section envelope in payload, got %s", payload)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for report section stream event")
 	}
 }
 
@@ -1105,8 +1197,13 @@ func TestPlatformIntelligenceReportRunPersistsAcrossServerRestart(t *testing.T) 
 		t.Fatalf("expected 200 for restored events, got %d: %s", eventsResp.Code, eventsResp.Body.String())
 	}
 	eventsBody := decodeJSON(t, eventsResp)
-	if got := eventsBody["count"]; got != float64(4) {
-		t.Fatalf("expected persisted event count=4, got %#v", got)
+	sectionCount := 0
+	if sections, ok := runBody["sections"].([]any); ok {
+		sectionCount = len(sections)
+	}
+	expectedEventCount := float64(4 + sectionCount)
+	if got := eventsBody["count"]; got != expectedEventCount {
+		t.Fatalf("expected persisted event count=%v, got %#v", expectedEventCount, got)
 	}
 }
 

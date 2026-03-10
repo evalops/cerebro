@@ -419,6 +419,25 @@ jobs:
       - name: Enforce Agent SDK contract compatibility
         run: go run ./scripts/check_agent_sdk_contract_compat/main.go --require-baseline
 
+  agent-sdk-packages:
+    name: agent-sdk-packages
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Node
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: '22'
+
+      - name: Verify generated Agent SDK packages are committed and valid
+        run: make agent-sdk-packages-check
+
   api-auth-smoke:
     name: api-auth-smoke
     runs-on: blacksmith-4vcpu-ubuntu-2404

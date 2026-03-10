@@ -822,6 +822,7 @@ func (s *Server) executePlatformReportRun(ctx context.Context, runID string, def
 	}
 
 	sections := graph.BuildReportSectionResults(definition, result)
+	sectionEmissions := graph.BuildReportSectionEmissions(definition, result, completedAt)
 	var snapshot *graph.ReportSnapshot
 	if materializeResult {
 		snapshot, err = graph.BuildReportSnapshot(runID, definition, result, true, completedAt)
@@ -868,6 +869,25 @@ func (s *Server) executePlatformReportRun(ctx context.Context, runID string, def
 				"snapshot_id": snapshot.ID,
 			})
 		}
+		for _, emission := range sectionEmissions {
+			eventData := map[string]any{
+				"report_id":        run.ReportID,
+				"section_key":      emission.Section.Key,
+				"sequence":         emission.Sequence,
+				"emitted_at":       normalizeRFC3339(emission.EmittedAt),
+				"progress_percent": emission.ProgressPercent,
+				"envelope_kind":    emission.Section.EnvelopeKind,
+				"content_type":     emission.Section.ContentType,
+				"item_count":       emission.Section.ItemCount,
+				"field_count":      emission.Section.FieldCount,
+				"field_keys":       append([]string(nil), emission.Section.FieldKeys...),
+				"measure_ids":      append([]string(nil), emission.Section.MeasureIDs...),
+			}
+			if snapshot != nil {
+				eventData["snapshot_id"] = snapshot.ID
+			}
+			graph.AppendReportRunEvent(run, string(webhooks.EventPlatformReportSectionEmitted), run.Status, platformReportTriggerSurface(run), run.RequestedBy, emission.EmittedAt, eventData)
+		}
 		graph.AppendReportRunEvent(run, string(webhooks.EventPlatformReportRunCompleted), run.Status, platformReportTriggerSurface(run), run.RequestedBy, completedAt, map[string]any{
 			"report_id":           run.ReportID,
 			"materialized_result": snapshot != nil,
@@ -880,8 +900,15 @@ func (s *Server) executePlatformReportRun(ctx context.Context, runID string, def
 	if canceledBeforeCommit {
 		return context.Canceled
 	}
+	stored, ok := s.platformReportRunSnapshot(definition.ID, runID)
+	if !ok || stored == nil {
+		return fmt.Errorf("report run disappeared after commit: %s", runID)
+	}
 	if snapshot != nil {
 		s.emitPlatformReportSnapshotLifecycleEvent(ctx, definition.ID, runID)
+	}
+	for _, emission := range sectionEmissions {
+		s.emitPlatformReportSectionLifecycleEvent(ctx, stored, emission)
 	}
 	s.emitPlatformReportRunLifecycleEvent(ctx, webhooks.EventPlatformReportRunCompleted, definition.ID, runID)
 	return nil
@@ -1320,6 +1347,7 @@ func (s *Server) emitPlatformReportRunLifecycleEvent(ctx context.Context, eventT
 		return
 	}
 	s.emitPlatformLifecycleEvent(ctx, eventType, platformReportRunEventPayload(run))
+	s.emitPlatformReportRunLifecycleStream(run, eventType)
 	s.emitAgentSDKReportProgress(run)
 }
 
@@ -1329,6 +1357,15 @@ func (s *Server) emitPlatformReportSnapshotLifecycleEvent(ctx context.Context, r
 		return
 	}
 	s.emitPlatformLifecycleEvent(ctx, webhooks.EventPlatformReportSnapshotMaterialized, platformReportSnapshotEventPayload(run))
+}
+
+func (s *Server) emitPlatformReportSectionLifecycleEvent(ctx context.Context, run *graph.ReportRun, section graph.ReportSectionEmission) {
+	if run == nil {
+		return
+	}
+	s.emitPlatformLifecycleEvent(ctx, webhooks.EventPlatformReportSectionEmitted, platformReportSectionEventPayload(run, section))
+	s.emitPlatformReportSectionStream(run, section)
+	s.emitAgentSDKReportSection(run, section)
 }
 
 func platformReportRunEventPayload(run *graph.ReportRun) map[string]any {
@@ -1456,6 +1493,37 @@ func platformReportSnapshotEventPayload(run *graph.ReportRun) map[string]any {
 	}
 	if run.Snapshot.Lineage.GraphBuiltAt != nil {
 		payload["graph_built_at"] = normalizeRFC3339(*run.Snapshot.Lineage.GraphBuiltAt)
+	}
+	return payload
+}
+
+func platformReportSectionEventPayload(run *graph.ReportRun, section graph.ReportSectionEmission) map[string]any {
+	if run == nil {
+		return nil
+	}
+	emission := graph.CloneReportSectionEmissions([]graph.ReportSectionEmission{section})[0]
+	payload := map[string]any{
+		"run_id":           run.ID,
+		"report_id":        run.ReportID,
+		"status":           run.Status,
+		"status_url":       run.StatusURL,
+		"section_key":      emission.Section.Key,
+		"sequence":         emission.Sequence,
+		"emitted_at":       normalizeRFC3339(emission.EmittedAt),
+		"progress_percent": emission.ProgressPercent,
+		"envelope_kind":    emission.Section.EnvelopeKind,
+		"content_type":     emission.Section.ContentType,
+		"item_count":       emission.Section.ItemCount,
+		"field_count":      emission.Section.FieldCount,
+	}
+	if len(emission.Section.FieldKeys) > 0 {
+		payload["field_keys"] = append([]string(nil), emission.Section.FieldKeys...)
+	}
+	if len(emission.Section.MeasureIDs) > 0 {
+		payload["measure_ids"] = append([]string(nil), emission.Section.MeasureIDs...)
+	}
+	if run.Snapshot != nil {
+		payload["snapshot_id"] = run.Snapshot.ID
 	}
 	return payload
 }

@@ -61,6 +61,15 @@ type ReportSectionResult struct {
 	MeasureIDs   []string `json:"measure_ids,omitempty"`
 }
 
+// ReportSectionEmission carries one section payload emitted over live report streams.
+type ReportSectionEmission struct {
+	Sequence        int                 `json:"sequence"`
+	EmittedAt       time.Time           `json:"emitted_at"`
+	ProgressPercent int                 `json:"progress_percent,omitempty"`
+	Section         ReportSectionResult `json:"section"`
+	Payload         any                 `json:"payload,omitempty"`
+}
+
 // ReportSnapshot stores materialization metadata for one report result.
 type ReportSnapshot struct {
 	ID           string              `json:"id"`
@@ -305,6 +314,29 @@ func BuildReportSectionResults(definition ReportDefinition, result map[string]an
 	return sections
 }
 
+// BuildReportSectionEmissions constructs stream-ready section payloads for one report result.
+func BuildReportSectionEmissions(definition ReportDefinition, result map[string]any, emittedAt time.Time) []ReportSectionEmission {
+	if emittedAt.IsZero() {
+		emittedAt = time.Now().UTC()
+	}
+	summaries := BuildReportSectionResults(definition, result)
+	emissions := make([]ReportSectionEmission, 0, len(definition.Sections))
+	total := len(definition.Sections)
+	for index, summary := range summaries {
+		emission := ReportSectionEmission{
+			Sequence:        index + 1,
+			EmittedAt:       emittedAt.UTC(),
+			ProgressPercent: reportSectionProgress(index+1, total),
+			Section:         CloneReportSectionResults([]ReportSectionResult{summary})[0],
+		}
+		if payload, ok := result[summary.Key]; ok {
+			emission.Payload = cloneReportJSONValue(payload)
+		}
+		emissions = append(emissions, emission)
+	}
+	return emissions
+}
+
 // BuildReportSnapshot constructs materialization metadata for one report run result.
 func BuildReportSnapshot(runID string, definition ReportDefinition, result map[string]any, retained bool, now time.Time) (*ReportSnapshot, error) {
 	now = now.UTC()
@@ -333,6 +365,46 @@ func BuildReportSnapshot(runID string, definition ReportDefinition, result map[s
 		ExpiresAt:    expiresAt,
 		Storage:      BuildReportStoragePolicy(true, false),
 	}, nil
+}
+
+func CloneReportSectionEmissions(values []ReportSectionEmission) []ReportSectionEmission {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := append([]ReportSectionEmission(nil), values...)
+	for i := range cloned {
+		cloned[i].Section = CloneReportSectionResults([]ReportSectionResult{values[i].Section})[0]
+		cloned[i].Payload = cloneReportJSONValue(values[i].Payload)
+	}
+	return cloned
+}
+
+func reportSectionProgress(index, total int) int {
+	if total <= 0 {
+		return 95
+	}
+	if index <= 0 {
+		return 50
+	}
+	if index > total {
+		index = total
+	}
+	return 50 + int(float64(index)/float64(total)*45)
+}
+
+func cloneReportJSONValue(value any) any {
+	if value == nil {
+		return nil
+	}
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return value
+	}
+	var decoded any
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		return value
+	}
+	return decoded
 }
 
 // BuildReportRunCacheKey generates a stable cache key for one report definition + parameter binding set.

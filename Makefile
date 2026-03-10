@@ -1,4 +1,4 @@
-.PHONY: build run test sync clean dev serve policy-list docker-build trivy-db security-scan security-scan-built security-scan-source vendor vendor-check oss-audit openapi-check openapi-sync config-docs config-docs-check ontology-docs ontology-docs-check cloudevents-docs cloudevents-docs-check cloudevents-contract-compat report-contract-docs report-contract-docs-check report-contract-compat agent-sdk-docs agent-sdk-docs-check agent-sdk-contract-compat platform-up platform-down platform-logs platform-smoke hooks
+.PHONY: build run test sync clean dev serve policy-list docker-build trivy-db security-scan security-scan-built security-scan-source vendor vendor-check oss-audit openapi-check openapi-sync config-docs config-docs-check ontology-docs ontology-docs-check cloudevents-docs cloudevents-docs-check cloudevents-contract-compat report-contract-docs report-contract-docs-check report-contract-compat agent-sdk-docs agent-sdk-docs-check agent-sdk-contract-compat agent-sdk-packages agent-sdk-packages-check platform-up platform-down platform-logs platform-smoke hooks
 
 # Version info
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -173,6 +173,21 @@ agent-sdk-docs-check: agent-sdk-docs
 
 agent-sdk-contract-compat:
 	go run ./scripts/check_agent_sdk_contract_compat/main.go
+
+agent-sdk-packages:
+	go run ./scripts/generate_agent_sdk_packages/main.go
+
+agent-sdk-packages-check: agent-sdk-packages
+	git diff --exit-code -- docs/AGENT_SDK_PACKAGES_AUTOGEN.md sdk/go/cerebro/client.go sdk/python/cerebro_sdk/__init__.py sdk/python/cerebro_sdk/client.py sdk/python/pyproject.toml sdk/typescript/package.json sdk/typescript/src/index.ts sdk/typescript/tsconfig.json
+	go test ./sdk/go/cerebro
+	python3 -m py_compile sdk/python/cerebro_sdk/*.py
+	python3 - <<'PY'
+	import pathlib
+	import tomllib
+	with pathlib.Path("sdk/python/pyproject.toml").open("rb") as fh:
+	    tomllib.load(fh)
+	PY
+	npx --yes -p typescript tsc -p sdk/typescript/tsconfig.json --noEmit
 
 # Docker run
 docker-run:

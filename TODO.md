@@ -5,6 +5,59 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 24 - External SDK Packages + Section Streams + Managed Credential Control (2026-03-09)
+
+### Review findings
+- [x] Gap: generated Agent SDK contracts existed, but there were still no externally consumable Go/Python/TypeScript package surfaces or reproducible package validation targets.
+- [x] Gap: long-running report execution exposed durable runs and MCP progress, but section-level payload delivery was still missing from the live transport contracts.
+- [x] Gap: SDK auth had structured credential parsing, but there was still no managed lifecycle surface for creation/rotation/revocation or protected-resource discovery metadata for OAuth-aware clients.
+- [x] Gap: the public Agent SDK catalog still had a hidden contract bug where `simulate` and `cerebro.simulate` collapsed to the same external tool ID.
+- [x] Gap: OpenAPI had drifted behind the real runtime surface for `report_run:*` routes, report streaming, and the new SDK auth/admin resources.
+
+### Research synthesis to adopt
+- [x] Package generation discipline: a generated SDK is only real once language-native validation is wired into deterministic generation and CI drift checks.
+- [x] MCP/report-runtime rule: partial execution insight should stream as stable section envelopes over the same durable run substrate, not via handler-local ad hoc progress blobs.
+- [x] OAuth protected-resource rule: external clients should discover supported scopes and authorization servers from one machine-readable endpoint instead of vendor-specific docs.
+- [x] Contract-governance rule: stable external tool IDs must be unique even when internal tool names converge semantically.
+
+### Execution plan
+- [x] Externalize generated SDK packages:
+  - [x] add generated Go package output under `sdk/go/cerebro`
+  - [x] add generated Python package output under `sdk/python/cerebro_sdk`
+  - [x] add generated Python `pyproject.toml`
+  - [x] add generated TypeScript package output under `sdk/typescript`
+  - [x] add `docs/AGENT_SDK_PACKAGES_AUTOGEN.md`
+  - [x] add `make agent-sdk-packages-check`
+- [x] Deepen report streaming:
+  - [x] emit section payload notifications over MCP as `notifications/report_section`
+  - [x] add platform report-run SSE stream endpoint
+  - [x] persist section emission events in report-run lifecycle history
+  - [x] include section progress/payload metadata in stream events
+- [x] Add managed credential control:
+  - [x] add file-backed managed credential store with hashed secret persistence
+  - [x] add admin create/get/list/rotate/revoke routes for SDK credentials
+  - [x] add scoped credential enforcement through auth and RBAC
+  - [x] add `/.well-known/oauth-protected-resource`
+- [x] Tighten public contracts:
+  - [x] fix duplicate simulation tool IDs in the generated Agent SDK catalog
+  - [x] align OpenAPI with `report_run:{run_id}` status routes
+  - [x] extend OpenAPI with protected-resource, credential admin, and report-stream resources
+  - [x] add regression coverage for section streaming and managed credential lifecycle
+
+### Detailed follow-on backlog
+- [ ] Package publishing and release governance:
+  - [ ] publish semantic version metadata from one canonical SDK release manifest
+  - [ ] generate changelogs directly from Agent SDK compatibility diffs
+  - [ ] emit per-language examples and README snippets from the generated catalog
+- [ ] Runtime telemetry deepening:
+  - [ ] stream cache-hit/cache-miss and retry-backoff metadata alongside section events
+  - [ ] extend section emissions with source/claim/evidence cardinality and truncation metadata
+  - [ ] reuse the same runtime streaming contract for simulation-heavy non-report tools
+- [ ] Auth and control-plane deepening:
+  - [ ] per-tool and per-tenant throttling policies for managed SDK credentials
+  - [ ] signed request support for higher-trust agent clients
+  - [ ] SDK usage/audit reports over credential, tool, and approval pressure dimensions
+
 ## Deep Review Cycle 23 - Agent SDK Contract Governance + Progress Runtime + Structured Credentials (2026-03-09)
 
 ### Review findings

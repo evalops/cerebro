@@ -1178,6 +1178,104 @@
       }
     },
     {
+      "event_type": "platform.report_run.section_emitted",
+      "summary": "Report section payload emitted on the shared platform intelligence layer.",
+      "schema_url": "urn:cerebro:events/platform.report_run.section_emitted/v1",
+      "required_data_keys": [
+        "run_id",
+        "report_id",
+        "section_key",
+        "sequence",
+        "emitted_at",
+        "status_url"
+      ],
+      "optional_data_keys": [
+        "status",
+        "progress_percent",
+        "envelope_kind",
+        "content_type",
+        "item_count",
+        "field_count",
+        "field_keys",
+        "measure_ids",
+        "snapshot_id",
+        "tenant_id",
+        "traceparent"
+      ],
+      "data_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "content_type": {
+            "type": "string"
+          },
+          "emitted_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "envelope_kind": {
+            "type": "string"
+          },
+          "field_count": {
+            "type": "integer"
+          },
+          "field_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "item_count": {
+            "type": "integer"
+          },
+          "measure_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "progress_percent": {
+            "type": "integer"
+          },
+          "report_id": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "section_key": {
+            "type": "string"
+          },
+          "sequence": {
+            "type": "integer"
+          },
+          "snapshot_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "status_url": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "traceparent": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "report_id",
+          "section_key",
+          "sequence",
+          "emitted_at",
+          "status_url"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "event_type": "platform.report_run.started",
       "summary": "Report execution started on the shared platform intelligence layer.",
       "schema_url": "urn:cerebro:events/platform.report_run.started/v1",

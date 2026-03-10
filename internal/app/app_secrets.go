@@ -61,6 +61,9 @@ func (a *App) APIKeysSnapshot() map[string]string {
 	}
 	current := a.apiKeys.Load()
 	if current == nil {
+		if a.Config != nil {
+			return cloneStringMap(a.Config.APIKeys)
+		}
 		return map[string]string{}
 	}
 	keys, ok := current.(map[string]string)
@@ -77,6 +80,9 @@ func (a *App) APICredentialsSnapshot() map[string]apiauth.Credential {
 	}
 	current := a.apiCredentials.Load()
 	if current == nil {
+		if a.Config != nil {
+			return apiauth.CloneCredentials(a.Config.APICredentials)
+		}
 		return map[string]apiauth.Credential{}
 	}
 	credentials, ok := current.(map[string]apiauth.Credential)

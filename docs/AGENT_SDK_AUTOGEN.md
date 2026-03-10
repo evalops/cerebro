@@ -7,7 +7,7 @@ Generated from the shared `App.AgentSDKTools()` registry and `internal/agentsdk`
 - MCP protocol version: **2025-06-18**
 - Tools: **23**
 - Resources: **5**
-- MCP methods + notifications: **6**
+- MCP methods + notifications: **7**
 
 ## Tools
 
@@ -23,6 +23,7 @@ Generated from the shared `App.AgentSDKTools()` registry and `internal/agentsdk`
 | `cerebro_decide` | `1.0.0` | `cerebro.record_decision` | `decide` | `writeback` | `direct_tool` | false | false | `POST /api/v1/agent-sdk/decisions` | `sdk.worldmodel.write` |
 | `cerebro_findings` | `1.0.0` | `cerebro.findings` | `findings` | `query` | `direct_tool` | false | false | ` ` | `sdk.context.read` |
 | `cerebro_graph_query` | `1.0.0` | `cerebro.graph_query` | `graph_query` | `query` | `direct_tool` | false | false | ` ` | `sdk.context.read` |
+| `cerebro_graph_simulate` | `1.0.0` | `cerebro.simulate` | `graph_simulate` | `enforcement` | `direct_tool` | false | false | ` ` | `sdk.enforcement.run` |
 | `cerebro_identity_calibration` | `1.0.0` | `cerebro.identity_calibration` | `identity_calibration` | `query` | `direct_tool` | false | false | ` ` | `sdk.context.read` |
 | `cerebro_identity_review` | `1.0.0` | `cerebro.identity_review` | `identity_review` | `query` | `direct_tool` | false | false | ` ` | `sdk.worldmodel.write` |
 | `cerebro_leverage` | `1.0.0` | `cerebro.graph_leverage_report` | `leverage` | `query` | `direct_tool` | false | false | `GET /api/v1/agent-sdk/leverage` | `sdk.context.read` |
@@ -32,8 +33,7 @@ Generated from the shared `App.AgentSDKTools()` registry and `internal/agentsdk`
 | `cerebro_report` | `2.0.0` | `cerebro.intelligence_report` | `report` | `intelligence` | `report_run` | true | true | `POST /api/v1/agent-sdk/report` | `sdk.context.read` |
 | `cerebro_resolve_identity` | `1.0.0` | `cerebro.resolve_identity` | `resolve_identity` | `writeback` | `direct_tool` | false | false | `POST /api/v1/agent-sdk/identity/resolve` | `sdk.worldmodel.write` |
 | `cerebro_risk_score` | `1.0.0` | `cerebro.risk_score` | `risk_score` | `query` | `direct_tool` | false | false | ` ` | `sdk.context.read` |
-| `cerebro_simulate` | `1.0.0` | `simulate` | `simulate` | `enforcement` | `direct_tool` | false | false | `POST /api/v1/agent-sdk/simulate` | `sdk.enforcement.run` |
-| `cerebro_simulate` | `1.0.0` | `cerebro.simulate` | `simulate` | `query` | `direct_tool` | false | false | ` ` | `sdk.enforcement.run` |
+| `cerebro_simulate` | `2.0.0` | `simulate` | `simulate` | `enforcement` | `direct_tool` | false | false | `POST /api/v1/agent-sdk/simulate` | `sdk.enforcement.run` |
 | `cerebro_split_identity` | `1.0.0` | `cerebro.split_identity` | `split_identity` | `query` | `direct_tool` | false | false | ` ` | `sdk.worldmodel.write` |
 | `cerebro_templates` | `1.0.0` | `cerebro.graph_query_templates` | `templates` | `query` | `direct_tool` | false | false | `GET /api/v1/agent-sdk/templates` | `sdk.context.read` |
 
@@ -57,6 +57,7 @@ Generated from the shared `App.AgentSDKTools()` registry and `internal/agentsdk`
 | `resources/list` | `request` | List readable Agent SDK resources |
 | `resources/read` | `request` | Read one Agent SDK resource payload |
 | `notifications/progress` | `notification` | Server-initiated progress notifications for long-running report executions |
+| `notifications/report_section` | `notification` | Server-initiated section payload notifications for durable report executions |
 
 ## Example Inputs
 
@@ -250,6 +251,16 @@ Generated from the shared `App.AgentSDKTools()` registry and `internal/agentsdk`
 }
 ```
 
+### `cerebro_graph_simulate`
+
+```json
+{
+  "edges": [],
+  "mutations": [],
+  "nodes": []
+}
+```
+
 ### `cerebro_identity_calibration`
 
 ```json
@@ -406,16 +417,6 @@ Generated from the shared `App.AgentSDKTools()` registry and `internal/agentsdk`
   "requester": "requester",
   "scenario": "customer_churn",
   "target": "service:payments"
-}
-```
-
-### `cerebro_simulate`
-
-```json
-{
-  "edges": [],
-  "mutations": [],
-  "nodes": []
 }
 ```
 
