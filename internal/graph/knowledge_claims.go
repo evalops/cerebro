@@ -447,12 +447,12 @@ func normalizeClaimWriteRequest(req ClaimWriteRequest) (ClaimWriteRequest, error
 	out.SourceName = strings.TrimSpace(req.SourceName)
 	out.SourceType = strings.TrimSpace(req.SourceType)
 	if out.SourceType != "" {
-		out.SourceType = normalizeSourceType(req.SourceType)
+		out.SourceType = normalizeSourceType(out.SourceType)
 	}
 	out.SourceURL = strings.TrimSpace(req.SourceURL)
 	out.TrustTier = strings.TrimSpace(req.TrustTier)
 	if out.TrustTier != "" {
-		out.TrustTier = normalizeTrustTier(req.TrustTier)
+		out.TrustTier = normalizeTrustTier(out.TrustTier)
 	}
 	out.SourceSystem = strings.TrimSpace(req.SourceSystem)
 	out.SourceEventID = strings.TrimSpace(req.SourceEventID)
