@@ -2,7 +2,7 @@ package graph
 
 import "time"
 
-// NodeKind represents the type of node in the security graph
+// NodeKind represents the type of node in the graph platform.
 type NodeKind string
 
 const (
@@ -70,6 +70,9 @@ const (
 	NodeKindDecision      NodeKind = "decision"
 	NodeKindOutcome       NodeKind = "outcome"
 	NodeKindEvidence      NodeKind = "evidence"
+	NodeKindObservation   NodeKind = "observation"
+	NodeKindSource        NodeKind = "source"
+	NodeKindClaim         NodeKind = "claim"
 	NodeKindAction        NodeKind = "action"
 	NodeKindDepartment    NodeKind = "department"
 	NodeKindLocation      NodeKind = "location"
@@ -92,7 +95,7 @@ type PropertySnapshot struct {
 	Value     any       `json:"value"`
 }
 
-// Node represents an entity in the security graph
+// Node represents an entity in the graph platform.
 type Node struct {
 	ID                 string                        `json:"id"`
 	Kind               NodeKind                      `json:"kind"`

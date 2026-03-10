@@ -8,6 +8,8 @@ import (
 )
 
 func TestRunPolicyDiff_JSONWithDryRunAssets(t *testing.T) {
+	t.Setenv(envCLIExecutionMode, string(cliExecutionModeDirect))
+
 	workDir := t.TempDir()
 	policiesDir := filepath.Join(workDir, "policies")
 	if err := os.MkdirAll(policiesDir, 0o755); err != nil {

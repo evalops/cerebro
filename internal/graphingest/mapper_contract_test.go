@@ -122,7 +122,7 @@ func TestMapperContractFixtures(t *testing.T) {
 				if node.Kind != wantKind {
 					t.Fatalf("expected node %q kind %q, got %q", expectedNode.ID, wantKind, node.Kind)
 				}
-				for _, key := range []string{"source_system", "source_event_id", "observed_at", "valid_from", "confidence"} {
+				for _, key := range []string{"source_system", "source_event_id", "observed_at", "valid_from", "recorded_at", "transaction_from", "confidence"} {
 					if _, ok := node.Properties[key]; !ok {
 						t.Fatalf("expected node %q metadata key %q, got %#v", expectedNode.ID, key, node.Properties)
 					}
@@ -134,7 +134,7 @@ func TestMapperContractFixtures(t *testing.T) {
 				if edge == nil {
 					t.Fatalf("expected edge %s -> %s (%s)", expectedEdge.Source, expectedEdge.Target, expectedEdge.Kind)
 				}
-				for _, key := range []string{"source_system", "source_event_id", "observed_at", "valid_from", "confidence"} {
+				for _, key := range []string{"source_system", "source_event_id", "observed_at", "valid_from", "recorded_at", "transaction_from", "confidence"} {
 					if _, ok := edge.Properties[key]; !ok {
 						t.Fatalf("expected edge %q metadata key %q, got %#v", edge.ID, key, edge.Properties)
 					}

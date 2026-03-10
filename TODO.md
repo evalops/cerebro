@@ -5,6 +5,119 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 15 - Platform Alias Execution + Org Route Extraction + First Job Resource (2026-03-09)
+
+### Review findings
+- [x] Gap: the transition architecture existed, but the router and OpenAPI still forced all shared primitives through legacy `/api/v1/graph/*` paths.
+- [x] Gap: org-intelligence capabilities (`who-knows`, `recommend-team`, `simulate-reorg`) still lived under `/api/v1/graph/*`, reinforcing the false idea that graph namespace equals platform namespace.
+- [x] Gap: legacy graph routes lacked runtime deprecation metadata, so compatibility aliases had no migration pressure.
+- [x] Gap: the platform split had no concrete proof that a heavy operation could return an execution resource instead of a synchronous payload.
+- [x] Gap: the transition doc still needed sharper classification for ambiguous analytics, stronger job rules, and explicit auth/deprecation/eventing sections.
+
+### Execution plan
+- [x] Add concrete platform and org aliases in code:
+  - [x] Add `POST /api/v1/platform/graph/queries`.
+  - [x] Add `POST /api/v1/platform/knowledge/claims`.
+  - [x] Add `POST /api/v1/platform/knowledge/decisions`.
+  - [x] Add `GET /api/v1/org/expertise/queries`.
+  - [x] Add `POST /api/v1/org/team-recommendations`.
+  - [x] Add `POST /api/v1/org/reorg-simulations`.
+- [x] Add runtime deprecation metadata on selected legacy graph aliases:
+  - [x] `/api/v1/graph/query`
+  - [x] `/api/v1/graph/write/claim`
+  - [x] `/api/v1/graph/write/decision`
+  - [x] `/api/v1/graph/who-knows`
+  - [x] `/api/v1/graph/recommend-team`
+  - [x] `/api/v1/graph/simulate-reorg`
+- [x] Add the first execution-resource proof point:
+  - [x] Add `POST /api/v1/security/analyses/attack-paths/jobs`.
+  - [x] Add `GET /api/v1/platform/jobs/{id}`.
+  - [x] Back the new endpoints with an in-memory async job record for attack-path analysis.
+- [x] Tighten the contract surface:
+  - [x] Add `Platform` and `Security` tags in OpenAPI.
+  - [x] Add typed schemas for platform graph query, platform claim write, platform decision write, platform jobs, attack-path job request, and reorg simulation request.
+  - [x] Mark the selected legacy graph endpoints `deprecated: true` in OpenAPI.
+- [x] Harden the transition doc:
+  - [x] Reclassify ambiguous analytics (`impact-analysis`, `cohort`, `outlier-score`) as pending proof instead of auto-promoting them to platform primitives.
+  - [x] Add explicit permission model, compatibility/deprecation policy, eventing model, and hidden-security-bias audit guidance.
+
+## Deep Review Cycle 14 - Platform Transition Architecture + API Boundary Cleanup (2026-03-09)
+
+### Review findings
+- [x] Gap: `docs/ARCHITECTURE.md` still described Cerebro primarily as a security data platform instead of a graph platform with security as the first application.
+- [x] Gap: the current OpenAPI exposes 189 `/api/v1/*` routes, with 61 `/api/v1/graph/*` routes that mix platform primitives, security workflows, and org-intelligence endpoints.
+- [x] Gap: graph platform candidates, security application endpoints, org-intelligence endpoints, and admin/control-plane concerns are interleaved under shared namespaces.
+- [x] Gap: historical drift created duplicate/alias surfaces (`/policy/evaluate`, top-level attack-path APIs, dual access-review APIs, dual sync surfaces).
+- [x] Gap: too many platform-grade endpoints still use weak object contracts (`additionalProperties: true`) and lack consistent envelope/job conventions.
+- [x] Gap: user-facing docs and OpenAPI descriptions still said "security graph" for shared graph substrate APIs.
+
+### Execution plan
+- [x] Produce a concrete platform transition architecture doc:
+  - [x] Inventory current routes by platform, security, org, and admin layers.
+  - [x] Diagnose bad abstractions, duplicates, and security-domain leakage.
+  - [x] Define target namespace structure for `/api/v1/platform`, `/api/v1/security`, `/api/v1/org`, and `/api/v1/admin`.
+  - [x] Define the canonical domain-agnostic platform model for entities, edges, evidence, claims, annotations, decisions, outcomes, actions, provenance, temporal semantics, identity, and schema modules.
+  - [x] Map current security concepts into the generalized platform model.
+  - [x] Provide endpoint reorganization, migration phases, and typed schema proposals.
+- [x] Wire the transition plan into the main architecture docs:
+  - [x] Add `docs/PLATFORM_TRANSITION_ARCHITECTURE.md`.
+  - [x] Update `docs/ARCHITECTURE.md` to describe the platform-first direction and link the transition doc.
+- [x] Reduce security-domain leakage in current user-facing platform contracts:
+  - [x] Normalize shared graph endpoint terminology from "security graph" to "graph platform" in OpenAPI/user-facing graph messaging.
+  - [x] Rename the router comment for shared graph endpoints to reflect platform ownership.
+
+### Follow-on execution backlog
+- [ ] Add new `/api/v1/platform/*` aliases backed by existing graph handlers, then mark legacy `/api/v1/graph/*` routes deprecated in OpenAPI.
+- [ ] Move org-intelligence endpoints (`who-knows`, `recommend-team`, `simulate-reorg`) out of `/api/v1/graph/*` and into `/api/v1/org/*`.
+- [ ] Collapse duplicate access-review surfaces onto `/api/v1/security/access-reviews/*`.
+- [ ] Collapse duplicate policy-evaluation routes onto `/api/v1/security/policy-evaluations`.
+- [ ] Convert provider sync, graph rebuild, attack-path analysis, and large simulation endpoints to explicit async job resources.
+- [ ] Replace `additionalProperties: true` on the highest-value platform endpoints with typed request/response schemas and shared envelopes.
+
+## Deep Review Cycle 13 - World Model Foundation + Claim Layer + Bitemporal Reasoning (2026-03-09)
+
+### Review findings
+- [x] Gap: the graph modeled entities and operational events well, but did not model facts as first-class claims.
+- [x] Gap: provenance existed, but there was no durable `source` abstraction to separate “who asserted this” from the write path that stored it.
+- [x] Gap: temporal semantics were fact-time heavy (`observed_at`, `valid_from`, `valid_to`) but lacked system-time fields for “when Cerebro learned this.”
+- [x] Gap: no API write path existed for a proper claim/assertion workflow.
+- [x] Gap: no intelligence surface existed for contradiction detection, unsupported claims, or sourceless claims.
+- [x] Gap: ingest/runtime metadata normalization did not stamp bitemporal fields on declarative mapper writes.
+- [x] Gap: architecture docs described ontology depth, but not the claim-first world-model target state.
+
+### Execution plan
+- [x] Add world-model ontology primitives:
+  - [x] Add node kinds: `claim`, `source`, `observation`.
+  - [x] Add edge kinds: `asserted_by`, `supports`, `refutes`, `supersedes`, `contradicts`.
+  - [x] Register built-in schema contracts and required relationships for the new kinds.
+- [x] Extend metadata contract to bitemporal writes:
+  - [x] Add `recorded_at`, `transaction_from`, `transaction_to` to `graph.WriteMetadata`.
+  - [x] Extend `NormalizeWriteMetadata(...)` defaults and property emission.
+  - [x] Extend metadata profiles and timestamp validation to cover new fields.
+- [x] Add bitemporal graph reads:
+  - [x] Add `GetAllNodesBitemporal(...)`.
+  - [x] Add `GetOutEdgesBitemporal(...)` / `GetInEdgesBitemporal(...)`.
+  - [x] Add `SubgraphBitemporal(...)`.
+- [x] Add first-class claim write flow:
+  - [x] Add `graph.ClaimWriteRequest` / `graph.WriteClaim(...)`.
+  - [x] Link claims to subjects, objects, sources, evidence, and superseding/supporting/refuting claims.
+  - [x] Validate referenced entities before writes.
+- [x] Add claim intelligence surface:
+  - [x] Add `BuildClaimConflictReport(...)`.
+  - [x] Detect contradictory active claims by `subject_id` + `predicate`.
+  - [x] Track unsupported, sourceless, and stale-claim counts.
+- [x] Expose runtime APIs:
+  - [x] Add `POST /api/v1/graph/write/claim`.
+  - [x] Add `GET /api/v1/graph/intelligence/claim-conflicts`.
+  - [x] Add handler tests and route coverage.
+- [x] Bring ingest up to the new metadata contract:
+  - [x] Stamp `recorded_at` and `transaction_from` during declarative mapper writes.
+  - [x] Extend mapper contract tests to assert bitemporal metadata presence.
+  - [x] Normalize malformed fact-time inputs into safe metadata defaults rather than silently dropping writes.
+- [x] Update architecture docs:
+  - [x] Add `docs/GRAPH_WORLD_MODEL_ARCHITECTURE.md`.
+  - [x] Update ontology/intelligence/architecture docs to describe the claim-first substrate.
+
 ## Deep Review Cycle 12 - Contract Versioning + Runtime Event Validation + Generated Schema Catalogs (2026-03-09)
 
 ### Review findings (external-pattern driven)

@@ -226,7 +226,7 @@ func (m *MermaidExporter) ExportSecurityReport(report *SecurityReport) string {
 		sb.WriteString("## Graph Statistics\n\n")
 		sb.WriteString("```mermaid\n")
 		sb.WriteString("mindmap\n")
-		sb.WriteString("    root((Security Graph))\n")
+		sb.WriteString("    root((Graph Platform))\n")
 		fmt.Fprintf(&sb, "        Nodes: %d\n", report.GraphStats.TotalNodes)
 		fmt.Fprintf(&sb, "            Identities: %d\n", report.GraphStats.IdentityCount)
 		fmt.Fprintf(&sb, "            Resources: %d\n", report.GraphStats.ResourceCount)

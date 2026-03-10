@@ -25,6 +25,37 @@ type graphWriteObservationRequest struct {
 	Metadata      map[string]any `json:"metadata,omitempty"`
 }
 
+type graphWriteClaimRequest struct {
+	ID                 string         `json:"id"`
+	ClaimType          string         `json:"claim_type,omitempty"`
+	SubjectID          string         `json:"subject_id"`
+	Predicate          string         `json:"predicate"`
+	ObjectID           string         `json:"object_id,omitempty"`
+	ObjectValue        string         `json:"object_value,omitempty"`
+	Status             string         `json:"status,omitempty"`
+	Summary            string         `json:"summary,omitempty"`
+	EvidenceIDs        []string       `json:"evidence_ids,omitempty"`
+	SupportingClaimIDs []string       `json:"supporting_claim_ids,omitempty"`
+	RefutingClaimIDs   []string       `json:"refuting_claim_ids,omitempty"`
+	SupersedesClaimID  string         `json:"supersedes_claim_id,omitempty"`
+	SourceID           string         `json:"source_id,omitempty"`
+	SourceName         string         `json:"source_name,omitempty"`
+	SourceType         string         `json:"source_type,omitempty"`
+	SourceURL          string         `json:"source_url,omitempty"`
+	TrustTier          string         `json:"trust_tier,omitempty"`
+	ReliabilityScore   float64        `json:"reliability_score,omitempty"`
+	SourceSystem       string         `json:"source_system"`
+	SourceEventID      string         `json:"source_event_id"`
+	ObservedAt         time.Time      `json:"observed_at"`
+	ValidFrom          time.Time      `json:"valid_from"`
+	ValidTo            *time.Time     `json:"valid_to,omitempty"`
+	RecordedAt         time.Time      `json:"recorded_at,omitempty"`
+	TransactionFrom    time.Time      `json:"transaction_from,omitempty"`
+	TransactionTo      *time.Time     `json:"transaction_to,omitempty"`
+	Confidence         float64        `json:"confidence"`
+	Metadata           map[string]any `json:"metadata,omitempty"`
+}
+
 type graphAnnotateEntityRequest struct {
 	EntityID      string         `json:"entity_id"`
 	Annotation    string         `json:"annotation"`
@@ -129,7 +160,7 @@ type graphActuateRecommendationRequest struct {
 func (s *Server) graphWriteObservation(w http.ResponseWriter, r *http.Request) {
 	g := s.app.SecurityGraph
 	if g == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 
@@ -194,10 +225,66 @@ func (s *Server) graphWriteObservation(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) graphWriteClaim(w http.ResponseWriter, r *http.Request) {
+	g := s.app.SecurityGraph
+	if g == nil {
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
+		return
+	}
+
+	var req graphWriteClaimRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	result, err := graph.WriteClaim(g, graph.ClaimWriteRequest{
+		ID:                 req.ID,
+		ClaimType:          req.ClaimType,
+		SubjectID:          req.SubjectID,
+		Predicate:          req.Predicate,
+		ObjectID:           req.ObjectID,
+		ObjectValue:        req.ObjectValue,
+		Status:             req.Status,
+		Summary:            req.Summary,
+		EvidenceIDs:        req.EvidenceIDs,
+		SupportingClaimIDs: req.SupportingClaimIDs,
+		RefutingClaimIDs:   req.RefutingClaimIDs,
+		SupersedesClaimID:  req.SupersedesClaimID,
+		SourceID:           req.SourceID,
+		SourceName:         req.SourceName,
+		SourceType:         req.SourceType,
+		SourceURL:          req.SourceURL,
+		TrustTier:          req.TrustTier,
+		ReliabilityScore:   req.ReliabilityScore,
+		SourceSystem:       req.SourceSystem,
+		SourceEventID:      req.SourceEventID,
+		ObservedAt:         req.ObservedAt,
+		ValidFrom:          req.ValidFrom,
+		ValidTo:            req.ValidTo,
+		RecordedAt:         req.RecordedAt,
+		TransactionFrom:    req.TransactionFrom,
+		TransactionTo:      req.TransactionTo,
+		Confidence:         req.Confidence,
+		Metadata:           req.Metadata,
+	})
+	if err != nil {
+		status := http.StatusBadRequest
+		switch {
+		case strings.Contains(err.Error(), "not found"):
+			status = http.StatusNotFound
+		}
+		s.error(w, status, err.Error())
+		return
+	}
+
+	s.json(w, http.StatusCreated, result)
+}
+
 func (s *Server) graphAnnotateEntity(w http.ResponseWriter, r *http.Request) {
 	g := s.app.SecurityGraph
 	if g == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 
@@ -268,7 +355,7 @@ func (s *Server) graphAnnotateEntity(w http.ResponseWriter, r *http.Request) {
 func (s *Server) graphWriteDecision(w http.ResponseWriter, r *http.Request) {
 	g := s.app.SecurityGraph
 	if g == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 
@@ -373,7 +460,7 @@ func (s *Server) graphWriteDecision(w http.ResponseWriter, r *http.Request) {
 func (s *Server) graphWriteOutcome(w http.ResponseWriter, r *http.Request) {
 	g := s.app.SecurityGraph
 	if g == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 
@@ -458,7 +545,7 @@ func (s *Server) graphWriteOutcome(w http.ResponseWriter, r *http.Request) {
 func (s *Server) graphResolveIdentity(w http.ResponseWriter, r *http.Request) {
 	g := s.app.SecurityGraph
 	if g == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 
@@ -492,7 +579,7 @@ func (s *Server) graphResolveIdentity(w http.ResponseWriter, r *http.Request) {
 func (s *Server) graphSplitIdentity(w http.ResponseWriter, r *http.Request) {
 	g := s.app.SecurityGraph
 	if g == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 
@@ -524,7 +611,7 @@ func (s *Server) graphSplitIdentity(w http.ResponseWriter, r *http.Request) {
 func (s *Server) graphReviewIdentity(w http.ResponseWriter, r *http.Request) {
 	g := s.app.SecurityGraph
 	if g == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 
@@ -555,7 +642,7 @@ func (s *Server) graphReviewIdentity(w http.ResponseWriter, r *http.Request) {
 func (s *Server) graphIdentityCalibration(w http.ResponseWriter, r *http.Request) {
 	g := s.app.SecurityGraph
 	if g == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 
@@ -600,7 +687,7 @@ func (s *Server) graphIdentityCalibration(w http.ResponseWriter, r *http.Request
 func (s *Server) graphActuateRecommendation(w http.ResponseWriter, r *http.Request) {
 	g := s.app.SecurityGraph
 	if g == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 

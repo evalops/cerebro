@@ -25,7 +25,7 @@ type QueryResult struct {
 	Count   int
 }
 
-// Builder constructs the security graph from data sources
+// Builder constructs the graph platform from data sources.
 type Builder struct {
 	source          DataSource
 	graph           *Graph
@@ -99,7 +99,7 @@ func (b *Builder) Build(ctx context.Context) error {
 	start := time.Now()
 	b.graph.Clear()
 
-	b.logger.Info("building security graph")
+	b.logger.Info("building graph platform")
 
 	// Phase 1: discover which tables have data (1 round-trip)
 	b.discoverTables(ctx)
@@ -177,7 +177,7 @@ func (b *Builder) Build(ctx context.Context) error {
 		BuildDuration: time.Since(start),
 	})
 
-	b.logger.Info("security graph built",
+	b.logger.Info("graph platform built",
 		"nodes", b.graph.NodeCount(),
 		"edges", b.graph.EdgeCount(),
 		"duration", time.Since(start))

@@ -1,0 +1,132 @@
+# Graph World Model Architecture
+
+This document defines the next bar for Cerebro: a graph that does not just store entities and events, but tracks what is believed, who asserted it, what supports it, what contradicts it, and when Cerebro learned it.
+
+## Goal
+
+A world-model graph should be able to answer, for any important fact:
+
+- what is being claimed
+- who asserted it
+- what supports it
+- what contradicts it
+- when it became true in the world
+- when Cerebro recorded it
+- whether it has been corrected, retracted, or superseded
+
+## Core Layers
+
+### 1) Entity Layer
+
+Durable world objects and actors:
+
+- identities: `person`, `user`, `role`, `group`, `service_account`, `identity_alias`
+- systems and resources: `service`, `workload`, `database`, `bucket`, `application`, `network`
+- operational domains: `pull_request`, `deployment_run`, `pipeline_run`, `check_run`, `meeting`, `document`, `communication_thread`, `incident`
+- decision loop: `decision`, `action`, `outcome`
+
+### 2) Knowledge Layer
+
+First-class truth substrate:
+
+- `claim`: one assertion about a subject/predicate/object or subject/predicate/value
+- `source`: the origin that asserted a claim
+- `evidence`: supporting artifact
+- `observation`: lower-level raw observation before or alongside higher-level evidence
+
+Canonical knowledge edges:
+
+- `asserted_by`
+- `based_on`
+- `supports`
+- `refutes`
+- `supersedes`
+- `contradicts`
+- `targets`
+- `refers`
+
+### 3) Temporal Layer
+
+Cerebro now needs two time dimensions:
+
+- fact time: `observed_at`, `valid_from`, `valid_to`
+- system time: `recorded_at`, `transaction_from`, `transaction_to`
+
+This distinction allows Cerebro to ask both:
+
+- “what was true on March 1, 2026?”
+- “what did Cerebro believe on March 1, 2026, based on what it had recorded by then?”
+
+## Implemented Foundation
+
+This cycle adds the minimum viable world-model substrate:
+
+- first-class node kinds: `claim`, `source`, `observation`
+- first-class edge kinds: `asserted_by`, `supports`, `refutes`, `supersedes`, `contradicts`
+- bitemporal metadata normalization in `graph.WriteMetadata`
+- bitemporal graph views through `GetAllNodesBitemporal(...)`, `GetOutEdgesBitemporal(...)`, and `SubgraphBitemporal(...)`
+- claim write path through `graph.WriteClaim(...)` and `POST /api/v1/graph/write/claim`
+- claim contradiction reporting through `BuildClaimConflictReport(...)` and `GET /api/v1/graph/intelligence/claim-conflicts`
+
+## What Still Needs To Be Added
+
+### Relationship Reification
+
+High-value edges should become first-class objects when they have lifecycle, approvals, or evidence:
+
+- ownership
+- employment
+- contract
+- access grant
+- dependency
+- obligation
+
+### Source Trust Model
+
+`source` should evolve to include:
+
+- trust program / authority domain
+- signing or authenticity status
+- producer identity
+- freshness decay policy
+- conflict history and empirical accuracy
+
+### Adjudication Layer
+
+Contradictions should not be silently flattened. Cerebro needs:
+
+- duplicate-entity queues
+- claim conflict queues
+- merge / split / supersede workflows
+- human review records and calibration metrics
+
+### Module Expansion
+
+The next ontology modules should extend beyond infra/operations into:
+
+- organization: `organization`, `team`, `project`, `capability`
+- commerce: `customer`, `vendor`, `product`, `contract`
+- geography: `region`, `location`, `facility`
+- governance: `policy`, `control`, `risk`
+- data / AI: `dataset`, `model`, `experiment`, `publication`
+
+## Build Rules
+
+When adding world-model semantics:
+
+1. Add the node/edge kind and schema registration.
+2. Require provenance and both temporal dimensions when the kind represents a durable claim.
+3. Add bitemporal tests, not just point-in-time tests.
+4. Add contradiction or supportability checks where the new kind can disagree with existing facts.
+5. Expose the reasoning surface through an API or tool contract, not just internal helpers.
+
+## Query Standard
+
+A world-model query surface should prefer claim-oriented questions such as:
+
+- all active `claim` nodes about `service:payments`
+- contradictory `claim` groups recorded before a given timestamp
+- unsupported claims without evidence or source attribution
+- claims superseded after a particular incident or decision
+
+That is the standard Cerebro should now optimize for.

@@ -9,7 +9,7 @@ var temporalNowUTC = func() time.Time {
 	return time.Now().UTC()
 }
 
-// Graph represents the security graph containing all nodes and edges
+// Graph represents the graph platform containing all nodes and edges.
 type Graph struct {
 	nodes    map[string]*Node
 	outEdges map[string][]*Edge // source -> edges

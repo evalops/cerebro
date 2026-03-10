@@ -118,7 +118,7 @@ func BuildGraphQualityReport(g *Graph, opts GraphQualityReportOptions) GraphQual
 		report.Recommendations = []GraphQualityRecommendation{{
 			Priority:        "high",
 			Category:        "graph_unavailable",
-			Title:           "Security graph is not initialized",
+			Title:           "Graph platform is not initialized",
 			Detail:          "No graph quality metrics are available because the graph is nil.",
 			SuggestedAction: "Initialize and populate the graph before requesting quality insights.",
 		}}

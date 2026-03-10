@@ -158,6 +158,112 @@ func TestGraphWriteDecisionOutcomeAndIdentity(t *testing.T) {
 	}
 }
 
+func TestGraphWriteClaim(t *testing.T) {
+	s := newTestServer(t)
+	g := s.app.SecurityGraph
+
+	g.AddNode(&graph.Node{
+		ID:   "service:payments",
+		Kind: graph.NodeKindService,
+		Name: "Payments",
+		Properties: map[string]any{
+			"service_id":    "payments",
+			"source_system": "cmdb",
+			"observed_at":   "2026-03-09T00:00:00Z",
+			"valid_from":    "2026-03-09T00:00:00Z",
+		},
+	})
+	g.AddNode(&graph.Node{
+		ID:   "person:alice@example.com",
+		Kind: graph.NodeKindPerson,
+		Name: "Alice",
+		Properties: map[string]any{
+			"observed_at": "2026-03-09T00:00:00Z",
+			"valid_from":  "2026-03-09T00:00:00Z",
+		},
+	})
+	g.AddNode(&graph.Node{
+		ID:   "evidence:runbook",
+		Kind: graph.NodeKindEvidence,
+		Name: "Runbook",
+		Properties: map[string]any{
+			"evidence_type": "document",
+			"source_system": "docs",
+			"observed_at":   "2026-03-09T00:00:00Z",
+			"valid_from":    "2026-03-09T00:00:00Z",
+		},
+	})
+
+	w := do(t, s, http.MethodPost, "/api/v1/graph/write/claim", map[string]any{
+		"subject_id":        "service:payments",
+		"predicate":         "owner",
+		"object_id":         "person:alice@example.com",
+		"summary":           "Payments is owned by Alice",
+		"evidence_ids":      []string{"evidence:runbook"},
+		"source_name":       "CMDB",
+		"source_type":       "system",
+		"trust_tier":        "authoritative",
+		"reliability_score": 0.99,
+		"source_system":     "api",
+	})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for claim, got %d: %s", w.Code, w.Body.String())
+	}
+	body := decodeJSON(t, w)
+	claimID, _ := body["claim_id"].(string)
+	if claimID == "" {
+		t.Fatalf("expected claim_id, got %#v", body)
+	}
+	if node, ok := g.GetNode(claimID); !ok || node == nil || node.Kind != graph.NodeKindClaim {
+		t.Fatalf("expected claim node %q, got %#v", claimID, node)
+	}
+	sourceID, _ := body["source_id"].(string)
+	if sourceID == "" {
+		t.Fatalf("expected source_id, got %#v", body)
+	}
+	if node, ok := g.GetNode(sourceID); !ok || node == nil || node.Kind != graph.NodeKindSource {
+		t.Fatalf("expected source node %q, got %#v", sourceID, node)
+	}
+	if got := w.Header().Get("Deprecation"); got != "true" {
+		t.Fatalf("expected deprecation header on legacy graph claim write endpoint, got %q", got)
+	}
+}
+
+func TestPlatformClaimAndDecisionAliases(t *testing.T) {
+	s := newTestServer(t)
+	g := s.app.SecurityGraph
+
+	g.AddNode(&graph.Node{ID: "service:payments", Kind: graph.NodeKindService, Name: "Payments"})
+	g.AddNode(&graph.Node{ID: "person:alice@example.com", Kind: graph.NodeKindPerson, Name: "Alice"})
+
+	claim := do(t, s, http.MethodPost, "/api/v1/platform/knowledge/claims", map[string]any{
+		"subject_id":    "service:payments",
+		"predicate":     "owner",
+		"object_id":     "person:alice@example.com",
+		"source_system": "api",
+	})
+	if claim.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for platform claim alias, got %d: %s", claim.Code, claim.Body.String())
+	}
+	claimBody := decodeJSON(t, claim)
+	if claimBody["claim_id"] == "" {
+		t.Fatalf("expected claim_id, got %#v", claimBody)
+	}
+
+	decision := do(t, s, http.MethodPost, "/api/v1/platform/knowledge/decisions", map[string]any{
+		"decision_type": "owner-confirmation",
+		"target_ids":    []string{"service:payments"},
+		"source_system": "api",
+	})
+	if decision.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for platform decision alias, got %d: %s", decision.Code, decision.Body.String())
+	}
+	decisionBody := decodeJSON(t, decision)
+	if decisionBody["decision_id"] == "" {
+		t.Fatalf("expected decision_id, got %#v", decisionBody)
+	}
+}
+
 func TestGraphIdentityReviewAndCalibrationEndpoints(t *testing.T) {
 	s := newTestServer(t)
 	g := s.app.SecurityGraph
@@ -317,5 +423,14 @@ func TestGraphWritebackValidationFailures(t *testing.T) {
 	})
 	if split.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for missing canonical_node_id on identity split, got %d: %s", split.Code, split.Body.String())
+	}
+
+	claim := do(t, s, http.MethodPost, "/api/v1/graph/write/claim", map[string]any{
+		"subject_id":   "service:missing",
+		"predicate":    "owner",
+		"object_value": "alice",
+	})
+	if claim.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for missing claim subject, got %d: %s", claim.Code, claim.Body.String())
 	}
 }

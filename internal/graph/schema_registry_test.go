@@ -47,6 +47,9 @@ func TestSchemaRegistry_IntelligenceSpineBuiltins(t *testing.T) {
 		NodeKindDecision,
 		NodeKindOutcome,
 		NodeKindEvidence,
+		NodeKindObservation,
+		NodeKindSource,
+		NodeKindClaim,
 		NodeKindAction,
 	}
 	for _, kind := range requiredNodeKinds {
@@ -63,6 +66,11 @@ func TestSchemaRegistry_IntelligenceSpineBuiltins(t *testing.T) {
 		EdgeKindBasedOn,
 		EdgeKindExecutedBy,
 		EdgeKindEvaluates,
+		EdgeKindAssertedBy,
+		EdgeKindSupports,
+		EdgeKindRefutes,
+		EdgeKindSupersedes,
+		EdgeKindContradicts,
 	}
 	for _, kind := range requiredEdgeKinds {
 		if !reg.IsEdgeKindRegistered(kind) {
@@ -161,6 +169,31 @@ func TestSchemaRegistry_IntelligenceSpineBuiltins(t *testing.T) {
 	for _, relationship := range []EdgeKind{EdgeKindTargets, EdgeKindEvaluates, EdgeKindBasedOn, EdgeKindInteractedWith} {
 		if !containsEdgeKind(actionDef.Relationships, relationship) {
 			t.Fatalf("expected action relationship %q, got %#v", relationship, actionDef.Relationships)
+		}
+	}
+
+	claimDef, ok := defByKind[NodeKindClaim]
+	if !ok {
+		t.Fatal("expected claim definition")
+	}
+	for _, property := range []string{"claim_type", "subject_id", "predicate", "status", "observed_at", "valid_from", "recorded_at", "transaction_from"} {
+		if !containsRequiredProperty(claimDef.RequiredProperties, property) {
+			t.Fatalf("expected claim required property %q, got %#v", property, claimDef.RequiredProperties)
+		}
+	}
+	for _, relationship := range []EdgeKind{EdgeKindTargets, EdgeKindRefers, EdgeKindBasedOn, EdgeKindAssertedBy, EdgeKindSupports, EdgeKindRefutes, EdgeKindSupersedes, EdgeKindContradicts} {
+		if !containsEdgeKind(claimDef.Relationships, relationship) {
+			t.Fatalf("expected claim relationship %q, got %#v", relationship, claimDef.Relationships)
+		}
+	}
+
+	sourceDef, ok := defByKind[NodeKindSource]
+	if !ok {
+		t.Fatal("expected source definition")
+	}
+	for _, property := range []string{"source_type", "canonical_name", "observed_at", "valid_from", "recorded_at", "transaction_from"} {
+		if !containsRequiredProperty(sourceDef.RequiredProperties, property) {
+			t.Fatalf("expected source required property %q, got %#v", property, sourceDef.RequiredProperties)
 		}
 	}
 }

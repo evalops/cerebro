@@ -309,10 +309,31 @@ func (s *Server) setupRoutes() {
 			r.Post("/ingest", s.ingestTelemetry)
 		})
 
-		// Security Graph endpoints
+		// Shared platform primitives
+		r.Route("/platform", func(r chi.Router) {
+			r.Route("/graph", func(r chi.Router) {
+				r.Post("/queries", s.platformGraphQueries)
+			})
+			r.Route("/knowledge", func(r chi.Router) {
+				r.Post("/claims", s.platformWriteClaim)
+				r.Post("/decisions", s.platformWriteDecision)
+			})
+			r.Route("/jobs", func(r chi.Router) {
+				r.Get("/{id}", s.getPlatformJob)
+			})
+		})
+
+		// Security application endpoints on the shared graph platform.
+		r.Route("/security", func(r chi.Router) {
+			r.Route("/analyses", func(r chi.Router) {
+				r.Post("/attack-paths/jobs", s.createSecurityAttackPathJob)
+			})
+		})
+
+		// Graph platform endpoints
 		r.Route("/graph", func(r chi.Router) {
 			r.Get("/diff", s.graphDiff)
-			r.Get("/query", s.graphQuery)
+			r.Get("/query", s.deprecatedAlias("/api/v1/platform/graph/queries", s.graphQuery))
 			r.Get("/query/templates", s.graphQueryTemplates)
 			r.Get("/stats", s.graphStats)
 			r.Get("/ingest/health", s.graphIngestHealth)
@@ -321,16 +342,18 @@ func (s *Server) setupRoutes() {
 			r.Get("/intelligence/insights", s.graphIntelligenceInsights)
 			r.Get("/intelligence/quality", s.graphIntelligenceQuality)
 			r.Get("/intelligence/metadata-quality", s.graphIntelligenceMetadataQuality)
+			r.Get("/intelligence/claim-conflicts", s.graphIntelligenceClaimConflicts)
 			r.Get("/intelligence/leverage", s.graphIntelligenceLeverage)
 			r.Get("/intelligence/calibration/weekly", s.graphIntelligenceWeeklyCalibration)
 			r.Get("/schema", s.getGraphSchema)
 			r.Get("/schema/health", s.getGraphSchemaHealth)
-			r.Get("/who-knows", s.whoKnows)
-			r.Post("/recommend-team", s.recommendTeam)
+			r.Get("/who-knows", s.deprecatedAlias("/api/v1/org/expertise/queries", s.whoKnows))
+			r.Post("/recommend-team", s.deprecatedAlias("/api/v1/org/team-recommendations", s.recommendTeam))
 			r.Post("/actuate/recommendation", s.graphActuateRecommendation)
 			r.Post("/write/observation", s.graphWriteObservation)
+			r.Post("/write/claim", s.deprecatedAlias("/api/v1/platform/knowledge/claims", s.graphWriteClaim))
 			r.Post("/write/annotation", s.graphAnnotateEntity)
-			r.Post("/write/decision", s.graphWriteDecision)
+			r.Post("/write/decision", s.deprecatedAlias("/api/v1/platform/knowledge/decisions", s.graphWriteDecision))
 			r.Post("/write/outcome", s.graphWriteOutcome)
 			r.Post("/identity/resolve", s.graphResolveIdentity)
 			r.Post("/identity/split", s.graphSplitIdentity)
@@ -342,7 +365,7 @@ func (s *Server) setupRoutes() {
 			r.Get("/reverse-access/{resourceId}", s.reverseAccess)
 			r.Post("/rebuild", s.rebuildGraph)
 			r.Post("/simulate", s.simulateGraph)
-			r.Post("/simulate-reorg", s.simulateReorg)
+			r.Post("/simulate-reorg", s.deprecatedAlias("/api/v1/org/reorg-simulations", s.simulateReorg))
 			r.Post("/evaluate-change", s.evaluateGraphChange)
 
 			// Risk Intelligence endpoints
@@ -384,6 +407,9 @@ func (s *Server) setupRoutes() {
 
 		// Organizational flow endpoints
 		r.Route("/org", func(r chi.Router) {
+			r.Get("/expertise/queries", s.whoKnows)
+			r.Post("/team-recommendations", s.recommendTeam)
+			r.Post("/reorg-simulations", s.simulateReorg)
 			r.Get("/information-flow", s.orgInformationFlow)
 			r.Get("/clock-speed", s.orgClockSpeed)
 			r.Get("/recommended-connections", s.orgRecommendedConnections)

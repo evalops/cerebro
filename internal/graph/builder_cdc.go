@@ -130,7 +130,7 @@ func (b *Builder) ApplyChanges(ctx context.Context, since time.Time) (GraphMutat
 	b.lastBuildTime = latest
 	b.lastMutation = summary
 
-	b.logger.Info("security graph incrementally updated",
+	b.logger.Info("graph platform incrementally updated",
 		"events", summary.EventsProcessed,
 		"nodes_added", summary.NodesAdded,
 		"nodes_updated", summary.NodesUpdated,

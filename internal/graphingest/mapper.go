@@ -544,16 +544,29 @@ func ensureTemporalAndProvenance(properties map[string]any, evt events.CloudEven
 		"tap",
 	)
 	sourceEventID := firstNonEmptyString(valueToString(properties["source_event_id"]), evt.ID)
-	observedAt := firstNonEmptyString(valueToString(properties["observed_at"]), evt.Time.UTC().Format(time.RFC3339))
-	validFrom := firstNonEmptyString(valueToString(properties["valid_from"]), observedAt)
-
-	properties["source_system"] = sourceSystem
-	properties["source_event_id"] = sourceEventID
-	properties["observed_at"] = observedAt
-	properties["valid_from"] = validFrom
-	if _, ok := properties["confidence"]; !ok {
-		properties["confidence"] = 0.80
+	observedAt := parseMetadataTimestamp(valueToString(properties["observed_at"]))
+	if observedAt.IsZero() {
+		observedAt = evt.Time.UTC()
 	}
+	validFrom := parseMetadataTimestamp(valueToString(properties["valid_from"]))
+	validTo := parseMetadataTimestampPtr(valueToString(properties["valid_to"]))
+	recordedAt := parseMetadataTimestamp(valueToString(properties["recorded_at"]))
+	transactionFrom := parseMetadataTimestamp(valueToString(properties["transaction_from"]))
+	transactionTo := parseMetadataTimestampPtr(valueToString(properties["transaction_to"]))
+	confidence, ok := toFloat64(properties["confidence"])
+	if !ok {
+		confidence = 0.80
+	}
+	metadata := graph.NormalizeWriteMetadata(observedAt, validFrom, validTo, sourceSystem, sourceEventID, confidence, graph.WriteMetadataDefaults{
+		Now:               observedAt,
+		RecordedAt:        recordedAt,
+		TransactionFrom:   transactionFrom,
+		TransactionTo:     transactionTo,
+		SourceSystem:      sourceSystem,
+		SourceEventID:     sourceEventID,
+		DefaultConfidence: 0.80,
+	})
+	metadata.ApplyTo(properties)
 
 	sourceSchemaURL := firstNonEmptyString(
 		valueToString(properties["source_schema_url"]),
@@ -671,6 +684,32 @@ func validateMapperWriteMetadata(properties map[string]any, entityType, entityID
 		}
 	}
 
+	recordedAtRaw := strings.TrimSpace(valueToString(properties["recorded_at"]))
+	recordedAt, err := time.Parse(time.RFC3339, recordedAtRaw)
+	if recordedAtRaw == "" || err != nil {
+		appendIssue("recorded_at", fmt.Sprintf("%s %q recorded_at must be RFC3339", entityType, strings.TrimSpace(entityID)))
+	}
+
+	transactionFromRaw := strings.TrimSpace(valueToString(properties["transaction_from"]))
+	transactionFrom, err := time.Parse(time.RFC3339, transactionFromRaw)
+	if transactionFromRaw == "" || err != nil {
+		appendIssue("transaction_from", fmt.Sprintf("%s %q transaction_from must be RFC3339", entityType, strings.TrimSpace(entityID)))
+	}
+
+	if !recordedAt.IsZero() && !transactionFrom.IsZero() && recordedAt.After(transactionFrom) {
+		appendIssue("recorded_at", fmt.Sprintf("%s %q recorded_at must be <= transaction_from", entityType, strings.TrimSpace(entityID)))
+	}
+
+	transactionToRaw := strings.TrimSpace(valueToString(properties["transaction_to"]))
+	if transactionToRaw != "" {
+		transactionTo, err := time.Parse(time.RFC3339, transactionToRaw)
+		if err != nil {
+			appendIssue("transaction_to", fmt.Sprintf("%s %q transaction_to must be RFC3339 when provided", entityType, strings.TrimSpace(entityID)))
+		} else if !transactionFrom.IsZero() && transactionTo.Before(transactionFrom) {
+			appendIssue("transaction_to", fmt.Sprintf("%s %q transaction_to must be >= transaction_from", entityType, strings.TrimSpace(entityID)))
+		}
+	}
+
 	if _, ok := toFloat64(properties["confidence"]); !ok {
 		appendIssue("confidence", fmt.Sprintf("%s %q confidence must be a number between 0 and 1", entityType, strings.TrimSpace(entityID)))
 	} else if confidence, _ := toFloat64(properties["confidence"]); confidence < 0 || confidence > 1 {
@@ -717,6 +756,26 @@ func valueToString(value any) string {
 	default:
 		return ""
 	}
+}
+
+func parseMetadataTimestamp(raw string) time.Time {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}
+	}
+	parsed, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return time.Time{}
+	}
+	return parsed.UTC()
+}
+
+func parseMetadataTimestampPtr(raw string) *time.Time {
+	parsed := parseMetadataTimestamp(raw)
+	if parsed.IsZero() {
+		return nil
+	}
+	return &parsed
 }
 
 func firstNonEmptyString(values ...string) string {

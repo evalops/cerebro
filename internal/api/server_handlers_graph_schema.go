@@ -70,7 +70,7 @@ func (s *Server) registerGraphSchema(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) getGraphSchemaHealth(w http.ResponseWriter, r *http.Request) {
 	if s.app.SecurityGraph == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 

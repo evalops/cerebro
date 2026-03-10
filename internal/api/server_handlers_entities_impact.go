@@ -13,7 +13,7 @@ import (
 
 func (s *Server) getEntityCohort(w http.ResponseWriter, r *http.Request) {
 	if s.app.SecurityGraph == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 
@@ -34,7 +34,7 @@ func (s *Server) getEntityCohort(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) getEntityOutlierScore(w http.ResponseWriter, r *http.Request) {
 	if s.app.SecurityGraph == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 
@@ -55,7 +55,7 @@ func (s *Server) getEntityOutlierScore(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) impactAnalysis(w http.ResponseWriter, r *http.Request) {
 	if s.app.SecurityGraph == nil {
-		s.error(w, http.StatusServiceUnavailable, "security graph not initialized")
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
 	}
 

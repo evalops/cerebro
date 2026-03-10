@@ -162,7 +162,7 @@ func BuildGraphLeverageReport(g *Graph, opts GraphLeverageReportOptions) GraphLe
 		report.Recommendations = []GraphLeverageRecommendation{{
 			Priority:        "high",
 			Category:        "graph_unavailable",
-			Title:           "Security graph is not initialized",
+			Title:           "Graph platform is not initialized",
 			Detail:          "Leverage metrics are unavailable because the graph is nil.",
 			SuggestedAction: "Initialize and ingest graph data before requesting leverage reports.",
 		}}

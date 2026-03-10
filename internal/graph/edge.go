@@ -48,6 +48,11 @@ const (
 	EdgeKindBasedOn        EdgeKind = "based_on"
 	EdgeKindExecutedBy     EdgeKind = "executed_by"
 	EdgeKindEvaluates      EdgeKind = "evaluates"
+	EdgeKindAssertedBy     EdgeKind = "asserted_by"
+	EdgeKindSupports       EdgeKind = "supports"
+	EdgeKindRefutes        EdgeKind = "refutes"
+	EdgeKindSupersedes     EdgeKind = "supersedes"
+	EdgeKindContradicts    EdgeKind = "contradicts"
 )
 
 // EdgeEffect represents whether an edge allows or denies access
