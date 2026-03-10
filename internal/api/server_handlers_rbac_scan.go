@@ -19,16 +19,11 @@ func (s *Server) listRoles(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listPermissions(w http.ResponseWriter, r *http.Request) {
-	s.json(w, http.StatusOK, []string{
-		"findings:read", "findings:write",
-		"policies:read", "policies:write",
-		"agents:read", "agents:write",
-		"tickets:read", "tickets:write",
-		"runtime:read", "runtime:write",
-		"graph:read", "graph:write",
-		"assets:read", "compliance:read", "compliance:export",
-		"admin:users", "admin:roles",
-	})
+	if s.app.RBAC == nil {
+		s.error(w, http.StatusServiceUnavailable, "rbac not initialized")
+		return
+	}
+	s.json(w, http.StatusOK, s.app.RBAC.ListPermissionIDs())
 }
 
 func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
@@ -38,8 +33,8 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID := GetUserID(r.Context())
-	if !s.app.RBAC.HasPermission(r.Context(), userID, "admin:users") {
-		s.error(w, http.StatusForbidden, "permission denied: admin:users required")
+	if !s.app.RBAC.HasPermission(r.Context(), userID, "admin.rbac.users.manage") {
+		s.error(w, http.StatusForbidden, "permission denied: admin.rbac.users.manage required")
 		return
 	}
 
@@ -88,8 +83,8 @@ func (s *Server) assignRole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	currentUserID := GetUserID(r.Context())
-	if !s.app.RBAC.HasPermission(r.Context(), currentUserID, "admin:roles") {
-		s.error(w, http.StatusForbidden, "permission denied: admin:roles required")
+	if !s.app.RBAC.HasPermission(r.Context(), currentUserID, "admin.rbac.roles.manage") {
+		s.error(w, http.StatusForbidden, "permission denied: admin.rbac.roles.manage required")
 		return
 	}
 
@@ -136,8 +131,8 @@ func (s *Server) createTenant(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID := GetUserID(r.Context())
-	if !s.app.RBAC.HasPermission(r.Context(), userID, "admin:users") {
-		s.error(w, http.StatusForbidden, "permission denied: admin:users required")
+	if !s.app.RBAC.HasPermission(r.Context(), userID, "admin.rbac.users.manage") {
+		s.error(w, http.StatusForbidden, "permission denied: admin.rbac.users.manage required")
 		return
 	}
 

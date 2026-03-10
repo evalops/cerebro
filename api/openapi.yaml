@@ -4916,10 +4916,10 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
-  /api/v1/graph/intelligence/insights:
+  /api/v1/platform/intelligence/insights:
     get:
       tags:
-        - Graph
+        - Platform
       summary: Build decision-grade intelligence insights
       description: Unified intelligence report with prioritized insights, evidence, confidence, coverage, and optional counterfactuals.
       parameters:
@@ -4986,8 +4986,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/IntelligenceReport'
         '400':
           description: Invalid query parameter
           content:
@@ -5006,10 +5005,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-  /api/v1/graph/intelligence/quality:
+  /api/v1/platform/intelligence/quality:
     get:
       tags:
-        - Graph
+        - Platform
       summary: Build graph quality intelligence KPIs
       description: Return ontology, identity, temporal, write-back, and domain-coverage quality metrics with prioritized improvement recommendations.
       parameters:
@@ -5042,8 +5041,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/GraphQualityReport'
         '400':
           description: Invalid query parameter
           content:
@@ -5056,10 +5054,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-  /api/v1/graph/intelligence/metadata-quality:
+  /api/v1/platform/intelligence/metadata-quality:
     get:
       tags:
-        - Graph
+        - Platform
       summary: Build graph metadata quality intelligence KPIs
       description: Return metadata profile coverage and per-kind metadata quality metrics with prioritized recommendations.
       parameters:
@@ -5077,8 +5075,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/GraphMetadataQualityReport'
         '400':
           description: Invalid query parameter
           content:
@@ -5091,10 +5088,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-  /api/v1/graph/intelligence/claim-conflicts:
+  /api/v1/platform/intelligence/claim-conflicts:
     get:
       tags:
-        - Graph
+        - Platform
       summary: Build claim contradiction and supportability report
       description: Return contradictory active claims grouped by subject and predicate, with evidence/source supportability metrics and optional bitemporal scoping.
       parameters:
@@ -5140,8 +5137,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/ClaimConflictReport'
         '400':
           description: Invalid query parameter
           content:
@@ -5154,10 +5150,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-  /api/v1/graph/intelligence/leverage:
+  /api/v1/platform/intelligence/leverage:
     get:
       tags:
-        - Graph
+        - Platform
       summary: Build deep graph leverage intelligence report
       description: Return a unified leverage report across quality, identity calibration, ingestion breadth, temporal recency, closed-loop outcomes, predictive readiness, query templates, and actuation readiness.
       parameters:
@@ -5222,8 +5218,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/GraphLeverageReport'
         '400':
           description: Invalid query parameter
           content:
@@ -5236,10 +5231,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-  /api/v1/graph/intelligence/calibration/weekly:
+  /api/v1/platform/intelligence/calibration/weekly:
     get:
       tags:
-        - Graph
+        - Platform
       summary: Build weekly graph calibration report
       description: Return a weekly calibration slice combining risk feedback backtest, identity calibration status, and ontology SLO trend context.
       parameters:
@@ -5285,8 +5280,390 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/WeeklyCalibrationReport'
+        '400':
+          description: Invalid query parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Graph platform is not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/graph/intelligence/insights:
+    get:
+      tags:
+        - Graph
+      deprecated: true
+      summary: Build decision-grade intelligence insights
+      description: Legacy compatibility alias for `/api/v1/platform/intelligence/insights`.
+      parameters:
+        - name: entity_id
+          in: query
+          required: false
+          description: Optional entity focus for entity-centric scoring and evidence.
+          schema:
+            type: string
+        - name: window_days
+          in: query
+          required: false
+          description: Outcome feedback window in days (1-3650).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 3650
+        - name: history_limit
+          in: query
+          required: false
+          description: Number of recent schema history entries to include (1-200).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+        - name: max_insights
+          in: query
+          required: false
+          description: Maximum number of prioritized insights to return (1-20).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20
+        - name: since_version
+          in: query
+          required: false
+          description: Optional schema drift baseline version.
+          schema:
+            type: integer
+            minimum: 1
+        - name: include_counterfactual
+          in: query
+          required: false
+          description: Include precomputed what-if simulations in insights.
+          schema:
+            type: boolean
+        - name: from
+          in: query
+          required: false
+          description: Optional RFC3339 lower bound snapshot timestamp for temporal diff context.
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          description: Optional RFC3339 upper bound snapshot timestamp for temporal diff context.
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Unified intelligence report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntelligenceReport'
+        '400':
+          description: Invalid query parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Snapshots not found for temporal diff parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Graph platform is not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/graph/intelligence/quality:
+    get:
+      tags:
+        - Graph
+      deprecated: true
+      summary: Build graph quality intelligence KPIs
+      description: Legacy compatibility alias for `/api/v1/platform/intelligence/quality`.
+      parameters:
+        - name: history_limit
+          in: query
+          required: false
+          description: Number of recent schema history entries to include (1-200).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+        - name: since_version
+          in: query
+          required: false
+          description: Optional schema drift baseline version.
+          schema:
+            type: integer
+            minimum: 1
+        - name: stale_after_hours
+          in: query
+          required: false
+          description: Freshness threshold in hours (1-8760).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 8760
+      responses:
+        '200':
+          description: Graph quality report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphQualityReport'
+        '400':
+          description: Invalid query parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Graph platform is not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/graph/intelligence/metadata-quality:
+    get:
+      tags:
+        - Graph
+      deprecated: true
+      summary: Build graph metadata quality intelligence KPIs
+      description: Legacy compatibility alias for `/api/v1/platform/intelligence/metadata-quality`.
+      parameters:
+        - name: top_kinds
+          in: query
+          required: false
+          description: Maximum number of profiled/unprofiled kinds to include in the response (1-200).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+      responses:
+        '200':
+          description: Graph metadata quality report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphMetadataQualityReport'
+        '400':
+          description: Invalid query parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Graph platform is not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/graph/intelligence/claim-conflicts:
+    get:
+      tags:
+        - Graph
+      deprecated: true
+      summary: Build claim contradiction and supportability report
+      description: Legacy compatibility alias for `/api/v1/platform/intelligence/claim-conflicts`.
+      parameters:
+        - name: max_conflicts
+          in: query
+          required: false
+          description: Maximum number of contradiction groups to return (1-200).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+        - name: include_resolved
+          in: query
+          required: false
+          description: Include resolved or superseded claims in the scan.
+          schema:
+            type: boolean
+        - name: stale_after_hours
+          in: query
+          required: false
+          description: Optional freshness threshold in hours (1-8760).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 8760
+        - name: valid_at
+          in: query
+          required: false
+          description: Optional fact-time slice (RFC3339).
+          schema:
+            type: string
+            format: date-time
+        - name: recorded_at
+          in: query
+          required: false
+          description: Optional system-time slice (RFC3339).
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Claim conflict report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClaimConflictReport'
+        '400':
+          description: Invalid query parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Graph platform is not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/graph/intelligence/leverage:
+    get:
+      tags:
+        - Graph
+      deprecated: true
+      summary: Build deep graph leverage intelligence report
+      description: Legacy compatibility alias for `/api/v1/platform/intelligence/leverage`.
+      parameters:
+        - name: history_limit
+          in: query
+          required: false
+          description: Number of recent schema history entries to include (1-200).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+        - name: since_version
+          in: query
+          required: false
+          description: Optional schema drift baseline version.
+          schema:
+            type: integer
+            minimum: 1
+        - name: stale_after_hours
+          in: query
+          required: false
+          description: Freshness threshold in hours (1-8760).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 8760
+        - name: recent_window_hours
+          in: query
+          required: false
+          description: Recent activity window in hours (1-168).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 168
+        - name: decision_sla_days
+          in: query
+          required: false
+          description: Days before a decision without outcomes is considered stale (1-365).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 365
+        - name: identity_suggest_threshold
+          in: query
+          required: false
+          description: Candidate suggestion threshold for identity review backlog (0-1).
+          schema:
+            type: number
+            minimum: 0
+            maximum: 1
+        - name: identity_queue_limit
+          in: query
+          required: false
+          description: Maximum queue entries returned for identity review backlog (1-200).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+      responses:
+        '200':
+          description: Graph leverage report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphLeverageReport'
+        '400':
+          description: Invalid query parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Graph platform is not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/graph/intelligence/calibration/weekly:
+    get:
+      tags:
+        - Graph
+      deprecated: true
+      summary: Build weekly graph calibration report
+      description: Legacy compatibility alias for `/api/v1/platform/intelligence/calibration/weekly`.
+      parameters:
+        - name: window_days
+          in: query
+          required: false
+          description: Feedback observation window in days (1-30).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 30
+        - name: trend_days
+          in: query
+          required: false
+          description: Ontology trend horizon in days (7-56).
+          schema:
+            type: integer
+            minimum: 7
+            maximum: 56
+        - name: profile
+          in: query
+          required: false
+          description: Optional risk profile name for outcome feedback calibration.
+          schema:
+            type: string
+        - name: include_queue
+          in: query
+          required: false
+          description: Include identity review queue details.
+          schema:
+            type: boolean
+        - name: queue_limit
+          in: query
+          required: false
+          description: Max identity review queue entries (1-200).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+      responses:
+        '200':
+          description: Weekly graph calibration report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WeeklyCalibrationReport'
         '400':
           description: Invalid query parameter
           content:
@@ -8857,3 +9234,1276 @@ components:
           items:
             type: object
             additionalProperties: true
+    FlexibleValue:
+      oneOf:
+        - type: string
+        - type: number
+        - type: integer
+        - type: boolean
+        - type: array
+          items:
+            type: string
+        - type: object
+          additionalProperties: true
+    StringIntegerMap:
+      type: object
+      additionalProperties:
+        type: integer
+    GraphNode:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+        name:
+          type: string
+        provider:
+          type: string
+        account:
+          type: string
+        region:
+          type: string
+        risk:
+          type: string
+          enum:
+            - critical
+            - high
+            - medium
+            - low
+            - none
+        properties:
+          type: object
+          additionalProperties: true
+    GraphEdge:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        source:
+          type: string
+        target:
+          type: string
+        kind:
+          type: string
+        effect:
+          type: string
+        priority:
+          type: integer
+        risk:
+          type: string
+          enum:
+            - critical
+            - high
+            - medium
+            - low
+            - none
+        properties:
+          type: object
+          additionalProperties: true
+    NodeMutation:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        action:
+          type: string
+        node:
+          $ref: '#/components/schemas/GraphNode'
+        properties:
+          type: object
+          additionalProperties: true
+    EdgeMutation:
+      type: object
+      additionalProperties: false
+      properties:
+        source:
+          type: string
+        target:
+          type: string
+        kind:
+          type: string
+        action:
+          type: string
+        edge:
+          $ref: '#/components/schemas/GraphEdge'
+    GraphDelta:
+      type: object
+      additionalProperties: false
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/NodeMutation'
+        edges:
+          type: array
+          items:
+            $ref: '#/components/schemas/EdgeMutation'
+    IntelligenceReportScope:
+      type: object
+      additionalProperties: false
+      properties:
+        entity_id:
+          type: string
+        outcome_window_days:
+          type: integer
+        freshness_stale_after_hours:
+          type: integer
+        schema_version:
+          type: integer
+    IntelligenceEvidence:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+        id:
+          type: string
+        title:
+          type: string
+        detail:
+          type: string
+        path:
+          type: array
+          items:
+            type: string
+        value:
+          $ref: '#/components/schemas/FlexibleValue'
+    InsightCounterfactual:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        summary:
+          type: string
+        delta:
+          $ref: '#/components/schemas/GraphDelta'
+        estimated_risk_score_delta:
+          type: number
+        estimated_blocked_attack_paths:
+          type: integer
+        estimated_removed_toxic_combos:
+          type: integer
+        estimated_created_attack_paths:
+          type: integer
+        estimated_introduced_toxic_combos:
+          type: integer
+    DecisionInsight:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        priority:
+          type: integer
+        severity:
+          type: string
+          enum:
+            - critical
+            - high
+            - medium
+            - low
+        title:
+          type: string
+        summary:
+          type: string
+        confidence:
+          type: number
+        coverage:
+          type: number
+        evidence:
+          type: array
+          items:
+            $ref: '#/components/schemas/IntelligenceEvidence'
+        suggested_actions:
+          type: array
+          items:
+            type: string
+        counterfactual:
+          $ref: '#/components/schemas/InsightCounterfactual'
+    FreshnessMetrics:
+      type: object
+      additionalProperties: false
+      properties:
+        observed_at:
+          type: string
+          format: date-time
+        total_nodes:
+          type: integer
+        nodes_with_observed:
+          type: integer
+        fresh_nodes:
+          type: integer
+        stale_nodes:
+          type: integer
+        freshness_percent:
+          type: number
+        median_age_hours:
+          type: number
+        p95_age_hours:
+          type: number
+    SchemaEntityCoverage:
+      type: object
+      additionalProperties: false
+      properties:
+        total:
+          type: integer
+        registered_kind:
+          type: integer
+        unknown_kind:
+          type: integer
+        conformant:
+          type: integer
+    SchemaKindCount:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+        count:
+          type: integer
+    SchemaIssueCount:
+      type: object
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+        detail:
+          type: string
+        count:
+          type: integer
+    SchemaRecommendation:
+      type: object
+      additionalProperties: false
+      properties:
+        priority:
+          type: string
+        category:
+          type: string
+        title:
+          type: string
+        detail:
+          type: string
+        suggested_action:
+          type: string
+    SchemaChange:
+      type: object
+      additionalProperties: false
+      properties:
+        version:
+          type: integer
+        changed_at:
+          type: string
+          format: date-time
+        added_node_kinds:
+          type: array
+          items:
+            type: string
+        updated_node_kinds:
+          type: array
+          items:
+            type: string
+        added_edge_kinds:
+          type: array
+          items:
+            type: string
+        updated_edge_kinds:
+          type: array
+          items:
+            type: string
+        compatibility_warnings:
+          type: array
+          items:
+            type: string
+    SchemaDriftReport:
+      type: object
+      additionalProperties: false
+      properties:
+        from_version:
+          type: integer
+        to_version:
+          type: integer
+        added_node_kinds:
+          type: array
+          items:
+            type: string
+        updated_node_kinds:
+          type: array
+          items:
+            type: string
+        added_edge_kinds:
+          type: array
+          items:
+            type: string
+        updated_edge_kinds:
+          type: array
+          items:
+            type: string
+        compatibility_warnings:
+          type: array
+          items:
+            type: string
+    SchemaValidationStats:
+      type: object
+      additionalProperties: false
+      properties:
+        mode:
+          type: string
+          enum:
+            - off
+            - warn
+            - enforce
+        node_warnings:
+          type: integer
+        edge_warnings:
+          type: integer
+        node_rejected:
+          type: integer
+        edge_rejected:
+          type: integer
+        node_warning_by_code:
+          $ref: '#/components/schemas/StringIntegerMap'
+        edge_warning_by_code:
+          $ref: '#/components/schemas/StringIntegerMap'
+        node_reject_by_code:
+          $ref: '#/components/schemas/StringIntegerMap'
+        edge_reject_by_code:
+          $ref: '#/components/schemas/StringIntegerMap'
+    SchemaHealthReport:
+      type: object
+      additionalProperties: false
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        schema_version:
+          type: integer
+        since_version:
+          type: integer
+        validation_mode:
+          type: string
+          enum:
+            - off
+            - warn
+            - enforce
+        nodes:
+          $ref: '#/components/schemas/SchemaEntityCoverage'
+        edges:
+          $ref: '#/components/schemas/SchemaEntityCoverage'
+        node_kind_coverage_percent:
+          type: number
+        edge_kind_coverage_percent:
+          type: number
+        node_conformance_percent:
+          type: number
+        edge_conformance_percent:
+          type: number
+        unknown_node_kinds:
+          type: array
+          items:
+            $ref: '#/components/schemas/SchemaKindCount'
+        unknown_edge_kinds:
+          type: array
+          items:
+            $ref: '#/components/schemas/SchemaKindCount'
+        missing_required_properties:
+          type: array
+          items:
+            $ref: '#/components/schemas/SchemaIssueCount'
+        invalid_property_types:
+          type: array
+          items:
+            $ref: '#/components/schemas/SchemaIssueCount'
+        missing_metadata_keys:
+          type: array
+          items:
+            $ref: '#/components/schemas/SchemaIssueCount'
+        invalid_metadata_enums:
+          type: array
+          items:
+            $ref: '#/components/schemas/SchemaIssueCount'
+        invalid_metadata_timestamps:
+          type: array
+          items:
+            $ref: '#/components/schemas/SchemaIssueCount'
+        invalid_relationships:
+          type: array
+          items:
+            $ref: '#/components/schemas/SchemaIssueCount'
+        drift:
+          $ref: '#/components/schemas/SchemaDriftReport'
+        recent_changes:
+          type: array
+          items:
+            $ref: '#/components/schemas/SchemaChange'
+        runtime_validation:
+          $ref: '#/components/schemas/SchemaValidationStats'
+        recommendations:
+          type: array
+          items:
+            $ref: '#/components/schemas/SchemaRecommendation'
+    OutcomeBacktest:
+      type: object
+      additionalProperties: false
+      properties:
+        samples:
+          type: integer
+        brier_score:
+          type: number
+        precision_at_50:
+          type: number
+        recall_at_50:
+          type: number
+    CalibrationBucket:
+      type: object
+      additionalProperties: false
+      properties:
+        lower_bound:
+          type: number
+        upper_bound:
+          type: number
+        samples:
+          type: integer
+        outcome_rate:
+          type: number
+        avg_predicted:
+          type: number
+        gap:
+          type: number
+    SignalDrift:
+      type: object
+      additionalProperties: false
+      properties:
+        signal:
+          type: string
+        recent_hit_rate:
+          type: number
+        baseline_hit_rate:
+          type: number
+        delta:
+          type: number
+        status:
+          type: string
+        recent_samples:
+          type: integer
+        baseline_samples:
+          type: integer
+    RulePromotionEvent:
+      type: object
+      additionalProperties: false
+      properties:
+        candidate_id:
+          type: string
+        rule_type:
+          type: string
+        status:
+          type: string
+        details:
+          type: string
+        applied_at:
+          type: string
+          format: date-time
+    RuleEffectiveness:
+      type: object
+      additionalProperties: false
+      properties:
+        rule_id:
+          type: string
+        rule_type:
+          type: string
+        signal_family:
+          type: string
+        severity:
+          type: string
+          enum:
+            - critical
+            - high
+            - medium
+            - low
+        detections:
+          type: integer
+        true_positives:
+          type: integer
+        false_positives:
+          type: integer
+        relevant_outcomes:
+          type: integer
+        precision:
+          type: number
+        recall:
+          type: number
+        avg_lead_time_days:
+          type: number
+        last_seen_at:
+          type: string
+          format: date-time
+    SeverityAdjustmentSuggestion:
+      type: object
+      additionalProperties: false
+      properties:
+        rule_id:
+          type: string
+        current_severity:
+          type: string
+          enum:
+            - critical
+            - high
+            - medium
+            - low
+        suggested_severity:
+          type: string
+          enum:
+            - critical
+            - high
+            - medium
+            - low
+        confidence:
+          type: number
+        reason:
+          type: string
+    RuleRetirementSuggestion:
+      type: object
+      additionalProperties: false
+      properties:
+        rule_id:
+          type: string
+        false_positive_rate:
+          type: number
+        detections:
+          type: integer
+        reason:
+          type: string
+    SignalWeightRecommendation:
+      type: object
+      additionalProperties: false
+      properties:
+        signal:
+          type: string
+        current_weight:
+          type: number
+        suggested_weight:
+          type: number
+        delta:
+          type: number
+        direction:
+          type: string
+        outcome_hit_rate:
+          type: number
+        observations:
+          type: integer
+        confidence:
+          type: number
+        rationale:
+          type: string
+    OutcomeFeedbackReport:
+      type: object
+      additionalProperties: false
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        observation_window_days:
+          type: integer
+        outcome_count:
+          type: integer
+        rule_signal_count:
+          type: integer
+        profile:
+          type: string
+        backtest:
+          $ref: '#/components/schemas/OutcomeBacktest'
+        calibration:
+          type: array
+          items:
+            $ref: '#/components/schemas/CalibrationBucket'
+        signal_drift:
+          type: array
+          items:
+            $ref: '#/components/schemas/SignalDrift'
+        rule_promotions:
+          type: array
+          items:
+            $ref: '#/components/schemas/RulePromotionEvent'
+        rule_effectiveness:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuleEffectiveness'
+        severity_adjustments:
+          type: array
+          items:
+            $ref: '#/components/schemas/SeverityAdjustmentSuggestion'
+        retirement_suggestions:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuleRetirementSuggestion'
+        signal_weight_adjustments:
+          type: array
+          items:
+            $ref: '#/components/schemas/SignalWeightRecommendation'
+    IntelligenceReport:
+      type: object
+      additionalProperties: false
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        scope:
+          $ref: '#/components/schemas/IntelligenceReportScope'
+        risk_score:
+          type: number
+        risk_level:
+          type: string
+          enum:
+            - critical
+            - high
+            - medium
+            - low
+            - none
+        coverage:
+          type: number
+        confidence:
+          type: number
+        freshness:
+          $ref: '#/components/schemas/FreshnessMetrics'
+        schema_health:
+          $ref: '#/components/schemas/SchemaHealthReport'
+        outcome_feedback:
+          $ref: '#/components/schemas/OutcomeFeedbackReport'
+        insights:
+          type: array
+          items:
+            $ref: '#/components/schemas/DecisionInsight'
+    GraphQualitySummary:
+      type: object
+      additionalProperties: false
+      properties:
+        nodes:
+          type: integer
+        edges:
+          type: integer
+        maturity_score:
+          type: number
+        maturity_grade:
+          type: string
+        critical_findings:
+          type: integer
+        healthy:
+          type: boolean
+    GraphQualityOntology:
+      type: object
+      additionalProperties: false
+      properties:
+        schema_health:
+          $ref: '#/components/schemas/SchemaHealthReport'
+        coverage_percent:
+          type: number
+        conformance_percent:
+          type: number
+        unknown_node_kinds:
+          type: integer
+        unknown_edge_kinds:
+          type: integer
+    GraphQualityIdentity:
+      type: object
+      additionalProperties: false
+      properties:
+        people_nodes:
+          type: integer
+        alias_nodes:
+          type: integer
+        linked_aliases:
+          type: integer
+        unlinked_aliases:
+          type: integer
+        linked_canonical_entities:
+          type: integer
+        linkage_percent:
+          type: number
+    GraphQualityTemporal:
+      type: object
+      additionalProperties: false
+      properties:
+        freshness:
+          $ref: '#/components/schemas/FreshnessMetrics'
+        stale_after_hours:
+          type: integer
+        node_observed_coverage_percent:
+          type: number
+        node_valid_from_coverage_percent:
+          type: number
+        edge_observed_coverage_percent:
+          type: number
+        edge_valid_from_coverage_percent:
+          type: number
+        metadata_completeness_percent:
+          type: number
+    GraphQualityWriteBack:
+      type: object
+      additionalProperties: false
+      properties:
+        decision_nodes:
+          type: integer
+        outcome_nodes:
+          type: integer
+        evidence_nodes:
+          type: integer
+        action_nodes:
+          type: integer
+        evaluation_edges:
+          type: integer
+        decisions_with_outcomes:
+          type: integer
+        outcomes_with_evaluations:
+          type: integer
+        closure_rate_percent:
+          type: number
+    GraphQualityDomainCoverage:
+      type: object
+      additionalProperties: false
+      properties:
+        category:
+          type: string
+        nodes:
+          type: integer
+        percent:
+          type: number
+    GraphQualityRecommendation:
+      type: object
+      additionalProperties: false
+      properties:
+        priority:
+          type: string
+        category:
+          type: string
+        title:
+          type: string
+        detail:
+          type: string
+        suggested_action:
+          type: string
+    GraphQualityReport:
+      type: object
+      additionalProperties: false
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        summary:
+          $ref: '#/components/schemas/GraphQualitySummary'
+        ontology:
+          $ref: '#/components/schemas/GraphQualityOntology'
+        identity:
+          $ref: '#/components/schemas/GraphQualityIdentity'
+        temporal:
+          $ref: '#/components/schemas/GraphQualityTemporal'
+        writeback:
+          $ref: '#/components/schemas/GraphQualityWriteBack'
+        domain_coverage:
+          type: array
+          items:
+            $ref: '#/components/schemas/GraphQualityDomainCoverage'
+        recommendations:
+          type: array
+          items:
+            $ref: '#/components/schemas/GraphQualityRecommendation'
+    GraphMetadataQualitySummary:
+      type: object
+      additionalProperties: false
+      properties:
+        nodes:
+          type: integer
+        profiled_kinds:
+          type: integer
+        profiled_nodes:
+          type: integer
+        unprofiled_nodes:
+          type: integer
+        required_key_coverage_percent:
+          type: number
+        timestamp_validity_percent:
+          type: number
+        enum_validity_percent:
+          type: number
+    GraphMetadataKindQuality:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+        nodes:
+          type: integer
+        required_keys:
+          type: array
+          items:
+            type: string
+        missing_required:
+          $ref: '#/components/schemas/StringIntegerMap'
+        invalid_timestamps:
+          $ref: '#/components/schemas/StringIntegerMap'
+        invalid_enums:
+          $ref: '#/components/schemas/StringIntegerMap'
+        completeness_percent:
+          type: number
+    GraphMetadataRecommendation:
+      type: object
+      additionalProperties: false
+      properties:
+        priority:
+          type: string
+        category:
+          type: string
+        title:
+          type: string
+        detail:
+          type: string
+        suggested_action:
+          type: string
+    GraphMetadataQualityReport:
+      type: object
+      additionalProperties: false
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        summary:
+          $ref: '#/components/schemas/GraphMetadataQualitySummary'
+        kinds:
+          type: array
+          items:
+            $ref: '#/components/schemas/GraphMetadataKindQuality'
+        unprofiled_kinds:
+          type: array
+          items:
+            $ref: '#/components/schemas/SchemaKindCount'
+        recommendations:
+          type: array
+          items:
+            $ref: '#/components/schemas/GraphMetadataRecommendation'
+    ClaimConflictReportSummary:
+      type: object
+      additionalProperties: false
+      properties:
+        total_claims:
+          type: integer
+        active_claims:
+          type: integer
+        conflict_groups:
+          type: integer
+        total_conflict_groups:
+          type: integer
+        returned_conflict_groups:
+          type: integer
+        conflicting_claims:
+          type: integer
+        total_conflicting_claims:
+          type: integer
+        returned_conflicting_claims:
+          type: integer
+        conflicts_truncated:
+          type: boolean
+        unsupported_claims:
+          type: integer
+        sourceless_claims:
+          type: integer
+        stale_claims:
+          type: integer
+    ClaimConflict:
+      type: object
+      additionalProperties: false
+      properties:
+        key:
+          type: string
+        subject_id:
+          type: string
+        predicate:
+          type: string
+        claim_ids:
+          type: array
+          items:
+            type: string
+        values:
+          type: array
+          items:
+            type: string
+        source_ids:
+          type: array
+          items:
+            type: string
+        statuses:
+          type: array
+          items:
+            type: string
+        highest_confidence:
+          type: number
+        latest_observed_at:
+          type: string
+          format: date-time
+    ClaimConflictRecommendation:
+      type: object
+      additionalProperties: false
+      properties:
+        priority:
+          type: string
+        title:
+          type: string
+        detail:
+          type: string
+    ClaimConflictReport:
+      type: object
+      additionalProperties: false
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        valid_at:
+          type: string
+          format: date-time
+        recorded_at:
+          type: string
+          format: date-time
+        summary:
+          $ref: '#/components/schemas/ClaimConflictReportSummary'
+        conflicts:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClaimConflict'
+        recommendations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClaimConflictRecommendation'
+    IdentityResolutionCandidate:
+      type: object
+      additionalProperties: false
+      properties:
+        alias_node_id:
+          type: string
+        canonical_node_id:
+          type: string
+        score:
+          type: number
+        deterministic:
+          type: boolean
+        reasons:
+          type: array
+          items:
+            type: string
+    IdentitySourceCalibration:
+      type: object
+      additionalProperties: false
+      properties:
+        source_system:
+          type: string
+        alias_nodes:
+          type: integer
+        reviewed_aliases:
+          type: integer
+        accepted_decisions:
+          type: integer
+        rejected_decisions:
+          type: integer
+        precision_percent:
+          type: number
+        review_coverage_percent:
+          type: number
+        backlog_aliases:
+          type: integer
+    IdentityReviewQueueItem:
+      type: object
+      additionalProperties: false
+      properties:
+        alias_node_id:
+          type: string
+        alias_name:
+          type: string
+        source_system:
+          type: string
+        current_canonical_id:
+          type: string
+        candidate_count:
+          type: integer
+        candidates:
+          type: array
+          items:
+            $ref: '#/components/schemas/IdentityResolutionCandidate'
+        last_review_verdict:
+          type: string
+        last_reviewed_at:
+          type: string
+          format: date-time
+          nullable: true
+        priority_score:
+          type: number
+    IdentityCalibrationReport:
+      type: object
+      additionalProperties: false
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        alias_nodes:
+          type: integer
+        linked_aliases:
+          type: integer
+        reviewed_aliases:
+          type: integer
+        decisions_total:
+          type: integer
+        accepted_decisions:
+          type: integer
+        rejected_decisions:
+          type: integer
+        precision_percent:
+          type: number
+        linkage_percent:
+          type: number
+        review_coverage_percent:
+          type: number
+        backlog_aliases:
+          type: integer
+        source_metrics:
+          type: array
+          items:
+            $ref: '#/components/schemas/IdentitySourceCalibration'
+        queue:
+          type: array
+          items:
+            $ref: '#/components/schemas/IdentityReviewQueueItem'
+    GraphLeverageSummary:
+      type: object
+      additionalProperties: false
+      properties:
+        leverage_score:
+          type: number
+        grade:
+          type: string
+        critical_gaps:
+          type: integer
+        healthy:
+          type: boolean
+    GraphSourceCoverage:
+      type: object
+      additionalProperties: false
+      properties:
+        source_system:
+          type: string
+        node_count:
+          type: integer
+        edge_count:
+          type: integer
+        total:
+          type: integer
+    GraphIngestionCoverage:
+      type: object
+      additionalProperties: false
+      properties:
+        expected_sources:
+          type: array
+          items:
+            type: string
+        observed_sources:
+          type: integer
+        coverage_percent:
+          type: number
+        missing_sources:
+          type: array
+          items:
+            type: string
+        source_counts:
+          type: array
+          items:
+            $ref: '#/components/schemas/GraphSourceCoverage'
+    GraphOntologySLOPoint:
+      type: object
+      additionalProperties: false
+      properties:
+        date:
+          type: string
+        canonical_kind_coverage_percent:
+          type: number
+        fallback_activity_percent:
+          type: number
+        schema_valid_write_percent:
+          type: number
+        samples:
+          type: integer
+    GraphOntologySLO:
+      type: object
+      additionalProperties: false
+      properties:
+        canonical_kind_coverage_percent:
+          type: number
+        fallback_activity_percent:
+          type: number
+        schema_valid_write_percent:
+          type: number
+        trend:
+          type: array
+          items:
+            $ref: '#/components/schemas/GraphOntologySLOPoint'
+    GraphTemporalLeverage:
+      type: object
+      additionalProperties: false
+      properties:
+        freshness:
+          $ref: '#/components/schemas/FreshnessMetrics'
+        recent_window_hours:
+          type: integer
+        recent_nodes:
+          type: integer
+        recent_edges:
+          type: integer
+        activity_coverage_percent:
+          type: number
+    GraphClosedLoopLeverage:
+      type: object
+      additionalProperties: false
+      properties:
+        decision_nodes:
+          type: integer
+        outcome_nodes:
+          type: integer
+        decisions_with_outcomes:
+          type: integer
+        closure_rate_percent:
+          type: number
+        stale_decisions_without_outcome:
+          type: integer
+    GraphPredictiveReadiness:
+      type: object
+      additionalProperties: false
+      properties:
+        labeled_outcomes:
+          type: integer
+        evidence_nodes:
+          type: integer
+        feature_coverage_percent:
+          type: number
+        readiness_score:
+          type: number
+    GraphQueryTemplate:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        mode:
+          type: string
+        required_parameters:
+          type: array
+          items:
+            type: string
+        optional_parameters:
+          type: array
+          items:
+            type: string
+        example:
+          type: object
+          additionalProperties: true
+    GraphQueryReadiness:
+      type: object
+      additionalProperties: false
+      properties:
+        template_count:
+          type: integer
+        temporal_capable:
+          type: boolean
+        templates:
+          type: array
+          items:
+            $ref: '#/components/schemas/GraphQueryTemplate'
+    GraphActuationReadiness:
+      type: object
+      additionalProperties: false
+      properties:
+        action_nodes:
+          type: integer
+        automated_actions:
+          type: integer
+        actions_with_targets:
+          type: integer
+        actions_linked_to_decisions:
+          type: integer
+        actions_with_outcomes:
+          type: integer
+        outcome_completion_rate_percent:
+          type: number
+        median_outcome_latency_hours:
+          type: number
+        stale_actions_without_outcome:
+          type: integer
+        actuation_coverage_percent:
+          type: number
+    GraphLeverageRecommendation:
+      type: object
+      additionalProperties: false
+      properties:
+        priority:
+          type: string
+        category:
+          type: string
+        title:
+          type: string
+        detail:
+          type: string
+        suggested_action:
+          type: string
+    GraphLeverageReport:
+      type: object
+      additionalProperties: false
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        summary:
+          $ref: '#/components/schemas/GraphLeverageSummary'
+        quality:
+          $ref: '#/components/schemas/GraphQualityReport'
+        identity:
+          $ref: '#/components/schemas/IdentityCalibrationReport'
+        ingestion:
+          $ref: '#/components/schemas/GraphIngestionCoverage'
+        ontology:
+          $ref: '#/components/schemas/GraphOntologySLO'
+        temporal:
+          $ref: '#/components/schemas/GraphTemporalLeverage'
+        closed_loop:
+          $ref: '#/components/schemas/GraphClosedLoopLeverage'
+        predictive:
+          $ref: '#/components/schemas/GraphPredictiveReadiness'
+        query:
+          $ref: '#/components/schemas/GraphQueryReadiness'
+        actuation:
+          $ref: '#/components/schemas/GraphActuationReadiness'
+        recommendations:
+          type: array
+          items:
+            $ref: '#/components/schemas/GraphLeverageRecommendation'
+    WeeklyCalibrationReport:
+      type: object
+      additionalProperties: false
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        window_days:
+          type: integer
+        trend_days:
+          type: integer
+        profile:
+          type: string
+        risk_feedback:
+          $ref: '#/components/schemas/OutcomeFeedbackReport'
+        identity:
+          $ref: '#/components/schemas/IdentityCalibrationReport'
+        ontology:
+          $ref: '#/components/schemas/GraphOntologySLO'

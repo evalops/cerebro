@@ -260,26 +260,49 @@ func routePermission(method, path string) string {
 	isExport := strings.Contains(path, "/export")
 
 	switch {
+	case strings.HasPrefix(path, "/api/v1/platform/graph"):
+		return "platform.graph.read"
+	case strings.HasPrefix(path, "/api/v1/platform/intelligence"):
+		return "platform.intelligence.read"
+	case strings.HasPrefix(path, "/api/v1/platform/jobs"):
+		return "platform.jobs.read"
+	case strings.HasPrefix(path, "/api/v1/platform/knowledge"):
+		return "platform.knowledge.write"
+	case strings.HasPrefix(path, "/api/v1/platform/workflows"):
+		return "platform.workflow.write"
+	case strings.HasPrefix(path, "/api/v1/security/analyses"):
+		if isWrite {
+			return "security.analyses.run"
+		}
+		return "security.analyses.read"
+	case strings.HasPrefix(path, "/api/v1/org/expertise"):
+		return "org.expertise.read"
+	case strings.HasPrefix(path, "/api/v1/org/team-recommendations"):
+		return "org.team.recommend"
+	case strings.HasPrefix(path, "/api/v1/org/reorg-simulations"):
+		return "org.reorg.simulate"
+	case strings.HasPrefix(path, "/api/v1/org"):
+		return "org.intelligence.read"
 	case strings.HasPrefix(path, "/api/v1/findings"):
 		if isWrite {
-			return "findings:write"
+			return "security.findings.manage"
 		}
-		return "findings:read"
+		return "security.findings.read"
 	case strings.HasPrefix(path, "/api/v1/policies"):
 		if isWrite {
-			return "policies:write"
+			return "security.policies.manage"
 		}
-		return "policies:read"
+		return "security.policies.read"
 	case strings.HasPrefix(path, "/api/v1/assets"),
 		strings.HasPrefix(path, "/api/v1/tables"),
 		strings.HasPrefix(path, "/api/v1/query"):
-		return "assets:read"
+		return "security.assets.read"
 	case strings.HasPrefix(path, "/api/v1/compliance"),
 		strings.HasPrefix(path, "/api/v1/reports"):
 		if isExport {
-			return "compliance:export"
+			return "security.compliance.export"
 		}
-		return "compliance:read"
+		return "security.compliance.read"
 	case strings.HasPrefix(path, "/api/v1/agents"):
 		if isWrite {
 			return "agents:write"
@@ -287,46 +310,113 @@ func routePermission(method, path string) string {
 		return "agents:read"
 	case strings.HasPrefix(path, "/api/v1/tickets"):
 		if isWrite {
-			return "tickets:write"
+			return "security.tickets.manage"
 		}
-		return "tickets:read"
+		return "security.tickets.read"
 	case strings.HasPrefix(path, "/api/v1/runtime"):
 		if isWrite {
-			return "runtime:write"
+			return "security.runtime.write"
 		}
-		return "runtime:read"
+		return "security.runtime.read"
 	case strings.HasPrefix(path, "/api/v1/graph"),
 		strings.HasPrefix(path, "/api/v1/attack-paths"),
 		strings.HasPrefix(path, "/api/v1/lineage"):
-		if isWrite {
-			return "graph:write"
+		switch {
+		case strings.HasPrefix(path, "/api/v1/attack-paths"),
+			strings.Contains(path, "/attack-paths"),
+			strings.Contains(path, "/blast-radius"),
+			strings.Contains(path, "/cascading-blast-radius"),
+			strings.Contains(path, "/reverse-access"),
+			strings.Contains(path, "/effective-permissions"),
+			strings.Contains(path, "/compare-permissions"),
+			strings.Contains(path, "/privilege-escalation"),
+			strings.Contains(path, "/toxic-combinations"),
+			strings.Contains(path, "/chokepoints"),
+			strings.Contains(path, "/impact-analysis"):
+			if isWrite {
+				return "security.analyses.run"
+			}
+			return "security.analyses.read"
+		case strings.Contains(path, "/identity/resolve"),
+			strings.Contains(path, "/identity/split"),
+			strings.Contains(path, "/identity/review"):
+			return "platform.identity.review"
+		case strings.Contains(path, "/schema/register"):
+			return "platform.schema.manage"
+		case strings.Contains(path, "/schema"):
+			return "platform.schema.read"
+		case strings.Contains(path, "/simulate"),
+			strings.Contains(path, "/evaluate-change"):
+			return "platform.simulation.run"
+		case strings.Contains(path, "/write/claim"):
+			return "platform.knowledge.write"
+		case strings.Contains(path, "/write/decision"),
+			strings.Contains(path, "/write/outcome"),
+			strings.Contains(path, "/actuate/recommendation"):
+			return "platform.workflow.write"
+		case strings.Contains(path, "/intelligence/"):
+			return "platform.intelligence.read"
+		case strings.Contains(path, "/diff"),
+			strings.Contains(path, "/query"),
+			strings.Contains(path, "/stats"),
+			strings.Contains(path, "/ingest/"),
+			strings.Contains(path, "/identity/calibration"):
+			return "platform.graph.read"
+		case isWrite:
+			return "platform.graph.write"
+		default:
+			return "platform.graph.read"
 		}
-		return "graph:read"
-	case strings.HasPrefix(path, "/api/v1/incidents"),
-		strings.HasPrefix(path, "/api/v1/identity"),
-		strings.HasPrefix(path, "/api/v1/threatintel"):
+	case strings.HasPrefix(path, "/api/v1/incidents"):
 		if isWrite {
-			return "findings:write"
+			return "security.incidents.manage"
 		}
-		return "findings:read"
+		return "security.incidents.read"
+	case strings.HasPrefix(path, "/api/v1/identity"):
+		if isWrite {
+			return "security.identity.manage"
+		}
+		return "security.identity.read"
+	case strings.HasPrefix(path, "/api/v1/threatintel"):
+		if isWrite {
+			return "security.threat.manage"
+		}
+		return "security.threat.read"
 	case strings.HasPrefix(path, "/api/v1/audit"):
-		return "admin:users"
+		return "admin.audit.read"
 	case strings.HasPrefix(path, "/api/v1/providers"),
-		strings.HasPrefix(path, "/api/v1/webhooks"),
-		strings.HasPrefix(path, "/api/v1/scheduler"),
-		strings.HasPrefix(path, "/api/v1/notifications"),
-		strings.HasPrefix(path, "/api/v1/remediation"),
+		strings.HasPrefix(path, "/api/v1/sync"):
+		return "admin.providers.manage"
+	case strings.HasPrefix(path, "/api/v1/webhooks"):
+		return "admin.webhooks.manage"
+	case strings.HasPrefix(path, "/api/v1/scheduler"):
+		return "admin.scheduler.manage"
+	case strings.HasPrefix(path, "/api/v1/notifications"):
+		return "admin.notifications.manage"
+	case strings.HasPrefix(path, "/api/v1/admin"),
 		strings.HasPrefix(path, "/api/v1/scan"),
-		strings.HasPrefix(path, "/api/v1/telemetry"):
-		return "admin:users"
-	case strings.HasPrefix(path, "/api/v1/rbac"),
-		strings.HasPrefix(path, "/api/v1/admin"):
-		return "admin:users"
+		strings.HasPrefix(path, "/api/v1/telemetry"),
+		strings.HasPrefix(path, "/api/v1/remediation"):
+		if isWrite {
+			return "admin.operations.manage"
+		}
+		return "admin.operations.read"
+	case strings.HasPrefix(path, "/api/v1/rbac/permissions"),
+		strings.HasPrefix(path, "/api/v1/rbac/roles"):
+		return "admin.rbac.roles.manage"
+	case strings.HasPrefix(path, "/api/v1/rbac/users"):
+		if strings.Contains(path, "/roles") {
+			return "admin.rbac.roles.manage"
+		}
+		return "admin.rbac.users.manage"
+	case strings.HasPrefix(path, "/api/v1/rbac/tenants"),
+		strings.HasPrefix(path, "/api/v1/rbac"):
+		return "admin.rbac.users.manage"
 	case strings.HasPrefix(path, "/api/v1"):
 		if isWrite {
-			return "admin:users"
+			return "admin.operations.manage"
 		}
-		return "findings:read"
+		return "security.findings.read"
 	default:
 		return ""
 	}

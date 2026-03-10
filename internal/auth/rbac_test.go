@@ -134,6 +134,66 @@ func TestRBAC_HasPermission(t *testing.T) {
 	}
 }
 
+func TestRBAC_HasPermission_ScopedNamespaces(t *testing.T) {
+	rbac := NewRBAC()
+
+	user := &User{
+		Email:   "platform@example.com",
+		Name:    "Platform Analyst",
+		RoleIDs: []string{"analyst"},
+	}
+	if err := rbac.CreateUser(user); err != nil {
+		t.Fatalf("CreateUser failed: %v", err)
+	}
+
+	tests := []struct {
+		permission string
+		want       bool
+	}{
+		{"platform.graph.read", true},
+		{"platform.intelligence.read", true},
+		{"platform.knowledge.write", true},
+		{"security.findings.manage", true},
+		{"security.analyses.run", true},
+		{"org.expertise.read", true},
+		{"org.reorg.simulate", true},
+		{"admin.operations.manage", false},
+		{"admin.rbac.roles.manage", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.permission, func(t *testing.T) {
+			if got := rbac.HasPermission(context.Background(), user.ID, tt.permission); got != tt.want {
+				t.Fatalf("HasPermission(%s) = %v, want %v", tt.permission, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRBAC_ListPermissionIDsIncludesScopedNamespaces(t *testing.T) {
+	rbac := NewRBAC()
+	ids := rbac.ListPermissionIDs()
+	expected := []string{
+		"platform.graph.read",
+		"platform.intelligence.read",
+		"security.findings.read",
+		"org.intelligence.read",
+		"admin.providers.manage",
+	}
+	for _, want := range expected {
+		found := false
+		for _, id := range ids {
+			if id == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected permission id %q in list", want)
+		}
+	}
+}
+
 func TestRBAC_HasPermission_EmptyUserIDDenied(t *testing.T) {
 	rbac := NewRBAC()
 	if got := rbac.HasPermission(context.Background(), "", "findings:read"); got {

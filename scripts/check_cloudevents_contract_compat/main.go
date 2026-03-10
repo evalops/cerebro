@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -39,18 +40,23 @@ func main() {
 	currentCatalog := graphingest.BuildContractCatalog(currentConfig, time.Time{})
 	report := graphingest.CompareContractCatalogs(baselineCatalog, currentCatalog, time.Now().UTC())
 
-	fmt.Printf("baseline_ref=%s baseline_mappings=%d current_mappings=%d added=%d removed=%d breaking=%d violations=%d\n",
+	fmt.Printf("baseline_ref=%s baseline_mappings=%d current_mappings=%d baseline_lifecycle_events=%d current_lifecycle_events=%d added=%d removed=%d added_lifecycle=%d removed_lifecycle=%d breaking=%d violations=%d\n",
 		baselineRef,
 		report.BaselineMappings,
 		report.CurrentMappings,
+		report.BaselineLifecycleEvents,
+		report.CurrentLifecycleEvents,
 		len(report.AddedMappings),
 		len(report.RemovedMappings),
+		len(report.AddedLifecycleEvents),
+		len(report.RemovedLifecycleEvents),
 		len(report.BreakingChanges),
 		len(report.VersioningViolations),
 	)
 	for _, issue := range report.BreakingChanges {
-		fmt.Printf("breaking_change mapping=%s type=%s detail=%s prev=%s curr=%s\n",
-			issue.MappingName,
+		fmt.Printf("breaking_change contract_type=%s contract=%s type=%s detail=%s prev=%s curr=%s\n",
+			issue.ContractType,
+			firstNonEmpty(issue.ContractName, issue.MappingName),
 			issue.ChangeType,
 			issue.Detail,
 			issue.PreviousContractVersion,
@@ -98,7 +104,9 @@ func gitShowFile(ref, filePath string) ([]byte, error) {
 	if !isSafeGitRef(ref) {
 		return nil, fmt.Errorf("unsafe git ref %q", ref)
 	}
-	cmd := exec.Command("git", "show", fmt.Sprintf("%s:%s", ref, filePath)) // #nosec G204,G702 -- ref is strictly validated by isSafeGitRef and filePath is a repository constant.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "show", fmt.Sprintf("%s:%s", ref, filePath)) // #nosec G204,G702 -- ref is strictly validated by isSafeGitRef and filePath is a repository constant.
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, err
@@ -120,4 +128,14 @@ func isSafeGitRef(ref string) bool {
 func fatalf(format string, args ...any) {
 	_, _ = fmt.Fprintf(os.Stderr, format+"\n", args...)
 	os.Exit(1)
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }

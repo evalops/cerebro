@@ -541,37 +541,16 @@ func (s *Server) graphIntelligenceWeeklyCalibration(w http.ResponseWriter, r *ht
 	}
 
 	profile := strings.TrimSpace(r.URL.Query().Get("profile"))
-	now := time.Now().UTC()
-	riskFeedback := engine.OutcomeFeedback(time.Duration(windowDays)*24*time.Hour, profile)
-	identity := graph.BuildIdentityCalibrationReport(s.app.SecurityGraph, graph.IdentityCalibrationOptions{
-		Now:              now,
+	report := graph.BuildWeeklyCalibrationReport(s.app.SecurityGraph, engine, graph.WeeklyCalibrationReportOptions{
+		Now:              time.Now().UTC(),
+		WindowDays:       windowDays,
+		TrendDays:        trendDays,
+		Profile:          profile,
 		IncludeQueue:     includeQueue,
 		QueueLimit:       queueLimit,
 		SuggestThreshold: 0.55,
 	})
-	ontology := graph.BuildGraphOntologySLO(s.app.SecurityGraph, now, trendDays)
-
-	s.json(w, http.StatusOK, map[string]any{
-		"generated_at": now,
-		"window_days":  windowDays,
-		"trend_days":   trendDays,
-		"profile":      profile,
-		"risk_feedback": map[string]any{
-			"observation_window_days": riskFeedback.ObservationWindowDays,
-			"outcome_count":           riskFeedback.OutcomeCount,
-			"rule_signal_count":       riskFeedback.RuleSignalCount,
-			"backtest":                riskFeedback.Backtest,
-			"calibration":             riskFeedback.Calibration,
-			"signal_drift":            riskFeedback.SignalDrift,
-		},
-		"identity": identity,
-		"ontology": map[string]any{
-			"canonical_kind_coverage_percent": ontology.CanonicalKindCoveragePercent,
-			"fallback_activity_percent":       ontology.FallbackActivityPercent,
-			"schema_valid_write_percent":      ontology.SchemaValidWritePercent,
-			"trend":                           ontology.Trend,
-		},
-	})
+	s.json(w, http.StatusOK, report)
 }
 
 type mapperSourceSLO struct {

@@ -56,13 +56,16 @@ CloudEvents and mapper contracts are generated in `docs/CLOUDEVENTS_AUTOGEN.md` 
 Primary interface for product surfaces and automations.
 
 Current endpoint:
-- `GET /api/v1/graph/intelligence/insights`
-- `GET /api/v1/graph/intelligence/quality`
-- `GET /api/v1/graph/intelligence/metadata-quality`
-- `GET /api/v1/graph/intelligence/claim-conflicts`
-- `GET /api/v1/graph/intelligence/leverage`
+- `GET /api/v1/platform/intelligence/insights`
+- `GET /api/v1/platform/intelligence/quality`
+- `GET /api/v1/platform/intelligence/metadata-quality`
+- `GET /api/v1/platform/intelligence/claim-conflicts`
+- `GET /api/v1/platform/intelligence/leverage`
+- `GET /api/v1/platform/intelligence/calibration/weekly`
 - `GET /api/v1/graph/ingest/health`
 - `GET /api/v1/graph/ingest/contracts`
+
+Legacy `/api/v1/graph/intelligence/*` paths remain as compatibility aliases, but the shared platform surface now lives under `/api/v1/platform/intelligence/*`.
 
 Output characteristics:
 - Prioritized `insights[]`
@@ -97,6 +100,11 @@ Ingest health characteristics:
 - Validation mode and dead-letter path visibility.
 - Dead-letter tail distributions by issue code, entity type/kind, mapping name, and event type.
 - Bounded tail inspection via `tail_limit` for low-latency operational checks.
+
+Report-boundary rule:
+- Org dynamics and security dynamics should usually surface here as derived reports over the shared metadata/context graph.
+- Examples: bus factor, information-flow fragility, privilege concentration, blast radius trends, and risky-configuration posture.
+- Do not promote those views into new substrate primitives unless they need independent write lifecycles or durable IDs.
 
 ### 2) Power Query API
 Read-only, bounded graph exploration for analysts and advanced workflows.
@@ -171,7 +179,7 @@ Operational replay loop:
 - Persist reviewer decisions on alias history and expose calibration metrics (`precision`, `review_coverage`, `backlog`) for continuous quality control.
 
 ## Unified Leverage Surface
-- `GET /api/v1/graph/intelligence/leverage` and `cerebro.graph_leverage_report` provide one combined operating view across:
+- `GET /api/v1/platform/intelligence/leverage` and `cerebro.graph_leverage_report` provide one combined operating view across:
   - ontology/quality maturity
   - ontology SLOs (`canonical_kind_coverage_percent`, `fallback_activity_percent`, `schema_valid_write_percent`) with trend samples
   - ingestion source breadth and gaps

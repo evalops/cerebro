@@ -5,6 +5,38 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 16 - Platform Intelligence Contracts + Lifecycle Events + Scoped Auth (2026-03-09)
+
+### Review findings
+- [x] Gap: the new `/api/v1/platform/*` split existed for graph query and writeback aliases, but intelligence/report endpoints still lived primarily under legacy `/api/v1/graph/intelligence/*` paths.
+- [x] Gap: the weekly calibration endpoint still returned an ad hoc map payload instead of a shared typed report model.
+- [x] Gap: writeback flows recorded claims, decisions, outcomes, and actions without emitting first-class platform lifecycle events for downstream automation.
+- [x] Gap: CloudEvents compatibility checks and generated docs covered mapper contracts, but not the newly added platform lifecycle event contracts.
+- [x] Gap: auth scopes still centered on legacy security-first permissions instead of explicit `platform`, `security`, `org`, and `admin` capability families.
+- [x] Gap: transition docs still needed a sharper rule that org/security dynamics belong primarily in derived reports over the shared metadata/context graph, not as new substrate primitives.
+
+### Execution plan
+- [x] Tighten the platform intelligence surface:
+  - [x] Add concrete `/api/v1/platform/intelligence/*` OpenAPI paths for `insights`, `quality`, `metadata-quality`, `claim-conflicts`, `leverage`, and `calibration/weekly`.
+  - [x] Keep `/api/v1/graph/intelligence/*` as deprecated compatibility aliases.
+  - [x] Replace `additionalProperties: true` response contracts for those endpoints with typed report schemas.
+  - [x] Add a typed `graph.WeeklyCalibrationReport` model and route handler output.
+- [x] Add lifecycle event emission + contract hardening:
+  - [x] Emit `platform.claim.written`, `platform.decision.recorded`, `platform.outcome.recorded`, and `platform.action.recorded` from writeback handlers.
+  - [x] Add generated lifecycle event contract metadata under `internal/platformevents`.
+  - [x] Extend CloudEvents docs generation and contract catalogs to include lifecycle events.
+  - [x] Extend compatibility checks to detect breaking lifecycle contract changes without schema-version bumps.
+  - [x] Add writeback tests that assert lifecycle event emission.
+- [x] Move auth to namespace-scoped capability families:
+  - [x] Add `platform.*`, `security.*`, `org.*`, and `admin.*` permissions to RBAC defaults.
+  - [x] Add implication rules from legacy permissions to the new scoped permissions for compatibility.
+  - [x] Update route-permission mapping and RBAC permission listing to reflect the new scope model.
+  - [x] Add scoped RBAC tests.
+- [x] Update docs and execution guidance:
+  - [x] Update transition/world-model/intelligence docs to frame org/security dynamics as report-level views over the graph.
+  - [x] Regenerate `docs/CLOUDEVENTS_AUTOGEN.md` and `docs/CLOUDEVENTS_CONTRACTS.json`.
+  - [x] Record this cycle in `TODO.md`.
+
 ## Deep Review Cycle 15 - Platform Alias Execution + Org Route Extraction + First Job Resource (2026-03-09)
 
 ### Review findings

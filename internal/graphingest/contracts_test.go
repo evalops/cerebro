@@ -6,6 +6,7 @@ import (
 
 	"github.com/evalops/cerebro/internal/events"
 	"github.com/evalops/cerebro/internal/graph"
+	"github.com/evalops/cerebro/internal/platformevents"
 )
 
 func TestBuildMappingContracts(t *testing.T) {
@@ -70,6 +71,23 @@ func TestBuildMappingContracts(t *testing.T) {
 	}
 }
 
+func TestBuildContractCatalogIncludesLifecycleEvents(t *testing.T) {
+	catalog := BuildContractCatalog(MappingConfig{}, time.Date(2026, 3, 9, 22, 0, 0, 0, time.UTC))
+	if len(catalog.LifecycleEvents) == 0 {
+		t.Fatal("expected lifecycle event contracts to be present")
+	}
+	first := catalog.LifecycleEvents[0]
+	if first.EventType == "" {
+		t.Fatalf("expected lifecycle event type, got %#v", first)
+	}
+	if first.SchemaURL == "" {
+		t.Fatalf("expected lifecycle schema URL, got %#v", first)
+	}
+	if schemaType, _ := first.DataSchema["type"].(string); schemaType != "object" {
+		t.Fatalf("expected lifecycle data_schema.type=object, got %#v", first.DataSchema["type"])
+	}
+}
+
 func TestValidateEventAgainstMappingContract(t *testing.T) {
 	config := MappingConfig{
 		Mappings: []EventMapping{
@@ -121,6 +139,19 @@ func TestValidateEventAgainstMappingContract(t *testing.T) {
 
 func TestCompareContractCatalogs(t *testing.T) {
 	baseline := ContractCatalog{
+		LifecycleEvents: []platformevents.LifecycleEventContract{
+			{
+				EventType:        "platform.claim.written",
+				SchemaURL:        "urn:cerebro:events/platform.claim.written/v1",
+				RequiredDataKeys: []string{"claim_id", "subject_id"},
+				DataSchema: map[string]any{
+					"properties": map[string]any{
+						"claim_id":   map[string]any{"type": "string"},
+						"subject_id": map[string]any{"type": "string"},
+					},
+				},
+			},
+		},
 		Mappings: []MappingContract{
 			{
 				Name:            "github_pr",
@@ -136,6 +167,20 @@ func TestCompareContractCatalogs(t *testing.T) {
 	}
 
 	currentNoMajor := ContractCatalog{
+		LifecycleEvents: []platformevents.LifecycleEventContract{
+			{
+				EventType:        "platform.claim.written",
+				SchemaURL:        "urn:cerebro:events/platform.claim.written/v1",
+				RequiredDataKeys: []string{"claim_id", "subject_id", "predicate"},
+				DataSchema: map[string]any{
+					"properties": map[string]any{
+						"claim_id":   map[string]any{"type": "string"},
+						"subject_id": map[string]any{"type": "integer"},
+						"predicate":  map[string]any{"type": "string"},
+					},
+				},
+			},
+		},
 		Mappings: []MappingContract{
 			{
 				Name:            "github_pr",
@@ -157,8 +202,25 @@ func TestCompareContractCatalogs(t *testing.T) {
 	if len(report.VersioningViolations) == 0 {
 		t.Fatalf("expected versioning violations, got %#v", report)
 	}
+	if report.BaselineLifecycleEvents != 1 || report.CurrentLifecycleEvents != 1 {
+		t.Fatalf("expected lifecycle counts to be tracked, got %#v", report)
+	}
 
 	currentMajor := ContractCatalog{
+		LifecycleEvents: []platformevents.LifecycleEventContract{
+			{
+				EventType:        "platform.claim.written",
+				SchemaURL:        "urn:cerebro:events/platform.claim.written/v2",
+				RequiredDataKeys: []string{"claim_id", "subject_id", "predicate"},
+				DataSchema: map[string]any{
+					"properties": map[string]any{
+						"claim_id":   map[string]any{"type": "string"},
+						"subject_id": map[string]any{"type": "integer"},
+						"predicate":  map[string]any{"type": "string"},
+					},
+				},
+			},
+		},
 		Mappings: []MappingContract{
 			{
 				Name:            "github_pr",

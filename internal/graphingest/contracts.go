@@ -1,6 +1,7 @@
 package graphingest
 
 import (
+	"encoding/json"
 	"fmt"
 	"path"
 	"reflect"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/evalops/cerebro/internal/events"
 	"github.com/evalops/cerebro/internal/graph"
+	"github.com/evalops/cerebro/internal/platformevents"
 )
 
 const (
@@ -48,21 +50,24 @@ type MappingContract struct {
 	DataSchema       map[string]any      `json:"data_schema,omitempty"`
 }
 
-// ContractCatalog captures envelope + mapping contract metadata for all configured mappings.
+// ContractCatalog captures envelope + mapping + platform lifecycle contract metadata.
 type ContractCatalog struct {
-	APIVersion           string                    `json:"apiVersion"`
-	Kind                 string                    `json:"kind"`
-	GeneratedAt          time.Time                 `json:"generated_at,omitempty"`
-	EnvelopeFields       []CloudEventFieldContract `json:"envelope_fields,omitempty"`
-	Mappings             []MappingContract         `json:"mappings,omitempty"`
-	DistinctRequiredData []string                  `json:"distinct_required_data,omitempty"`
-	DistinctOptionalData []string                  `json:"distinct_optional_data,omitempty"`
-	DistinctContextKeys  []string                  `json:"distinct_context_keys,omitempty"`
-	DistinctResolveKeys  []string                  `json:"distinct_resolve_keys,omitempty"`
+	APIVersion           string                                  `json:"apiVersion"`
+	Kind                 string                                  `json:"kind"`
+	GeneratedAt          time.Time                               `json:"generated_at,omitempty"`
+	EnvelopeFields       []CloudEventFieldContract               `json:"envelope_fields,omitempty"`
+	LifecycleEvents      []platformevents.LifecycleEventContract `json:"lifecycle_events,omitempty"`
+	Mappings             []MappingContract                       `json:"mappings,omitempty"`
+	DistinctRequiredData []string                                `json:"distinct_required_data,omitempty"`
+	DistinctOptionalData []string                                `json:"distinct_optional_data,omitempty"`
+	DistinctContextKeys  []string                                `json:"distinct_context_keys,omitempty"`
+	DistinctResolveKeys  []string                                `json:"distinct_resolve_keys,omitempty"`
 }
 
 // ContractCompatibilityIssue captures one compatibility-affecting change.
 type ContractCompatibilityIssue struct {
+	ContractType            string   `json:"contract_type,omitempty"`
+	ContractName            string   `json:"contract_name,omitempty"`
 	MappingName             string   `json:"mapping_name"`
 	ChangeType              string   `json:"change_type"`
 	Detail                  string   `json:"detail"`
@@ -75,14 +80,18 @@ type ContractCompatibilityIssue struct {
 
 // ContractCompatibilityReport summarizes compatibility drift between baseline/current catalogs.
 type ContractCompatibilityReport struct {
-	GeneratedAt          time.Time                    `json:"generated_at"`
-	BaselineMappings     int                          `json:"baseline_mappings"`
-	CurrentMappings      int                          `json:"current_mappings"`
-	AddedMappings        []string                     `json:"added_mappings,omitempty"`
-	RemovedMappings      []string                     `json:"removed_mappings,omitempty"`
-	BreakingChanges      []ContractCompatibilityIssue `json:"breaking_changes,omitempty"`
-	VersioningViolations []ContractCompatibilityIssue `json:"versioning_violations,omitempty"`
-	Compatible           bool                         `json:"compatible"`
+	GeneratedAt             time.Time                    `json:"generated_at"`
+	BaselineMappings        int                          `json:"baseline_mappings"`
+	CurrentMappings         int                          `json:"current_mappings"`
+	BaselineLifecycleEvents int                          `json:"baseline_lifecycle_events"`
+	CurrentLifecycleEvents  int                          `json:"current_lifecycle_events"`
+	AddedMappings           []string                     `json:"added_mappings,omitempty"`
+	RemovedMappings         []string                     `json:"removed_mappings,omitempty"`
+	AddedLifecycleEvents    []string                     `json:"added_lifecycle_events,omitempty"`
+	RemovedLifecycleEvents  []string                     `json:"removed_lifecycle_events,omitempty"`
+	BreakingChanges         []ContractCompatibilityIssue `json:"breaking_changes,omitempty"`
+	VersioningViolations    []ContractCompatibilityIssue `json:"versioning_violations,omitempty"`
+	Compatible              bool                         `json:"compatible"`
 }
 
 type templateRef struct {
@@ -91,7 +100,7 @@ type templateRef struct {
 	FromData   bool
 }
 
-// BuildContractCatalog builds envelope + mapping contract output from one mapping config.
+// BuildContractCatalog builds envelope + mapping + lifecycle contract output from one mapping config.
 func BuildContractCatalog(config MappingConfig, now time.Time) ContractCatalog {
 	if !now.IsZero() {
 		now = now.UTC()
@@ -123,6 +132,7 @@ func BuildContractCatalog(config MappingConfig, now time.Time) ContractCatalog {
 		Kind:                 defaultContractCatalogKind,
 		GeneratedAt:          now,
 		EnvelopeFields:       cloudEventEnvelopeFields(),
+		LifecycleEvents:      platformevents.LifecycleContracts(),
 		Mappings:             mappings,
 		DistinctRequiredData: sortedSetKeys(required),
 		DistinctOptionalData: sortedSetKeys(optional),
@@ -301,10 +311,12 @@ func CompareContractCatalogs(baseline, current ContractCatalog, now time.Time) C
 		now = time.Now().UTC()
 	}
 	report := ContractCompatibilityReport{
-		GeneratedAt:      now,
-		BaselineMappings: len(baseline.Mappings),
-		CurrentMappings:  len(current.Mappings),
-		Compatible:       true,
+		GeneratedAt:             now,
+		BaselineMappings:        len(baseline.Mappings),
+		CurrentMappings:         len(current.Mappings),
+		BaselineLifecycleEvents: len(baseline.LifecycleEvents),
+		CurrentLifecycleEvents:  len(current.LifecycleEvents),
+		Compatible:              true,
 	}
 
 	baselineByName := make(map[string]MappingContract, len(baseline.Mappings))
@@ -339,6 +351,37 @@ func CompareContractCatalogs(baseline, current ContractCatalog, now time.Time) C
 	sort.Strings(report.AddedMappings)
 	sort.Strings(report.RemovedMappings)
 
+	baselineLifecycleByType := make(map[string]platformevents.LifecycleEventContract, len(baseline.LifecycleEvents))
+	currentLifecycleByType := make(map[string]platformevents.LifecycleEventContract, len(current.LifecycleEvents))
+	for _, contract := range baseline.LifecycleEvents {
+		name := strings.TrimSpace(string(contract.EventType))
+		if name == "" {
+			continue
+		}
+		baselineLifecycleByType[name] = contract
+	}
+	for _, contract := range current.LifecycleEvents {
+		name := strings.TrimSpace(string(contract.EventType))
+		if name == "" {
+			continue
+		}
+		currentLifecycleByType[name] = contract
+	}
+	for name := range currentLifecycleByType {
+		if _, ok := baselineLifecycleByType[name]; ok {
+			continue
+		}
+		report.AddedLifecycleEvents = append(report.AddedLifecycleEvents, name)
+	}
+	for name := range baselineLifecycleByType {
+		if _, ok := currentLifecycleByType[name]; ok {
+			continue
+		}
+		report.RemovedLifecycleEvents = append(report.RemovedLifecycleEvents, name)
+	}
+	sort.Strings(report.AddedLifecycleEvents)
+	sort.Strings(report.RemovedLifecycleEvents)
+
 	for name, previous := range baselineByName {
 		next, ok := currentByName[name]
 		if !ok {
@@ -347,6 +390,8 @@ func CompareContractCatalogs(baseline, current ContractCatalog, now time.Time) C
 		addedRequired := subtractStrings(next.RequiredDataKeys, previous.RequiredDataKeys)
 		if len(addedRequired) > 0 {
 			issue := ContractCompatibilityIssue{
+				ContractType:            "mapping",
+				ContractName:            name,
 				MappingName:             name,
 				ChangeType:              "required_keys_added",
 				Detail:                  fmt.Sprintf("new required data keys added: %v", addedRequired),
@@ -370,6 +415,8 @@ func CompareContractCatalogs(baseline, current ContractCatalog, now time.Time) C
 				continue
 			}
 			issue := ContractCompatibilityIssue{
+				ContractType:            "mapping",
+				ContractName:            name,
 				MappingName:             name,
 				ChangeType:              "enum_tightened",
 				Detail:                  fmt.Sprintf("enum %q removed allowed value(s): %v", key, removed),
@@ -385,10 +432,136 @@ func CompareContractCatalogs(baseline, current ContractCatalog, now time.Time) C
 		}
 	}
 
+	for name, previous := range baselineLifecycleByType {
+		next, ok := currentLifecycleByType[name]
+		if !ok {
+			continue
+		}
+
+		addedRequired := subtractStrings(next.RequiredDataKeys, previous.RequiredDataKeys)
+		if len(addedRequired) > 0 {
+			issue := ContractCompatibilityIssue{
+				ContractType:            "lifecycle_event",
+				ContractName:            name,
+				MappingName:             name,
+				ChangeType:              "lifecycle_required_keys_added",
+				Detail:                  fmt.Sprintf("new required lifecycle data keys added: %v", addedRequired),
+				PreviousContractVersion: strings.TrimSpace(previous.SchemaURL),
+				CurrentContractVersion:  strings.TrimSpace(next.SchemaURL),
+				AddedRequiredKeys:       addedRequired,
+			}
+			report.BreakingChanges = append(report.BreakingChanges, issue)
+			if !hasLifecycleVersionBump(previous.SchemaURL, next.SchemaURL) {
+				report.VersioningViolations = append(report.VersioningViolations, issue)
+			}
+		}
+
+		for _, key := range subtractStrings(lifecycleSchemaPropertyKeys(previous.DataSchema), lifecycleSchemaPropertyKeys(next.DataSchema)) {
+			issue := ContractCompatibilityIssue{
+				ContractType:            "lifecycle_event",
+				ContractName:            name,
+				MappingName:             name,
+				ChangeType:              "lifecycle_property_removed",
+				Detail:                  fmt.Sprintf("lifecycle property %q removed from event payload", key),
+				PreviousContractVersion: strings.TrimSpace(previous.SchemaURL),
+				CurrentContractVersion:  strings.TrimSpace(next.SchemaURL),
+			}
+			report.BreakingChanges = append(report.BreakingChanges, issue)
+			if !hasLifecycleVersionBump(previous.SchemaURL, next.SchemaURL) {
+				report.VersioningViolations = append(report.VersioningViolations, issue)
+			}
+		}
+
+		for _, key := range intersectStrings(lifecycleSchemaPropertyKeys(previous.DataSchema), lifecycleSchemaPropertyKeys(next.DataSchema)) {
+			if lifecycleSchemaPropertySignature(previous.DataSchema, key) == lifecycleSchemaPropertySignature(next.DataSchema, key) {
+				continue
+			}
+			issue := ContractCompatibilityIssue{
+				ContractType:            "lifecycle_event",
+				ContractName:            name,
+				MappingName:             name,
+				ChangeType:              "lifecycle_property_changed",
+				Detail:                  fmt.Sprintf("lifecycle property %q schema changed", key),
+				PreviousContractVersion: strings.TrimSpace(previous.SchemaURL),
+				CurrentContractVersion:  strings.TrimSpace(next.SchemaURL),
+			}
+			report.BreakingChanges = append(report.BreakingChanges, issue)
+			if !hasLifecycleVersionBump(previous.SchemaURL, next.SchemaURL) {
+				report.VersioningViolations = append(report.VersioningViolations, issue)
+			}
+		}
+	}
+
 	if len(report.VersioningViolations) > 0 {
 		report.Compatible = false
 	}
 	return report
+}
+
+func hasLifecycleVersionBump(previousSchemaURL, currentSchemaURL string) bool {
+	return lifecycleSchemaVersion(currentSchemaURL) > lifecycleSchemaVersion(previousSchemaURL)
+}
+
+func lifecycleSchemaVersion(schemaURL string) int {
+	schemaURL = strings.TrimSpace(schemaURL)
+	if schemaURL == "" {
+		return 0
+	}
+	parts := strings.Split(strings.TrimRight(schemaURL, "/"), "/")
+	if len(parts) == 0 {
+		return 0
+	}
+	last := strings.TrimSpace(parts[len(parts)-1])
+	if len(last) < 2 || (last[0] != 'v' && last[0] != 'V') {
+		return 0
+	}
+	version, err := strconv.Atoi(last[1:])
+	if err != nil || version < 0 {
+		return 0
+	}
+	return version
+}
+
+func lifecycleSchemaPropertyKeys(schema map[string]any) []string {
+	properties, _ := schema["properties"].(map[string]any)
+	keys := make([]string, 0, len(properties))
+	for key := range properties {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func lifecycleSchemaPropertySignature(schema map[string]any, key string) string {
+	properties, _ := schema["properties"].(map[string]any)
+	value, ok := properties[key]
+	if !ok {
+		return ""
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Sprintf("%v", value)
+	}
+	return string(encoded)
+}
+
+func intersectStrings(left, right []string) []string {
+	if len(left) == 0 || len(right) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(left))
+	for _, value := range left {
+		seen[value] = struct{}{}
+	}
+	out := make([]string, 0, len(right))
+	for _, value := range right {
+		if _, ok := seen[value]; !ok {
+			continue
+		}
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func cloudEventEnvelopeFields() []CloudEventFieldContract {
