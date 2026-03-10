@@ -639,12 +639,16 @@ func (s *Server) updatePlatformReportRun(runID string, apply func(*graph.ReportR
 		s.platformReportRunMu.Unlock()
 		return fmt.Errorf("report run not found: %s", runID)
 	}
+	previous := graph.CloneReportRun(run)
 	updated := graph.CloneReportRun(run)
 	apply(updated)
 	s.platformReportRuns[runID] = updated
 	snapshot := s.clonePlatformReportRunsLocked()
 	s.platformReportRunMu.Unlock()
 	if err := s.persistPlatformReportRuns(snapshot); err != nil {
+		s.platformReportRunMu.Lock()
+		s.platformReportRuns[runID] = previous
+		s.platformReportRunMu.Unlock()
 		return fmt.Errorf("persist report run %q: %w", runID, err)
 	}
 	return nil

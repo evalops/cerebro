@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -559,6 +560,44 @@ func TestPlatformIntelligenceReportRunLifecycleEvents(t *testing.T) {
 	}
 	if completed.Data["materialized_result"] != true {
 		t.Fatalf("expected completed event to mark materialized_result=true, got %#v", completed.Data["materialized_result"])
+	}
+}
+
+func TestPlatformReportRunUpdateRollsBackOnPersistenceFailure(t *testing.T) {
+	application := newTestApp(t)
+	s := NewServer(application)
+	run := &graph.ReportRun{
+		ID:            "report_run:test-rollback",
+		ReportID:      "quality",
+		Status:        graph.ReportRunStatusQueued,
+		ExecutionMode: graph.ReportExecutionModeSync,
+		SubmittedAt:   time.Date(2026, 3, 10, 4, 0, 0, 0, time.UTC),
+		StatusURL:     "/api/v1/platform/intelligence/reports/quality/runs/report_run:test-rollback",
+	}
+	if err := s.storePlatformReportRun(run); err != nil {
+		t.Fatalf("storePlatformReportRun() failed: %v", err)
+	}
+
+	stateDir := filepath.Dir(application.Config.PlatformReportRunStateFile)
+	if err := os.Chmod(stateDir, 0o500); err != nil {
+		t.Fatalf("chmod state dir read-only: %v", err)
+	}
+	defer func() {
+		_ = os.Chmod(stateDir, 0o700)
+	}()
+
+	err := s.updatePlatformReportRun(run.ID, func(run *graph.ReportRun) {
+		run.Status = graph.ReportRunStatusRunning
+	})
+	if err == nil {
+		t.Fatal("expected persistence failure from updatePlatformReportRun")
+	}
+	stored, ok := s.platformReportRunSnapshot(run.ReportID, run.ID)
+	if !ok {
+		t.Fatalf("expected stored report run %q", run.ID)
+	}
+	if stored.Status != graph.ReportRunStatusQueued {
+		t.Fatalf("expected status rollback to queued, got %q", stored.Status)
 	}
 }
 
