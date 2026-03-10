@@ -25,6 +25,8 @@ type platformReportStreamMessage struct {
 	Section   *graph.ReportSectionEmission `json:"section,omitempty"`
 }
 
+var platformReportStreamEmitHook func()
+
 func (s *Server) registerPlatformReportStream(runID string) (<-chan platformReportStreamMessage, func()) {
 	s.platformReportStreamMu.Lock()
 	defer s.platformReportStreamMu.Unlock()
@@ -56,17 +58,17 @@ func (s *Server) registerPlatformReportStream(runID string) (<-chan platformRepo
 
 func (s *Server) emitPlatformReportStreamMessage(runID string, message platformReportStreamMessage) {
 	s.platformReportStreamMu.RLock()
+	defer s.platformReportStreamMu.RUnlock()
 	subscribers, ok := s.platformReportStreams[runID]
 	if !ok {
-		s.platformReportStreamMu.RUnlock()
 		return
 	}
-	channels := make([]chan platformReportStreamMessage, 0, len(subscribers))
-	for ch := range subscribers {
-		channels = append(channels, ch)
+	// Hold the read lock across non-blocking sends so cleanup cannot close a
+	// subscriber channel between selection and delivery.
+	if platformReportStreamEmitHook != nil {
+		platformReportStreamEmitHook()
 	}
-	s.platformReportStreamMu.RUnlock()
-	for _, ch := range channels {
+	for ch := range subscribers {
 		select {
 		case ch <- message:
 		default:

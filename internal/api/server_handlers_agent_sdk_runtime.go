@@ -21,6 +21,8 @@ type agentSDKReportProgressSubscription struct {
 	ProgressToken string
 }
 
+var agentSDKMCPSessionEmitHook func()
+
 func (s *Server) registerAgentSDKMCPSession(sessionID string) (<-chan agentSDKMCPResponse, func()) {
 	s.agentSDKMCPSessionMu.Lock()
 	defer s.agentSDKMCPSessionMu.Unlock()
@@ -52,18 +54,17 @@ func (s *Server) registerAgentSDKMCPSession(sessionID string) (<-chan agentSDKMC
 
 func (s *Server) emitAgentSDKMCPNotification(sessionID string, message agentSDKMCPResponse) {
 	s.agentSDKMCPSessionMu.RLock()
+	defer s.agentSDKMCPSessionMu.RUnlock()
 	session, ok := s.agentSDKMCPSessions[sessionID]
 	if !ok {
-		s.agentSDKMCPSessionMu.RUnlock()
 		return
 	}
-	subscribers := make([]chan agentSDKMCPResponse, 0, len(session.subscribers))
-	for subscriber := range session.subscribers {
-		subscribers = append(subscribers, subscriber)
+	// Hold the read lock across non-blocking sends so cleanup cannot close a
+	// subscriber channel during notification fanout.
+	if agentSDKMCPSessionEmitHook != nil {
+		agentSDKMCPSessionEmitHook()
 	}
-	s.agentSDKMCPSessionMu.RUnlock()
-
-	for _, subscriber := range subscribers {
+	for subscriber := range session.subscribers {
 		select {
 		case subscriber <- message:
 		default:
