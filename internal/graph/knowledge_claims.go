@@ -174,7 +174,7 @@ func WriteClaim(g *Graph, req ClaimWriteRequest) (ClaimWriteResult, error) {
 
 	claimID := request.ID
 	if claimID == "" {
-		claimID = fmt.Sprintf("claim:%s:%d", slugifyKnowledgeKey(request.Predicate), metadata.RecordedAt.UnixNano())
+		claimID = fmt.Sprintf("claim:%s:%s:%d", slugifyKnowledgeKey(request.SubjectID), slugifyKnowledgeKey(request.Predicate), metadata.RecordedAt.UnixNano())
 	}
 	properties := cloneAnyMap(request.Metadata)
 	if properties == nil {
@@ -232,15 +232,21 @@ func WriteClaim(g *Graph, req ClaimWriteRequest) (ClaimWriteResult, error) {
 			"trust_tier":        firstNonEmpty(request.TrustTier, "verified"),
 			"reliability_score": clampUnit(request.ReliabilityScore),
 		}
-		metadata.ApplyTo(sourceProperties)
-		g.AddNode(&Node{
-			ID:         sourceID,
-			Kind:       NodeKindSource,
-			Name:       firstNonEmpty(request.SourceName, sourceID),
-			Provider:   metadata.SourceSystem,
-			Properties: sourceProperties,
-			Risk:       RiskNone,
-		})
+		if existingSource, ok := g.GetNode(sourceID); ok && existingSource != nil {
+			if err := validateClaimSourceNode(existingSource, sourceProperties); err != nil {
+				return ClaimWriteResult{}, err
+			}
+		} else {
+			metadata.ApplyTo(sourceProperties)
+			g.AddNode(&Node{
+				ID:         sourceID,
+				Kind:       NodeKindSource,
+				Name:       firstNonEmpty(request.SourceName, sourceID),
+				Provider:   metadata.SourceSystem,
+				Properties: sourceProperties,
+				Risk:       RiskNone,
+			})
+		}
 		g.AddEdge(&Edge{
 			ID:         fmt.Sprintf("%s->%s:%s", claimID, sourceID, EdgeKindAssertedBy),
 			Source:     claimID,
@@ -502,11 +508,44 @@ func normalizeTrustTier(raw string) string {
 
 func claimStatusResolved(status string) bool {
 	switch normalizeClaimStatus(status) {
-	case "retracted", "superseded", "refuted":
+	case "corrected", "retracted", "superseded", "refuted":
 		return true
 	default:
 		return false
 	}
+}
+
+func validateClaimSourceNode(existing *Node, desired map[string]any) error {
+	if existing == nil {
+		return nil
+	}
+	if existing.Kind != NodeKindSource {
+		return fmt.Errorf("source id %s already exists as %s", existing.ID, existing.Kind)
+	}
+	checks := []struct {
+		key string
+	}{
+		{key: "source_type"},
+		{key: "canonical_name"},
+		{key: "url"},
+		{key: "trust_tier"},
+	}
+	for _, check := range checks {
+		want := strings.TrimSpace(readString(desired, check.key))
+		if want == "" {
+			continue
+		}
+		got := strings.TrimSpace(readString(existing.Properties, check.key))
+		if got != "" && !strings.EqualFold(got, want) {
+			return fmt.Errorf("source %s conflicts on %s", existing.ID, check.key)
+		}
+	}
+	wantReliability := readFloat(desired, "reliability_score")
+	gotReliability := readFloat(existing.Properties, "reliability_score")
+	if wantReliability > 0 && gotReliability > 0 && gotReliability != wantReliability {
+		return fmt.Errorf("source %s conflicts on reliability_score", existing.ID)
+	}
+	return nil
 }
 
 func claimUnsupportedAt(g *Graph, claim *Node, validAt, recordedAt time.Time) bool {
