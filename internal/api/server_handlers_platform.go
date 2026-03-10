@@ -1349,6 +1349,9 @@ func (s *Server) cancelPlatformJob(jobID, reason string) bool {
 	job.CompletedAt = &now
 	job.CancelRequestedAt = &now
 	job.CancelReason = strings.TrimSpace(reason)
+	if job.Error == "" {
+		job.Error = job.CancelReason
+	}
 	cancel := job.cancel
 	job.cancel = nil
 	job.ctx = nil
@@ -1499,6 +1502,13 @@ func (s *Server) syncPlatformJobWithReportRun(run *graph.ReportRun) {
 	if !ok || job == nil {
 		return
 	}
+	if run.CancelRequestedAt != nil {
+		cancelRequestedAt := *run.CancelRequestedAt
+		job.CancelRequestedAt = &cancelRequestedAt
+	}
+	if reason := strings.TrimSpace(run.CancelReason); reason != "" {
+		job.CancelReason = reason
+	}
 	switch run.Status {
 	case graph.ReportRunStatusRunning:
 		job.Status = "running"
@@ -1522,10 +1532,16 @@ func (s *Server) syncPlatformJobWithReportRun(run *graph.ReportRun) {
 		}
 		job.Error = run.Error
 	case graph.ReportRunStatusCanceled:
-		job.Status = "canceled"
-		if run.CompletedAt != nil {
-			completedAt := *run.CompletedAt
-			job.CompletedAt = &completedAt
+		// Preserve cancellation metadata immediately, but do not flip an active
+		// job to terminal canceled until the job-owned cancel func has been
+		// invoked. Otherwise handlers that are waiting on request context
+		// cancellation can hang indefinitely.
+		if job.cancel == nil {
+			job.Status = "canceled"
+			if run.CompletedAt != nil {
+				completedAt := *run.CompletedAt
+				job.CompletedAt = &completedAt
+			}
 		}
 		if job.Error == "" {
 			job.Error = strings.TrimSpace(run.CancelReason)
