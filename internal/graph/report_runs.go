@@ -986,7 +986,7 @@ func reportPayloadValueMatchesSchema(value any, schema any) bool {
 			return false
 		}
 		properties, _ := definition["properties"].(map[string]any)
-		requiredKeys := reportSchemaRequiredKeys(definition["required"])
+		requiredKeys := SchemaRequiredKeys(definition["required"])
 		for _, key := range requiredKeys {
 			propertySchema, exists := properties[key]
 			if !exists {
@@ -1094,28 +1094,6 @@ func reportPayloadArray(value any) ([]any, bool) {
 		converted = append(converted, raw.Index(i).Interface())
 	}
 	return converted, true
-}
-
-func reportSchemaRequiredKeys(raw any) []string {
-	requiredKeys := make([]string, 0)
-	switch typed := raw.(type) {
-	case []any:
-		for _, entry := range typed {
-			key, _ := entry.(string)
-			key = strings.TrimSpace(key)
-			if key != "" {
-				requiredKeys = append(requiredKeys, key)
-			}
-		}
-	case []string:
-		for _, key := range typed {
-			key = strings.TrimSpace(key)
-			if key != "" {
-				requiredKeys = append(requiredKeys, key)
-			}
-		}
-	}
-	return requiredKeys
 }
 
 func reportSchemaAdditionalProperties(raw any) (bool, any) {

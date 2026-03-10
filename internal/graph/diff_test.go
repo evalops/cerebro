@@ -146,6 +146,54 @@ func TestSnapshotStore_LoadSnapshotByRecordID(t *testing.T) {
 	}
 }
 
+func TestSnapshotStore_LoadSnapshotsByRecordIDs(t *testing.T) {
+	dir := t.TempDir()
+	base := time.Date(2026, 3, 7, 0, 0, 0, 0, time.UTC)
+	first := &Snapshot{
+		Version:   snapshotVersion,
+		CreatedAt: base.Add(5 * time.Minute),
+		Metadata: Metadata{
+			BuiltAt:   base,
+			NodeCount: 1,
+			EdgeCount: 0,
+		},
+		Nodes: []*Node{
+			{ID: "node-a", Kind: NodeKindUser, Name: "a"},
+		},
+	}
+	second := &Snapshot{
+		Version:   snapshotVersion,
+		CreatedAt: base.Add(10 * time.Minute),
+		Metadata: Metadata{
+			BuiltAt:   base.Add(5 * time.Minute),
+			NodeCount: 1,
+			EdgeCount: 0,
+		},
+		Nodes: []*Node{
+			{ID: "node-b", Kind: NodeKindBucket, Name: "b"},
+		},
+	}
+	mustSaveSnapshot(t, dir, first)
+	mustSaveSnapshot(t, dir, second)
+
+	store := NewSnapshotStore(dir, 10)
+	records, err := store.ListGraphSnapshotRecords()
+	if err != nil {
+		t.Fatalf("ListGraphSnapshotRecords failed: %v", err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("expected two snapshot records, got %d", len(records))
+	}
+
+	snapshots, loadedRecords, err := store.LoadSnapshotsByRecordIDs(records[0].ID, records[1].ID)
+	if err != nil {
+		t.Fatalf("LoadSnapshotsByRecordIDs failed: %v", err)
+	}
+	if len(snapshots) != 2 || len(loadedRecords) != 2 {
+		t.Fatalf("expected two loaded snapshots and records, got %d and %d", len(snapshots), len(loadedRecords))
+	}
+}
+
 func TestGraphSnapshotAncestryFromCollection(t *testing.T) {
 	base := time.Date(2026, 3, 7, 0, 0, 0, 0, time.UTC)
 	firstBuiltAt := base

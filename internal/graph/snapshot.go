@@ -225,17 +225,30 @@ func (s *SnapshotStore) ListGraphSnapshotRecords() ([]GraphSnapshotRecord, error
 	return records, nil
 }
 
-// LoadSnapshotByRecordID loads one file-backed graph snapshot by its typed snapshot record ID.
-func (s *SnapshotStore) LoadSnapshotByRecordID(snapshotID string) (*Snapshot, *GraphSnapshotRecord, error) {
-	snapshotID = strings.TrimSpace(snapshotID)
-	if snapshotID == "" {
-		return nil, nil, fmt.Errorf("snapshot id required")
+// LoadSnapshotsByRecordIDs loads one or more file-backed graph snapshots by typed snapshot record ID in a single store scan.
+func (s *SnapshotStore) LoadSnapshotsByRecordIDs(snapshotIDs ...string) (map[string]*Snapshot, map[string]*GraphSnapshotRecord, error) {
+	requested := make(map[string]struct{}, len(snapshotIDs))
+	for _, snapshotID := range snapshotIDs {
+		snapshotID = strings.TrimSpace(snapshotID)
+		if snapshotID != "" {
+			requested[snapshotID] = struct{}{}
+		}
 	}
+	if len(requested) == 0 {
+		return nil, nil, fmt.Errorf("at least one snapshot id required")
+	}
+
 	infos, err := s.List()
 	if err != nil {
 		return nil, nil, err
 	}
+
+	snapshots := make(map[string]*Snapshot, len(requested))
+	records := make(map[string]*GraphSnapshotRecord, len(requested))
 	for _, info := range infos {
+		if len(records) == len(requested) {
+			break
+		}
 		snapshot, err := LoadSnapshotFromFile(info.Path)
 		if err != nil {
 			continue
@@ -244,11 +257,34 @@ func (s *SnapshotStore) LoadSnapshotByRecordID(snapshotID string) (*Snapshot, *G
 		if record == nil {
 			continue
 		}
-		if strings.TrimSpace(record.ID) == snapshotID {
-			return snapshot, record, nil
+		recordID := strings.TrimSpace(record.ID)
+		if _, ok := requested[recordID]; !ok {
+			continue
+		}
+		snapshots[recordID] = snapshot
+		records[recordID] = record
+	}
+
+	for snapshotID := range requested {
+		if _, ok := snapshots[snapshotID]; !ok {
+			return nil, nil, fmt.Errorf("snapshot %q not found", snapshotID)
 		}
 	}
-	return nil, nil, fmt.Errorf("snapshot %q not found", snapshotID)
+
+	return snapshots, records, nil
+}
+
+// LoadSnapshotByRecordID loads one file-backed graph snapshot by its typed snapshot record ID.
+func (s *SnapshotStore) LoadSnapshotByRecordID(snapshotID string) (*Snapshot, *GraphSnapshotRecord, error) {
+	snapshotID = strings.TrimSpace(snapshotID)
+	if snapshotID == "" {
+		return nil, nil, fmt.Errorf("snapshot id required")
+	}
+	snapshots, records, err := s.LoadSnapshotsByRecordIDs(snapshotID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return snapshots[snapshotID], records[snapshotID], nil
 }
 
 // DiffByTime loads snapshots nearest to the provided timestamps and computes a structural diff.

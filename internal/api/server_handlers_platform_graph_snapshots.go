@@ -65,11 +65,12 @@ func (s *Server) platformGraphSnapshotDiff(fromSnapshotID, toSnapshotID string) 
 	if fromSnapshotID == "" || toSnapshotID == "" {
 		return nil, http.StatusBadRequest, fmt.Errorf("from_snapshot_id and to_snapshot_id are required")
 	}
-	fromRecord, ok := s.platformGraphSnapshot(fromSnapshotID)
+	records := s.platformGraphSnapshotRecords()
+	fromRecord, ok := records[fromSnapshotID]
 	if !ok {
 		return nil, http.StatusNotFound, fmt.Errorf("graph snapshot not found: %s", fromSnapshotID)
 	}
-	toRecord, ok := s.platformGraphSnapshot(toSnapshotID)
+	toRecord, ok := records[toSnapshotID]
 	if !ok {
 		return nil, http.StatusNotFound, fmt.Errorf("graph snapshot not found: %s", toSnapshotID)
 	}
@@ -80,15 +81,11 @@ func (s *Server) platformGraphSnapshotDiff(fromSnapshotID, toSnapshotID string) 
 	if store == nil {
 		return nil, http.StatusNotFound, fmt.Errorf("graph snapshot store not configured")
 	}
-	fromSnapshot, _, err := store.LoadSnapshotByRecordID(fromSnapshotID)
+	snapshots, _, err := store.LoadSnapshotsByRecordIDs(fromSnapshotID, toSnapshotID)
 	if err != nil {
 		return nil, http.StatusNotFound, err
 	}
-	toSnapshot, _, err := store.LoadSnapshotByRecordID(toSnapshotID)
-	if err != nil {
-		return nil, http.StatusNotFound, err
-	}
-	diff := graph.DiffSnapshots(fromSnapshot, toSnapshot)
+	diff := graph.DiffSnapshots(snapshots[fromSnapshotID], snapshots[toSnapshotID])
 	record := graph.BuildGraphSnapshotDiffRecord(*fromRecord, *toRecord, diff, time.Now().UTC())
 	if record == nil {
 		return nil, http.StatusInternalServerError, fmt.Errorf("failed to build graph snapshot diff")

@@ -217,7 +217,7 @@ func buildSchemaExampleValue(schema any) any {
 	switch strings.TrimSpace(typeName) {
 	case "object":
 		properties, _ := definition["properties"].(map[string]any)
-		required := schemaRequiredKeys(definition["required"])
+		required := graph.SchemaRequiredKeys(definition["required"])
 		example := make(map[string]any, len(required))
 		for _, key := range required {
 			example[key] = buildSchemaExampleValue(properties[key])
@@ -244,28 +244,6 @@ func buildSchemaExampleValue(schema any) any {
 	default:
 		return "example"
 	}
-}
-
-func schemaRequiredKeys(raw any) []string {
-	keys := make([]string, 0)
-	switch typed := raw.(type) {
-	case []string:
-		for _, key := range typed {
-			key = strings.TrimSpace(key)
-			if key != "" {
-				keys = append(keys, key)
-			}
-		}
-	case []any:
-		for _, rawKey := range typed {
-			key, _ := rawKey.(string)
-			key = strings.TrimSpace(key)
-			if key != "" {
-				keys = append(keys, key)
-			}
-		}
-	}
-	return keys
 }
 
 func mustMarshalIndented(value any) string {
