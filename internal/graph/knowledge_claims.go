@@ -77,13 +77,18 @@ type ClaimConflictReport struct {
 
 // ClaimConflictReportSummary captures high-level quality indicators for the claim layer.
 type ClaimConflictReportSummary struct {
-	TotalClaims       int `json:"total_claims"`
-	ActiveClaims      int `json:"active_claims"`
-	ConflictGroups    int `json:"conflict_groups"`
-	ConflictingClaims int `json:"conflicting_claims"`
-	UnsupportedClaims int `json:"unsupported_claims"`
-	SourcelessClaims  int `json:"sourceless_claims"`
-	StaleClaims       int `json:"stale_claims"`
+	TotalClaims               int  `json:"total_claims"`
+	ActiveClaims              int  `json:"active_claims"`
+	ConflictGroups            int  `json:"conflict_groups"`
+	TotalConflictGroups       int  `json:"total_conflict_groups"`
+	ReturnedConflictGroups    int  `json:"returned_conflict_groups"`
+	ConflictingClaims         int  `json:"conflicting_claims"`
+	TotalConflictingClaims    int  `json:"total_conflicting_claims"`
+	ReturnedConflictingClaims int  `json:"returned_conflicting_claims"`
+	ConflictsTruncated        bool `json:"conflicts_truncated,omitempty"`
+	UnsupportedClaims         int  `json:"unsupported_claims"`
+	SourcelessClaims          int  `json:"sourceless_claims"`
+	StaleClaims               int  `json:"stale_claims"`
 }
 
 // ClaimConflict captures one contradictory claim set over the same subject/predicate.
@@ -385,17 +390,18 @@ func BuildClaimConflictReport(g *Graph, opts ClaimConflictReportOptions) ClaimCo
 		}
 	}
 
-	conflicts := make([]ClaimConflict, 0)
+	allConflicts := make([]ClaimConflict, 0)
 	for key, acc := range groups {
 		values := uniqueSortedStrings(normalizeNonEmptyStrings(acc.values))
 		if len(values) <= 1 {
 			continue
 		}
 		report.Summary.ConflictGroups++
+		report.Summary.TotalConflictGroups++
 		for _, claimID := range acc.claimIDs {
 			conflictingClaimSet[claimID] = struct{}{}
 		}
-		conflicts = append(conflicts, ClaimConflict{
+		allConflicts = append(allConflicts, ClaimConflict{
 			Key:               key,
 			SubjectID:         acc.subjectID,
 			Predicate:         acc.predicate,
@@ -407,17 +413,22 @@ func BuildClaimConflictReport(g *Graph, opts ClaimConflictReportOptions) ClaimCo
 			LatestObservedAt:  acc.latestObservedAt,
 		})
 	}
-	sort.Slice(conflicts, func(i, j int) bool {
-		if len(conflicts[i].ClaimIDs) == len(conflicts[j].ClaimIDs) {
-			return conflicts[i].Key < conflicts[j].Key
+	sort.Slice(allConflicts, func(i, j int) bool {
+		if len(allConflicts[i].ClaimIDs) == len(allConflicts[j].ClaimIDs) {
+			return allConflicts[i].Key < allConflicts[j].Key
 		}
-		return len(conflicts[i].ClaimIDs) > len(conflicts[j].ClaimIDs)
+		return len(allConflicts[i].ClaimIDs) > len(allConflicts[j].ClaimIDs)
 	})
+	conflicts := append([]ClaimConflict(nil), allConflicts...)
 	if len(conflicts) > opts.MaxConflicts {
 		conflicts = conflicts[:opts.MaxConflicts]
+		report.Summary.ConflictsTruncated = true
 	}
 	report.Conflicts = conflicts
 	report.Summary.ConflictingClaims = len(conflictingClaimSet)
+	report.Summary.TotalConflictingClaims = len(conflictingClaimSet)
+	report.Summary.ReturnedConflictGroups = len(conflicts)
+	report.Summary.ReturnedConflictingClaims = countConflictClaimIDs(conflicts)
 	report.Recommendations = buildClaimConflictRecommendations(report.Summary)
 	return report
 }
@@ -548,6 +559,22 @@ func validateClaimSourceNode(existing *Node, desired map[string]any) error {
 	return nil
 }
 
+func countConflictClaimIDs(conflicts []ClaimConflict) int {
+	if len(conflicts) == 0 {
+		return 0
+	}
+	claimIDs := make(map[string]struct{}, len(conflicts)*2)
+	for _, conflict := range conflicts {
+		for _, claimID := range conflict.ClaimIDs {
+			if claimID == "" {
+				continue
+			}
+			claimIDs[claimID] = struct{}{}
+		}
+	}
+	return len(claimIDs)
+}
+
 func claimUnsupportedAt(g *Graph, claim *Node, validAt, recordedAt time.Time) bool {
 	if g == nil || claim == nil {
 		return true
@@ -610,11 +637,15 @@ func claimComparableValue(claim *Node) string {
 
 func buildClaimConflictRecommendations(summary ClaimConflictReportSummary) []ClaimConflictRecommendation {
 	recommendations := make([]ClaimConflictRecommendation, 0, 4)
-	if summary.ConflictGroups > 0 {
+	conflictGroups := summary.TotalConflictGroups
+	if conflictGroups == 0 {
+		conflictGroups = summary.ConflictGroups
+	}
+	if conflictGroups > 0 {
 		recommendations = append(recommendations, ClaimConflictRecommendation{
 			Priority: "high",
 			Title:    "Resolve contradictory active claims",
-			Detail:   fmt.Sprintf("%d subject/predicate groups currently disagree on value and need adjudication or supersession.", summary.ConflictGroups),
+			Detail:   fmt.Sprintf("%d subject/predicate groups currently disagree on value and need adjudication or supersession.", conflictGroups),
 		})
 	}
 	if summary.UnsupportedClaims > 0 {
