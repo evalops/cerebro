@@ -5,6 +5,42 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 15 - Platform Alias Execution + Org Route Extraction + First Job Resource (2026-03-09)
+
+### Review findings
+- [x] Gap: the transition architecture existed, but the router and OpenAPI still forced all shared primitives through legacy `/api/v1/graph/*` paths.
+- [x] Gap: org-intelligence capabilities (`who-knows`, `recommend-team`, `simulate-reorg`) still lived under `/api/v1/graph/*`, reinforcing the false idea that graph namespace equals platform namespace.
+- [x] Gap: legacy graph routes lacked runtime deprecation metadata, so compatibility aliases had no migration pressure.
+- [x] Gap: the platform split had no concrete proof that a heavy operation could return an execution resource instead of a synchronous payload.
+- [x] Gap: the transition doc still needed sharper classification for ambiguous analytics, stronger job rules, and explicit auth/deprecation/eventing sections.
+
+### Execution plan
+- [x] Add concrete platform and org aliases in code:
+  - [x] Add `POST /api/v1/platform/graph/queries`.
+  - [x] Add `POST /api/v1/platform/knowledge/claims`.
+  - [x] Add `POST /api/v1/platform/knowledge/decisions`.
+  - [x] Add `GET /api/v1/org/expertise/queries`.
+  - [x] Add `POST /api/v1/org/team-recommendations`.
+  - [x] Add `POST /api/v1/org/reorg-simulations`.
+- [x] Add runtime deprecation metadata on selected legacy graph aliases:
+  - [x] `/api/v1/graph/query`
+  - [x] `/api/v1/graph/write/claim`
+  - [x] `/api/v1/graph/write/decision`
+  - [x] `/api/v1/graph/who-knows`
+  - [x] `/api/v1/graph/recommend-team`
+  - [x] `/api/v1/graph/simulate-reorg`
+- [x] Add the first execution-resource proof point:
+  - [x] Add `POST /api/v1/security/analyses/attack-paths/jobs`.
+  - [x] Add `GET /api/v1/platform/jobs/{id}`.
+  - [x] Back the new endpoints with an in-memory async job record for attack-path analysis.
+- [x] Tighten the contract surface:
+  - [x] Add `Platform` and `Security` tags in OpenAPI.
+  - [x] Add typed schemas for platform graph query, platform claim write, platform decision write, platform jobs, attack-path job request, and reorg simulation request.
+  - [x] Mark the selected legacy graph endpoints `deprecated: true` in OpenAPI.
+- [x] Harden the transition doc:
+  - [x] Reclassify ambiguous analytics (`impact-analysis`, `cohort`, `outlier-score`) as pending proof instead of auto-promoting them to platform primitives.
+  - [x] Add explicit permission model, compatibility/deprecation policy, eventing model, and hidden-security-bias audit guidance.
+
 ## Deep Review Cycle 14 - Platform Transition Architecture + API Boundary Cleanup (2026-03-09)
 
 ### Review findings

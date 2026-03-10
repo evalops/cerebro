@@ -710,6 +710,42 @@ func TestGraphQueryEndpoint_NeighborsAndPaths(t *testing.T) {
 	if count, ok := pathsBody["count"].(float64); !ok || count < 1 {
 		t.Fatalf("expected at least one path, got %#v", pathsBody["count"])
 	}
+
+	if got := neighbors.Header().Get("Deprecation"); got != "true" {
+		t.Fatalf("expected deprecation header on legacy graph query endpoint, got %q", got)
+	}
+	if got := neighbors.Header().Get("Sunset"); got == "" {
+		t.Fatal("expected sunset header on legacy graph query endpoint")
+	}
+}
+
+func TestPlatformGraphQueryEndpoint_PostAlias(t *testing.T) {
+	s := newTestServer(t)
+	g := s.app.SecurityGraph
+
+	g.AddNode(&graph.Node{ID: "user:alice", Kind: graph.NodeKindUser, Name: "Alice"})
+	g.AddNode(&graph.Node{ID: "role:admin", Kind: graph.NodeKindRole, Name: "Admin"})
+	g.AddNode(&graph.Node{ID: "db:prod", Kind: graph.NodeKindDatabase, Name: "Prod", Risk: graph.RiskCritical})
+	g.AddEdge(&graph.Edge{ID: "alice-admin", Source: "user:alice", Target: "role:admin", Kind: graph.EdgeKindCanAssume, Effect: graph.EdgeEffectAllow})
+	g.AddEdge(&graph.Edge{ID: "admin-db", Source: "role:admin", Target: "db:prod", Kind: graph.EdgeKindCanRead, Effect: graph.EdgeEffectAllow})
+
+	w := do(t, s, http.MethodPost, "/api/v1/platform/graph/queries", map[string]any{
+		"mode":      "paths",
+		"node_id":   "user:alice",
+		"target_id": "db:prod",
+		"k":         2,
+		"max_depth": 6,
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for platform graph query alias, got %d: %s", w.Code, w.Body.String())
+	}
+	body := decodeJSON(t, w)
+	if body["mode"] != "paths" {
+		t.Fatalf("expected paths mode, got %#v", body["mode"])
+	}
+	if count, ok := body["count"].(float64); !ok || count < 1 {
+		t.Fatalf("expected at least one path, got %#v", body["count"])
+	}
 }
 
 func TestGraphQueryEndpoint_TemporalScope(t *testing.T) {

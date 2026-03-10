@@ -24,6 +24,9 @@ func TestGraphSimulateReorgEndpoint(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
+	if got := w.Header().Get("Deprecation"); got != "true" {
+		t.Fatalf("expected deprecation header on legacy graph reorg endpoint, got %q", got)
+	}
 
 	decoded := decodeJSON(t, w)
 	bridges, ok := decoded["broken_bridges"].([]any)
@@ -55,6 +58,26 @@ func TestGraphSimulateReorgEndpoint_Validation(t *testing.T) {
 	})
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for unknown person, got %d", w.Code)
+	}
+}
+
+func TestOrgReorgSimulationAlias(t *testing.T) {
+	s := newTestServer(t)
+	seedSimulateReorgGraph(s.app.SecurityGraph)
+
+	w := do(t, s, http.MethodPost, "/api/v1/org/reorg-simulations", map[string]any{
+		"changes": []map[string]any{{
+			"person":         "person:bob@example.com",
+			"new_department": "Platform",
+			"new_manager":    "person:vp@example.com",
+		}},
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for org reorg simulation alias, got %d: %s", w.Code, w.Body.String())
+	}
+	decoded := decodeJSON(t, w)
+	if _, ok := decoded["recommended_actions"].([]any); !ok {
+		t.Fatalf("expected recommended_actions in org alias response, got %#v", decoded["recommended_actions"])
 	}
 }
 

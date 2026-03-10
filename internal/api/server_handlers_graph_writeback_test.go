@@ -224,6 +224,44 @@ func TestGraphWriteClaim(t *testing.T) {
 	if node, ok := g.GetNode(sourceID); !ok || node == nil || node.Kind != graph.NodeKindSource {
 		t.Fatalf("expected source node %q, got %#v", sourceID, node)
 	}
+	if got := w.Header().Get("Deprecation"); got != "true" {
+		t.Fatalf("expected deprecation header on legacy graph claim write endpoint, got %q", got)
+	}
+}
+
+func TestPlatformClaimAndDecisionAliases(t *testing.T) {
+	s := newTestServer(t)
+	g := s.app.SecurityGraph
+
+	g.AddNode(&graph.Node{ID: "service:payments", Kind: graph.NodeKindService, Name: "Payments"})
+	g.AddNode(&graph.Node{ID: "person:alice@example.com", Kind: graph.NodeKindPerson, Name: "Alice"})
+
+	claim := do(t, s, http.MethodPost, "/api/v1/platform/knowledge/claims", map[string]any{
+		"subject_id":    "service:payments",
+		"predicate":     "owner",
+		"object_id":     "person:alice@example.com",
+		"source_system": "api",
+	})
+	if claim.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for platform claim alias, got %d: %s", claim.Code, claim.Body.String())
+	}
+	claimBody := decodeJSON(t, claim)
+	if claimBody["claim_id"] == "" {
+		t.Fatalf("expected claim_id, got %#v", claimBody)
+	}
+
+	decision := do(t, s, http.MethodPost, "/api/v1/platform/knowledge/decisions", map[string]any{
+		"decision_type": "owner-confirmation",
+		"target_ids":    []string{"service:payments"},
+		"source_system": "api",
+	})
+	if decision.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for platform decision alias, got %d: %s", decision.Code, decision.Body.String())
+	}
+	decisionBody := decodeJSON(t, decision)
+	if decisionBody["decision_id"] == "" {
+		t.Fatalf("expected decision_id, got %#v", decisionBody)
+	}
 }
 
 func TestGraphIdentityReviewAndCalibrationEndpoints(t *testing.T) {

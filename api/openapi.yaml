@@ -50,8 +50,12 @@ tags:
     description: Webhook management
   - name: Admin
     description: Administrative endpoints
+  - name: Platform
+    description: Shared platform primitives built on the graph substrate
+  - name: Security
+    description: Security application endpoints layered on the shared platform
   - name: Graph
-    description: Graph platform and shared intelligence endpoints
+    description: Legacy graph compatibility endpoints retained while shared primitives move under Platform
   - name: Org
     description: Organizational topology and information-flow analytics endpoints
   - name: Runtime
@@ -1417,6 +1421,37 @@ paths:
                 additionalProperties: true
         '404':
           description: Attack path not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/security/analyses/attack-paths/jobs:
+    post:
+      tags:
+        - Security
+      summary: Start an asynchronous attack-path analysis job
+      description: Queue a security attack-path analysis and return a platform job resource for status and results.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityAttackPathJobRequest'
+      responses:
+        '202':
+          description: Attack-path job accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformJob'
+        '400':
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Graph platform is not initialized
           content:
             application/json:
               schema:
@@ -4724,8 +4759,9 @@ paths:
     get:
       tags:
         - Graph
+      deprecated: true
       summary: Run bounded graph neighborhood and path queries
-      description: Power-query interface for read-only neighbors and k-shortest paths with strict guardrails.
+      description: Legacy compatibility endpoint. Use `POST /api/v1/platform/graph/queries` for the typed platform contract.
       parameters:
         - name: mode
           in: query
@@ -4813,6 +4849,43 @@ paths:
                 additionalProperties: true
         '400':
           description: Invalid query parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Requested node was not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Graph platform is not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/platform/graph/queries:
+    post:
+      tags:
+        - Platform
+      summary: Run a typed platform graph query
+      description: Typed platform query interface for bounded neighborhood and path analysis with temporal scoping.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlatformGraphQueryRequest'
+      responses:
+        '200':
+          description: Query result payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformGraphQueryResponse'
+        '400':
+          description: Invalid request body
           content:
             application/json:
               schema:
@@ -5367,95 +5440,59 @@ paths:
     post:
       tags:
         - Graph
+      deprecated: true
       summary: Record a first-class claim with provenance and bitemporal metadata
-      description: Create a claim node, connect it to subject/object entities, and link evidence, source attribution, and supporting or refuting claims.
+      description: Legacy compatibility endpoint. Use `POST /api/v1/platform/knowledge/claims` for the typed platform contract.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required:
-                - subject_id
-                - predicate
-              properties:
-                id:
-                  type: string
-                claim_type:
-                  type: string
-                subject_id:
-                  type: string
-                predicate:
-                  type: string
-                object_id:
-                  type: string
-                object_value:
-                  type: string
-                status:
-                  type: string
-                summary:
-                  type: string
-                evidence_ids:
-                  type: array
-                  items:
-                    type: string
-                supporting_claim_ids:
-                  type: array
-                  items:
-                    type: string
-                refuting_claim_ids:
-                  type: array
-                  items:
-                    type: string
-                supersedes_claim_id:
-                  type: string
-                source_id:
-                  type: string
-                source_name:
-                  type: string
-                source_type:
-                  type: string
-                source_url:
-                  type: string
-                trust_tier:
-                  type: string
-                reliability_score:
-                  type: number
-                source_system:
-                  type: string
-                source_event_id:
-                  type: string
-                observed_at:
-                  type: string
-                  format: date-time
-                valid_from:
-                  type: string
-                  format: date-time
-                valid_to:
-                  type: string
-                  format: date-time
-                recorded_at:
-                  type: string
-                  format: date-time
-                transaction_from:
-                  type: string
-                  format: date-time
-                transaction_to:
-                  type: string
-                  format: date-time
-                confidence:
-                  type: number
-                metadata:
-                  type: object
-                  additionalProperties: true
+              $ref: '#/components/schemas/PlatformClaimWriteRequest'
       responses:
         '201':
           description: Claim recorded
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/PlatformClaimWriteResponse'
+        '400':
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Referenced graph entity not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Graph platform is not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/platform/knowledge/claims:
+    post:
+      tags:
+        - Platform
+      summary: Record a platform claim
+      description: Create a claim node, connect it to subject/object entities, and link evidence, source attribution, and supporting or refuting claims.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlatformClaimWriteRequest'
+      responses:
+        '201':
+          description: Claim recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformClaimWriteResponse'
         '400':
           description: Invalid request body
           content:
@@ -5546,66 +5583,22 @@ paths:
     post:
       tags:
         - Graph
+      deprecated: true
       summary: Record a decision node with linked targets and evidence
-      description: Create a decision node and connect it to targets, evidence, and actions.
+      description: Legacy compatibility endpoint. Use `POST /api/v1/platform/knowledge/decisions` for the typed platform contract.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required:
-                - decision_type
-                - target_ids
-              properties:
-                id:
-                  type: string
-                decision_type:
-                  type: string
-                status:
-                  type: string
-                made_by:
-                  type: string
-                rationale:
-                  type: string
-                target_ids:
-                  type: array
-                  items:
-                    type: string
-                evidence_ids:
-                  type: array
-                  items:
-                    type: string
-                action_ids:
-                  type: array
-                  items:
-                    type: string
-                source_system:
-                  type: string
-                source_event_id:
-                  type: string
-                observed_at:
-                  type: string
-                  format: date-time
-                valid_from:
-                  type: string
-                  format: date-time
-                valid_to:
-                  type: string
-                  format: date-time
-                confidence:
-                  type: number
-                metadata:
-                  type: object
-                  additionalProperties: true
+              $ref: '#/components/schemas/PlatformDecisionWriteRequest'
       responses:
         '201':
           description: Decision recorded
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/PlatformDecisionWriteResponse'
         '400':
           description: Invalid request body
           content:
@@ -5620,6 +5613,67 @@ paths:
                 $ref: '#/components/schemas/Error'
         '503':
           description: Graph platform is not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/platform/knowledge/decisions:
+    post:
+      tags:
+        - Platform
+      summary: Record a platform decision
+      description: Create a decision node and connect it to targets, evidence, and actions.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlatformDecisionWriteRequest'
+      responses:
+        '201':
+          description: Decision recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformDecisionWriteResponse'
+        '400':
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: One or more target entities were not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Graph platform is not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/platform/jobs/{id}:
+    get:
+      tags:
+        - Platform
+      summary: Get platform job status and result
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Platform job record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformJob'
+        '404':
+          description: Job not found
           content:
             application/json:
               schema:
@@ -5922,8 +5976,9 @@ paths:
     get:
       tags:
         - Graph
+      deprecated: true
       summary: Rank experts for a topic, customer, or system
-      description: Return a ranked list of people who are most likely to have relevant knowledge, with availability-aware routing.
+      description: Legacy compatibility endpoint. Use `GET /api/v1/org/expertise/queries`.
       parameters:
         - name: topic
           in: query
@@ -5977,10 +6032,96 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /api/v1/org/expertise/queries:
+    get:
+      tags:
+        - Org
+      summary: Rank experts for a topic, customer, or system
+      description: Return a ranked list of people who are most likely to have relevant knowledge, with availability-aware routing.
+      parameters:
+        - name: topic
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: customer
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: system
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: available
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 25
+      responses:
+        '200':
+          description: Ranked knowledge candidates
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Missing required query parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Graph platform is not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/graph/recommend-team:
     post:
       tags:
         - Graph
+      deprecated: true
+      summary: Recommend a graph-informed team for a project
+      description: Legacy compatibility endpoint. Use `POST /api/v1/org/team-recommendations`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TeamRecommendationRequest'
+      responses:
+        '200':
+          description: Team recommendation with candidate ranking, team analysis, and alternatives
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamRecommendationResult'
+        '400':
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Graph platform is not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/org/team-recommendations:
+    post:
+      tags:
+        - Org
       summary: Recommend a graph-informed team for a project
       description: Rank people by system knowledge, collaboration fit, bridge potential, availability, and bus-factor impact.
       requestBody:
@@ -6171,8 +6312,9 @@ paths:
     post:
       tags:
         - Graph
+      deprecated: true
       summary: Simulate organizational reorg changes
-      description: Apply proposed reorg changes against a cloned graph and return predicted communication, knowledge, and customer impacts.
+      description: Legacy compatibility endpoint. Use `POST /api/v1/org/reorg-simulations`.
       requestBody:
         required: true
         content:
@@ -6187,6 +6329,38 @@ paths:
                   items:
                     type: object
                     additionalProperties: true
+      responses:
+        '200':
+          description: Reorg impact analysis
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid reorg request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Graph platform is not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/org/reorg-simulations:
+    post:
+      tags:
+        - Org
+      summary: Simulate organizational reorg changes
+      description: Apply proposed reorg changes against a cloned graph and return predicted communication, knowledge, and customer impacts.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReorgSimulationRequest'
       responses:
         '200':
           description: Reorg impact analysis
@@ -8362,3 +8536,324 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/TeamAlternative'
+    PlatformGraphQueryRequest:
+      type: object
+      required:
+        - node_id
+      additionalProperties: false
+      properties:
+        mode:
+          type: string
+          enum:
+            - neighbors
+            - paths
+        node_id:
+          type: string
+        direction:
+          type: string
+          enum:
+            - in
+            - out
+            - both
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 200
+        target_id:
+          type: string
+        k:
+          type: integer
+          minimum: 1
+          maximum: 10
+        max_depth:
+          type: integer
+          minimum: 1
+          maximum: 12
+        as_of:
+          type: string
+          format: date-time
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+    PlatformGraphQueryNeighbor:
+      type: object
+      additionalProperties: false
+      properties:
+        direction:
+          type: string
+        edge:
+          type: object
+          additionalProperties: true
+        node:
+          type: object
+          additionalProperties: true
+    PlatformGraphQueryExplain:
+      type: object
+      additionalProperties: false
+      properties:
+        edge_scan_count:
+          type: integer
+        path_step_count:
+          type: integer
+        guardrails:
+          type: array
+          items:
+            type: string
+    PlatformGraphQueryResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        mode:
+          type: string
+        node_id:
+          type: string
+        source_id:
+          type: string
+        target_id:
+          type: string
+        direction:
+          type: string
+        temporal:
+          type: object
+          additionalProperties: true
+        total:
+          type: integer
+        count:
+          type: integer
+        limit:
+          type: integer
+        truncated:
+          type: boolean
+        k:
+          type: integer
+        max_depth:
+          type: integer
+        neighbors:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformGraphQueryNeighbor'
+        paths:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        explain:
+          $ref: '#/components/schemas/PlatformGraphQueryExplain'
+    PlatformClaimWriteRequest:
+      type: object
+      required:
+        - subject_id
+        - predicate
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        claim_type:
+          type: string
+        subject_id:
+          type: string
+        predicate:
+          type: string
+        object_id:
+          type: string
+        object_value:
+          type: string
+        status:
+          type: string
+        summary:
+          type: string
+        evidence_ids:
+          type: array
+          items:
+            type: string
+        supporting_claim_ids:
+          type: array
+          items:
+            type: string
+        refuting_claim_ids:
+          type: array
+          items:
+            type: string
+        supersedes_claim_id:
+          type: string
+        source_id:
+          type: string
+        source_name:
+          type: string
+        source_type:
+          type: string
+        source_url:
+          type: string
+        trust_tier:
+          type: string
+        reliability_score:
+          type: number
+        source_system:
+          type: string
+        source_event_id:
+          type: string
+        observed_at:
+          type: string
+          format: date-time
+        valid_from:
+          type: string
+          format: date-time
+        valid_to:
+          type: string
+          format: date-time
+        recorded_at:
+          type: string
+          format: date-time
+        transaction_from:
+          type: string
+          format: date-time
+        transaction_to:
+          type: string
+          format: date-time
+        confidence:
+          type: number
+        metadata:
+          type: object
+          additionalProperties: true
+    PlatformClaimWriteResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        claim_id:
+          type: string
+        source_id:
+          type: string
+        evidence_linked:
+          type: integer
+        supporting_claims_linked:
+          type: integer
+        refuting_claims_linked:
+          type: integer
+        supersedes_linked:
+          type: boolean
+        observed_at:
+          type: string
+          format: date-time
+        recorded_at:
+          type: string
+          format: date-time
+    PlatformDecisionWriteRequest:
+      type: object
+      required:
+        - decision_type
+        - target_ids
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        decision_type:
+          type: string
+        status:
+          type: string
+        made_by:
+          type: string
+        rationale:
+          type: string
+        target_ids:
+          type: array
+          items:
+            type: string
+        evidence_ids:
+          type: array
+          items:
+            type: string
+        action_ids:
+          type: array
+          items:
+            type: string
+        source_system:
+          type: string
+        source_event_id:
+          type: string
+        observed_at:
+          type: string
+          format: date-time
+        valid_from:
+          type: string
+          format: date-time
+        valid_to:
+          type: string
+          format: date-time
+        confidence:
+          type: number
+        metadata:
+          type: object
+          additionalProperties: true
+    PlatformDecisionWriteResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        decision_id:
+          type: string
+        target_count:
+          type: integer
+    PlatformJob:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+        status:
+          type: string
+          enum:
+            - queued
+            - running
+            - succeeded
+            - failed
+        submitted_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        requested_by:
+          type: string
+        input:
+          type: object
+          additionalProperties: true
+        result:
+          type: object
+          additionalProperties: true
+        error:
+          type: string
+        status_url:
+          type: string
+    SecurityAttackPathJobRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        max_depth:
+          type: integer
+          minimum: 1
+          maximum: 10
+        threshold:
+          type: number
+          minimum: 0
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 200
+    ReorgSimulationRequest:
+      type: object
+      required:
+        - changes
+      additionalProperties: false
+      properties:
+        changes:
+          type: array
+          items:
+            type: object
+            additionalProperties: true

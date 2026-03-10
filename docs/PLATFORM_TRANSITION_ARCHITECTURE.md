@@ -6,7 +6,7 @@ Research inputs for this design are captured in [GRAPH_ONTOLOGY_EXTERNAL_PATTERN
 
 ## 1. Executive Summary
 
-Cerebro should be treated as two things that currently share one API surface:
+Cerebro currently exposes one API contract for two distinct layers:
 
 - a shared graph platform with ingest, ontology, identity, temporal/provenance, reasoning, and actuation primitives
 - a security application that uses that platform for CSPM, identity governance, compliance, attack-path analysis, runtime detection/response, and remediation
@@ -20,7 +20,7 @@ Today those two layers are entangled. The result is that:
 
 The target state is:
 
-- `/api/v1/platform/*` for domain-agnostic substrate capabilities
+- `/api/v1/platform/*` for shared platform primitives
 - `/api/v1/security/*` for CSPM/security application workflows
 - `/api/v1/org/*` for organization-intelligence workflows
 - `/api/v1/admin/*` for operational control-plane concerns
@@ -35,7 +35,7 @@ The current OpenAPI exposes 189 `/api/v1/*` paths. Of those, 61 sit under `/api/
 
 ### Current API Grouping
 
-`Graph platform candidates`
+`Platform primitives`
 
 - `/api/v1/graph/query`
 - `/api/v1/graph/diff`
@@ -51,6 +51,9 @@ The current OpenAPI exposes 189 `/api/v1/*` paths. Of those, 61 sit under `/api/
 - `/api/v1/graph/intelligence/calibration/weekly`
 - `/api/v1/graph/evaluate-change`
 - `/api/v1/graph/simulate`
+
+`Analytic programs that need sharper classification before entering platform v1`
+
 - `/api/v1/impact-analysis`
 - `/api/v1/entities/{id}/cohort`
 - `/api/v1/entities/{id}/outlier-score`
@@ -136,10 +139,10 @@ The current OpenAPI exposes 189 `/api/v1/*` paths. Of those, 61 sit under `/api/
 
 ### What The Current System Actually Is
 
-Cerebro is already two products sharing one API:
+Cerebro currently exposes one API contract for two distinct layers:
 
-- a graph/knowledge substrate
-- a security product built on that substrate
+- a shared platform
+- a security application
 
 The transition work is to make that explicit in contracts, namespaces, and lifecycle boundaries.
 
@@ -147,7 +150,7 @@ The transition work is to make that explicit in contracts, namespaces, and lifec
 
 ### Namespace Decision
 
-Use `/api/v1/platform/*` for all domain-agnostic substrate APIs.
+Use `/api/v1/platform/*` for all domain-agnostic shared primitives.
 
 Rationale:
 
@@ -159,12 +162,17 @@ Rationale:
 
 - `/api/v1/platform/graph/*`: graph reads, diffs, neighborhood/path/subgraph queries
 - `/api/v1/platform/knowledge/*`: observations, evidence, claims, annotations, decisions, actions, outcomes
-- `/api/v1/platform/identity/*`: alias resolution, merge/split review, calibration
+  - `/api/v1/platform/identity/*`: alias resolution, merge/split review, calibration
 - `/api/v1/platform/schema/*`: ontology modules, health, registration, compatibility
 - `/api/v1/platform/ingest/*`: contracts, validation, dead-letter, pipeline health
 - `/api/v1/platform/intelligence/*`: quality, freshness, contradiction, coverage, calibration
 - `/api/v1/platform/simulations/*`: graph mutation simulation, scenario evaluation, change impact
 - `/api/v1/platform/jobs/*`: async execution objects and status
+
+`Note`
+
+- `knowledge` is acceptable as the first resource family name, but it is carrying two different lifecycles today: fact-like records and workflow-like records.
+- If permissions and audit semantics start diverging, split it into `/platform/facts/*` and `/platform/workflows/*` rather than letting one family accumulate too much meaning.
 
 ### Node Categories
 
@@ -654,10 +662,15 @@ Current security mapping:
 - `POST /api/v1/security/access-reviews/{id}:start`
 - `POST /api/v1/security/access-reviews/{id}/items/{itemId}:decide`
 - `GET /api/v1/security/attack-paths`
-- `POST /api/v1/security/attack-path-analyses`
-- `POST /api/v1/security/access-analyses/blast-radius`
-- `POST /api/v1/security/access-analyses/privilege-escalation`
-- `POST /api/v1/security/access-analyses/toxic-combinations`
+- `POST /api/v1/security/analyses/attack-paths/jobs`
+- `POST /api/v1/security/analyses/blast-radius`
+- `POST /api/v1/security/analyses/privilege-escalation`
+- `POST /api/v1/security/analyses/toxic-combinations`
+- `POST /api/v1/security/analyses/effective-permissions`
+- `POST /api/v1/security/analyses/permission-comparisons`
+- `POST /api/v1/security/analyses/reverse-access`
+- `POST /api/v1/security/analyses/chokepoints`
+- `POST /api/v1/security/analyses/peer-groups`
 - `GET /api/v1/security/runtime/detections`
 - `POST /api/v1/security/runtime/events`
 - `GET /api/v1/security/runtime/findings`
@@ -699,8 +712,9 @@ Current security mapping:
 1. Use nouns for primary resources.
    - Prefer `POST /policy-evaluations` over `/policy/evaluate`.
 
-2. Use jobs for long-running operations.
-   - provider syncs, scans, attack-path analysis, cross-tenant pattern building, and large simulations should return job resources.
+2. Use jobs as a core platform/control-plane primitive.
+   - any operation expected to exceed 2 seconds p95 or fan out across more than one provider or source must expose an execution resource
+   - provider syncs, graph rebuilds, scans, attack-path analysis, rule discovery, cross-tenant pattern building, and large simulations should return job resources
 
 3. Keep shared reasoning separate from vertical views.
    - platform simulation APIs return generic traversal, impact, and contradiction primitives
@@ -708,6 +722,50 @@ Current security mapping:
 
 4. Keep `/api/v1/graph/*` as temporary aliases only.
    - use deprecation headers and OpenAPI `deprecated: true` once the new platform paths exist
+
+### Permission Model
+
+The namespace split should map cleanly onto capability scopes instead of one growing permission blob.
+
+Recommended initial scopes:
+
+- `platform.graph.read`
+- `platform.graph.write`
+- `platform.schema.manage`
+- `platform.identity.review`
+- `platform.simulation.run`
+- `platform.jobs.read`
+- `security.findings.read`
+- `security.findings.manage`
+- `security.policies.manage`
+- `security.remediation.approve`
+- `security.analyses.run`
+- `org.expertise.read`
+- `org.reorg.run`
+- `admin.providers.manage`
+- `admin.sync.manage`
+
+### Compatibility And Deprecation Policy
+
+- Every renamed route gets a compatibility alias and a documented successor path.
+- Compatibility aliases must emit deprecation headers and a concrete sunset date.
+- Removal requires request telemetry showing successor-path adoption above the target threshold.
+- The minimum support window should be one full minor release cycle or 90 days, whichever is longer.
+- Aliases that still receive material traffic after the window ends require an explicit extension decision, not silent immortality.
+
+### Eventing Model
+
+Platform primitives should emit CloudEvents for downstream applications and automations.
+
+Recommended baseline events:
+
+- `cerebro.platform.claim.created`
+- `cerebro.platform.decision.recorded`
+- `cerebro.platform.action.executed`
+- `cerebro.platform.outcome.recorded`
+- `cerebro.platform.identity.merge-reviewed`
+- `cerebro.platform.schema.module-registered`
+- `cerebro.platform.job.completed`
 
 ## 5. Mapping Table
 
@@ -740,9 +798,9 @@ Current security mapping:
 | `/api/v1/graph/intelligence/calibration/weekly` | platform | `/api/v1/platform/intelligence/calibration/weekly` | rename |
 | `/api/v1/graph/evaluate-change` | platform | `/api/v1/platform/simulations/change-evaluations` | rename |
 | `/api/v1/graph/simulate` | platform | `/api/v1/platform/simulations` | rename |
-| `/api/v1/impact-analysis` | platform | `/api/v1/platform/simulations/scenario-runs` | split |
-| `/api/v1/entities/{id}/cohort` | platform | `/api/v1/platform/entities/{id}/analytics/cohort` | rename |
-| `/api/v1/entities/{id}/outlier-score` | platform | `/api/v1/platform/entities/{id}/analytics/outlier-score` | rename |
+| `/api/v1/impact-analysis` | pending classification | prove domain-neutral first, else move to app intelligence | hold |
+| `/api/v1/entities/{id}/cohort` | pending classification | prove domain-neutral first, else move to app intelligence | hold |
+| `/api/v1/entities/{id}/outlier-score` | pending classification | prove domain-neutral first, else move to app intelligence | hold |
 | `/api/v1/graph/who-knows` | org | `/api/v1/org/expertise/queries` | move |
 | `/api/v1/graph/recommend-team` | org | `/api/v1/org/team-recommendations` | move |
 | `/api/v1/graph/simulate-reorg` | org | `/api/v1/org/reorg-simulations` | move |
@@ -765,15 +823,15 @@ Current security mapping:
 | `/api/v1/graph/access-reviews*` | security | `/api/v1/security/access-reviews*` | deprecate duplicate |
 | `/api/v1/attack-paths*` | security | `/api/v1/security/attack-paths*` | rename |
 | `/api/v1/graph/attack-paths*` | security | `/api/v1/security/attack-paths*` | deprecate duplicate |
-| `/api/v1/graph/blast-radius/*` | security | `/api/v1/security/access-analyses/blast-radius` | move |
-| `/api/v1/graph/cascading-blast-radius/*` | security | `/api/v1/security/access-analyses/cascading-blast-radius` | move |
-| `/api/v1/graph/reverse-access/*` | security | `/api/v1/security/access-analyses/reverse-access` | move |
-| `/api/v1/graph/privilege-escalation/*` | security | `/api/v1/security/access-analyses/privilege-escalation` | move |
-| `/api/v1/graph/toxic-combinations` | security | `/api/v1/security/access-analyses/toxic-combinations` | move |
-| `/api/v1/graph/chokepoints` | security | `/api/v1/security/access-analyses/chokepoints` | move |
-| `/api/v1/graph/peer-groups` | security | `/api/v1/security/access-analyses/peer-groups` | move |
-| `/api/v1/graph/effective-permissions/*` | security | `/api/v1/security/access-analyses/effective-permissions` | move |
-| `/api/v1/graph/compare-permissions` | security | `/api/v1/security/access-analyses/permission-comparisons` | move |
+| `/api/v1/graph/blast-radius/*` | security | `/api/v1/security/analyses/blast-radius` | move |
+| `/api/v1/graph/cascading-blast-radius/*` | security | `/api/v1/security/analyses/cascading-blast-radius` | move |
+| `/api/v1/graph/reverse-access/*` | security | `/api/v1/security/analyses/reverse-access` | move |
+| `/api/v1/graph/privilege-escalation/*` | security | `/api/v1/security/analyses/privilege-escalation` | move |
+| `/api/v1/graph/toxic-combinations` | security | `/api/v1/security/analyses/toxic-combinations` | move |
+| `/api/v1/graph/chokepoints` | security | `/api/v1/security/analyses/chokepoints` | move |
+| `/api/v1/graph/peer-groups` | security | `/api/v1/security/analyses/peer-groups` | move |
+| `/api/v1/graph/effective-permissions/*` | security | `/api/v1/security/analyses/effective-permissions` | move |
+| `/api/v1/graph/compare-permissions` | security | `/api/v1/security/analyses/permission-comparisons` | move |
 | `/api/v1/graph/risk-report` | security | `/api/v1/security/risk/report` | move |
 | `/api/v1/graph/risk-feedback` | security | `/api/v1/security/risk/feedback` | move |
 | `/api/v1/graph/rule-discovery/*` | security | `/api/v1/security/rule-discovery/*` | move |
@@ -814,6 +872,11 @@ Current security mapping:
 
 - Introduce `/api/v1/platform/knowledge/*` as the only write path for claim/evidence/decision/action/outcome primitives.
 - Convert heavy simulations and analyses into async job resources.
+- Treat the hidden-security-bias audit as mandatory substrate work:
+  - review canonical node kinds for cloud/security-only assumptions
+  - review edge kinds for access- and infra-only assumptions
+  - review canonical ID formation for source rules that would break on org/business/document/customer domains
+  - review required metadata fields that assume cloud/security collectors
 - Split security analytics from graph primitives.
   - attack paths
   - blast radius

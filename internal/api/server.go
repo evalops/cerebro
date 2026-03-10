@@ -29,6 +29,8 @@ type Server struct {
 	riskEngineSource    *graph.Graph
 	crossTenantReplayMu sync.Mutex
 	crossTenantReplay   map[string]time.Time
+	platformJobMu       sync.RWMutex
+	platformJobs        map[string]*platformJob
 }
 
 type auditLogWriter interface {
@@ -44,6 +46,7 @@ func NewServer(application *app.App) *Server {
 		router:            chi.NewRouter(),
 		auditLogger:       application.AuditRepo,
 		crossTenantReplay: make(map[string]time.Time),
+		platformJobs:      make(map[string]*platformJob),
 	}
 	s.setupMiddleware()
 	s.setupRoutes()
