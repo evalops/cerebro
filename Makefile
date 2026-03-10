@@ -181,12 +181,7 @@ agent-sdk-packages-check: agent-sdk-packages
 	git diff --exit-code -- docs/AGENT_SDK_PACKAGES_AUTOGEN.md sdk/go/cerebro/client.go sdk/python/cerebro_sdk/__init__.py sdk/python/cerebro_sdk/client.py sdk/python/pyproject.toml sdk/typescript/package.json sdk/typescript/src/index.ts sdk/typescript/tsconfig.json
 	go test ./sdk/go/cerebro
 	python3 -m py_compile sdk/python/cerebro_sdk/*.py
-	python3 - <<'PY'
-	import pathlib
-	import tomllib
-	with pathlib.Path("sdk/python/pyproject.toml").open("rb") as fh:
-	    tomllib.load(fh)
-	PY
+	python3 -c 'import pathlib,tomllib; tomllib.load(pathlib.Path("sdk/python/pyproject.toml").open("rb"))'
 	npx --yes -p typescript tsc -p sdk/typescript/tsconfig.json --noEmit
 
 # Docker run
