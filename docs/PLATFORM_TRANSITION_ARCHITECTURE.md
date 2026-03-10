@@ -37,7 +37,7 @@ This is an evolutionary refactor, not a rewrite. Existing CSPM flows should keep
 
 ### Inventory Summary
 
-The current OpenAPI exposes 197 `/api/v1/*` paths. Of those, 48 sit under `/api/v1/graph`, but a meaningful fraction of those are not platform primitives. They are security or org application workflows.
+The current OpenAPI exposes 237 `/api/v1/*` paths. Of those, 47 sit under `/api/v1/graph`, but a meaningful fraction of those are not platform primitives. They are security or org application workflows.
 
 ### Current API Grouping
 
@@ -45,7 +45,7 @@ The current OpenAPI exposes 197 `/api/v1/*` paths. Of those, 48 sit under `/api/
 
 - `/api/v1/platform/graph/queries`
 - `/api/v1/platform/graph/templates`
-- `/api/v1/graph/diff`
+- `/api/v1/platform/graph/diffs`
 - `/api/v1/graph/schema`
 - `/api/v1/graph/schema/health`
 - `/api/v1/graph/schema/register`
@@ -793,7 +793,7 @@ Recommended baseline events:
 | Current endpoint / concept | Target layer | Target resource / primitive | Action |
 | --- | --- | --- | --- |
 | `/api/v1/graph/query` | platform | `/api/v1/platform/graph/queries` | rename |
-| `/api/v1/graph/diff` | platform | `/api/v1/platform/graph/diffs` | rename |
+| `/api/v1/platform/graph/diffs` | platform | `/api/v1/platform/graph/diffs` | keep |
 | `/api/v1/graph/query/templates` | platform | `/api/v1/platform/graph/templates` | rename |
 | `/api/v1/graph/schema` | platform | `/api/v1/platform/schema` | rename |
 | `/api/v1/graph/schema/health` | platform | `/api/v1/platform/schema/health` | rename |

@@ -5,6 +5,48 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 28 - Snapshot Ancestry + Typed Diffs + Contract Example Autogen (2026-03-10)
+
+### Review findings
+- [x] Gap: `graph_snapshot_id` existed as a typed resource, but clients still could not traverse ordered snapshot ancestry or ask for a typed diff between two durable snapshot resources.
+- [x] Gap: the public graph diff surface was still timestamp-shaped and legacy (`/api/v1/graph/diff`), which leaked storage details instead of exposing platform snapshot primitives.
+- [x] Gap: strict report envelope matching still only validated top-level required fields, so nested contract drift could still be mislabeled as strict payloads.
+- [x] Gap: report contract docs listed envelope schemas but did not generate concrete example payloads from those schemas, which weakened downstream UI/SDK extension work.
+
+### Research synthesis to adopt
+- [x] Resource-navigation rule: once snapshot IDs are durable, diffs and ancestry should be navigable through those IDs, not reconstructed indirectly from timestamps.
+- [x] Artifact honesty rule: a snapshot resource should advertise whether it is materialized/diffable so clients do not guess whether lineage metadata points at a real artifact.
+- [x] Contract-proof rule: a payload should only claim strict envelope conformance when nested objects, arrays, and format constraints all validate recursively.
+- [x] Autogen rule: example payloads should be synthesized from canonical schemas so docs do not drift from runtime contracts.
+
+### Execution plan
+- [x] Deepen graph snapshot resources:
+  - [x] merge file-backed snapshot artifacts into the platform snapshot catalog
+  - [x] expose `captured_at`, `materialized`, `diffable`, `storage_class`, and `byte_size` on `GraphSnapshotRecord`
+  - [x] add chronological `GraphSnapshotAncestry`
+- [x] Replace the legacy diff surface:
+  - [x] remove `/api/v1/graph/diff`
+  - [x] expose `POST /api/v1/platform/graph/diffs`
+  - [x] expose `GET /api/v1/platform/graph/snapshots/{snapshot_id}/diffs/{other_snapshot_id}`
+  - [x] return typed `GraphSnapshotDiffRecord` / `GraphSnapshotDiffSummary`
+- [x] Tighten envelope honesty:
+  - [x] validate strict envelope matches recursively across nested arrays/objects
+  - [x] enforce `additionalProperties: false` and `format: date-time` for strict matching
+  - [x] extend report runtime tests for nested-envelope fallback behavior
+- [x] Improve contract autogen:
+  - [x] generate deterministic envelope example payloads in `GRAPH_REPORT_CONTRACTS_AUTOGEN.md`
+  - [x] keep examples derived from schema inputs rather than versioned contract fields
+
+### Detailed follow-on backlog
+- [ ] Snapshot/runtime hardening:
+  - [ ] persist standalone graph snapshot manifests with explicit parent/child lineage instead of inferring ancestry from timestamps
+  - [ ] attach integrity hashes and retention policy directly to graph snapshot resources
+  - [ ] expose snapshot-to-snapshot change classes and filtered diff summaries for higher-level report/reporting use
+- [ ] Report contract/autogen hardening:
+  - [ ] generate example payloads for section fragments and benchmark overlays
+  - [ ] emit machine-readable example catalogs alongside markdown docs
+  - [ ] reuse the recursive validator for generated SDK fixture verification
+
 ## Deep Review Cycle 27 - Report Execution Control + Graph Snapshot Resources + Payload Contracts (2026-03-10)
 
 ### Review findings

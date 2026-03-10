@@ -140,6 +140,7 @@ Report-execution rule:
 - `ReportRun` is a durable control-plane resource: run metadata is persisted separately from materialized result payloads so restart recovery does not erase execution history.
 - `ReportSnapshot` is a retained derived artifact with content hash, recording timestamps, lineage metadata, and storage-backed materialization metadata.
 - `GraphSnapshotRecord` is the graph-state resource that durable report lineage points at; report runs should not be the only place a `graph_snapshot_id` can be inspected.
+- graph snapshot resources should expose ancestry and typed diff navigation through stable snapshot IDs, not timestamp-only APIs.
 - retry policy (`max_attempts`, `base_backoff_ms`, `max_backoff_ms`) and attempt classification (`transient`, `deterministic`, `cancelled`, `superseded`) are part of the durable execution contract.
 - attempt status is distinct from run status and should surface `scheduled` when async backoff is active.
 - Runs and snapshots should always expose:

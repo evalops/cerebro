@@ -95,6 +95,131 @@ Generated from the built-in report runtime registries via `go run ./scripts/gene
 | `summary` | `1.0.0` | `PlatformSummaryEnvelope` | `urn:cerebro:report-envelope:summary:v1` | `context`, `scorecard`, `health_summary`, `calibration_summary`, `freshness_summary`, `readiness_summary`, `capability_summary`, `backtest_summary` |
 | `timeseries` | `1.0.0` | `PlatformTimeseriesEnvelope` | `urn:cerebro:report-envelope:timeseries:v1` | `timeseries_summary` |
 
+### Envelope Examples
+
+#### `distribution`
+
+```json
+{
+  "items": [
+    {
+      "dimension": "example",
+      "measures": [
+        {
+          "id": "example",
+          "label": "example",
+          "value_type": "example"
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### `evidence_list`
+
+```json
+{
+  "items": [
+    {
+      "evidence_id": "example",
+      "source_system": "example"
+    }
+  ]
+}
+```
+
+#### `narrative_block`
+
+```json
+{
+  "body": "example"
+}
+```
+
+#### `network_slice`
+
+```json
+{
+  "edges": [
+    {
+      "kind": "example",
+      "source": "example",
+      "target": "example"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "example",
+      "kind": "example"
+    }
+  ]
+}
+```
+
+#### `ranking`
+
+```json
+{
+  "items": [
+    {
+      "id": "example",
+      "rank": 1,
+      "title": "example"
+    }
+  ]
+}
+```
+
+#### `recommendations`
+
+```json
+{
+  "items": [
+    {
+      "id": "example",
+      "priority": "example",
+      "title": "example"
+    }
+  ]
+}
+```
+
+#### `summary`
+
+```json
+{
+  "headline": "example",
+  "measures": [
+    {
+      "id": "example",
+      "label": "example",
+      "value_type": "example"
+    }
+  ]
+}
+```
+
+#### `timeseries`
+
+```json
+{
+  "points": [
+    {
+      "timestamp": "2026-03-10T00:00:00Z",
+      "values": [
+        {
+          "id": "example",
+          "label": "example",
+          "value_type": "example"
+        }
+      ]
+    }
+  ]
+}
+```
+
+
 ## Section Fragments
 
 | ID | Version | Schema Name | Schema URL | Description |
