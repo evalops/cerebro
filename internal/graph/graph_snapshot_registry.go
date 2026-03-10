@@ -10,7 +10,12 @@ import (
 type GraphSnapshotRecord struct {
 	ID                       string     `json:"id"`
 	BuiltAt                  *time.Time `json:"built_at,omitempty"`
+	CapturedAt               *time.Time `json:"captured_at,omitempty"`
 	Current                  bool       `json:"current,omitempty"`
+	Materialized             bool       `json:"materialized,omitempty"`
+	Diffable                 bool       `json:"diffable,omitempty"`
+	StorageClass             string     `json:"storage_class,omitempty"`
+	ByteSize                 int64      `json:"byte_size,omitempty"`
 	NodeCount                int        `json:"node_count,omitempty"`
 	EdgeCount                int        `json:"edge_count,omitempty"`
 	Providers                []string   `json:"providers,omitempty"`
@@ -50,11 +55,17 @@ func GraphSnapshotCollectionSnapshot(g *Graph, runs map[string]*ReportRun, now t
 			accumulateGraphSnapshotRecord(records, run.Snapshot.Lineage, run.ReportID, run.Snapshot.GeneratedAt, true)
 		}
 	}
+	return GraphSnapshotCollectionFromRecords(records, now)
+}
+
+// GraphSnapshotCollectionFromRecords normalizes a graph snapshot record map into a stable collection payload.
+func GraphSnapshotCollectionFromRecords(records map[string]*GraphSnapshotRecord, now time.Time) GraphSnapshotCollection {
 	snapshots := make([]GraphSnapshotRecord, 0, len(records))
 	for _, record := range records {
 		if record == nil || strings.TrimSpace(record.ID) == "" {
 			continue
 		}
+		record.ID = strings.TrimSpace(record.ID)
 		record.Providers = append([]string(nil), record.Providers...)
 		record.Accounts = append([]string(nil), record.Accounts...)
 		record.ObservedReportIDs = append([]string(nil), record.ObservedReportIDs...)
@@ -69,16 +80,10 @@ func GraphSnapshotCollectionSnapshot(g *Graph, runs map[string]*ReportRun, now t
 		if left.Current != right.Current {
 			return left.Current
 		}
-		leftBuilt := time.Time{}
-		rightBuilt := time.Time{}
-		if left.BuiltAt != nil {
-			leftBuilt = left.BuiltAt.UTC()
-		}
-		if right.BuiltAt != nil {
-			rightBuilt = right.BuiltAt.UTC()
-		}
-		if !leftBuilt.Equal(rightBuilt) {
-			return leftBuilt.After(rightBuilt)
+		leftSortTime := graphSnapshotSortTime(left)
+		rightSortTime := graphSnapshotSortTime(right)
+		if !leftSortTime.Equal(rightSortTime) {
+			return leftSortTime.After(rightSortTime)
 		}
 		return left.ID < right.ID
 	})
@@ -170,4 +175,19 @@ func containsGraphSnapshotString(values []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+func graphSnapshotSortTime(record GraphSnapshotRecord) time.Time {
+	switch {
+	case record.BuiltAt != nil && !record.BuiltAt.IsZero():
+		return record.BuiltAt.UTC()
+	case record.CapturedAt != nil && !record.CapturedAt.IsZero():
+		return record.CapturedAt.UTC()
+	case record.LastObservedAt != nil && !record.LastObservedAt.IsZero():
+		return record.LastObservedAt.UTC()
+	case record.FirstObservedAt != nil && !record.FirstObservedAt.IsZero():
+		return record.FirstObservedAt.UTC()
+	default:
+		return time.Time{}
+	}
 }

@@ -2,11 +2,14 @@ package graph
 
 import (
 	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -201,6 +204,53 @@ func (s *SnapshotStore) List() ([]SnapshotInfo, error) {
 	return infos, nil
 }
 
+// ListGraphSnapshotRecords returns typed graph snapshot records for file-backed snapshot artifacts.
+func (s *SnapshotStore) ListGraphSnapshotRecords() ([]GraphSnapshotRecord, error) {
+	infos, err := s.List()
+	if err != nil {
+		return nil, err
+	}
+	records := make([]GraphSnapshotRecord, 0, len(infos))
+	for _, info := range infos {
+		snapshot, err := LoadSnapshotFromFile(info.Path)
+		if err != nil {
+			continue
+		}
+		record := buildGraphSnapshotRecordFromSnapshot(snapshot, info)
+		if record == nil {
+			continue
+		}
+		records = append(records, *record)
+	}
+	return records, nil
+}
+
+// LoadSnapshotByRecordID loads one file-backed graph snapshot by its typed snapshot record ID.
+func (s *SnapshotStore) LoadSnapshotByRecordID(snapshotID string) (*Snapshot, *GraphSnapshotRecord, error) {
+	snapshotID = strings.TrimSpace(snapshotID)
+	if snapshotID == "" {
+		return nil, nil, fmt.Errorf("snapshot id required")
+	}
+	infos, err := s.List()
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, info := range infos {
+		snapshot, err := LoadSnapshotFromFile(info.Path)
+		if err != nil {
+			continue
+		}
+		record := buildGraphSnapshotRecordFromSnapshot(snapshot, info)
+		if record == nil {
+			continue
+		}
+		if strings.TrimSpace(record.ID) == snapshotID {
+			return snapshot, record, nil
+		}
+	}
+	return nil, nil, fmt.Errorf("snapshot %q not found", snapshotID)
+}
+
 // DiffByTime loads snapshots nearest to the provided timestamps and computes a structural diff.
 func (s *SnapshotStore) DiffByTime(t1, t2 time.Time) (*GraphDiff, error) {
 	if t1.IsZero() || t2.IsZero() {
@@ -345,6 +395,66 @@ func cloneAnyMap(values map[string]any) map[string]any {
 		cloned[key] = cloneAny(value)
 	}
 	return cloned
+}
+
+func buildGraphSnapshotRecordFromSnapshot(snapshot *Snapshot, info SnapshotInfo) *GraphSnapshotRecord {
+	if snapshot == nil {
+		return nil
+	}
+	record := &GraphSnapshotRecord{
+		ID:                      buildSnapshotRecordID(snapshot),
+		Materialized:            true,
+		Diffable:                true,
+		StorageClass:            "local_snapshot_store",
+		ByteSize:                info.Size,
+		NodeCount:               snapshot.Metadata.NodeCount,
+		EdgeCount:               snapshot.Metadata.EdgeCount,
+		Providers:               append([]string(nil), snapshot.Metadata.Providers...),
+		Accounts:                append([]string(nil), snapshot.Metadata.Accounts...),
+		BuildDurationMS:         snapshot.Metadata.BuildDuration.Milliseconds(),
+		GraphSchemaVersion:      SchemaVersion(),
+		OntologyContractVersion: GraphOntologyContractVersion,
+	}
+	if record.ID == "" {
+		return nil
+	}
+	if !snapshot.Metadata.BuiltAt.IsZero() {
+		builtAt := snapshot.Metadata.BuiltAt.UTC()
+		record.BuiltAt = &builtAt
+	}
+	capturedAt := snapshot.CreatedAt
+	if capturedAt.IsZero() {
+		capturedAt = info.CreatedAt
+	}
+	if !capturedAt.IsZero() {
+		capturedAt = capturedAt.UTC()
+		record.CapturedAt = &capturedAt
+	}
+	if record.NodeCount == 0 {
+		record.NodeCount = len(snapshot.Nodes)
+	}
+	if record.EdgeCount == 0 {
+		record.EdgeCount = len(snapshot.Edges)
+	}
+	return record
+}
+
+func buildSnapshotRecordID(snapshot *Snapshot) string {
+	if snapshot == nil {
+		return ""
+	}
+	if id := buildReportGraphSnapshotID(snapshot.Metadata); id != "" {
+		return id
+	}
+	payload := fmt.Sprintf("%s|%d|%d|%d|%d",
+		snapshot.CreatedAt.UTC().Format(time.RFC3339Nano),
+		len(snapshot.Nodes),
+		len(snapshot.Edges),
+		snapshot.Metadata.NodeCount,
+		snapshot.Metadata.EdgeCount,
+	)
+	sum := sha256.Sum256([]byte(payload))
+	return "graph_snapshot_artifact:" + hex.EncodeToString(sum[:12])
 }
 
 func cloneStringMap(values map[string]string) map[string]string {

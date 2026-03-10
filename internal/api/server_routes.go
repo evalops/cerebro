@@ -351,10 +351,13 @@ func (s *Server) setupRoutes() {
 			r.Route("/graph", func(r chi.Router) {
 				r.Get("/queries", s.platformGraphQueriesGet)
 				r.Post("/queries", s.platformGraphQueries)
+				r.Post("/diffs", s.createPlatformGraphDiff)
 				r.Get("/templates", s.platformGraphTemplates)
 				r.Get("/snapshots", s.listPlatformGraphSnapshots)
 				r.Get("/snapshots/current", s.getCurrentPlatformGraphSnapshot)
 				r.Get("/snapshots/{snapshot_id}", s.getPlatformGraphSnapshot)
+				r.Get("/snapshots/{snapshot_id}/ancestry", s.getPlatformGraphSnapshotAncestry)
+				r.Get("/snapshots/{snapshot_id}/diffs/{other_snapshot_id}", s.getPlatformGraphSnapshotDiff)
 			})
 			r.Route("/intelligence", func(r chi.Router) {
 				r.Get("/measures", s.listPlatformIntelligenceMeasures)
@@ -403,7 +406,6 @@ func (s *Server) setupRoutes() {
 
 		// Graph platform endpoints
 		r.Route("/graph", func(r chi.Router) {
-			r.Get("/diff", s.graphDiff)
 			r.Get("/stats", s.graphStats)
 			r.Get("/ingest/health", s.graphIngestHealth)
 			r.Get("/ingest/dead-letter", s.graphIngestDeadLetter)

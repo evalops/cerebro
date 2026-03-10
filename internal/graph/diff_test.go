@@ -109,6 +109,71 @@ func TestSnapshotStore_DiffByTime_SelectsClosestSnapshots(t *testing.T) {
 	}
 }
 
+func TestSnapshotStore_LoadSnapshotByRecordID(t *testing.T) {
+	dir := t.TempDir()
+	base := time.Date(2026, 3, 7, 0, 0, 0, 0, time.UTC)
+	snapshot := &Snapshot{
+		Version:   snapshotVersion,
+		CreatedAt: base.Add(5 * time.Minute),
+		Metadata: Metadata{
+			BuiltAt:   base,
+			NodeCount: 1,
+			EdgeCount: 0,
+		},
+		Nodes: []*Node{
+			{ID: "node-a", Kind: NodeKindUser, Name: "a"},
+		},
+	}
+	mustSaveSnapshot(t, dir, snapshot)
+
+	store := NewSnapshotStore(dir, 10)
+	records, err := store.ListGraphSnapshotRecords()
+	if err != nil {
+		t.Fatalf("ListGraphSnapshotRecords failed: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("expected one snapshot record, got %d", len(records))
+	}
+	loaded, record, err := store.LoadSnapshotByRecordID(records[0].ID)
+	if err != nil {
+		t.Fatalf("LoadSnapshotByRecordID failed: %v", err)
+	}
+	if record == nil || record.ID != records[0].ID {
+		t.Fatalf("expected matching record id %q, got %+v", records[0].ID, record)
+	}
+	if loaded == nil || len(loaded.Nodes) != 1 || loaded.Nodes[0].ID != "node-a" {
+		t.Fatalf("expected snapshot node-a, got %+v", loaded)
+	}
+}
+
+func TestGraphSnapshotAncestryFromCollection(t *testing.T) {
+	base := time.Date(2026, 3, 7, 0, 0, 0, 0, time.UTC)
+	firstBuiltAt := base
+	secondBuiltAt := base.Add(1 * time.Hour)
+	collection := GraphSnapshotCollection{
+		GeneratedAt: base.Add(2 * time.Hour),
+		Count:       2,
+		Snapshots: []GraphSnapshotRecord{
+			{ID: "graph_snapshot:newer", BuiltAt: &secondBuiltAt},
+			{ID: "graph_snapshot:older", BuiltAt: &firstBuiltAt, Diffable: true},
+		},
+	}
+
+	ancestry, ok := GraphSnapshotAncestryFromCollection(collection, "graph_snapshot:newer")
+	if !ok {
+		t.Fatal("expected ancestry for newer snapshot")
+	}
+	if ancestry.Count != 2 || ancestry.Position != 2 {
+		t.Fatalf("unexpected ancestry counters: %+v", ancestry)
+	}
+	if ancestry.Previous == nil || ancestry.Previous.ID != "graph_snapshot:older" {
+		t.Fatalf("expected previous older snapshot, got %+v", ancestry.Previous)
+	}
+	if ancestry.Next != nil {
+		t.Fatalf("expected no next snapshot, got %+v", ancestry.Next)
+	}
+}
+
 func mustSaveSnapshot(t *testing.T, dir string, snapshot *Snapshot) {
 	t.Helper()
 	path := filepath.Join(dir, fmt.Sprintf("graph-%s.json.gz", snapshot.CreatedAt.Format("20060102-150405")))

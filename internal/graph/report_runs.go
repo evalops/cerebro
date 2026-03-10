@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -961,48 +962,68 @@ func reportSectionPayloadContract(section ReportSection, content any) (string, s
 }
 
 func reportPayloadMatchesEnvelope(content any, schema map[string]any) bool {
-	properties, _ := schema["properties"].(map[string]any)
-	if len(properties) == 0 {
-		return false
-	}
-	requiredKeys := make([]string, 0)
-	switch typed := schema["required"].(type) {
-	case []any:
-		for _, raw := range typed {
-			key, _ := raw.(string)
-			key = strings.TrimSpace(key)
-			if key != "" {
-				requiredKeys = append(requiredKeys, key)
-			}
-		}
-	case []string:
-		for _, key := range typed {
-			key = strings.TrimSpace(key)
-			if key != "" {
-				requiredKeys = append(requiredKeys, key)
-			}
-		}
-	}
-	contentMap, ok := content.(map[string]any)
-	if !ok {
-		return false
-	}
-	for _, key := range requiredKeys {
-		value, exists := contentMap[key]
-		if !exists || !reportPayloadTypeMatchesSchema(value, properties[key]) {
-			return false
-		}
-	}
-	return true
+	return reportPayloadValueMatchesSchema(content, schema)
 }
 
-func reportPayloadTypeMatchesSchema(value any, schema any) bool {
+func reportPayloadValueMatchesSchema(value any, schema any) bool {
 	definition, _ := schema.(map[string]any)
+	if len(definition) == 0 {
+		return false
+	}
+	if oneOf, ok := definition["oneOf"].([]any); ok && len(oneOf) > 0 {
+		for _, candidate := range oneOf {
+			if reportPayloadValueMatchesSchema(value, candidate) {
+				return true
+			}
+		}
+		return false
+	}
 	typeName, _ := definition["type"].(string)
 	switch strings.TrimSpace(typeName) {
+	case "object":
+		contentMap, ok := reportPayloadObject(value)
+		if !ok {
+			return false
+		}
+		properties, _ := definition["properties"].(map[string]any)
+		requiredKeys := reportSchemaRequiredKeys(definition["required"])
+		for _, key := range requiredKeys {
+			propertySchema, exists := properties[key]
+			if !exists {
+				return false
+			}
+			propertyValue, ok := contentMap[key]
+			if !ok || !reportPayloadValueMatchesSchema(propertyValue, propertySchema) {
+				return false
+			}
+		}
+		additionalAllowed, additionalSchema := reportSchemaAdditionalProperties(definition["additionalProperties"])
+		for key, raw := range contentMap {
+			propertySchema, known := properties[key]
+			if known {
+				if !reportPayloadValueMatchesSchema(raw, propertySchema) {
+					return false
+				}
+				continue
+			}
+			if !additionalAllowed {
+				return false
+			}
+			if additionalSchema != nil && !reportPayloadValueMatchesSchema(raw, additionalSchema) {
+				return false
+			}
+		}
+		return true
 	case "string":
-		_, ok := value.(string)
-		return ok
+		typed, ok := value.(string)
+		if !ok {
+			return false
+		}
+		if format, _ := definition["format"].(string); strings.TrimSpace(format) == "date-time" {
+			_, err := time.Parse(time.RFC3339, typed)
+			return err == nil
+		}
+		return true
 	case "number":
 		switch value.(type) {
 		case float64, float32, int, int64, int32, uint, uint64, uint32:
@@ -1023,13 +1044,88 @@ func reportPayloadTypeMatchesSchema(value any, schema any) bool {
 		_, ok := value.(bool)
 		return ok
 	case "array":
-		_, ok := value.([]any)
-		return ok
-	case "object":
-		_, ok := value.(map[string]any)
-		return ok
+		values, ok := reportPayloadArray(value)
+		if !ok {
+			return false
+		}
+		itemSchema := definition["items"]
+		if itemSchema == nil {
+			return true
+		}
+		for _, item := range values {
+			if !reportPayloadValueMatchesSchema(item, itemSchema) {
+				return false
+			}
+		}
+		return true
 	default:
 		return value != nil
+	}
+}
+
+func reportPayloadObject(value any) (map[string]any, bool) {
+	switch typed := value.(type) {
+	case map[string]any:
+		return typed, true
+	}
+	raw := reflect.ValueOf(value)
+	if !raw.IsValid() || raw.Kind() != reflect.Map || raw.Type().Key().Kind() != reflect.String {
+		return nil, false
+	}
+	converted := make(map[string]any, raw.Len())
+	iter := raw.MapRange()
+	for iter.Next() {
+		converted[iter.Key().String()] = iter.Value().Interface()
+	}
+	return converted, true
+}
+
+func reportPayloadArray(value any) ([]any, bool) {
+	switch typed := value.(type) {
+	case []any:
+		return typed, true
+	}
+	raw := reflect.ValueOf(value)
+	if !raw.IsValid() || (raw.Kind() != reflect.Slice && raw.Kind() != reflect.Array) {
+		return nil, false
+	}
+	converted := make([]any, 0, raw.Len())
+	for i := 0; i < raw.Len(); i++ {
+		converted = append(converted, raw.Index(i).Interface())
+	}
+	return converted, true
+}
+
+func reportSchemaRequiredKeys(raw any) []string {
+	requiredKeys := make([]string, 0)
+	switch typed := raw.(type) {
+	case []any:
+		for _, entry := range typed {
+			key, _ := entry.(string)
+			key = strings.TrimSpace(key)
+			if key != "" {
+				requiredKeys = append(requiredKeys, key)
+			}
+		}
+	case []string:
+		for _, key := range typed {
+			key = strings.TrimSpace(key)
+			if key != "" {
+				requiredKeys = append(requiredKeys, key)
+			}
+		}
+	}
+	return requiredKeys
+}
+
+func reportSchemaAdditionalProperties(raw any) (bool, any) {
+	switch typed := raw.(type) {
+	case bool:
+		return typed, nil
+	case map[string]any:
+		return true, typed
+	default:
+		return true, nil
 	}
 }
 

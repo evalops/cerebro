@@ -101,6 +101,17 @@ func renderMarkdown(catalog graph.ReportContractCatalog) string {
 			joinCodeOrDash(envelope.CompatibleSectionKinds),
 		)
 	}
+	b.WriteString("\n### Envelope Examples\n\n")
+	for _, envelope := range catalog.SectionEnvelopes {
+		example := buildSchemaExample(envelope.JSONSchema)
+		if example == nil {
+			continue
+		}
+		fmt.Fprintf(&b, "#### `%s`\n\n", escapePipes(envelope.ID))
+		b.WriteString("```json\n")
+		b.WriteString(mustMarshalIndented(example))
+		b.WriteString("\n```\n\n")
+	}
 
 	b.WriteString("\n## Section Fragments\n\n")
 	b.WriteString("| ID | Version | Schema Name | Schema URL | Description |\n")
@@ -182,4 +193,85 @@ func textOrDash(value string) string {
 func fatalf(format string, args ...any) {
 	_, _ = fmt.Fprintf(os.Stderr, format+"\n", args...)
 	os.Exit(1)
+}
+
+func buildSchemaExample(schema map[string]any) any {
+	return buildSchemaExampleValue(schema)
+}
+
+func buildSchemaExampleValue(schema any) any {
+	definition, _ := schema.(map[string]any)
+	if len(definition) == 0 {
+		return nil
+	}
+	if oneOf, ok := definition["oneOf"].([]any); ok && len(oneOf) > 0 {
+		return buildSchemaExampleValue(oneOf[0])
+	}
+	if enumValues, ok := definition["enum"].([]string); ok && len(enumValues) > 0 {
+		return enumValues[0]
+	}
+	if enumValues, ok := definition["enum"].([]any); ok && len(enumValues) > 0 {
+		return enumValues[0]
+	}
+	typeName, _ := definition["type"].(string)
+	switch strings.TrimSpace(typeName) {
+	case "object":
+		properties, _ := definition["properties"].(map[string]any)
+		required := schemaRequiredKeys(definition["required"])
+		example := make(map[string]any, len(required))
+		for _, key := range required {
+			example[key] = buildSchemaExampleValue(properties[key])
+		}
+		return example
+	case "array":
+		itemSchema := definition["items"]
+		if itemSchema == nil {
+			return []any{}
+		}
+		return []any{buildSchemaExampleValue(itemSchema)}
+	case "string":
+		format, _ := definition["format"].(string)
+		if strings.TrimSpace(format) == "date-time" {
+			return "2026-03-10T00:00:00Z"
+		}
+		return "example"
+	case "integer":
+		return 1
+	case "number":
+		return 1.0
+	case "boolean":
+		return true
+	default:
+		return "example"
+	}
+}
+
+func schemaRequiredKeys(raw any) []string {
+	keys := make([]string, 0)
+	switch typed := raw.(type) {
+	case []string:
+		for _, key := range typed {
+			key = strings.TrimSpace(key)
+			if key != "" {
+				keys = append(keys, key)
+			}
+		}
+	case []any:
+		for _, rawKey := range typed {
+			key, _ := rawKey.(string)
+			key = strings.TrimSpace(key)
+			if key != "" {
+				keys = append(keys, key)
+			}
+		}
+	}
+	return keys
+}
+
+func mustMarshalIndented(value any) string {
+	payload, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return "{}"
+	}
+	return string(payload)
 }
