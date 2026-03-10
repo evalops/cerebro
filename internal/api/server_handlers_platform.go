@@ -419,6 +419,10 @@ func (s *Server) createPlatformIntelligenceReportRun(w http.ResponseWriter, r *h
 		return
 	}
 	stored, _ := s.platformReportRunSnapshot(reportID, run.ID)
+	if stored == nil {
+		s.error(w, http.StatusInternalServerError, "report run disappeared after execution")
+		return
+	}
 	w.Header().Set("Location", stored.StatusURL)
 	s.json(w, http.StatusCreated, stored)
 }
@@ -600,6 +604,7 @@ func (s *Server) retryPlatformIntelligenceReportRun(w http.ResponseWriter, r *ht
 		return
 	}
 
+	s.emitPlatformReportRunLifecycleEvent(r.Context(), webhooks.EventPlatformReportRunQueued, reportID, runID)
 	if executionMode == graph.ReportExecutionModeAsync {
 		job := s.newPlatformJob(r.Context(), "platform.report_run", map[string]any{
 			"report_id":        reportID,
@@ -611,47 +616,44 @@ func (s *Server) retryPlatformIntelligenceReportRun(w http.ResponseWriter, r *ht
 			"retry_of_attempt": previousAttemptID,
 			"retry_reason":     retryReason,
 		}, retriedBy)
-		if err := s.updatePlatformReportRun(runID, func(updated *graph.ReportRun) {
-			updated.JobID = job.ID
-			updated.JobStatusURL = job.StatusURL
-			for i := len(updated.Attempts) - 1; i >= 0; i-- {
-				if updated.Attempts[i].ID == updated.LatestAttemptID {
-					updated.Attempts[i].JobID = job.ID
-					break
-				}
-			}
-		}); err != nil {
+		stored, cancelJob, cancelReason, err := s.attachPlatformReportRunJob(runID, job)
+		if err != nil {
 			s.error(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		// #nosec G118 -- async retry execution intentionally detaches from request lifetime and is canceled through the platform job.
-		go s.runPlatformJob(job.ID, func(jobCtx context.Context) (any, error) {
-			if backoff > 0 {
-				timer := time.NewTimer(backoff)
-				defer timer.Stop()
-				select {
-				case <-jobCtx.Done():
-					return nil, jobCtx.Err()
-				case <-timer.C:
+		if cancelJob {
+			s.cancelPlatformJob(job.ID, cancelReason)
+		} else {
+			// #nosec G118 -- async retry execution intentionally detaches from request lifetime and is canceled through the platform job.
+			go s.runPlatformJob(job.ID, func(jobCtx context.Context) (any, error) {
+				if backoff > 0 {
+					timer := time.NewTimer(backoff)
+					defer timer.Stop()
+					select {
+					case <-jobCtx.Done():
+						return nil, jobCtx.Err()
+					case <-timer.C:
+					}
 				}
-			}
-			if err := s.executePlatformReportRun(jobCtx, runID, definition, parameters, materializeResult); err != nil {
-				return nil, err
-			}
-			stored, ok := s.platformReportRunSnapshot(reportID, runID)
-			if !ok {
-				return nil, fmt.Errorf("report run %q disappeared during retry", runID)
-			}
-			return graph.SummarizeReportRun(*stored), nil
-		})
-		stored, _ = s.platformReportRunSnapshot(reportID, runID)
-		s.emitPlatformReportRunLifecycleEvent(r.Context(), webhooks.EventPlatformReportRunQueued, reportID, runID)
+				if err := s.executePlatformReportRun(jobCtx, runID, definition, parameters, materializeResult); err != nil {
+					return nil, err
+				}
+				stored, ok := s.platformReportRunSnapshot(reportID, runID)
+				if !ok {
+					return nil, fmt.Errorf("report run %q disappeared during retry", runID)
+				}
+				return graph.SummarizeReportRun(*stored), nil
+			})
+		}
+		if stored == nil {
+			s.error(w, http.StatusInternalServerError, "report run disappeared after retry job attachment")
+			return
+		}
 		w.Header().Set("Location", stored.StatusURL)
 		s.json(w, http.StatusAccepted, stored)
 		return
 	}
 
-	s.emitPlatformReportRunLifecycleEvent(r.Context(), webhooks.EventPlatformReportRunQueued, reportID, runID)
 	if err := s.executePlatformReportRun(r.Context(), runID, definition, parameters, materializeResult); err != nil && !errors.Is(err, context.Canceled) {
 		stored, _ = s.platformReportRunSnapshot(reportID, runID)
 		if stored != nil {
@@ -663,6 +665,10 @@ func (s *Server) retryPlatformIntelligenceReportRun(w http.ResponseWriter, r *ht
 		return
 	}
 	stored, _ = s.platformReportRunSnapshot(reportID, runID)
+	if stored == nil {
+		s.error(w, http.StatusInternalServerError, "report run disappeared after retry execution")
+		return
+	}
 	w.Header().Set("Location", stored.StatusURL)
 	s.json(w, http.StatusOK, stored)
 }
@@ -699,7 +705,7 @@ func (s *Server) cancelPlatformIntelligenceReportRun(w http.ResponseWriter, r *h
 		actor = run.RequestedBy
 	}
 
-	if err := s.updatePlatformReportRun(runID, func(stored *graph.ReportRun) {
+	stored, err := s.updatePlatformReportRunSnapshot(runID, func(stored *graph.ReportRun) {
 		stored.Status = graph.ReportRunStatusCanceled
 		stored.CompletedAt = &canceledAt
 		stored.Error = cancelReason
@@ -710,15 +716,19 @@ func (s *Server) cancelPlatformIntelligenceReportRun(w http.ResponseWriter, r *h
 		})
 		stored.AttemptCount = len(stored.Attempts)
 		stored.EventCount = len(stored.Events)
-	}); err != nil {
+	})
+	if err != nil {
 		s.error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if run.JobID != "" {
-		s.cancelPlatformJob(run.JobID, cancelReason)
+	if stored == nil {
+		s.error(w, http.StatusInternalServerError, "report run disappeared after cancel")
+		return
+	}
+	if stored.JobID != "" {
+		s.cancelPlatformJob(stored.JobID, cancelReason)
 	}
 	s.emitPlatformReportRunLifecycleEvent(r.Context(), webhooks.EventPlatformReportRunCanceled, reportID, runID)
-	stored, _ := s.platformReportRunSnapshot(reportID, runID)
 	w.Header().Set("Location", stored.StatusURL)
 	s.json(w, http.StatusOK, stored)
 }
@@ -1133,6 +1143,38 @@ func (s *Server) cancelPlatformJob(jobID, reason string) bool {
 	return true
 }
 
+// attachPlatformReportRunJob links a platform job to the latest persisted run state.
+// If a cancellation won the race before the job was attached, the caller should cancel
+// the newly created job immediately so the run and job do not drift.
+func (s *Server) attachPlatformReportRunJob(runID string, job *platformJob) (*graph.ReportRun, bool, string, error) {
+	if job == nil {
+		return nil, false, "", fmt.Errorf("platform job is required")
+	}
+	cancelJob := false
+	cancelReason := ""
+	stored, err := s.updatePlatformReportRunSnapshot(runID, func(updated *graph.ReportRun) {
+		updated.JobID = job.ID
+		updated.JobStatusURL = job.StatusURL
+		for i := len(updated.Attempts) - 1; i >= 0; i-- {
+			if updated.Attempts[i].ID == updated.LatestAttemptID {
+				updated.Attempts[i].JobID = job.ID
+				break
+			}
+		}
+		if updated.Status == graph.ReportRunStatusCanceled {
+			cancelJob = true
+			cancelReason = strings.TrimSpace(updated.Error)
+			if cancelReason == "" {
+				cancelReason = "report run was canceled before job attachment"
+			}
+		}
+	})
+	if err != nil {
+		return nil, false, "", err
+	}
+	return stored, cancelJob, cancelReason, nil
+}
+
 func clonePlatformJob(job *platformJob) *platformJob {
 	if job == nil {
 		return nil
@@ -1187,13 +1229,18 @@ func (s *Server) storePlatformReportRun(run *graph.ReportRun) error {
 }
 
 func (s *Server) updatePlatformReportRun(runID string, apply func(*graph.ReportRun)) error {
+	_, err := s.updatePlatformReportRunSnapshot(runID, apply)
+	return err
+}
+
+func (s *Server) updatePlatformReportRunSnapshot(runID string, apply func(*graph.ReportRun)) (*graph.ReportRun, error) {
 	s.platformReportSaveMu.Lock()
 	defer s.platformReportSaveMu.Unlock()
 	s.platformReportRunMu.Lock()
 	run, ok := s.platformReportRuns[runID]
 	if !ok {
 		s.platformReportRunMu.Unlock()
-		return fmt.Errorf("report run not found: %s", runID)
+		return nil, fmt.Errorf("report run not found: %s", runID)
 	}
 	previous := graph.CloneReportRun(run)
 	updated := graph.CloneReportRun(run)
@@ -1205,9 +1252,9 @@ func (s *Server) updatePlatformReportRun(runID string, apply func(*graph.ReportR
 		s.platformReportRunMu.Lock()
 		s.platformReportRuns[runID] = previous
 		s.platformReportRunMu.Unlock()
-		return fmt.Errorf("persist report run %q: %w", runID, err)
+		return nil, fmt.Errorf("persist report run %q: %w", runID, err)
 	}
-	return nil
+	return graph.CloneReportRun(updated), nil
 }
 
 func (s *Server) platformReportRunSnapshot(reportID, runID string) (*graph.ReportRun, bool) {

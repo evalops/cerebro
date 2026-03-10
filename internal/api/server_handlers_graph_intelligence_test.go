@@ -967,6 +967,82 @@ func TestPlatformIntelligenceReportRunCancelAsync(t *testing.T) {
 	}
 }
 
+func TestAttachPlatformReportRunJobCancelsLateAttachedJobForCanceledRun(t *testing.T) {
+	s := newTestServer(t)
+	now := time.Date(2026, 3, 10, 1, 50, 0, 0, time.UTC)
+	run := &graph.ReportRun{
+		ID:            "report_run:late-cancel-job",
+		ReportID:      "quality",
+		Status:        graph.ReportRunStatusCanceled,
+		ExecutionMode: graph.ReportExecutionModeAsync,
+		SubmittedAt:   now.Add(-time.Minute),
+		CompletedAt:   &now,
+		RequestedBy:   "alice@example.com",
+		StatusURL:     "/api/v1/platform/intelligence/reports/quality/runs/report_run:late-cancel-job",
+		Error:         "operator requested cancellation",
+	}
+	run.Attempts = []graph.ReportRunAttempt{
+		graph.NewReportRunAttempt(run.ID, 1, run.Status, "api.retry", "platform.async", "test-host", run.RequestedBy, "", now.Add(-time.Minute)),
+	}
+	run.LatestAttemptID = run.Attempts[0].ID
+	run.AttemptCount = len(run.Attempts)
+	if err := s.storePlatformReportRun(run); err != nil {
+		t.Fatalf("storePlatformReportRun() failed: %v", err)
+	}
+
+	job := s.newPlatformJob(context.Background(), "platform.report_run", map[string]any{
+		"report_id": run.ReportID,
+		"run_id":    run.ID,
+	}, run.RequestedBy)
+	stored, cancelJob, cancelReason, err := s.attachPlatformReportRunJob(run.ID, job)
+	if err != nil {
+		t.Fatalf("attachPlatformReportRunJob() failed: %v", err)
+	}
+	if stored == nil {
+		t.Fatal("expected updated run snapshot after attaching job")
+	}
+	if !cancelJob {
+		t.Fatal("expected canceled run to request immediate job cancellation")
+	}
+	if cancelReason != run.Error {
+		t.Fatalf("expected cancel reason %q, got %q", run.Error, cancelReason)
+	}
+	if stored.JobID != job.ID {
+		t.Fatalf("expected stored job id %q, got %q", job.ID, stored.JobID)
+	}
+	if !s.cancelPlatformJob(job.ID, cancelReason) {
+		t.Fatal("expected cancelPlatformJob() to cancel the newly attached job")
+	}
+
+	jobSnapshot, ok := s.platformJobSnapshot(job.ID)
+	if !ok {
+		t.Fatalf("expected platform job %q to exist", job.ID)
+	}
+	if got := jobSnapshot.Status; got != "canceled" {
+		t.Fatalf("expected canceled platform job, got %q", got)
+	}
+	if got := jobSnapshot.CancelReason; got != run.Error {
+		t.Fatalf("expected job cancel reason %q, got %q", run.Error, got)
+	}
+
+	runSnapshot, ok := s.platformReportRunSnapshot(run.ReportID, run.ID)
+	if !ok {
+		t.Fatalf("expected persisted report run %q", run.ID)
+	}
+	if got := runSnapshot.Status; got != graph.ReportRunStatusCanceled {
+		t.Fatalf("expected run to remain canceled, got %q", got)
+	}
+	if got := runSnapshot.JobID; got != job.ID {
+		t.Fatalf("expected persisted run job id %q, got %q", job.ID, got)
+	}
+	if len(runSnapshot.Attempts) != 1 {
+		t.Fatalf("expected one attempt on persisted run, got %d", len(runSnapshot.Attempts))
+	}
+	if got := runSnapshot.Attempts[0].JobID; got != job.ID {
+		t.Fatalf("expected persisted attempt job id %q, got %q", job.ID, got)
+	}
+}
+
 func TestPlatformIntelligenceReportRunPersistsAcrossServerRestart(t *testing.T) {
 	application := newTestApp(t)
 	s1 := NewServer(application)
