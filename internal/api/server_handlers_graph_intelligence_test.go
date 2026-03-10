@@ -1181,6 +1181,76 @@ func TestPlatformIntelligenceReportRunRetryAsyncIncludesBackoffMetadata(t *testi
 	}
 }
 
+func TestPlatformIntelligenceReportRunRetryRechecksMaxAttemptsInsideUpdate(t *testing.T) {
+	s := newTestServer(t)
+	now := time.Date(2026, 3, 10, 2, 15, 0, 0, time.UTC)
+	run := &graph.ReportRun{
+		ID:            "report_run:retry-race",
+		ReportID:      "quality",
+		Status:        graph.ReportRunStatusFailed,
+		ExecutionMode: graph.ReportExecutionModeSync,
+		SubmittedAt:   now.Add(-2 * time.Minute),
+		CompletedAt:   ptrTime(now.Add(-time.Minute)),
+		RequestedBy:   "alice@example.com",
+		StatusURL:     "/api/v1/platform/intelligence/reports/quality/runs/report_run:retry-race",
+		RetryPolicy: graph.ReportRetryPolicy{
+			MaxAttempts:   2,
+			BaseBackoffMS: 10,
+			MaxBackoffMS:  20,
+		},
+		Error: "temporary upstream failure",
+	}
+	firstAttempt := graph.NewReportRunAttempt(run.ID, 1, graph.ReportRunStatusFailed, "api.request", "platform.inline", "test-host", run.RequestedBy, "", now.Add(-2*time.Minute))
+	run.Attempts = []graph.ReportRunAttempt{firstAttempt}
+	run.LatestAttemptID = firstAttempt.ID
+	graph.CompleteLatestReportRunAttempt(run, graph.ReportRunStatusFailed, now.Add(-time.Minute), run.Error, graph.ReportAttemptClassTransient)
+	run.AttemptCount = 1
+	run.EventCount = 1
+	if err := s.storePlatformReportRun(run); err != nil {
+		t.Fatalf("storePlatformReportRun() failed: %v", err)
+	}
+
+	s.platformReportSaveMu.Lock()
+	done := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		done <- do(t, s, http.MethodPost, run.StatusURL+":retry", map[string]any{
+			"retry_policy": map[string]any{
+				"max_attempts":    2,
+				"base_backoff_ms": 10,
+				"max_backoff_ms":  20,
+			},
+			"reason": "stale retry window",
+		})
+	}()
+	time.Sleep(50 * time.Millisecond)
+
+	s.platformReportRunMu.Lock()
+	stored := graph.CloneReportRun(s.platformReportRuns[run.ID])
+	secondAttempt := graph.NewReportRunAttempt(run.ID, 2, graph.ReportRunStatusFailed, "api.retry", "platform.inline", "test-host", run.RequestedBy, "", now.Add(-30*time.Second))
+	secondAttempt.RetryOfAttemptID = firstAttempt.ID
+	secondAttempt.RetryReason = "other operator retry"
+	stored.Attempts = append(stored.Attempts, secondAttempt)
+	stored.LatestAttemptID = secondAttempt.ID
+	stored.AttemptCount = len(stored.Attempts)
+	s.platformReportRuns[run.ID] = stored
+	s.platformReportRunMu.Unlock()
+	s.platformReportSaveMu.Unlock()
+
+	resp := <-done
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("expected 409 once attempts are exhausted in the update window, got %d: %s", resp.Code, resp.Body.String())
+	}
+
+	status := do(t, s, http.MethodGet, run.StatusURL, nil)
+	if status.Code != http.StatusOK {
+		t.Fatalf("expected 200 for run lookup, got %d: %s", status.Code, status.Body.String())
+	}
+	body := decodeJSON(t, status)
+	if got := body["attempt_count"]; got != float64(2) {
+		t.Fatalf("expected attempt_count to remain at 2, got %#v", got)
+	}
+}
+
 func TestPlatformIntelligenceReportRunCancelAsync(t *testing.T) {
 	s := newTestServer(t)
 	g := s.app.SecurityGraph
@@ -1356,6 +1426,72 @@ func TestPlatformIntelligenceReportRunCancelAsync(t *testing.T) {
 	if got := events[len(events)-1].(map[string]any)["type"]; got != string(webhooks.EventPlatformReportRunCanceled) {
 		t.Fatalf("expected canceled event last, got %#v", got)
 	}
+}
+
+func TestPlatformIntelligenceReportRunCancelDoesNotOverwriteSucceededRun(t *testing.T) {
+	s := newTestServer(t)
+	now := time.Date(2026, 3, 10, 2, 45, 0, 0, time.UTC)
+	run := &graph.ReportRun{
+		ID:            "report_run:cancel-race",
+		ReportID:      "quality",
+		Status:        graph.ReportRunStatusRunning,
+		ExecutionMode: graph.ReportExecutionModeAsync,
+		SubmittedAt:   now.Add(-2 * time.Minute),
+		StartedAt:     ptrTime(now.Add(-time.Minute)),
+		RequestedBy:   "alice@example.com",
+		StatusURL:     "/api/v1/platform/intelligence/reports/quality/runs/report_run:cancel-race",
+	}
+	run.Attempts = []graph.ReportRunAttempt{
+		graph.NewReportRunAttempt(run.ID, 1, graph.ReportRunStatusRunning, "api.request", "platform.job", "test-host", run.RequestedBy, "", now.Add(-2*time.Minute)),
+	}
+	run.LatestAttemptID = run.Attempts[0].ID
+	graph.StartLatestReportRunAttempt(run, now.Add(-time.Minute))
+	run.AttemptCount = len(run.Attempts)
+	if err := s.storePlatformReportRun(run); err != nil {
+		t.Fatalf("storePlatformReportRun() failed: %v", err)
+	}
+
+	s.platformReportSaveMu.Lock()
+	done := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		done <- do(t, s, http.MethodPost, run.StatusURL+":cancel", map[string]any{
+			"reason": "late cancel",
+		})
+	}()
+	time.Sleep(50 * time.Millisecond)
+
+	s.platformReportRunMu.Lock()
+	stored := graph.CloneReportRun(s.platformReportRuns[run.ID])
+	completedAt := now
+	stored.Status = graph.ReportRunStatusSucceeded
+	stored.CompletedAt = &completedAt
+	stored.Error = ""
+	graph.CompleteLatestReportRunAttempt(stored, stored.Status, completedAt, "", "")
+	stored.AttemptCount = len(stored.Attempts)
+	s.platformReportRuns[run.ID] = stored
+	s.platformReportRunMu.Unlock()
+	s.platformReportSaveMu.Unlock()
+
+	resp := <-done
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("expected 409 when the run becomes terminal before cancel commit, got %d: %s", resp.Code, resp.Body.String())
+	}
+
+	status := do(t, s, http.MethodGet, run.StatusURL, nil)
+	if status.Code != http.StatusOK {
+		t.Fatalf("expected 200 for run lookup, got %d: %s", status.Code, status.Body.String())
+	}
+	body := decodeJSON(t, status)
+	if got := body["status"]; got != graph.ReportRunStatusSucceeded {
+		t.Fatalf("expected succeeded run to remain succeeded, got %#v", got)
+	}
+	if got := body["cancel_reason"]; got != nil {
+		t.Fatalf("expected no cancel_reason on succeeded run, got %#v", got)
+	}
+}
+
+func ptrTime(value time.Time) *time.Time {
+	return &value
 }
 
 func TestAttachPlatformReportRunJobCancelsLateAttachedJobForCanceledRun(t *testing.T) {

@@ -661,10 +661,6 @@ func (s *Server) retryPlatformIntelligenceReportRun(w http.ResponseWriter, r *ht
 		retryPolicy = *req.RetryPolicy
 	}
 	retryPolicy = graph.NormalizeReportRetryPolicy(retryPolicy)
-	if run.AttemptCount >= retryPolicy.MaxAttempts {
-		s.error(w, http.StatusConflict, "retry policy max_attempts exhausted")
-		return
-	}
 	lineage := graph.BuildReportLineage(s.app.SecurityGraph, definition)
 	cacheSource := s.reusablePlatformReportRun(reportID, cacheKey, lineage, runID)
 
@@ -673,31 +669,31 @@ func (s *Server) retryPlatformIntelligenceReportRun(w http.ResponseWriter, r *ht
 	if retryReason == "" {
 		retryReason = "manual_retry"
 	}
-	nextAttemptNumber := len(run.Attempts) + 1
+	nextAttemptNumber := 0
 	backoff := time.Duration(0)
-	if executionMode == graph.ReportExecutionModeAsync {
-		backoff = graph.ReportRetryBackoff(retryPolicy, nextAttemptNumber)
-	}
 	var previousAttemptID string
-	if attempt := graph.LatestReportRunAttempt(run); attempt != nil {
-		previousAttemptID = attempt.ID
-	}
 	retriedBy := strings.TrimSpace(GetUserID(r.Context()))
 	if retriedBy == "" {
 		retriedBy = run.RequestedBy
 	}
 
-	attempt := graph.NewReportRunAttempt(run.ID, nextAttemptNumber, graph.ReportRunStatusQueued, "api.retry", reportExecutionSurface(executionMode), platformExecutionHost(), retriedBy, "", now)
-	attempt.RetryOfAttemptID = previousAttemptID
-	attempt.RetryReason = retryReason
-	attempt.RetryBackoffMS = backoff.Milliseconds()
-	if backoff > 0 {
-		scheduledFor := now.Add(backoff)
-		attempt.ScheduledFor = &scheduledFor
-		attempt.Status = graph.ReportAttemptStatusScheduled
-	}
-
+	maxAttemptsExceeded := false
 	if err := s.updatePlatformReportRun(runID, func(stored *graph.ReportRun) {
+		if stored.AttemptCount >= retryPolicy.MaxAttempts {
+			maxAttemptsExceeded = true
+			return
+		}
+		nextAttemptNumber = len(stored.Attempts) + 1
+		if executionMode == graph.ReportExecutionModeAsync {
+			backoff = graph.ReportRetryBackoff(retryPolicy, nextAttemptNumber)
+		}
+		if attempt := graph.LatestReportRunAttempt(stored); attempt != nil {
+			previousAttemptID = attempt.ID
+		}
+		attempt := graph.NewReportRunAttempt(stored.ID, nextAttemptNumber, graph.ReportRunStatusQueued, "api.retry", reportExecutionSurface(executionMode), platformExecutionHost(), retriedBy, "", now)
+		attempt.RetryOfAttemptID = previousAttemptID
+		attempt.RetryReason = retryReason
+		attempt.RetryBackoffMS = backoff.Milliseconds()
 		stored.Status = graph.ReportRunStatusQueued
 		stored.ExecutionMode = executionMode
 		stored.RequestedBy = retriedBy
@@ -726,6 +722,9 @@ func (s *Server) retryPlatformIntelligenceReportRun(w http.ResponseWriter, r *ht
 		stored.Lineage = lineage
 		stored.Attempts = append(stored.Attempts, attempt)
 		stored.LatestAttemptID = attempt.ID
+		if backoff > 0 {
+			graph.ScheduleLatestReportRunAttempt(stored, now.Add(backoff))
+		}
 		graph.AppendReportRunEvent(stored, string(webhooks.EventPlatformReportRunQueued), stored.Status, "api.retry", retriedBy, now, map[string]any{
 			"report_id":           stored.ReportID,
 			"execution_mode":      executionMode,
@@ -741,6 +740,10 @@ func (s *Server) retryPlatformIntelligenceReportRun(w http.ResponseWriter, r *ht
 		stored.EventCount = len(stored.Events)
 	}); err != nil {
 		s.error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if maxAttemptsExceeded {
+		s.error(w, http.StatusConflict, "retry policy max_attempts exhausted")
 		return
 	}
 
@@ -850,9 +853,15 @@ func (s *Server) cancelPlatformIntelligenceReportRun(w http.ResponseWriter, r *h
 	if actor == "" {
 		actor = run.RequestedBy
 	}
-	cancelAccepted := run.Status == graph.ReportRunStatusRunning
+	cancelAccepted := false
+	cancelRejected := false
 
 	stored, err := s.updatePlatformReportRunSnapshot(runID, func(stored *graph.ReportRun) {
+		if stored.Status != graph.ReportRunStatusQueued && stored.Status != graph.ReportRunStatusRunning {
+			cancelRejected = true
+			return
+		}
+		cancelAccepted = stored.Status == graph.ReportRunStatusRunning
 		stored.CancelRequestedAt = &canceledAt
 		stored.CancelRequestedBy = actor
 		stored.CancelReason = cancelReason
@@ -869,6 +878,10 @@ func (s *Server) cancelPlatformIntelligenceReportRun(w http.ResponseWriter, r *h
 	})
 	if err != nil {
 		s.error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if cancelRejected {
+		s.error(w, http.StatusConflict, "only queued or running report runs can be canceled")
 		return
 	}
 	if stored == nil {
@@ -1711,21 +1724,16 @@ func (s *Server) clonePlatformReportRunsLocked() map[string]*graph.ReportRun {
 }
 
 func (s *Server) platformGraphSnapshotCollection() graph.GraphSnapshotCollection {
-	s.platformReportRunMu.RLock()
-	runs := s.clonePlatformReportRunsLocked()
-	s.platformReportRunMu.RUnlock()
-	return graph.GraphSnapshotCollectionSnapshot(s.app.SecurityGraph, runs, time.Now().UTC())
+	return graph.GraphSnapshotCollectionFromRecords(s.platformGraphSnapshotRecords(), time.Now().UTC())
 }
 
 func (s *Server) platformGraphSnapshot(snapshotID string) (*graph.GraphSnapshotRecord, bool) {
-	collection := s.platformGraphSnapshotCollection()
-	for i := range collection.Snapshots {
-		if strings.TrimSpace(collection.Snapshots[i].ID) == strings.TrimSpace(snapshotID) {
-			snapshot := collection.Snapshots[i]
-			return &snapshot, true
-		}
+	record, ok := s.platformGraphSnapshotRecords()[strings.TrimSpace(snapshotID)]
+	if !ok || record == nil {
+		return nil, false
 	}
-	return nil, false
+	snapshot := *record
+	return &snapshot, true
 }
 
 func (s *Server) persistPlatformReportRuns(runs map[string]*graph.ReportRun) error {
