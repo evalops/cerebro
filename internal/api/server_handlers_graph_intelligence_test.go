@@ -388,6 +388,62 @@ func TestPlatformIntelligenceBenchmarkPackCatalog(t *testing.T) {
 	}
 }
 
+func TestPlatformGraphSnapshotCatalog(t *testing.T) {
+	s := newTestServer(t)
+	now := time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC)
+	s.app.SecurityGraph.SetMetadata(graph.Metadata{
+		BuiltAt:       now,
+		NodeCount:     3,
+		EdgeCount:     2,
+		Providers:     []string{"github"},
+		Accounts:      []string{"acct-a"},
+		BuildDuration: 2 * time.Second,
+	})
+
+	run := &graph.ReportRun{
+		ID:          "report_run:graph-snapshot",
+		ReportID:    "quality",
+		Status:      graph.ReportRunStatusSucceeded,
+		SubmittedAt: now.Add(5 * time.Minute),
+		Lineage:     graph.BuildReportLineage(s.app.SecurityGraph, graph.ReportDefinition{ID: "quality"}),
+	}
+	if err := s.storePlatformReportRun(run); err != nil {
+		t.Fatalf("storePlatformReportRun() failed: %v", err)
+	}
+
+	list := do(t, s, http.MethodGet, "/api/v1/platform/graph/snapshots", nil)
+	if list.Code != http.StatusOK {
+		t.Fatalf("expected 200 for snapshot catalog, got %d: %s", list.Code, list.Body.String())
+	}
+	listBody := decodeJSON(t, list)
+	if got := listBody["count"]; got != float64(1) {
+		t.Fatalf("expected snapshot count 1, got %#v", got)
+	}
+	snapshots, ok := listBody["snapshots"].([]any)
+	if !ok || len(snapshots) != 1 {
+		t.Fatalf("expected one snapshot entry, got %#v", listBody["snapshots"])
+	}
+	snapshot, ok := snapshots[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected snapshot object, got %#v", snapshots[0])
+	}
+	snapshotID, _ := snapshot["id"].(string)
+	if snapshotID == "" {
+		t.Fatalf("expected snapshot id, got %#v", snapshot["id"])
+	}
+	if got := snapshot["current"]; got != true {
+		t.Fatalf("expected current snapshot flag, got %#v", got)
+	}
+	current := do(t, s, http.MethodGet, "/api/v1/platform/graph/snapshots/current", nil)
+	if current.Code != http.StatusOK {
+		t.Fatalf("expected 200 for current snapshot, got %d: %s", current.Code, current.Body.String())
+	}
+	get := do(t, s, http.MethodGet, "/api/v1/platform/graph/snapshots/"+snapshotID, nil)
+	if get.Code != http.StatusOK {
+		t.Fatalf("expected 200 for snapshot get, got %d: %s", get.Code, get.Body.String())
+	}
+}
+
 func TestPlatformIntelligenceReportRunSync(t *testing.T) {
 	s := newTestServer(t)
 	g := s.app.SecurityGraph
@@ -644,6 +700,81 @@ func TestPlatformIntelligenceReportRunCacheReuseExposesSectionTelemetry(t *testi
 	}
 	if _, ok := telemetry["materialization_duration_ms"].(float64); !ok {
 		t.Fatalf("expected section telemetry materialization_duration_ms, got %#v", telemetry["materialization_duration_ms"])
+	}
+}
+
+func TestPlatformIntelligenceReportRunControlAndRetryPolicyEndpoints(t *testing.T) {
+	s := newTestServer(t)
+	g := s.app.SecurityGraph
+	now := time.Date(2026, 3, 9, 16, 50, 0, 0, time.UTC)
+
+	g.AddNode(&graph.Node{
+		ID:   "person:alice@example.com",
+		Kind: graph.NodeKindPerson,
+		Name: "Alice",
+		Properties: map[string]any{
+			"email":       "alice@example.com",
+			"observed_at": now.Format(time.RFC3339),
+			"valid_from":  now.Format(time.RFC3339),
+		},
+	})
+	g.SetMetadata(graph.Metadata{
+		BuiltAt:   now.Add(10 * time.Minute),
+		NodeCount: 1,
+		Providers: []string{"test"},
+	})
+
+	create := do(t, s, http.MethodPost, "/api/v1/platform/intelligence/reports/quality/runs", map[string]any{
+		"execution_mode": "sync",
+		"parameters": []map[string]any{
+			{"name": "stale_after_hours", "integer_value": 24},
+		},
+	})
+	if create.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", create.Code, create.Body.String())
+	}
+	body := decodeJSON(t, create)
+	statusURL, _ := body["status_url"].(string)
+	if statusURL == "" {
+		t.Fatalf("expected status_url, got %#v", body["status_url"])
+	}
+
+	control := do(t, s, http.MethodGet, statusURL+"/control", nil)
+	if control.Code != http.StatusOK {
+		t.Fatalf("expected 200 for control lookup, got %d: %s", control.Code, control.Body.String())
+	}
+	controlBody := decodeJSON(t, control)
+	if got := controlBody["terminal"]; got != true {
+		t.Fatalf("expected terminal control state, got %#v", got)
+	}
+	if got := controlBody["retryable"]; got != false {
+		t.Fatalf("expected retryable=false for succeeded run, got %#v", got)
+	}
+
+	retryPolicy := do(t, s, http.MethodGet, statusURL+"/retry-policy", nil)
+	if retryPolicy.Code != http.StatusOK {
+		t.Fatalf("expected 200 for retry policy lookup, got %d: %s", retryPolicy.Code, retryPolicy.Body.String())
+	}
+	policyBody := decodeJSON(t, retryPolicy)
+	if got := policyBody["remaining_attempts"]; got != float64(graph.DefaultReportRetryMaxAttempts-1) {
+		t.Fatalf("expected remaining attempts to reflect one consumed attempt, got %#v", got)
+	}
+
+	update := do(t, s, http.MethodPut, statusURL+"/retry-policy", map[string]any{
+		"max_attempts":    5,
+		"base_backoff_ms": 100,
+		"max_backoff_ms":  1000,
+	})
+	if update.Code != http.StatusOK {
+		t.Fatalf("expected 200 for retry policy update, got %d: %s", update.Code, update.Body.String())
+	}
+	updateBody := decodeJSON(t, update)
+	policy, ok := updateBody["retry_policy"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected retry_policy object, got %#v", updateBody["retry_policy"])
+	}
+	if got := policy["max_attempts"]; got != float64(5) {
+		t.Fatalf("expected max_attempts=5, got %#v", got)
 	}
 }
 
@@ -1014,6 +1145,9 @@ func TestPlatformIntelligenceReportRunRetryAsyncIncludesBackoffMetadata(t *testi
 	if got := secondAttempt["scheduled_for"]; got == "" {
 		t.Fatalf("expected scheduled_for metadata, got %#v", got)
 	}
+	if got := secondAttempt["status"]; got != graph.ReportAttemptStatusScheduled {
+		t.Fatalf("expected scheduled second attempt status, got %#v", got)
+	}
 
 	var latest map[string]any
 	for i := 0; i < 100; i++ {
@@ -1047,6 +1181,76 @@ func TestPlatformIntelligenceReportRunRetryAsyncIncludesBackoffMetadata(t *testi
 	}
 }
 
+func TestPlatformIntelligenceReportRunRetryRechecksMaxAttemptsInsideUpdate(t *testing.T) {
+	s := newTestServer(t)
+	now := time.Date(2026, 3, 10, 2, 15, 0, 0, time.UTC)
+	run := &graph.ReportRun{
+		ID:            "report_run:retry-race",
+		ReportID:      "quality",
+		Status:        graph.ReportRunStatusFailed,
+		ExecutionMode: graph.ReportExecutionModeSync,
+		SubmittedAt:   now.Add(-2 * time.Minute),
+		CompletedAt:   ptrTime(now.Add(-time.Minute)),
+		RequestedBy:   "alice@example.com",
+		StatusURL:     "/api/v1/platform/intelligence/reports/quality/runs/report_run:retry-race",
+		RetryPolicy: graph.ReportRetryPolicy{
+			MaxAttempts:   2,
+			BaseBackoffMS: 10,
+			MaxBackoffMS:  20,
+		},
+		Error: "temporary upstream failure",
+	}
+	firstAttempt := graph.NewReportRunAttempt(run.ID, 1, graph.ReportRunStatusFailed, "api.request", "platform.inline", "test-host", run.RequestedBy, "", now.Add(-2*time.Minute))
+	run.Attempts = []graph.ReportRunAttempt{firstAttempt}
+	run.LatestAttemptID = firstAttempt.ID
+	graph.CompleteLatestReportRunAttempt(run, graph.ReportRunStatusFailed, now.Add(-time.Minute), run.Error, graph.ReportAttemptClassTransient)
+	run.AttemptCount = 1
+	run.EventCount = 1
+	if err := s.storePlatformReportRun(run); err != nil {
+		t.Fatalf("storePlatformReportRun() failed: %v", err)
+	}
+
+	s.platformReportSaveMu.Lock()
+	done := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		done <- do(t, s, http.MethodPost, run.StatusURL+":retry", map[string]any{
+			"retry_policy": map[string]any{
+				"max_attempts":    2,
+				"base_backoff_ms": 10,
+				"max_backoff_ms":  20,
+			},
+			"reason": "stale retry window",
+		})
+	}()
+	time.Sleep(50 * time.Millisecond)
+
+	s.platformReportRunMu.Lock()
+	stored := graph.CloneReportRun(s.platformReportRuns[run.ID])
+	secondAttempt := graph.NewReportRunAttempt(run.ID, 2, graph.ReportRunStatusFailed, "api.retry", "platform.inline", "test-host", run.RequestedBy, "", now.Add(-30*time.Second))
+	secondAttempt.RetryOfAttemptID = firstAttempt.ID
+	secondAttempt.RetryReason = "other operator retry"
+	stored.Attempts = append(stored.Attempts, secondAttempt)
+	stored.LatestAttemptID = secondAttempt.ID
+	stored.AttemptCount = len(stored.Attempts)
+	s.platformReportRuns[run.ID] = stored
+	s.platformReportRunMu.Unlock()
+	s.platformReportSaveMu.Unlock()
+
+	resp := <-done
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("expected 409 once attempts are exhausted in the update window, got %d: %s", resp.Code, resp.Body.String())
+	}
+
+	status := do(t, s, http.MethodGet, run.StatusURL, nil)
+	if status.Code != http.StatusOK {
+		t.Fatalf("expected 200 for run lookup, got %d: %s", status.Code, status.Body.String())
+	}
+	body := decodeJSON(t, status)
+	if got := body["attempt_count"]; got != float64(2) {
+		t.Fatalf("expected attempt_count to remain at 2, got %#v", got)
+	}
+}
+
 func TestPlatformIntelligenceReportRunCancelAsync(t *testing.T) {
 	s := newTestServer(t)
 	g := s.app.SecurityGraph
@@ -1069,6 +1273,16 @@ func TestPlatformIntelligenceReportRunCancelAsync(t *testing.T) {
 	})
 
 	startedCh := make(chan struct{}, 1)
+	canceledEvents := make(chan webhooks.Event, 1)
+	s.app.Webhooks.Subscribe(func(_ context.Context, event webhooks.Event) error {
+		if event.Type == webhooks.EventPlatformReportRunCanceled {
+			select {
+			case canceledEvents <- event:
+			default:
+			}
+		}
+		return nil
+	})
 	s.platformReportHandlers["quality"] = func(w http.ResponseWriter, r *http.Request) {
 		select {
 		case startedCh <- struct{}{}:
@@ -1102,15 +1316,21 @@ func TestPlatformIntelligenceReportRunCancelAsync(t *testing.T) {
 	cancel := do(t, s, http.MethodPost, statusURL+":cancel", map[string]any{
 		"reason": "operator requested cancellation",
 	})
-	if cancel.Code != http.StatusOK {
-		t.Fatalf("expected 200 for cancel, got %d: %s", cancel.Code, cancel.Body.String())
+	if cancel.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 for running cancel request, got %d: %s", cancel.Code, cancel.Body.String())
 	}
 	canceled := decodeJSON(t, cancel)
 	if got := canceled["status"]; got != graph.ReportRunStatusCanceled {
-		t.Fatalf("expected canceled run response, got %#v", got)
+		t.Fatalf("expected durable run to transition to canceled immediately, got %#v", got)
 	}
-	if got := canceled["error"]; got != "operator requested cancellation" {
-		t.Fatalf("expected cancel reason to persist on run error, got %#v", got)
+	if got := canceled["cancel_reason"]; got != "operator requested cancellation" {
+		t.Fatalf("expected cancel reason to persist on run control metadata, got %#v", got)
+	}
+	if got := canceled["cancel_requested_by"]; got == "" {
+		t.Fatalf("expected cancel_requested_by, got %#v", got)
+	}
+	if got := canceled["cancel_requested_at"]; got == "" {
+		t.Fatalf("expected cancel_requested_at, got %#v", got)
 	}
 
 	var runBody map[string]any
@@ -1127,6 +1347,21 @@ func TestPlatformIntelligenceReportRunCancelAsync(t *testing.T) {
 	}
 	if got := runBody["status"]; got != graph.ReportRunStatusCanceled {
 		t.Fatalf("expected canceled run status, got %#v", got)
+	}
+	if got := runBody["error"]; got != "operator requested cancellation" {
+		t.Fatalf("expected final canceled run to keep operator reason, got %#v", got)
+	}
+
+	controlResp := do(t, s, http.MethodGet, statusURL+"/control", nil)
+	if controlResp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for control lookup, got %d: %s", controlResp.Code, controlResp.Body.String())
+	}
+	controlBody := decodeJSON(t, controlResp)
+	if got := controlBody["terminal"]; got != true {
+		t.Fatalf("expected terminal control state after cancellation, got %#v", got)
+	}
+	if got := controlBody["cancel_reason"]; got != "operator requested cancellation" {
+		t.Fatalf("expected control cancel reason, got %#v", got)
 	}
 
 	var jobBody map[string]any
@@ -1147,6 +1382,17 @@ func TestPlatformIntelligenceReportRunCancelAsync(t *testing.T) {
 	if got := jobBody["cancel_reason"]; got != "operator requested cancellation" {
 		t.Fatalf("expected job cancel reason, got %#v", got)
 	}
+	select {
+	case event := <-canceledEvents:
+		if got := event.Data["run_id"]; got != canceled["id"] {
+			t.Fatalf("expected canceled webhook run_id %v, got %#v", canceled["id"], got)
+		}
+		if got := event.Data["cancel_reason"]; got != "operator requested cancellation" {
+			t.Fatalf("expected canceled webhook cancel_reason, got %#v", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for canceled webhook event")
+	}
 
 	attemptsResp := do(t, s, http.MethodGet, statusURL+"/attempts", nil)
 	if attemptsResp.Code != http.StatusOK {
@@ -1164,6 +1410,9 @@ func TestPlatformIntelligenceReportRunCancelAsync(t *testing.T) {
 	if got := attempt["classification"]; got != graph.ReportAttemptClassCancelled {
 		t.Fatalf("expected cancelled attempt classification, got %#v", got)
 	}
+	if got := attempt["status"]; got != graph.ReportAttemptStatusCanceled {
+		t.Fatalf("expected canceled attempt status, got %#v", got)
+	}
 
 	eventsResp := do(t, s, http.MethodGet, statusURL+"/events", nil)
 	if eventsResp.Code != http.StatusOK {
@@ -1177,6 +1426,72 @@ func TestPlatformIntelligenceReportRunCancelAsync(t *testing.T) {
 	if got := events[len(events)-1].(map[string]any)["type"]; got != string(webhooks.EventPlatformReportRunCanceled) {
 		t.Fatalf("expected canceled event last, got %#v", got)
 	}
+}
+
+func TestPlatformIntelligenceReportRunCancelDoesNotOverwriteSucceededRun(t *testing.T) {
+	s := newTestServer(t)
+	now := time.Date(2026, 3, 10, 2, 45, 0, 0, time.UTC)
+	run := &graph.ReportRun{
+		ID:            "report_run:cancel-race",
+		ReportID:      "quality",
+		Status:        graph.ReportRunStatusRunning,
+		ExecutionMode: graph.ReportExecutionModeAsync,
+		SubmittedAt:   now.Add(-2 * time.Minute),
+		StartedAt:     ptrTime(now.Add(-time.Minute)),
+		RequestedBy:   "alice@example.com",
+		StatusURL:     "/api/v1/platform/intelligence/reports/quality/runs/report_run:cancel-race",
+	}
+	run.Attempts = []graph.ReportRunAttempt{
+		graph.NewReportRunAttempt(run.ID, 1, graph.ReportRunStatusRunning, "api.request", "platform.job", "test-host", run.RequestedBy, "", now.Add(-2*time.Minute)),
+	}
+	run.LatestAttemptID = run.Attempts[0].ID
+	graph.StartLatestReportRunAttempt(run, now.Add(-time.Minute))
+	run.AttemptCount = len(run.Attempts)
+	if err := s.storePlatformReportRun(run); err != nil {
+		t.Fatalf("storePlatformReportRun() failed: %v", err)
+	}
+
+	s.platformReportSaveMu.Lock()
+	done := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		done <- do(t, s, http.MethodPost, run.StatusURL+":cancel", map[string]any{
+			"reason": "late cancel",
+		})
+	}()
+	time.Sleep(50 * time.Millisecond)
+
+	s.platformReportRunMu.Lock()
+	stored := graph.CloneReportRun(s.platformReportRuns[run.ID])
+	completedAt := now
+	stored.Status = graph.ReportRunStatusSucceeded
+	stored.CompletedAt = &completedAt
+	stored.Error = ""
+	graph.CompleteLatestReportRunAttempt(stored, stored.Status, completedAt, "", "")
+	stored.AttemptCount = len(stored.Attempts)
+	s.platformReportRuns[run.ID] = stored
+	s.platformReportRunMu.Unlock()
+	s.platformReportSaveMu.Unlock()
+
+	resp := <-done
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("expected 409 when the run becomes terminal before cancel commit, got %d: %s", resp.Code, resp.Body.String())
+	}
+
+	status := do(t, s, http.MethodGet, run.StatusURL, nil)
+	if status.Code != http.StatusOK {
+		t.Fatalf("expected 200 for run lookup, got %d: %s", status.Code, status.Body.String())
+	}
+	body := decodeJSON(t, status)
+	if got := body["status"]; got != graph.ReportRunStatusSucceeded {
+		t.Fatalf("expected succeeded run to remain succeeded, got %#v", got)
+	}
+	if got := body["cancel_reason"]; got != nil {
+		t.Fatalf("expected no cancel_reason on succeeded run, got %#v", got)
+	}
+}
+
+func ptrTime(value time.Time) *time.Time {
+	return &value
 }
 
 func TestAttachPlatformReportRunJobCancelsLateAttachedJobForCanceledRun(t *testing.T) {
