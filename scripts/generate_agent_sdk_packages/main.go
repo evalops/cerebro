@@ -374,16 +374,47 @@ type ReportRequest struct {
 }
 
 type ReportSectionResult struct {
-	Key          string   ` + "`json:\"key\"`" + `
-	Title        string   ` + "`json:\"title\"`" + `
-	Kind         string   ` + "`json:\"kind\"`" + `
-	EnvelopeKind string   ` + "`json:\"envelope_kind,omitempty\"`" + `
-	Present      bool     ` + "`json:\"present\"`" + `
-	ContentType  string   ` + "`json:\"content_type,omitempty\"`" + `
-	ItemCount    int      ` + "`json:\"item_count,omitempty\"`" + `
-	FieldCount   int      ` + "`json:\"field_count,omitempty\"`" + `
-	FieldKeys    []string ` + "`json:\"field_keys,omitempty\"`" + `
-	MeasureIDs   []string ` + "`json:\"measure_ids,omitempty\"`" + `
+	Key             string                        ` + "`json:\"key\"`" + `
+	Title           string                        ` + "`json:\"title\"`" + `
+	Kind            string                        ` + "`json:\"kind\"`" + `
+	EnvelopeKind    string                        ` + "`json:\"envelope_kind,omitempty\"`" + `
+	Present         bool                          ` + "`json:\"present\"`" + `
+	ContentType     string                        ` + "`json:\"content_type,omitempty\"`" + `
+	ItemCount       int                           ` + "`json:\"item_count,omitempty\"`" + `
+	FieldCount      int                           ` + "`json:\"field_count,omitempty\"`" + `
+	FieldKeys       []string                      ` + "`json:\"field_keys,omitempty\"`" + `
+	MeasureIDs      []string                      ` + "`json:\"measure_ids,omitempty\"`" + `
+	Lineage         *ReportSectionLineage         ` + "`json:\"lineage,omitempty\"`" + `
+	Materialization *ReportSectionMaterialization ` + "`json:\"materialization,omitempty\"`" + `
+	Telemetry       *ReportSectionTelemetry       ` + "`json:\"telemetry,omitempty\"`" + `
+}
+
+type ReportSectionLineage struct {
+	ReferencedNodeCount int       ` + "`json:\"referenced_node_count,omitempty\"`" + `
+	ReferencedNodeIDs   []string  ` + "`json:\"referenced_node_ids,omitempty\"`" + `
+	ClaimCount          int       ` + "`json:\"claim_count,omitempty\"`" + `
+	ClaimIDs            []string  ` + "`json:\"claim_ids,omitempty\"`" + `
+	EvidenceCount       int       ` + "`json:\"evidence_count,omitempty\"`" + `
+	EvidenceIDs         []string  ` + "`json:\"evidence_ids,omitempty\"`" + `
+	SourceCount         int       ` + "`json:\"source_count,omitempty\"`" + `
+	SourceIDs           []string  ` + "`json:\"source_ids,omitempty\"`" + `
+	SupportingEdgeCount int       ` + "`json:\"supporting_edge_count,omitempty\"`" + `
+	SupportingEdgeIDs   []string  ` + "`json:\"supporting_edge_ids,omitempty\"`" + `
+	ValidAt             *time.Time ` + "`json:\"valid_at,omitempty\"`" + `
+	RecordedAt          *time.Time ` + "`json:\"recorded_at,omitempty\"`" + `
+	IDsTruncated        bool      ` + "`json:\"ids_truncated,omitempty\"`" + `
+}
+
+type ReportSectionMaterialization struct {
+	Truncated         bool     ` + "`json:\"truncated,omitempty\"`" + `
+	TruncationSignals []string ` + "`json:\"truncation_signals,omitempty\"`" + `
+}
+
+type ReportSectionTelemetry struct {
+	MaterializationDurationMS int64  ` + "`json:\"materialization_duration_ms\"`" + `
+	CacheStatus              string ` + "`json:\"cache_status,omitempty\"`" + `
+	CacheSourceRunID         string ` + "`json:\"cache_source_run_id,omitempty\"`" + `
+	RetryBackoffMS           int64  ` + "`json:\"retry_backoff_ms,omitempty\"`" + `
 }
 
 type ReportSectionEmission struct {
@@ -407,14 +438,16 @@ type ReportStreamEvent struct {
 }
 
 type ReportRun struct {
-	ID            string                ` + "`json:\"id\"`" + `
-	ReportID      string                ` + "`json:\"report_id\"`" + `
-	Status        string                ` + "`json:\"status\"`" + `
-	ExecutionMode string                ` + "`json:\"execution_mode\"`" + `
-	StatusURL     string                ` + "`json:\"status_url\"`" + `
-	Sections      []ReportSectionResult ` + "`json:\"sections,omitempty\"`" + `
-	Result        map[string]any        ` + "`json:\"result,omitempty\"`" + `
-	Error         string                ` + "`json:\"error,omitempty\"`" + `
+	ID               string                ` + "`json:\"id\"`" + `
+	ReportID         string                ` + "`json:\"report_id\"`" + `
+	Status           string                ` + "`json:\"status\"`" + `
+	ExecutionMode    string                ` + "`json:\"execution_mode\"`" + `
+	CacheStatus      string                ` + "`json:\"cache_status,omitempty\"`" + `
+	CacheSourceRunID string                ` + "`json:\"cache_source_run_id,omitempty\"`" + `
+	StatusURL        string                ` + "`json:\"status_url\"`" + `
+	Sections         []ReportSectionResult ` + "`json:\"sections,omitempty\"`" + `
+	Result           map[string]any        ` + "`json:\"result,omitempty\"`" + `
+	Error            string                ` + "`json:\"error,omitempty\"`" + `
 }
 
 type ProtectedResourceMetadata struct {

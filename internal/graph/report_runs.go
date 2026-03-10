@@ -19,6 +19,9 @@ const (
 	ReportRunStatusSucceeded = "succeeded"
 	ReportRunStatusFailed    = "failed"
 	ReportRunStatusCanceled  = "canceled"
+
+	ReportCacheStatusHit  = "hit"
+	ReportCacheStatusMiss = "miss"
 )
 
 // ReportParameterValue holds one typed parameter binding for a report run.
@@ -47,6 +50,15 @@ type ReportRetryPolicy struct {
 	MaxBackoffMS  int64 `json:"max_backoff_ms,omitempty"`
 }
 
+// ReportSectionBuildOptions carries execution context used when summarizing one report result.
+type ReportSectionBuildOptions struct {
+	Graph            *Graph
+	TimeSlice        ReportTimeSlice
+	CacheStatus      string
+	CacheSourceRunID string
+	RetryBackoffMS   int64
+}
+
 // ReportSectionResult summarizes one rendered section within a report run.
 type ReportSectionResult struct {
 	Key             string                        `json:"key"`
@@ -61,6 +73,7 @@ type ReportSectionResult struct {
 	MeasureIDs      []string                      `json:"measure_ids,omitempty"`
 	Lineage         *ReportSectionLineage         `json:"lineage,omitempty"`
 	Materialization *ReportSectionMaterialization `json:"materialization,omitempty"`
+	Telemetry       *ReportSectionTelemetry       `json:"telemetry,omitempty"`
 }
 
 // ReportSectionEmission carries one section payload emitted over live report streams.
@@ -74,21 +87,33 @@ type ReportSectionEmission struct {
 
 // ReportSectionLineage captures graph lineage surfaced by one report section payload.
 type ReportSectionLineage struct {
-	ReferencedNodeCount int      `json:"referenced_node_count,omitempty"`
-	ReferencedNodeIDs   []string `json:"referenced_node_ids,omitempty"`
-	ClaimCount          int      `json:"claim_count,omitempty"`
-	ClaimIDs            []string `json:"claim_ids,omitempty"`
-	EvidenceCount       int      `json:"evidence_count,omitempty"`
-	EvidenceIDs         []string `json:"evidence_ids,omitempty"`
-	SourceCount         int      `json:"source_count,omitempty"`
-	SourceIDs           []string `json:"source_ids,omitempty"`
-	IDsTruncated        bool     `json:"ids_truncated,omitempty"`
+	ReferencedNodeCount int        `json:"referenced_node_count,omitempty"`
+	ReferencedNodeIDs   []string   `json:"referenced_node_ids,omitempty"`
+	ClaimCount          int        `json:"claim_count,omitempty"`
+	ClaimIDs            []string   `json:"claim_ids,omitempty"`
+	EvidenceCount       int        `json:"evidence_count,omitempty"`
+	EvidenceIDs         []string   `json:"evidence_ids,omitempty"`
+	SourceCount         int        `json:"source_count,omitempty"`
+	SourceIDs           []string   `json:"source_ids,omitempty"`
+	SupportingEdgeCount int        `json:"supporting_edge_count,omitempty"`
+	SupportingEdgeIDs   []string   `json:"supporting_edge_ids,omitempty"`
+	ValidAt             *time.Time `json:"valid_at,omitempty"`
+	RecordedAt          *time.Time `json:"recorded_at,omitempty"`
+	IDsTruncated        bool       `json:"ids_truncated,omitempty"`
 }
 
 // ReportSectionMaterialization captures delivery/truncation hints for one section payload.
 type ReportSectionMaterialization struct {
 	Truncated         bool     `json:"truncated,omitempty"`
 	TruncationSignals []string `json:"truncation_signals,omitempty"`
+}
+
+// ReportSectionTelemetry captures execution/runtime metadata for one section artifact.
+type ReportSectionTelemetry struct {
+	MaterializationDurationMS int64  `json:"materialization_duration_ms"`
+	CacheStatus               string `json:"cache_status,omitempty"`
+	CacheSourceRunID          string `json:"cache_source_run_id,omitempty"`
+	RetryBackoffMS            int64  `json:"retry_backoff_ms,omitempty"`
 }
 
 // ReportSnapshot stores materialization metadata for one report result.
@@ -109,59 +134,63 @@ type ReportSnapshot struct {
 
 // ReportRun represents one instantiated execution of a report definition.
 type ReportRun struct {
-	ID              string                 `json:"id"`
-	ReportID        string                 `json:"report_id"`
-	Status          string                 `json:"status"`
-	ExecutionMode   string                 `json:"execution_mode"`
-	SubmittedAt     time.Time              `json:"submitted_at"`
-	StartedAt       *time.Time             `json:"started_at,omitempty"`
-	CompletedAt     *time.Time             `json:"completed_at,omitempty"`
-	RequestedBy     string                 `json:"requested_by,omitempty"`
-	Parameters      []ReportParameterValue `json:"parameters,omitempty"`
-	TimeSlice       ReportTimeSlice        `json:"time_slice,omitempty"`
-	CacheKey        string                 `json:"cache_key,omitempty"`
-	JobID           string                 `json:"job_id,omitempty"`
-	JobStatusURL    string                 `json:"job_status_url,omitempty"`
-	StatusURL       string                 `json:"status_url"`
-	LatestAttemptID string                 `json:"latest_attempt_id,omitempty"`
-	AttemptCount    int                    `json:"attempt_count,omitempty"`
-	EventCount      int                    `json:"event_count,omitempty"`
-	RetryPolicy     ReportRetryPolicy      `json:"retry_policy,omitempty"`
-	Lineage         ReportLineage          `json:"lineage,omitempty"`
-	Storage         ReportStoragePolicy    `json:"storage,omitempty"`
-	Snapshot        *ReportSnapshot        `json:"snapshot,omitempty"`
-	Sections        []ReportSectionResult  `json:"sections,omitempty"`
-	Result          map[string]any         `json:"result,omitempty"`
-	Error           string                 `json:"error,omitempty"`
-	Attempts        []ReportRunAttempt     `json:"-"`
-	Events          []ReportRunEvent       `json:"-"`
+	ID               string                 `json:"id"`
+	ReportID         string                 `json:"report_id"`
+	Status           string                 `json:"status"`
+	ExecutionMode    string                 `json:"execution_mode"`
+	SubmittedAt      time.Time              `json:"submitted_at"`
+	StartedAt        *time.Time             `json:"started_at,omitempty"`
+	CompletedAt      *time.Time             `json:"completed_at,omitempty"`
+	RequestedBy      string                 `json:"requested_by,omitempty"`
+	Parameters       []ReportParameterValue `json:"parameters,omitempty"`
+	TimeSlice        ReportTimeSlice        `json:"time_slice,omitempty"`
+	CacheKey         string                 `json:"cache_key,omitempty"`
+	CacheStatus      string                 `json:"cache_status,omitempty"`
+	CacheSourceRunID string                 `json:"cache_source_run_id,omitempty"`
+	JobID            string                 `json:"job_id,omitempty"`
+	JobStatusURL     string                 `json:"job_status_url,omitempty"`
+	StatusURL        string                 `json:"status_url"`
+	LatestAttemptID  string                 `json:"latest_attempt_id,omitempty"`
+	AttemptCount     int                    `json:"attempt_count,omitempty"`
+	EventCount       int                    `json:"event_count,omitempty"`
+	RetryPolicy      ReportRetryPolicy      `json:"retry_policy,omitempty"`
+	Lineage          ReportLineage          `json:"lineage,omitempty"`
+	Storage          ReportStoragePolicy    `json:"storage,omitempty"`
+	Snapshot         *ReportSnapshot        `json:"snapshot,omitempty"`
+	Sections         []ReportSectionResult  `json:"sections,omitempty"`
+	Result           map[string]any         `json:"result,omitempty"`
+	Error            string                 `json:"error,omitempty"`
+	Attempts         []ReportRunAttempt     `json:"-"`
+	Events           []ReportRunEvent       `json:"-"`
 }
 
 // ReportRunSummary is the lightweight list representation of a report run.
 type ReportRunSummary struct {
-	ID              string                 `json:"id"`
-	ReportID        string                 `json:"report_id"`
-	Status          string                 `json:"status"`
-	ExecutionMode   string                 `json:"execution_mode"`
-	SubmittedAt     time.Time              `json:"submitted_at"`
-	StartedAt       *time.Time             `json:"started_at,omitempty"`
-	CompletedAt     *time.Time             `json:"completed_at,omitempty"`
-	RequestedBy     string                 `json:"requested_by,omitempty"`
-	Parameters      []ReportParameterValue `json:"parameters,omitempty"`
-	TimeSlice       ReportTimeSlice        `json:"time_slice,omitempty"`
-	CacheKey        string                 `json:"cache_key,omitempty"`
-	JobID           string                 `json:"job_id,omitempty"`
-	JobStatusURL    string                 `json:"job_status_url,omitempty"`
-	StatusURL       string                 `json:"status_url"`
-	LatestAttemptID string                 `json:"latest_attempt_id,omitempty"`
-	AttemptCount    int                    `json:"attempt_count,omitempty"`
-	EventCount      int                    `json:"event_count,omitempty"`
-	RetryPolicy     ReportRetryPolicy      `json:"retry_policy,omitempty"`
-	Lineage         ReportLineage          `json:"lineage,omitempty"`
-	Storage         ReportStoragePolicy    `json:"storage,omitempty"`
-	Snapshot        *ReportSnapshot        `json:"snapshot,omitempty"`
-	Sections        []ReportSectionResult  `json:"sections,omitempty"`
-	Error           string                 `json:"error,omitempty"`
+	ID               string                 `json:"id"`
+	ReportID         string                 `json:"report_id"`
+	Status           string                 `json:"status"`
+	ExecutionMode    string                 `json:"execution_mode"`
+	SubmittedAt      time.Time              `json:"submitted_at"`
+	StartedAt        *time.Time             `json:"started_at,omitempty"`
+	CompletedAt      *time.Time             `json:"completed_at,omitempty"`
+	RequestedBy      string                 `json:"requested_by,omitempty"`
+	Parameters       []ReportParameterValue `json:"parameters,omitempty"`
+	TimeSlice        ReportTimeSlice        `json:"time_slice,omitempty"`
+	CacheKey         string                 `json:"cache_key,omitempty"`
+	CacheStatus      string                 `json:"cache_status,omitempty"`
+	CacheSourceRunID string                 `json:"cache_source_run_id,omitempty"`
+	JobID            string                 `json:"job_id,omitempty"`
+	JobStatusURL     string                 `json:"job_status_url,omitempty"`
+	StatusURL        string                 `json:"status_url"`
+	LatestAttemptID  string                 `json:"latest_attempt_id,omitempty"`
+	AttemptCount     int                    `json:"attempt_count,omitempty"`
+	EventCount       int                    `json:"event_count,omitempty"`
+	RetryPolicy      ReportRetryPolicy      `json:"retry_policy,omitempty"`
+	Lineage          ReportLineage          `json:"lineage,omitempty"`
+	Storage          ReportStoragePolicy    `json:"storage,omitempty"`
+	Snapshot         *ReportSnapshot        `json:"snapshot,omitempty"`
+	Sections         []ReportSectionResult  `json:"sections,omitempty"`
+	Error            string                 `json:"error,omitempty"`
 }
 
 // ReportRunCollection is the list response for report runs.
@@ -294,8 +323,14 @@ func ExtractReportTimeSlice(values []ReportParameterValue) ReportTimeSlice {
 
 // BuildReportSectionResults summarizes the section-level shape of a materialized report result.
 func BuildReportSectionResults(definition ReportDefinition, result map[string]any, g *Graph) []ReportSectionResult {
+	return BuildReportSectionResultsWithOptions(definition, result, &ReportSectionBuildOptions{Graph: g})
+}
+
+// BuildReportSectionResultsWithOptions summarizes the section-level shape of a materialized report result.
+func BuildReportSectionResultsWithOptions(definition ReportDefinition, result map[string]any, opts *ReportSectionBuildOptions) []ReportSectionResult {
 	sections := make([]ReportSectionResult, 0, len(definition.Sections))
 	for _, section := range definition.Sections {
+		startedAt := time.Now().UTC()
 		summary := ReportSectionResult{
 			Key:          section.Key,
 			Title:        section.Title,
@@ -330,8 +365,13 @@ func BuildReportSectionResults(definition ReportDefinition, result map[string]an
 				summary.ContentType = fmt.Sprintf("%T", content)
 			}
 		}
-		summary.Lineage = BuildReportSectionLineage(g, content)
+		if opts != nil {
+			summary.Lineage = BuildReportSectionLineageWithTimeSlice(opts.Graph, content, opts.TimeSlice)
+		} else {
+			summary.Lineage = BuildReportSectionLineage(nil, content)
+		}
 		summary.Materialization = BuildReportSectionMaterialization(content)
+		summary.Telemetry = buildReportSectionTelemetry(opts, startedAt, time.Now().UTC())
 		sections = append(sections, summary)
 	}
 	return sections
@@ -339,12 +379,23 @@ func BuildReportSectionResults(definition ReportDefinition, result map[string]an
 
 // BuildReportSectionEmissions constructs stream-ready section payloads for one report result.
 func BuildReportSectionEmissions(definition ReportDefinition, result map[string]any, g *Graph, emittedAt time.Time) []ReportSectionEmission {
+	summaries := BuildReportSectionResults(definition, result, g)
+	return BuildReportSectionEmissionsFromResults(summaries, result, emittedAt)
+}
+
+// BuildReportSectionEmissionsWithOptions constructs stream-ready section payloads for one report result.
+func BuildReportSectionEmissionsWithOptions(definition ReportDefinition, result map[string]any, opts *ReportSectionBuildOptions, emittedAt time.Time) []ReportSectionEmission {
+	summaries := BuildReportSectionResultsWithOptions(definition, result, opts)
+	return BuildReportSectionEmissionsFromResults(summaries, result, emittedAt)
+}
+
+// BuildReportSectionEmissionsFromResults constructs stream-ready section payloads from precomputed section summaries.
+func BuildReportSectionEmissionsFromResults(summaries []ReportSectionResult, result map[string]any, emittedAt time.Time) []ReportSectionEmission {
 	if emittedAt.IsZero() {
 		emittedAt = time.Now().UTC()
 	}
-	summaries := BuildReportSectionResults(definition, result, g)
-	emissions := make([]ReportSectionEmission, 0, len(definition.Sections))
-	total := len(definition.Sections)
+	emissions := make([]ReportSectionEmission, 0, len(summaries))
+	total := len(summaries)
 	for index, summary := range summaries {
 		emission := ReportSectionEmission{
 			Sequence:        index + 1,
@@ -453,29 +504,31 @@ func BuildReportRunCacheKey(reportID string, values []ReportParameterValue) (str
 // SummarizeReportRun strips the variable report payload while preserving execution metadata.
 func SummarizeReportRun(run ReportRun) ReportRunSummary {
 	return ReportRunSummary{
-		ID:              run.ID,
-		ReportID:        run.ReportID,
-		Status:          run.Status,
-		ExecutionMode:   run.ExecutionMode,
-		SubmittedAt:     run.SubmittedAt,
-		StartedAt:       cloneTimePtr(run.StartedAt),
-		CompletedAt:     cloneTimePtr(run.CompletedAt),
-		RequestedBy:     run.RequestedBy,
-		Parameters:      CloneReportParameterValues(run.Parameters),
-		TimeSlice:       cloneReportTimeSlice(run.TimeSlice),
-		CacheKey:        run.CacheKey,
-		JobID:           run.JobID,
-		JobStatusURL:    run.JobStatusURL,
-		StatusURL:       run.StatusURL,
-		LatestAttemptID: run.LatestAttemptID,
-		AttemptCount:    len(run.Attempts),
-		EventCount:      len(run.Events),
-		RetryPolicy:     NormalizeReportRetryPolicy(run.RetryPolicy),
-		Lineage:         CloneReportLineage(run.Lineage),
-		Storage:         CloneReportStoragePolicy(run.Storage),
-		Snapshot:        cloneReportSnapshot(run.Snapshot),
-		Sections:        CloneReportSectionResults(run.Sections),
-		Error:           run.Error,
+		ID:               run.ID,
+		ReportID:         run.ReportID,
+		Status:           run.Status,
+		ExecutionMode:    run.ExecutionMode,
+		SubmittedAt:      run.SubmittedAt,
+		StartedAt:        cloneTimePtr(run.StartedAt),
+		CompletedAt:      cloneTimePtr(run.CompletedAt),
+		RequestedBy:      run.RequestedBy,
+		Parameters:       CloneReportParameterValues(run.Parameters),
+		TimeSlice:        cloneReportTimeSlice(run.TimeSlice),
+		CacheKey:         run.CacheKey,
+		CacheStatus:      run.CacheStatus,
+		CacheSourceRunID: run.CacheSourceRunID,
+		JobID:            run.JobID,
+		JobStatusURL:     run.JobStatusURL,
+		StatusURL:        run.StatusURL,
+		LatestAttemptID:  run.LatestAttemptID,
+		AttemptCount:     len(run.Attempts),
+		EventCount:       len(run.Events),
+		RetryPolicy:      NormalizeReportRetryPolicy(run.RetryPolicy),
+		Lineage:          CloneReportLineage(run.Lineage),
+		Storage:          CloneReportStoragePolicy(run.Storage),
+		Snapshot:         cloneReportSnapshot(run.Snapshot),
+		Sections:         CloneReportSectionResults(run.Sections),
+		Error:            run.Error,
 	}
 }
 
@@ -528,6 +581,7 @@ func CloneReportSectionResults(values []ReportSectionResult) []ReportSectionResu
 		cloned[i].FieldKeys = append([]string(nil), values[i].FieldKeys...)
 		cloned[i].Lineage = cloneReportSectionLineage(values[i].Lineage)
 		cloned[i].Materialization = cloneReportSectionMaterialization(values[i].Materialization)
+		cloned[i].Telemetry = cloneReportSectionTelemetry(values[i].Telemetry)
 	}
 	return cloned
 }
@@ -539,26 +593,34 @@ const (
 
 // BuildReportSectionLineage extracts graph lineage references from one section payload.
 func BuildReportSectionLineage(g *Graph, payload any) *ReportSectionLineage {
+	return BuildReportSectionLineageWithTimeSlice(g, payload, ReportTimeSlice{})
+}
+
+// BuildReportSectionLineageWithTimeSlice extracts graph lineage references from one section payload using the provided temporal view.
+func BuildReportSectionLineageWithTimeSlice(g *Graph, payload any, slice ReportTimeSlice) *ReportSectionLineage {
 	if g == nil || payload == nil {
 		return nil
 	}
+	validAt, recordedAt, annotatedValidAt, annotatedRecordedAt, useTemporal := reportSectionLineageTimeSlice(slice)
 	acc := reportSectionLineageAccumulator{
-		referenced: make(map[string]struct{}),
-		claims:     make(map[string]struct{}),
-		evidence:   make(map[string]struct{}),
-		sources:    make(map[string]struct{}),
+		referenced:      make(map[string]struct{}),
+		claims:          make(map[string]struct{}),
+		evidence:        make(map[string]struct{}),
+		sources:         make(map[string]struct{}),
+		supportingEdges: make(map[string]struct{}),
 	}
-	collectReportSectionPayloadRefs(g, payload, &acc)
-	expandReportSectionClaimRefs(g, &acc)
+	collectReportSectionPayloadRefs(g, payload, &acc, validAt, recordedAt, useTemporal)
+	expandReportSectionClaimRefs(g, &acc, validAt, recordedAt, useTemporal)
 
-	if len(acc.referenced) == 0 && len(acc.claims) == 0 && len(acc.evidence) == 0 && len(acc.sources) == 0 {
+	if len(acc.referenced) == 0 && len(acc.claims) == 0 && len(acc.evidence) == 0 && len(acc.sources) == 0 && len(acc.supportingEdges) == 0 {
 		return nil
 	}
 	referencedIDs, referencedTruncated := limitedSortedStrings(acc.referenced, reportSectionLineageIDLimit)
 	claimIDs, claimTruncated := limitedSortedStrings(acc.claims, reportSectionLineageIDLimit)
 	evidenceIDs, evidenceTruncated := limitedSortedStrings(acc.evidence, reportSectionLineageIDLimit)
 	sourceIDs, sourceTruncated := limitedSortedStrings(acc.sources, reportSectionLineageIDLimit)
-	return &ReportSectionLineage{
+	supportingEdgeIDs, supportingEdgeTruncated := limitedSortedStrings(acc.supportingEdges, reportSectionLineageIDLimit)
+	lineage := &ReportSectionLineage{
 		ReferencedNodeCount: len(acc.referenced),
 		ReferencedNodeIDs:   referencedIDs,
 		ClaimCount:          len(acc.claims),
@@ -567,8 +629,17 @@ func BuildReportSectionLineage(g *Graph, payload any) *ReportSectionLineage {
 		EvidenceIDs:         evidenceIDs,
 		SourceCount:         len(acc.sources),
 		SourceIDs:           sourceIDs,
-		IDsTruncated:        referencedTruncated || claimTruncated || evidenceTruncated || sourceTruncated,
+		SupportingEdgeCount: len(acc.supportingEdges),
+		SupportingEdgeIDs:   supportingEdgeIDs,
+		IDsTruncated:        referencedTruncated || claimTruncated || evidenceTruncated || sourceTruncated || supportingEdgeTruncated,
 	}
+	if annotatedValidAt != nil {
+		lineage.ValidAt = cloneTimePtr(annotatedValidAt)
+	}
+	if annotatedRecordedAt != nil {
+		lineage.RecordedAt = cloneTimePtr(annotatedRecordedAt)
+	}
+	return lineage
 }
 
 // BuildReportSectionMaterialization inspects one section payload for truncation signals.
@@ -586,35 +657,36 @@ func BuildReportSectionMaterialization(payload any) *ReportSectionMaterializatio
 }
 
 type reportSectionLineageAccumulator struct {
-	referenced map[string]struct{}
-	claims     map[string]struct{}
-	evidence   map[string]struct{}
-	sources    map[string]struct{}
+	referenced      map[string]struct{}
+	claims          map[string]struct{}
+	evidence        map[string]struct{}
+	sources         map[string]struct{}
+	supportingEdges map[string]struct{}
 }
 
-func collectReportSectionPayloadRefs(g *Graph, value any, acc *reportSectionLineageAccumulator) {
+func collectReportSectionPayloadRefs(g *Graph, value any, acc *reportSectionLineageAccumulator, validAt, recordedAt time.Time, useTemporal bool) {
 	if g == nil || acc == nil || value == nil {
 		return
 	}
 	switch typed := value.(type) {
 	case map[string]any:
 		for _, child := range typed {
-			collectReportSectionPayloadRefs(g, child, acc)
+			collectReportSectionPayloadRefs(g, child, acc, validAt, recordedAt, useTemporal)
 		}
 	case []any:
 		for _, child := range typed {
-			collectReportSectionPayloadRefs(g, child, acc)
+			collectReportSectionPayloadRefs(g, child, acc, validAt, recordedAt, useTemporal)
 		}
 	case []string:
 		for _, child := range typed {
-			collectReportSectionPayloadRefs(g, child, acc)
+			collectReportSectionPayloadRefs(g, child, acc, validAt, recordedAt, useTemporal)
 		}
 	case string:
 		nodeID := strings.TrimSpace(typed)
 		if nodeID == "" {
 			return
 		}
-		node, ok := g.GetNode(nodeID)
+		node, ok := reportSectionVisibleNode(g, nodeID, validAt, recordedAt, useTemporal)
 		if !ok || node == nil {
 			return
 		}
@@ -630,7 +702,7 @@ func collectReportSectionPayloadRefs(g *Graph, value any, acc *reportSectionLine
 	}
 }
 
-func expandReportSectionClaimRefs(g *Graph, acc *reportSectionLineageAccumulator) {
+func expandReportSectionClaimRefs(g *Graph, acc *reportSectionLineageAccumulator, validAt, recordedAt time.Time, useTemporal bool) {
 	if g == nil || acc == nil || len(acc.claims) == 0 {
 		return
 	}
@@ -647,14 +719,14 @@ func expandReportSectionClaimRefs(g *Graph, acc *reportSectionLineageAccumulator
 		}
 		visited[claimID] = struct{}{}
 
-		for _, edge := range g.GetOutEdges(claimID) {
-			reportSectionExpandClaimEdge(g, acc, edge, &queue)
+		for _, edge := range reportSectionClaimOutEdges(g, claimID, validAt, recordedAt, useTemporal) {
+			reportSectionExpandClaimEdge(g, acc, edge, &queue, validAt, recordedAt, useTemporal)
 		}
-		for _, edge := range g.GetInEdges(claimID) {
+		for _, edge := range reportSectionClaimInEdges(g, claimID, validAt, recordedAt, useTemporal) {
 			if edge == nil || strings.TrimSpace(edge.Source) == "" {
 				continue
 			}
-			sourceNode, ok := g.GetNode(edge.Source)
+			sourceNode, ok := reportSectionVisibleNode(g, edge.Source, validAt, recordedAt, useTemporal)
 			if !ok || sourceNode == nil || sourceNode.Kind != NodeKindClaim {
 				continue
 			}
@@ -662,6 +734,9 @@ func expandReportSectionClaimRefs(g *Graph, acc *reportSectionLineageAccumulator
 				continue
 			}
 			acc.referenced[sourceNode.ID] = struct{}{}
+			if strings.TrimSpace(edge.ID) != "" {
+				acc.supportingEdges[edge.ID] = struct{}{}
+			}
 			if _, ok := acc.claims[sourceNode.ID]; !ok {
 				acc.claims[sourceNode.ID] = struct{}{}
 				queue = append(queue, sourceNode.ID)
@@ -670,23 +745,32 @@ func expandReportSectionClaimRefs(g *Graph, acc *reportSectionLineageAccumulator
 	}
 }
 
-func reportSectionExpandClaimEdge(g *Graph, acc *reportSectionLineageAccumulator, edge *Edge, queue *[]string) {
+func reportSectionExpandClaimEdge(g *Graph, acc *reportSectionLineageAccumulator, edge *Edge, queue *[]string, validAt, recordedAt time.Time, useTemporal bool) {
 	if g == nil || acc == nil || edge == nil || strings.TrimSpace(edge.Target) == "" {
 		return
 	}
-	targetNode, ok := g.GetNode(edge.Target)
+	targetNode, ok := reportSectionVisibleNode(g, edge.Target, validAt, recordedAt, useTemporal)
 	if !ok || targetNode == nil {
 		return
 	}
 	acc.referenced[targetNode.ID] = struct{}{}
 	switch targetNode.Kind {
 	case NodeKindEvidence, NodeKindObservation:
+		if strings.TrimSpace(edge.ID) != "" {
+			acc.supportingEdges[edge.ID] = struct{}{}
+		}
 		acc.evidence[targetNode.ID] = struct{}{}
 	case NodeKindSource:
+		if strings.TrimSpace(edge.ID) != "" {
+			acc.supportingEdges[edge.ID] = struct{}{}
+		}
 		acc.sources[targetNode.ID] = struct{}{}
 	case NodeKindClaim:
 		if !reportSectionClaimTraversalEdge(edge.Kind) {
 			return
+		}
+		if strings.TrimSpace(edge.ID) != "" {
+			acc.supportingEdges[edge.ID] = struct{}{}
 		}
 		if _, ok := acc.claims[targetNode.ID]; ok {
 			return
@@ -778,6 +862,9 @@ func cloneReportSectionLineage(lineage *ReportSectionLineage) *ReportSectionLine
 	cloned.ClaimIDs = append([]string(nil), lineage.ClaimIDs...)
 	cloned.EvidenceIDs = append([]string(nil), lineage.EvidenceIDs...)
 	cloned.SourceIDs = append([]string(nil), lineage.SourceIDs...)
+	cloned.SupportingEdgeIDs = append([]string(nil), lineage.SupportingEdgeIDs...)
+	cloned.ValidAt = cloneTimePtr(lineage.ValidAt)
+	cloned.RecordedAt = cloneTimePtr(lineage.RecordedAt)
 	return &cloned
 }
 
@@ -787,6 +874,14 @@ func cloneReportSectionMaterialization(materialization *ReportSectionMaterializa
 	}
 	cloned := *materialization
 	cloned.TruncationSignals = append([]string(nil), materialization.TruncationSignals...)
+	return &cloned
+}
+
+func cloneReportSectionTelemetry(telemetry *ReportSectionTelemetry) *ReportSectionTelemetry {
+	if telemetry == nil {
+		return nil
+	}
+	cloned := *telemetry
 	return &cloned
 }
 
@@ -874,4 +969,91 @@ func cloneBoolPtr(value *bool) *bool {
 	}
 	cloned := *value
 	return &cloned
+}
+
+func buildReportSectionTelemetry(opts *ReportSectionBuildOptions, startedAt, completedAt time.Time) *ReportSectionTelemetry {
+	if opts == nil {
+		return nil
+	}
+	telemetry := &ReportSectionTelemetry{
+		MaterializationDurationMS: max(0, completedAt.Sub(startedAt).Milliseconds()),
+		CacheStatus:               strings.TrimSpace(opts.CacheStatus),
+		CacheSourceRunID:          strings.TrimSpace(opts.CacheSourceRunID),
+		RetryBackoffMS:            opts.RetryBackoffMS,
+	}
+	if telemetry.MaterializationDurationMS == 0 && telemetry.CacheStatus == "" && telemetry.CacheSourceRunID == "" && telemetry.RetryBackoffMS == 0 {
+		return nil
+	}
+	return telemetry
+}
+
+func reportSectionLineageTimeSlice(slice ReportTimeSlice) (time.Time, time.Time, *time.Time, *time.Time, bool) {
+	var annotatedValidAt *time.Time
+	var annotatedRecordedAt *time.Time
+	if slice.ValidAt != nil && !slice.ValidAt.IsZero() {
+		copy := slice.ValidAt.UTC()
+		annotatedValidAt = &copy
+	} else if slice.AsOf != nil && !slice.AsOf.IsZero() {
+		copy := slice.AsOf.UTC()
+		annotatedValidAt = &copy
+	}
+	if slice.RecordedAt != nil && !slice.RecordedAt.IsZero() {
+		copy := slice.RecordedAt.UTC()
+		annotatedRecordedAt = &copy
+	} else if slice.AsOf != nil && !slice.AsOf.IsZero() {
+		copy := slice.AsOf.UTC()
+		annotatedRecordedAt = &copy
+	}
+	useTemporal := annotatedValidAt != nil || annotatedRecordedAt != nil
+	if !useTemporal {
+		return time.Time{}, time.Time{}, nil, nil, false
+	}
+	validAt := temporalNowUTC()
+	recordedAt := temporalNowUTC()
+	if annotatedValidAt != nil {
+		validAt = annotatedValidAt.UTC()
+	}
+	if annotatedRecordedAt != nil {
+		recordedAt = annotatedRecordedAt.UTC()
+	}
+	return validAt, recordedAt, annotatedValidAt, annotatedRecordedAt, true
+}
+
+func reportSectionVisibleNode(g *Graph, nodeID string, validAt, recordedAt time.Time, useTemporal bool) (*Node, bool) {
+	if g == nil {
+		return nil, false
+	}
+	if !useTemporal {
+		return g.GetNode(nodeID)
+	}
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	node, ok := g.nodes[nodeID]
+	if !ok || node == nil || node.DeletedAt != nil {
+		return nil, false
+	}
+	if !g.nodeVisibleAtLocked(node, validAt, recordedAt) {
+		return nil, false
+	}
+	return node, true
+}
+
+func reportSectionClaimOutEdges(g *Graph, claimID string, validAt, recordedAt time.Time, useTemporal bool) []*Edge {
+	if g == nil {
+		return nil
+	}
+	if useTemporal {
+		return g.GetOutEdgesBitemporal(claimID, validAt, recordedAt)
+	}
+	return g.GetOutEdges(claimID)
+}
+
+func reportSectionClaimInEdges(g *Graph, claimID string, validAt, recordedAt time.Time, useTemporal bool) []*Edge {
+	if g == nil {
+		return nil
+	}
+	if useTemporal {
+		return g.GetInEdgesBitemporal(claimID, validAt, recordedAt)
+	}
+	return g.GetInEdges(claimID)
 }

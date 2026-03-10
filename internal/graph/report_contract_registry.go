@@ -25,6 +25,24 @@ type ReportSectionEnvelopeCatalog struct {
 	Envelopes   []ReportSectionEnvelopeDefinition `json:"envelopes"`
 }
 
+// ReportSectionFragmentDefinition describes one reusable metadata fragment contract embedded in section results.
+type ReportSectionFragmentDefinition struct {
+	ID          string         `json:"id"`
+	Version     string         `json:"version"`
+	Title       string         `json:"title"`
+	Description string         `json:"description,omitempty"`
+	SchemaName  string         `json:"schema_name"`
+	SchemaURL   string         `json:"schema_url"`
+	JSONSchema  map[string]any `json:"json_schema,omitempty"`
+}
+
+// ReportSectionFragmentCatalog is the discoverable registry payload for section metadata fragments.
+type ReportSectionFragmentCatalog struct {
+	GeneratedAt time.Time                         `json:"generated_at"`
+	Count       int                               `json:"count"`
+	Fragments   []ReportSectionFragmentDefinition `json:"fragments"`
+}
+
 // BenchmarkBand captures one threshold band inside a benchmark pack.
 type BenchmarkBand struct {
 	Label       string   `json:"label"`
@@ -334,6 +352,93 @@ var defaultReportSectionEnvelopeDefinitions = []ReportSectionEnvelopeDefinition{
 	},
 }
 
+var defaultReportSectionFragmentDefinitions = []ReportSectionFragmentDefinition{
+	{
+		ID:          "lineage",
+		Version:     "1.0.0",
+		Title:       "Section Lineage Fragment",
+		Description: "Reusable lineage metadata embedded in report section summaries and emissions.",
+		SchemaName:  "PlatformReportSectionLineage",
+		SchemaURL:   "urn:cerebro:report-section-fragment:lineage:v1",
+		JSONSchema: map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]any{
+				"referenced_node_count": map[string]any{"type": "integer"},
+				"referenced_node_ids": map[string]any{
+					"type":  "array",
+					"items": map[string]any{"type": "string"},
+				},
+				"claim_count": map[string]any{"type": "integer"},
+				"claim_ids": map[string]any{
+					"type":  "array",
+					"items": map[string]any{"type": "string"},
+				},
+				"evidence_count": map[string]any{"type": "integer"},
+				"evidence_ids": map[string]any{
+					"type":  "array",
+					"items": map[string]any{"type": "string"},
+				},
+				"source_count": map[string]any{"type": "integer"},
+				"source_ids": map[string]any{
+					"type":  "array",
+					"items": map[string]any{"type": "string"},
+				},
+				"supporting_edge_count": map[string]any{"type": "integer"},
+				"supporting_edge_ids": map[string]any{
+					"type":  "array",
+					"items": map[string]any{"type": "string"},
+				},
+				"valid_at":    map[string]any{"type": "string", "format": "date-time"},
+				"recorded_at": map[string]any{"type": "string", "format": "date-time"},
+				"ids_truncated": map[string]any{
+					"type": "boolean",
+				},
+			},
+		},
+	},
+	{
+		ID:          "materialization",
+		Version:     "1.0.0",
+		Title:       "Section Materialization Fragment",
+		Description: "Reusable delivery and truncation metadata embedded in report section summaries and emissions.",
+		SchemaName:  "PlatformReportSectionMaterialization",
+		SchemaURL:   "urn:cerebro:report-section-fragment:materialization:v1",
+		JSONSchema: map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]any{
+				"truncated": map[string]any{"type": "boolean"},
+				"truncation_signals": map[string]any{
+					"type":  "array",
+					"items": map[string]any{"type": "string"},
+				},
+			},
+		},
+	},
+	{
+		ID:          "telemetry",
+		Version:     "1.0.0",
+		Title:       "Section Telemetry Fragment",
+		Description: "Reusable execution telemetry embedded in report section summaries and emissions.",
+		SchemaName:  "PlatformReportSectionTelemetry",
+		SchemaURL:   "urn:cerebro:report-section-fragment:telemetry:v1",
+		JSONSchema: map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]any{
+				"materialization_duration_ms": map[string]any{"type": "integer"},
+				"cache_status": map[string]any{
+					"type": "string",
+					"enum": []string{ReportCacheStatusHit, ReportCacheStatusMiss},
+				},
+				"cache_source_run_id": map[string]any{"type": "string"},
+				"retry_backoff_ms":    map[string]any{"type": "integer"},
+			},
+		},
+	},
+}
+
 var defaultBenchmarkPacks = []BenchmarkPack{
 	{
 		ID:          "decision-intelligence.default",
@@ -501,6 +606,45 @@ func ReportSectionEnvelopeCatalogSnapshot(now time.Time) ReportSectionEnvelopeCa
 		GeneratedAt: now,
 		Count:       len(envelopes),
 		Envelopes:   envelopes,
+	}
+}
+
+// ListReportSectionFragmentDefinitions returns the built-in section metadata fragment contracts.
+func ListReportSectionFragmentDefinitions() []ReportSectionFragmentDefinition {
+	fragments := make([]ReportSectionFragmentDefinition, 0, len(defaultReportSectionFragmentDefinitions))
+	for _, fragment := range defaultReportSectionFragmentDefinitions {
+		cloned := fragment
+		cloned.JSONSchema = cloneAnyMap(fragment.JSONSchema)
+		fragments = append(fragments, cloned)
+	}
+	sort.Slice(fragments, func(i, j int) bool { return fragments[i].ID < fragments[j].ID })
+	return fragments
+}
+
+// GetReportSectionFragmentDefinition returns one section fragment contract by id.
+func GetReportSectionFragmentDefinition(id string) (ReportSectionFragmentDefinition, bool) {
+	id = strings.TrimSpace(id)
+	for _, fragment := range defaultReportSectionFragmentDefinitions {
+		if fragment.ID == id {
+			cloned := fragment
+			cloned.JSONSchema = cloneAnyMap(fragment.JSONSchema)
+			return cloned, true
+		}
+	}
+	return ReportSectionFragmentDefinition{}, false
+}
+
+// ReportSectionFragmentCatalogSnapshot returns a timestamped view of the section-fragment registry.
+func ReportSectionFragmentCatalogSnapshot(now time.Time) ReportSectionFragmentCatalog {
+	now = now.UTC()
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	fragments := ListReportSectionFragmentDefinitions()
+	return ReportSectionFragmentCatalog{
+		GeneratedAt: now,
+		Count:       len(fragments),
+		Fragments:   fragments,
 	}
 }
 

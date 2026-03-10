@@ -1942,6 +1942,131 @@
       }
     }
   ],
+  "section_fragments": [
+    {
+      "id": "lineage",
+      "version": "1.0.0",
+      "title": "Section Lineage Fragment",
+      "description": "Reusable lineage metadata embedded in report section summaries and emissions.",
+      "schema_name": "PlatformReportSectionLineage",
+      "schema_url": "urn:cerebro:report-section-fragment:lineage:v1",
+      "json_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "claim_count": {
+            "type": "integer"
+          },
+          "claim_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "evidence_count": {
+            "type": "integer"
+          },
+          "evidence_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "ids_truncated": {
+            "type": "boolean"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "referenced_node_count": {
+            "type": "integer"
+          },
+          "referenced_node_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "source_count": {
+            "type": "integer"
+          },
+          "source_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "supporting_edge_count": {
+            "type": "integer"
+          },
+          "supporting_edge_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "valid_at": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "id": "materialization",
+      "version": "1.0.0",
+      "title": "Section Materialization Fragment",
+      "description": "Reusable delivery and truncation metadata embedded in report section summaries and emissions.",
+      "schema_name": "PlatformReportSectionMaterialization",
+      "schema_url": "urn:cerebro:report-section-fragment:materialization:v1",
+      "json_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "truncated": {
+            "type": "boolean"
+          },
+          "truncation_signals": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "id": "telemetry",
+      "version": "1.0.0",
+      "title": "Section Telemetry Fragment",
+      "description": "Reusable execution telemetry embedded in report section summaries and emissions.",
+      "schema_name": "PlatformReportSectionTelemetry",
+      "schema_url": "urn:cerebro:report-section-fragment:telemetry:v1",
+      "json_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "cache_source_run_id": {
+            "type": "string"
+          },
+          "cache_status": {
+            "enum": [
+              "hit",
+              "miss"
+            ],
+            "type": "string"
+          },
+          "materialization_duration_ms": {
+            "type": "integer"
+          },
+          "retry_backoff_ms": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    }
+  ],
   "benchmark_packs": [
     {
       "id": "claim-conflicts.default",

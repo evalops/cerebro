@@ -5,6 +5,63 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 26 - Report Section Telemetry + Cache Reuse + Fragment Governance (2026-03-10)
+
+### Review findings
+- [x] Gap: section metadata exposed lineage and truncation, but not the execution facts operators actually need to interpret derived artifacts: cache reuse, retry backoff, and real section materialization timing.
+- [x] Gap: section lineage still stopped at nodes only, which meant explanation surfaces could not trace the supporting graph edges or the exact bitemporal slice used to produce one section.
+- [x] Gap: lineage/materialization metadata existed in code and OpenAPI, but not in the governed report contract catalog, so compatibility checks could not detect drift when section metadata evolved.
+- [x] Gap: report cache keys existed, but the report runtime still did not actually reuse prior compatible runs, leaving `cache_key` as metadata theater instead of an operational capability.
+
+### Research synthesis to adopt
+- [x] Runtime observability rule: section metadata must surface the execution facts that materially affect interpretation, not just payload shape.
+- [x] Explainability rule: a derived section should expose both the referenced entities and the supporting relationships/time basis that made the section true.
+- [x] Contract-governance rule: reusable metadata fragments deserve the same registry/versioning discipline as envelopes and benchmark packs.
+- [x] Cache honesty rule: if a run reuses a prior artifact, that fact should be explicit on the run, the section, and the lifecycle events.
+
+### Execution plan
+- [x] Deepen reusable section telemetry:
+  - [x] add `ReportSectionTelemetry`
+  - [x] capture real per-section materialization duration
+  - [x] expose cache hit/miss and cache source run ID
+  - [x] expose retry backoff on section artifacts
+- [x] Deepen section provenance:
+  - [x] add supporting edge counts/IDs to section lineage
+  - [x] add `valid_at` / `recorded_at` lineage selectors for point-in-time runs
+  - [x] make lineage extraction respect bitemporal visibility when a run carries a time slice
+- [x] Make cache reuse real:
+  - [x] add compatible run reuse keyed by report, cache key, and lineage
+  - [x] persist cache status and cache source run ID on `ReportRun`
+  - [x] propagate cache reuse through sync runs, retries, events, SSE, and MCP progress
+- [x] Govern section metadata contracts:
+  - [x] add `ReportSectionFragmentDefinition` registry
+  - [x] publish fragment contracts in `ReportContractCatalog`
+  - [x] add field-level diff summaries to report-contract compatibility reports
+  - [x] expose section fragment discovery endpoints
+- [x] Tighten contracts/tests/docs:
+  - [x] extend OpenAPI for section fragments, run cache metadata, telemetry, and bitemporal lineage fields
+  - [x] regenerate report and CloudEvents contract docs
+  - [x] extend generated SDK report models
+  - [x] add graph/API regression coverage for cache reuse, retry telemetry, fragment discovery, and bitemporal supporting-edge lineage
+
+### Detailed follow-on backlog
+- [ ] Section execution depth:
+  - [ ] add per-section partial-failure classification separate from truncation
+  - [ ] add section-local cache tier / freshness metadata once storage tiering exists
+  - [ ] add configurable lineage sample limits by report family
+- [ ] Derived artifact graph write-back:
+  - [ ] materialize high-value section lineage back into graph annotations/outcomes where it creates leverage
+  - [ ] attach section lineage to recommendation acceptance and outcome review loops
+  - [ ] add graph navigation links from section metadata into query/templates surfaces
+- [ ] Contract/autogen hardening:
+  - [ ] generate section example payload fixtures from one canonical source
+  - [ ] expose live contract diff summaries over an admin/report-governance surface
+  - [ ] generate concrete envelope/fragment unions to eliminate the remaining unused-component warnings in OpenAPI
+- [ ] Storage/runtime hardening:
+  - [ ] add retention enforcement and integrity verification for report snapshots
+  - [ ] add cache invalidation policy surfaces instead of lineage-only implicit invalidation
+  - [ ] add report-run storage migrations for future schema evolution
+
 ## Deep Review Cycle 25 - Report Section Lineage + Truncation Metadata (2026-03-10)
 
 ### Review findings
@@ -36,16 +93,16 @@ Status: executed end-to-end via PR workflow
 
 ### Detailed follow-on backlog
 - [ ] Section telemetry deepening:
-  - [ ] add real per-section duration capture instead of synthetic timing guesses
-  - [ ] add cache-hit/cache-miss and retry-backoff metadata where the runtime actually has those signals
+  - [x] add real per-section duration capture instead of synthetic timing guesses
+  - [x] add cache-hit/cache-miss and retry-backoff metadata where the runtime actually has those signals
   - [ ] add per-section partial-failure classification separate from truncation
 - [ ] Section provenance deepening:
-  - [ ] expose supporting edge IDs and bitemporal windows for section lineage samples
+  - [x] expose supporting edge IDs and bitemporal windows for section lineage samples
   - [ ] add configurable lineage sample limits by report family
   - [ ] materialize high-value section lineage back into graph annotations/outcomes where it creates leverage
 - [ ] Section contract generation:
-  - [ ] derive section lineage/materialization schema fragments from one canonical contract source
-  - [ ] generate report-definition diff summaries when section metadata fields evolve
+  - [x] derive section lineage/materialization schema fragments from one canonical contract source
+  - [x] generate report-definition diff summaries when section metadata fields evolve
   - [ ] emit section example payloads with lineage/truncation fixtures in generated docs
 
 ## Deep Review Cycle 24 - External SDK Packages + Section Streams + Managed Credential Control (2026-03-09)

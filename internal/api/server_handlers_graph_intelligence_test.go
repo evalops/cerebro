@@ -336,6 +336,32 @@ func TestPlatformIntelligenceSectionEnvelopeCatalog(t *testing.T) {
 	}
 }
 
+func TestPlatformIntelligenceSectionFragmentCatalog(t *testing.T) {
+	s := newTestServer(t)
+
+	w := do(t, s, http.MethodGet, "/api/v1/platform/intelligence/section-fragments", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	body := decodeJSON(t, w)
+	if count, ok := body["count"].(float64); !ok || int(count) < 3 {
+		t.Fatalf("expected at least 3 section fragments, got %#v", body["count"])
+	}
+	fragments, ok := body["fragments"].([]any)
+	if !ok || len(fragments) == 0 {
+		t.Fatalf("expected fragments array, got %#v", body["fragments"])
+	}
+
+	getResp := do(t, s, http.MethodGet, "/api/v1/platform/intelligence/section-fragments/telemetry", nil)
+	if getResp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for telemetry fragment, got %d: %s", getResp.Code, getResp.Body.String())
+	}
+	getBody := decodeJSON(t, getResp)
+	if got := getBody["schema_name"]; got != "PlatformReportSectionTelemetry" {
+		t.Fatalf("expected PlatformReportSectionTelemetry schema, got %#v", got)
+	}
+}
+
 func TestPlatformIntelligenceBenchmarkPackCatalog(t *testing.T) {
 	s := newTestServer(t)
 
@@ -540,6 +566,84 @@ func TestPlatformIntelligenceReportRunSync(t *testing.T) {
 	listBody := decodeJSON(t, listResp)
 	if count, ok := listBody["count"].(float64); !ok || count < 1 {
 		t.Fatalf("expected at least one report run, got %#v", listBody["count"])
+	}
+}
+
+func TestPlatformIntelligenceReportRunCacheReuseExposesSectionTelemetry(t *testing.T) {
+	s := newTestServer(t)
+	g := s.app.SecurityGraph
+	now := time.Date(2026, 3, 9, 16, 45, 0, 0, time.UTC)
+
+	g.AddNode(&graph.Node{
+		ID:   "person:alice@example.com",
+		Kind: graph.NodeKindPerson,
+		Name: "Alice",
+		Properties: map[string]any{
+			"email":       "alice@example.com",
+			"observed_at": now.Format(time.RFC3339),
+			"valid_from":  now.Format(time.RFC3339),
+		},
+	})
+	g.SetMetadata(graph.Metadata{
+		BuiltAt:   now.Add(10 * time.Minute),
+		NodeCount: 1,
+		Providers: []string{"test"},
+	})
+
+	first := do(t, s, http.MethodPost, "/api/v1/platform/intelligence/reports/quality/runs", map[string]any{
+		"execution_mode": "sync",
+		"parameters": []map[string]any{
+			{"name": "stale_after_hours", "integer_value": 24},
+		},
+	})
+	if first.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for first run, got %d: %s", first.Code, first.Body.String())
+	}
+	firstBody := decodeJSON(t, first)
+	firstRunID, _ := firstBody["id"].(string)
+	if firstRunID == "" {
+		t.Fatalf("expected first run id, got %#v", firstBody["id"])
+	}
+	if got := firstBody["cache_status"]; got != graph.ReportCacheStatusMiss {
+		t.Fatalf("expected first run cache_status miss, got %#v", got)
+	}
+
+	second := do(t, s, http.MethodPost, "/api/v1/platform/intelligence/reports/quality/runs", map[string]any{
+		"execution_mode": "sync",
+		"parameters": []map[string]any{
+			{"name": "stale_after_hours", "integer_value": 24},
+		},
+	})
+	if second.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for second run, got %d: %s", second.Code, second.Body.String())
+	}
+	secondBody := decodeJSON(t, second)
+	if got := secondBody["cache_status"]; got != graph.ReportCacheStatusHit {
+		t.Fatalf("expected second run cache_status hit, got %#v", got)
+	}
+	if got := secondBody["cache_source_run_id"]; got != firstRunID {
+		t.Fatalf("expected second run cache_source_run_id %q, got %#v", firstRunID, got)
+	}
+	sections, ok := secondBody["sections"].([]any)
+	if !ok || len(sections) == 0 {
+		t.Fatalf("expected cached sections, got %#v", secondBody["sections"])
+	}
+	firstSection, ok := sections[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected first section object, got %#v", sections[0])
+	}
+	telemetry, ok := firstSection["telemetry"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected section telemetry, got %#v", firstSection["telemetry"])
+	}
+	if got := telemetry["cache_status"]; got != graph.ReportCacheStatusHit {
+		t.Fatalf("expected section telemetry cache_status hit, got %#v", got)
+	}
+	if got := telemetry["cache_source_run_id"]; got != firstRunID {
+		t.Fatalf("expected section telemetry cache_source_run_id %q, got %#v", firstRunID, got)
+	}
+	if _, ok := telemetry["materialization_duration_ms"].(float64); !ok {
+		t.Fatalf("expected section telemetry materialization_duration_ms, got %#v", telemetry["materialization_duration_ms"])
 	}
 }
 
@@ -925,6 +1029,21 @@ func TestPlatformIntelligenceReportRunRetryAsyncIncludesBackoffMetadata(t *testi
 	}
 	if got := latest["status"]; got != graph.ReportRunStatusSucceeded {
 		t.Fatalf("expected async retry to succeed, got %#v", got)
+	}
+	sections, ok := latest["sections"].([]any)
+	if !ok || len(sections) == 0 {
+		t.Fatalf("expected sections on retried run, got %#v", latest["sections"])
+	}
+	firstSection, ok := sections[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected first section object, got %#v", sections[0])
+	}
+	telemetry, ok := firstSection["telemetry"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected section telemetry on retried run, got %#v", firstSection["telemetry"])
+	}
+	if got := telemetry["retry_backoff_ms"]; got != float64(20) {
+		t.Fatalf("expected section retry_backoff_ms=20, got %#v", got)
 	}
 }
 

@@ -106,15 +106,21 @@ func (s *Server) emitAgentSDKReportProgress(run *graph.ReportRun) {
 		"total":         100,
 		"message":       message,
 		"data": map[string]any{
-			"run_id":            run.ID,
-			"report_id":         run.ReportID,
-			"status":            run.Status,
-			"status_url":        run.StatusURL,
-			"attempt_count":     run.AttemptCount,
-			"event_count":       run.EventCount,
-			"latest_attempt_id": run.LatestAttemptID,
-			"snapshot_id":       reportSnapshotID(run),
+			"run_id":              run.ID,
+			"report_id":           run.ReportID,
+			"status":              run.Status,
+			"status_url":          run.StatusURL,
+			"attempt_count":       run.AttemptCount,
+			"event_count":         run.EventCount,
+			"latest_attempt_id":   run.LatestAttemptID,
+			"snapshot_id":         reportSnapshotID(run),
+			"cache_status":        run.CacheStatus,
+			"cache_source_run_id": run.CacheSourceRunID,
 		},
+	}
+	if attempt := graph.LatestReportRunAttempt(run); attempt != nil && attempt.RetryBackoffMS > 0 {
+		paramsData, _ := params["data"].(map[string]any)
+		paramsData["retry_backoff_ms"] = attempt.RetryBackoffMS
 	}
 	s.emitAgentSDKMCPNotification(subscription.SessionID, agentSDKMCPResponse{
 		JSONRPC: "2.0",

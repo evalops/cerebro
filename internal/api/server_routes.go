@@ -358,6 +358,8 @@ func (s *Server) setupRoutes() {
 				r.Get("/checks", s.listPlatformIntelligenceChecks)
 				r.Get("/section-envelopes", s.listPlatformIntelligenceSectionEnvelopes)
 				r.Get("/section-envelopes/{envelope_id}", s.getPlatformIntelligenceSectionEnvelope)
+				r.Get("/section-fragments", s.listPlatformIntelligenceSectionFragments)
+				r.Get("/section-fragments/{fragment_id}", s.getPlatformIntelligenceSectionFragment)
 				r.Get("/benchmark-packs", s.listPlatformIntelligenceBenchmarkPacks)
 				r.Get("/benchmark-packs/{pack_id}", s.getPlatformIntelligenceBenchmarkPack)
 				r.Get("/reports", s.listPlatformIntelligenceReports)
