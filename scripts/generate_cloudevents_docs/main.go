@@ -53,6 +53,7 @@ func renderMarkdown(catalog graphingest.ContractCatalog) string {
 		fmt.Fprintf(&b, "- Generated at: **%s**\n", catalog.GeneratedAt.UTC().Format(time.RFC3339))
 	}
 	fmt.Fprintf(&b, "- CloudEvent envelope fields: **%d**\n", len(catalog.EnvelopeFields))
+	fmt.Fprintf(&b, "- Platform lifecycle event contracts: **%d**\n", len(catalog.LifecycleEvents))
 	fmt.Fprintf(&b, "- TAP mapping rules: **%d**\n", len(catalog.Mappings))
 	fmt.Fprintf(&b, "- Wildcard event patterns: **%d**\n", totalWildcards)
 	fmt.Fprintf(&b, "- Distinct required data keys across mappings: **%d**\n", len(catalog.DistinctRequiredData))
@@ -67,6 +68,24 @@ func renderMarkdown(catalog graphingest.ContractCatalog) string {
 			required = "yes"
 		}
 		fmt.Fprintf(&b, "| `%s` | `%s` | %s |\n", field.Name, field.Type, required)
+	}
+
+	b.WriteString("\n## Platform Lifecycle Event Contracts\n\n")
+	if len(catalog.LifecycleEvents) == 0 {
+		b.WriteString("No platform lifecycle event contracts are registered.\n")
+	} else {
+		b.WriteString("| Event Type | Summary | Schema URL | Required Data Keys | Optional Data Keys |\n")
+		b.WriteString("|---|---|---|---|---|\n")
+		for _, contract := range catalog.LifecycleEvents {
+			fmt.Fprintf(&b,
+				"| `%s` | %s | `%s` | %s | %s |\n",
+				escapePipes(string(contract.EventType)),
+				escapePipes(contract.Summary),
+				escapePipes(contract.SchemaURL),
+				joinCodeOrDash(contract.RequiredDataKeys),
+				joinCodeOrDash(contract.OptionalDataKeys),
+			)
+		}
 	}
 
 	b.WriteString("\n## Mapping Contracts\n\n")

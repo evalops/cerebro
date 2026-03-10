@@ -57,6 +57,18 @@ This distinction allows Cerebro to ask both:
 - “what was true on March 1, 2026?”
 - “what did Cerebro believe on March 1, 2026, based on what it had recorded by then?”
 
+### 4) Derived Report Layer
+
+Not every useful analytic deserves a first-class API noun or substrate primitive.
+
+Org dynamics and security dynamics should usually be exposed as derived reports over the metadata/context graph, for example:
+
+- bus-factor and knowledge-fragility views
+- privilege concentration and risky-configuration posture
+- coordination bottlenecks, information-flow lag, and reorg impact summaries
+
+These are report surfaces built from entities, edges, claims, evidence, and temporal state. They should only become first-class workflow resources when they need durable IDs, approvals, write-back, or actuation semantics of their own.
+
 ## Implemented Foundation
 
 This cycle adds the minimum viable world-model substrate:
@@ -66,7 +78,7 @@ This cycle adds the minimum viable world-model substrate:
 - bitemporal metadata normalization in `graph.WriteMetadata`
 - bitemporal graph views through `GetAllNodesBitemporal(...)`, `GetOutEdgesBitemporal(...)`, and `SubgraphBitemporal(...)`
 - claim write path through `graph.WriteClaim(...)` and `POST /api/v1/graph/write/claim`
-- claim contradiction reporting through `BuildClaimConflictReport(...)` and `GET /api/v1/graph/intelligence/claim-conflicts`
+- claim contradiction reporting through `BuildClaimConflictReport(...)` and `GET /api/v1/platform/intelligence/claim-conflicts` (with legacy `/api/v1/graph/intelligence/claim-conflicts` alias preserved)
 
 ## What Still Needs To Be Added
 
@@ -128,5 +140,7 @@ A world-model query surface should prefer claim-oriented questions such as:
 - contradictory `claim` groups recorded before a given timestamp
 - unsupported claims without evidence or source attribution
 - claims superseded after a particular incident or decision
+
+Derived report surfaces should then package those lower-level answers into operator views, rather than inventing separate substrate concepts for every org or security dynamic.
 
 That is the standard Cerebro should now optimize for.

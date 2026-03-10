@@ -64,6 +64,380 @@
       "required": false
     }
   ],
+  "lifecycle_events": [
+    {
+      "event_type": "platform.action.recorded",
+      "summary": "Action write recorded on the shared platform workflow layer.",
+      "schema_url": "urn:cerebro:events/platform.action.recorded/v1",
+      "required_data_keys": [
+        "action_id",
+        "title",
+        "target_ids",
+        "source_system",
+        "source_event_id",
+        "observed_at",
+        "valid_from",
+        "auto_generated"
+      ],
+      "optional_data_keys": [
+        "decision_id",
+        "recommendation_id",
+        "insight_type",
+        "summary",
+        "status",
+        "tenant_id",
+        "traceparent"
+      ],
+      "data_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "action_id": {
+            "type": "string"
+          },
+          "auto_generated": {
+            "type": "boolean"
+          },
+          "decision_id": {
+            "type": "string"
+          },
+          "insight_type": {
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "recommendation_id": {
+            "type": "string"
+          },
+          "source_event_id": {
+            "type": "string"
+          },
+          "source_system": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "target_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "traceparent": {
+            "type": "string"
+          },
+          "valid_from": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action_id",
+          "title",
+          "target_ids",
+          "source_system",
+          "source_event_id",
+          "observed_at",
+          "valid_from",
+          "auto_generated"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "event_type": "platform.claim.written",
+      "summary": "Claim write recorded on the shared platform knowledge layer.",
+      "schema_url": "urn:cerebro:events/platform.claim.written/v1",
+      "required_data_keys": [
+        "claim_id",
+        "subject_id",
+        "predicate",
+        "claim_type",
+        "status",
+        "source_system",
+        "source_event_id",
+        "observed_at",
+        "recorded_at",
+        "transaction_from"
+      ],
+      "optional_data_keys": [
+        "source_id",
+        "object_id",
+        "object_value",
+        "evidence_ids",
+        "supporting_claim_ids",
+        "refuting_claim_ids",
+        "tenant_id",
+        "traceparent"
+      ],
+      "data_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "claim_id": {
+            "type": "string"
+          },
+          "claim_type": {
+            "type": "string"
+          },
+          "evidence_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "object_id": {
+            "type": "string"
+          },
+          "object_value": {
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "predicate": {
+            "type": "string"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "refuting_claim_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "source_event_id": {
+            "type": "string"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "source_system": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "subject_id": {
+            "type": "string"
+          },
+          "supporting_claim_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "traceparent": {
+            "type": "string"
+          },
+          "transaction_from": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "claim_id",
+          "subject_id",
+          "predicate",
+          "claim_type",
+          "status",
+          "source_system",
+          "source_event_id",
+          "observed_at",
+          "recorded_at",
+          "transaction_from"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "event_type": "platform.decision.recorded",
+      "summary": "Decision write recorded on the shared platform workflow layer.",
+      "schema_url": "urn:cerebro:events/platform.decision.recorded/v1",
+      "required_data_keys": [
+        "decision_id",
+        "decision_type",
+        "status",
+        "target_ids",
+        "source_system",
+        "source_event_id",
+        "observed_at",
+        "valid_from"
+      ],
+      "optional_data_keys": [
+        "made_by",
+        "rationale",
+        "evidence_ids",
+        "action_ids",
+        "tenant_id",
+        "traceparent"
+      ],
+      "data_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "action_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "decision_id": {
+            "type": "string"
+          },
+          "decision_type": {
+            "type": "string"
+          },
+          "evidence_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "made_by": {
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "rationale": {
+            "type": "string"
+          },
+          "source_event_id": {
+            "type": "string"
+          },
+          "source_system": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "target_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "traceparent": {
+            "type": "string"
+          },
+          "valid_from": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision_id",
+          "decision_type",
+          "status",
+          "target_ids",
+          "source_system",
+          "source_event_id",
+          "observed_at",
+          "valid_from"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "event_type": "platform.outcome.recorded",
+      "summary": "Outcome write recorded on the shared platform workflow layer.",
+      "schema_url": "urn:cerebro:events/platform.outcome.recorded/v1",
+      "required_data_keys": [
+        "outcome_id",
+        "decision_id",
+        "outcome_type",
+        "verdict",
+        "impact_score",
+        "source_system",
+        "source_event_id",
+        "observed_at",
+        "valid_from"
+      ],
+      "optional_data_keys": [
+        "target_ids",
+        "tenant_id",
+        "traceparent"
+      ],
+      "data_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "decision_id": {
+            "type": "string"
+          },
+          "impact_score": {
+            "type": "number"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "outcome_id": {
+            "type": "string"
+          },
+          "outcome_type": {
+            "type": "string"
+          },
+          "source_event_id": {
+            "type": "string"
+          },
+          "source_system": {
+            "type": "string"
+          },
+          "target_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "traceparent": {
+            "type": "string"
+          },
+          "valid_from": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "outcome_id",
+          "decision_id",
+          "outcome_type",
+          "verdict",
+          "impact_score",
+          "source_system",
+          "source_event_id",
+          "observed_at",
+          "valid_from"
+        ],
+        "type": "object"
+      }
+    }
+  ],
   "mappings": [
     {
       "name": "calendar_meeting_recorded",

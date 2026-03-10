@@ -25,6 +25,12 @@ The target state is:
 - `/api/v1/org/*` for organization-intelligence workflows
 - `/api/v1/admin/*` for operational control-plane concerns
 
+Additional boundary rule:
+
+- org and security dynamics should default to report surfaces built on the shared graph, not new platform primitives
+- examples include bus factor, coordination fragility, privilege concentration, blast-radius posture, and other derived analytics
+- only promote those views into standalone resources when they require their own write lifecycle, durable IDs, approvals, or actuation semantics
+
 This is an evolutionary refactor, not a rewrite. Existing CSPM flows stay working behind compatibility aliases while new contracts move to typed platform/application boundaries.
 
 ## 2. Current-State Diagnosis
@@ -57,6 +63,8 @@ The current OpenAPI exposes 189 `/api/v1/*` paths. Of those, 61 sit under `/api/
 - `/api/v1/impact-analysis`
 - `/api/v1/entities/{id}/cohort`
 - `/api/v1/entities/{id}/outlier-score`
+
+These should be treated as report programs over the graph until proven to be reusable primitives. The same rule applies to most org-dynamics and security-dynamics outputs.
 
 `Security application endpoints`
 

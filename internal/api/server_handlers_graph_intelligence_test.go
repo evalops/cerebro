@@ -183,6 +183,39 @@ func TestGraphIntelligenceQualityEndpoint_InvalidParams(t *testing.T) {
 	}
 }
 
+func TestPlatformIntelligenceQualityEndpointAndLegacyAlias(t *testing.T) {
+	s := newTestServer(t)
+	g := s.app.SecurityGraph
+	now := time.Date(2026, 3, 9, 16, 0, 0, 0, time.UTC)
+
+	g.AddNode(&graph.Node{
+		ID:   "person:alice@example.com",
+		Kind: graph.NodeKindPerson,
+		Name: "Alice",
+		Properties: map[string]any{
+			"email":       "alice@example.com",
+			"observed_at": now.Format(time.RFC3339),
+			"valid_from":  now.Format(time.RFC3339),
+		},
+	})
+
+	platformResp := do(t, s, http.MethodGet, "/api/v1/platform/intelligence/quality?stale_after_hours=24", nil)
+	if platformResp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for platform intelligence quality, got %d: %s", platformResp.Code, platformResp.Body.String())
+	}
+	if got := platformResp.Header().Get("Deprecation"); got != "" {
+		t.Fatalf("did not expect deprecation header on platform endpoint, got %q", got)
+	}
+
+	legacyResp := do(t, s, http.MethodGet, "/api/v1/graph/intelligence/quality?stale_after_hours=24", nil)
+	if legacyResp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for legacy intelligence quality alias, got %d: %s", legacyResp.Code, legacyResp.Body.String())
+	}
+	if got := legacyResp.Header().Get("Deprecation"); got != "true" {
+		t.Fatalf("expected deprecation header on legacy graph endpoint, got %q", got)
+	}
+}
+
 func TestGraphIntelligenceMetadataQualityEndpoint(t *testing.T) {
 	s := newTestServer(t)
 	g := s.app.SecurityGraph
@@ -668,6 +701,10 @@ func TestGraphIntelligenceWeeklyCalibrationEndpoint(t *testing.T) {
 	body := decodeJSON(t, w)
 	if _, ok := body["risk_feedback"].(map[string]any); !ok {
 		t.Fatalf("expected risk_feedback object, got %#v", body["risk_feedback"])
+	}
+	riskFeedback := body["risk_feedback"].(map[string]any)
+	if _, ok := riskFeedback["generated_at"].(string); !ok {
+		t.Fatalf("expected typed risk_feedback.generated_at, got %#v", riskFeedback["generated_at"])
 	}
 	if _, ok := body["identity"].(map[string]any); !ok {
 		t.Fatalf("expected identity object, got %#v", body["identity"])

@@ -150,6 +150,10 @@ const (
 	EventApprovalRequested        EventType = "approval.requested"
 	EventCohortOutlierDetected    EventType = "cohort.outlier_detected"
 	EventComplianceScoreChanged   EventType = "compliance.score_changed"
+	EventPlatformClaimWritten     EventType = "platform.claim.written"
+	EventPlatformDecisionRecorded EventType = "platform.decision.recorded"
+	EventPlatformOutcomeRecorded  EventType = "platform.outcome.recorded"
+	EventPlatformActionRecorded   EventType = "platform.action.recorded"
 )
 
 var defaultEventTypes = []EventType{
@@ -182,6 +186,10 @@ var defaultEventTypes = []EventType{
 	EventApprovalRequested,
 	EventCohortOutlierDetected,
 	EventComplianceScoreChanged,
+	EventPlatformClaimWritten,
+	EventPlatformDecisionRecorded,
+	EventPlatformOutcomeRecorded,
+	EventPlatformActionRecorded,
 }
 
 // DefaultEventTypes returns the list of webhook event types registered by default.
@@ -413,7 +421,9 @@ func isValidEventType(e EventType) bool {
 		EventRemediationRule, EventRemediationActionCompleted, EventRemediationActionFailed,
 		EventSignalCreated, EventSignalResolved, EventSignalEscalated,
 		EventRiskScoreChanged, EventToxicCombinationDetected, EventToxicCombinationResolved,
-		EventApprovalRequested, EventCohortOutlierDetected, EventComplianceScoreChanged:
+		EventApprovalRequested, EventCohortOutlierDetected, EventComplianceScoreChanged,
+		EventPlatformClaimWritten, EventPlatformDecisionRecorded, EventPlatformOutcomeRecorded,
+		EventPlatformActionRecorded:
 		return true
 	default:
 		return false

@@ -1,10 +1,12 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"testing"
 
 	"github.com/evalops/cerebro/internal/graph"
+	"github.com/evalops/cerebro/internal/webhooks"
 )
 
 func TestGraphWriteObservationAndAnnotation(t *testing.T) {
@@ -369,6 +371,136 @@ func TestGraphActuateRecommendationEndpoint(t *testing.T) {
 	})
 	if invalid.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for invalid recommendation actuation payload, got %d: %s", invalid.Code, invalid.Body.String())
+	}
+}
+
+func TestGraphWritebackEmitsPlatformLifecycleEvents(t *testing.T) {
+	s := newTestServer(t)
+	g := s.app.SecurityGraph
+
+	g.AddNode(&graph.Node{
+		ID:   "service:payments",
+		Kind: graph.NodeKindService,
+		Name: "Payments",
+		Properties: map[string]any{
+			"service_id":  "payments",
+			"observed_at": "2026-03-09T00:00:00Z",
+			"valid_from":  "2026-03-09T00:00:00Z",
+		},
+	})
+	g.AddNode(&graph.Node{
+		ID:   "person:alice@example.com",
+		Kind: graph.NodeKindPerson,
+		Name: "Alice",
+		Properties: map[string]any{
+			"email": "alice@example.com",
+		},
+	})
+	g.AddNode(&graph.Node{
+		ID:   "evidence:runbook",
+		Kind: graph.NodeKindEvidence,
+		Name: "Runbook",
+		Properties: map[string]any{
+			"evidence_type": "document",
+			"source_system": "docs",
+			"observed_at":   "2026-03-09T00:00:00Z",
+			"valid_from":    "2026-03-09T00:00:00Z",
+		},
+	})
+
+	eventsCh := make(chan webhooks.Event, 8)
+	s.app.Webhooks.Subscribe(func(_ context.Context, event webhooks.Event) error {
+		eventsCh <- event
+		return nil
+	})
+
+	claim := do(t, s, http.MethodPost, "/api/v1/graph/write/claim", map[string]any{
+		"subject_id":    "service:payments",
+		"predicate":     "owner",
+		"object_id":     "person:alice@example.com",
+		"evidence_ids":  []string{"evidence:runbook"},
+		"source_system": "api",
+	})
+	if claim.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for claim, got %d: %s", claim.Code, claim.Body.String())
+	}
+	claimBody := decodeJSON(t, claim)
+	event := <-eventsCh
+	if event.Type != webhooks.EventPlatformClaimWritten {
+		t.Fatalf("expected claim lifecycle event, got %q", event.Type)
+	}
+	if event.Data["claim_id"] != claimBody["claim_id"] {
+		t.Fatalf("expected claim_id %v, got %#v", claimBody["claim_id"], event.Data["claim_id"])
+	}
+	if event.Data["subject_id"] != "service:payments" {
+		t.Fatalf("expected subject_id service:payments, got %#v", event.Data["subject_id"])
+	}
+
+	decision := do(t, s, http.MethodPost, "/api/v1/graph/write/decision", map[string]any{
+		"decision_type": "rollback",
+		"status":        "approved",
+		"made_by":       "person:alice@example.com",
+		"target_ids":    []string{"service:payments"},
+		"source_system": "conductor",
+	})
+	if decision.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for decision, got %d: %s", decision.Code, decision.Body.String())
+	}
+	decisionBody := decodeJSON(t, decision)
+	event = <-eventsCh
+	if event.Type != webhooks.EventPlatformDecisionRecorded {
+		t.Fatalf("expected decision lifecycle event, got %q", event.Type)
+	}
+	if event.Data["decision_id"] != decisionBody["decision_id"] {
+		t.Fatalf("expected decision_id %v, got %#v", decisionBody["decision_id"], event.Data["decision_id"])
+	}
+	if event.Data["status"] != "approved" {
+		t.Fatalf("expected approved status, got %#v", event.Data["status"])
+	}
+
+	outcome := do(t, s, http.MethodPost, "/api/v1/graph/write/outcome", map[string]any{
+		"decision_id":   decisionBody["decision_id"],
+		"outcome_type":  "deployment_result",
+		"verdict":       "positive",
+		"impact_score":  0.7,
+		"target_ids":    []string{"service:payments"},
+		"source_system": "conductor",
+	})
+	if outcome.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for outcome, got %d: %s", outcome.Code, outcome.Body.String())
+	}
+	outcomeBody := decodeJSON(t, outcome)
+	event = <-eventsCh
+	if event.Type != webhooks.EventPlatformOutcomeRecorded {
+		t.Fatalf("expected outcome lifecycle event, got %q", event.Type)
+	}
+	if event.Data["outcome_id"] != outcomeBody["outcome_id"] {
+		t.Fatalf("expected outcome_id %v, got %#v", outcomeBody["outcome_id"], event.Data["outcome_id"])
+	}
+
+	action := do(t, s, http.MethodPost, "/api/v1/graph/actuate/recommendation", map[string]any{
+		"recommendation_id": "rec-1",
+		"insight_type":      "graph_freshness",
+		"title":             "Increase scanner cadence",
+		"summary":           "Reduce freshness lag on payments",
+		"decision_id":       decisionBody["decision_id"],
+		"target_ids":        []string{"service:payments"},
+		"source_system":     "conductor",
+		"auto_generated":    true,
+	})
+	if action.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for action, got %d: %s", action.Code, action.Body.String())
+	}
+	actionBody := decodeJSON(t, action)
+	event = <-eventsCh
+	if event.Type != webhooks.EventPlatformActionRecorded {
+		t.Fatalf("expected action lifecycle event, got %q", event.Type)
+	}
+	if event.Data["action_id"] != actionBody["action_id"] {
+		t.Fatalf("expected action_id %v, got %#v", actionBody["action_id"], event.Data["action_id"])
+	}
+	if event.Data["auto_generated"] != true {
+		t.Fatalf("expected auto_generated=true, got %#v", event.Data["auto_generated"])
 	}
 }
 

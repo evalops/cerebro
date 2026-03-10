@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/evalops/cerebro/internal/graphingest"
+	"github.com/evalops/cerebro/internal/platformevents"
 )
 
 func TestRenderMarkdownIncludesSections(t *testing.T) {
@@ -14,6 +15,13 @@ func TestRenderMarkdownIncludesSections(t *testing.T) {
 		Kind:           "CloudEventMappingContractCatalog",
 		GeneratedAt:    time.Date(2026, 3, 9, 22, 0, 0, 0, time.UTC),
 		EnvelopeFields: []graphingest.CloudEventFieldContract{{Name: "specversion", Type: "string", Required: true}},
+		LifecycleEvents: []platformevents.LifecycleEventContract{{
+			EventType:        "platform.claim.written",
+			Summary:          "Claim recorded",
+			SchemaURL:        "urn:cerebro:events/platform.claim.written/v1",
+			RequiredDataKeys: []string{"claim_id"},
+			OptionalDataKeys: []string{"tenant_id"},
+		}},
 		Mappings: []graphingest.MappingContract{{
 			Name:             "m1",
 			SourcePattern:    "ensemble.tap.incident.timeline.*",
@@ -29,6 +37,8 @@ func TestRenderMarkdownIncludesSections(t *testing.T) {
 	for _, want := range []string{
 		"# CloudEvents Auto-Generated Contract Catalog",
 		"## CloudEvent Envelope",
+		"## Platform Lifecycle Event Contracts",
+		"`platform.claim.written`",
 		"## Mapping Contracts",
 		"`m1`",
 		"`ensemble.tap.incident.timeline.*`",
