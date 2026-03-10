@@ -1441,6 +1441,7 @@ func (s *Server) storePlatformReportRun(run *graph.ReportRun) error {
 		s.platformReportRunMu.Unlock()
 		return fmt.Errorf("persist report run %q: %w", run.ID, err)
 	}
+	s.syncPlatformJobWithReportRun(run)
 	return nil
 }
 
@@ -1470,6 +1471,7 @@ func (s *Server) updatePlatformReportRunSnapshot(runID string, apply func(*graph
 		s.platformReportRunMu.Unlock()
 		return nil, fmt.Errorf("persist report run %q: %w", runID, err)
 	}
+	s.syncPlatformJobWithReportRun(updated)
 	return graph.CloneReportRun(updated), nil
 }
 
@@ -1481,6 +1483,54 @@ func (s *Server) platformReportRunSnapshot(reportID, runID string) (*graph.Repor
 		return nil, false
 	}
 	return graph.CloneReportRun(run), true
+}
+
+func (s *Server) syncPlatformJobWithReportRun(run *graph.ReportRun) {
+	if run == nil {
+		return
+	}
+	jobID := strings.TrimSpace(run.JobID)
+	if jobID == "" {
+		return
+	}
+	s.platformJobMu.Lock()
+	defer s.platformJobMu.Unlock()
+	job, ok := s.platformJobs[jobID]
+	if !ok || job == nil {
+		return
+	}
+	switch run.Status {
+	case graph.ReportRunStatusRunning:
+		job.Status = "running"
+		if run.StartedAt != nil {
+			startedAt := *run.StartedAt
+			job.StartedAt = &startedAt
+		}
+	case graph.ReportRunStatusSucceeded:
+		job.Status = "succeeded"
+		if run.CompletedAt != nil {
+			completedAt := *run.CompletedAt
+			job.CompletedAt = &completedAt
+		}
+		job.Error = ""
+		job.Result = cloneJSONValue(graph.SummarizeReportRun(*run))
+	case graph.ReportRunStatusFailed:
+		job.Status = "failed"
+		if run.CompletedAt != nil {
+			completedAt := *run.CompletedAt
+			job.CompletedAt = &completedAt
+		}
+		job.Error = run.Error
+	case graph.ReportRunStatusCanceled:
+		job.Status = "canceled"
+		if run.CompletedAt != nil {
+			completedAt := *run.CompletedAt
+			job.CompletedAt = &completedAt
+		}
+		if job.Error == "" {
+			job.Error = strings.TrimSpace(run.CancelReason)
+		}
+	}
 }
 
 func (s *Server) platformReportRunSummaries(reportID string) []graph.ReportRunSummary {
