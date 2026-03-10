@@ -153,6 +153,50 @@ func TestPlatformKnowledgeAnalysisRejectsInvalidParams(t *testing.T) {
 	}
 }
 
+func TestPlatformKnowledgeClaimGroupDetailIncludesSingleValueGroups(t *testing.T) {
+	s := newTestServer(t)
+	g := s.app.SecurityGraph
+	baseAt := time.Date(2026, 3, 10, 9, 0, 0, 0, time.UTC)
+	baseProps := map[string]any{
+		"observed_at":      baseAt.UTC().Format(time.RFC3339),
+		"valid_from":       baseAt.UTC().Format(time.RFC3339),
+		"recorded_at":      baseAt.UTC().Format(time.RFC3339),
+		"transaction_from": baseAt.UTC().Format(time.RFC3339),
+	}
+	g.AddNode(&graph.Node{ID: "service:payments", Kind: graph.NodeKindService, Name: "Payments", Properties: cloneJSONMap(baseProps)})
+	g.AddNode(&graph.Node{ID: "person:alice@example.com", Kind: graph.NodeKindPerson, Name: "Alice", Properties: cloneJSONMap(baseProps)})
+
+	if _, err := graph.WriteClaim(g, graph.ClaimWriteRequest{
+		ID:              "claim:payments:owner:alice",
+		SubjectID:       "service:payments",
+		Predicate:       "owner",
+		ObjectID:        "person:alice@example.com",
+		SourceName:      "CMDB",
+		SourceType:      "system",
+		SourceSystem:    "cmdb",
+		ObservedAt:      baseAt,
+		ValidFrom:       baseAt,
+		RecordedAt:      baseAt,
+		TransactionFrom: baseAt,
+	}); err != nil {
+		t.Fatalf("write claim: %v", err)
+	}
+
+	groupID := "claim_group:service-payments:owner"
+	resp := do(t, s, http.MethodGet, "/api/v1/platform/knowledge/claim-groups/"+groupID, nil)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for single-value claim group detail, got %d: %s", resp.Code, resp.Body.String())
+	}
+	body := decodeJSON(t, resp)
+	if body["id"] != groupID {
+		t.Fatalf("expected group id %q, got %#v", groupID, body)
+	}
+	derived := body["derived"].(map[string]any)
+	if derived["needs_adjudication"] != false {
+		t.Fatalf("did not expect adjudication for single-value group, got %#v", derived)
+	}
+}
+
 func seedPlatformKnowledgeScenario(t *testing.T, s *Server) (time.Time, string, string, string) {
 	t.Helper()
 	g := s.app.SecurityGraph

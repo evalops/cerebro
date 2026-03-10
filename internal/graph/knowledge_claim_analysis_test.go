@@ -317,3 +317,39 @@ func TestExplainClaimIncludesSourceRecords(t *testing.T) {
 		t.Fatalf("expected CMDB source, got %+v", explanation.Sources[0])
 	}
 }
+
+func TestGetClaimGroupRecordIncludesSingleValueGroups(t *testing.T) {
+	g := New()
+	baseAt := time.Date(2026, 3, 10, 9, 0, 0, 0, time.UTC)
+	g.AddNode(&Node{ID: "service:payments", Kind: NodeKindService, Name: "Payments", Properties: knowledgeTestProperties(baseAt)})
+	g.AddNode(&Node{ID: "person:alice@example.com", Kind: NodeKindPerson, Name: "Alice", Properties: knowledgeTestProperties(baseAt)})
+
+	claim, err := WriteClaim(g, ClaimWriteRequest{
+		ID:              "claim:payments:owner:alice",
+		SubjectID:       "service:payments",
+		Predicate:       "owner",
+		ObjectID:        "person:alice@example.com",
+		SourceName:      "CMDB",
+		SourceType:      "system",
+		SourceSystem:    "cmdb",
+		ObservedAt:      baseAt,
+		ValidFrom:       baseAt,
+		RecordedAt:      baseAt,
+		TransactionFrom: baseAt,
+	})
+	if err != nil {
+		t.Fatalf("write claim: %v", err)
+	}
+
+	groupID := buildClaimGroupID("service:payments", "owner")
+	record, ok := GetClaimGroupRecord(g, groupID, baseAt.Add(time.Hour), baseAt.Add(time.Hour), false)
+	if !ok {
+		t.Fatalf("expected single-value claim group for %q", claim.ClaimID)
+	}
+	if record.ID != groupID {
+		t.Fatalf("expected group id %q, got %+v", groupID, record)
+	}
+	if record.Derived.NeedsAdjudication {
+		t.Fatalf("did not expect adjudication on single-value group, got %+v", record.Derived)
+	}
+}

@@ -328,12 +328,13 @@ func GetClaimGroupRecord(g *Graph, groupID string, validAt, recordedAt time.Time
 		return ClaimGroupRecord{}, false
 	}
 	result := QueryClaimGroups(g, ClaimGroupQueryOptions{
-		GroupID:         groupID,
-		IncludeResolved: includeResolved,
-		IncludeClaims:   true,
-		ValidAt:         validAt,
-		RecordedAt:      recordedAt,
-		Limit:           1,
+		GroupID:            groupID,
+		IncludeResolved:    includeResolved,
+		IncludeSingleValue: true,
+		IncludeClaims:      true,
+		ValidAt:            validAt,
+		RecordedAt:         recordedAt,
+		Limit:              1,
 	})
 	if len(result.Groups) == 0 {
 		return ClaimGroupRecord{}, false
