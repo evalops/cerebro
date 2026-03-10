@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strings"
 	"text/template"
-	"time"
 
 	"github.com/evalops/cerebro/internal/agents"
 	"github.com/evalops/cerebro/internal/agentsdk"
@@ -28,7 +27,6 @@ const (
 )
 
 type templateData struct {
-	GeneratedAt    string
 	Catalog        agentsdk.Catalog
 	MethodBindings []methodBinding
 	PythonAll      []string
@@ -48,7 +46,6 @@ func main() {
 	bindings := buildMethodBindings(catalog)
 
 	data := templateData{
-		GeneratedAt:    time.Now().UTC().Format(time.RFC3339),
 		Catalog:        catalog,
 		MethodBindings: bindings,
 		PythonAll:      []string{"APIError", "Client"},
@@ -218,7 +215,6 @@ func renderDocs(data templateData) string {
 	var b strings.Builder
 	b.WriteString("# Agent SDK Package Auto-Generation\n\n")
 	b.WriteString("Generated from `docs/AGENT_SDK_CONTRACTS.json` via `go run ./scripts/generate_agent_sdk_packages/main.go`.\n\n")
-	fmt.Fprintf(&b, "- Generated at: **%s**\n", data.GeneratedAt)
 	fmt.Fprintf(&b, "- Tool bindings: **%d**\n", len(data.MethodBindings))
 	b.WriteString("- Package paths:\n")
 	b.WriteString("  - `sdk/go/cerebro`\n")

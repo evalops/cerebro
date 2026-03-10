@@ -2,7 +2,6 @@
 
 Generated from `docs/AGENT_SDK_CONTRACTS.json` via `go run ./scripts/generate_agent_sdk_packages/main.go`.
 
-- Generated at: **2026-03-10T07:20:31Z**
 - Tool bindings: **23**
 - Package paths:
   - `sdk/go/cerebro`
