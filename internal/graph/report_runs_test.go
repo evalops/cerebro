@@ -234,6 +234,131 @@ func TestBuildReportSectionLineageExpandsTransitiveClaimRefs(t *testing.T) {
 	}
 }
 
+func TestBuildReportSectionResultsWithOptionsIncludesTelemetryAndBitemporalSupportingEdges(t *testing.T) {
+	g := New()
+	validAt := time.Date(2026, 3, 10, 9, 0, 0, 0, time.UTC)
+	recordedAt := time.Date(2026, 3, 10, 9, 0, 0, 0, time.UTC)
+	futureValidAt := validAt.Add(2 * time.Hour)
+	futureRecordedAt := recordedAt.Add(2 * time.Hour)
+
+	g.AddNode(&Node{
+		ID:   "claim:root",
+		Kind: NodeKindClaim,
+		Name: "Root claim",
+		Properties: map[string]any{
+			"valid_from":  validAt.Format(time.RFC3339),
+			"recorded_at": recordedAt.Format(time.RFC3339),
+		},
+	})
+	g.AddNode(&Node{
+		ID:   "evidence:visible",
+		Kind: NodeKindEvidence,
+		Name: "Visible evidence",
+		Properties: map[string]any{
+			"valid_from":  validAt.Format(time.RFC3339),
+			"recorded_at": recordedAt.Format(time.RFC3339),
+		},
+	})
+	g.AddNode(&Node{
+		ID:   "source:visible",
+		Kind: NodeKindSource,
+		Name: "Visible source",
+		Properties: map[string]any{
+			"valid_from":  validAt.Format(time.RFC3339),
+			"recorded_at": recordedAt.Format(time.RFC3339),
+		},
+	})
+	g.AddNode(&Node{
+		ID:   "claim:future",
+		Kind: NodeKindClaim,
+		Name: "Future claim",
+		Properties: map[string]any{
+			"valid_from":  futureValidAt.Format(time.RFC3339),
+			"recorded_at": futureRecordedAt.Format(time.RFC3339),
+		},
+	})
+	g.AddEdge(&Edge{
+		ID:     "claim-based-on-visible",
+		Source: "claim:root",
+		Target: "evidence:visible",
+		Kind:   EdgeKindBasedOn,
+		Properties: map[string]any{
+			"valid_from":  validAt.Format(time.RFC3339),
+			"recorded_at": recordedAt.Format(time.RFC3339),
+		},
+	})
+	g.AddEdge(&Edge{
+		ID:     "claim-asserted-by-visible",
+		Source: "claim:root",
+		Target: "source:visible",
+		Kind:   EdgeKindAssertedBy,
+		Properties: map[string]any{
+			"valid_from":  validAt.Format(time.RFC3339),
+			"recorded_at": recordedAt.Format(time.RFC3339),
+		},
+	})
+	g.AddEdge(&Edge{
+		ID:     "claim-supports-future",
+		Source: "claim:root",
+		Target: "claim:future",
+		Kind:   EdgeKindSupports,
+		Properties: map[string]any{
+			"valid_from":  futureValidAt.Format(time.RFC3339),
+			"recorded_at": futureRecordedAt.Format(time.RFC3339),
+		},
+	})
+
+	definition := ReportDefinition{
+		ID: "claim-conflicts",
+		Sections: []ReportSection{
+			{Key: "conflicts", Title: "Conflicts", Kind: "table"},
+		},
+	}
+	result := map[string]any{
+		"conflicts": []any{map[string]any{"claim_ids": []any{"claim:root"}}},
+	}
+
+	sections := BuildReportSectionResultsWithOptions(definition, result, &ReportSectionBuildOptions{
+		Graph:            g,
+		TimeSlice:        ReportTimeSlice{ValidAt: &validAt, RecordedAt: &recordedAt},
+		CacheStatus:      ReportCacheStatusMiss,
+		RetryBackoffMS:   250,
+		CacheSourceRunID: "report_run:cached",
+	})
+	if len(sections) != 1 {
+		t.Fatalf("expected one section, got %d", len(sections))
+	}
+	lineage := sections[0].Lineage
+	if lineage == nil {
+		t.Fatalf("expected lineage metadata, got %+v", sections[0])
+	}
+	if lineage.SupportingEdgeCount != 2 {
+		t.Fatalf("expected two visible supporting edges, got %+v", lineage)
+	}
+	if len(lineage.SupportingEdgeIDs) != 2 || lineage.SupportingEdgeIDs[0] != "claim-asserted-by-visible" || lineage.SupportingEdgeIDs[1] != "claim-based-on-visible" {
+		t.Fatalf("expected only visible supporting edge ids, got %+v", lineage.SupportingEdgeIDs)
+	}
+	if lineage.ValidAt == nil || !lineage.ValidAt.Equal(validAt) {
+		t.Fatalf("expected valid_at=%s, got %+v", validAt, lineage.ValidAt)
+	}
+	if lineage.RecordedAt == nil || !lineage.RecordedAt.Equal(recordedAt) {
+		t.Fatalf("expected recorded_at=%s, got %+v", recordedAt, lineage.RecordedAt)
+	}
+	telemetry := sections[0].Telemetry
+	if telemetry == nil {
+		t.Fatalf("expected telemetry metadata, got %+v", sections[0])
+	}
+	if telemetry.CacheStatus != ReportCacheStatusMiss {
+		t.Fatalf("expected cache_status=miss, got %+v", telemetry)
+	}
+	if telemetry.CacheSourceRunID != "report_run:cached" {
+		t.Fatalf("expected cache_source_run_id report_run:cached, got %+v", telemetry)
+	}
+	if telemetry.RetryBackoffMS != 250 {
+		t.Fatalf("expected retry_backoff_ms=250, got %+v", telemetry)
+	}
+}
+
 func TestReportRunAttemptAndEventCollections(t *testing.T) {
 	run := &ReportRun{
 		ID:            "report_run:test",

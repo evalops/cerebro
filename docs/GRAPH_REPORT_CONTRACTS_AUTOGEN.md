@@ -8,6 +8,7 @@ Generated from the built-in report runtime registries via `go run ./scripts/gene
 - Measures: **28**
 - Checks: **22**
 - Section envelopes: **8**
+- Section fragments: **3**
 - Benchmark packs: **6**
 
 ## Reports
@@ -93,6 +94,14 @@ Generated from the built-in report runtime registries via `go run ./scripts/gene
 | `recommendations` | `1.0.0` | `PlatformRecommendationsEnvelope` | `urn:cerebro:report-envelope:recommendations:v1` | `action_list` |
 | `summary` | `1.0.0` | `PlatformSummaryEnvelope` | `urn:cerebro:report-envelope:summary:v1` | `context`, `scorecard`, `health_summary`, `calibration_summary`, `freshness_summary`, `readiness_summary`, `capability_summary`, `backtest_summary` |
 | `timeseries` | `1.0.0` | `PlatformTimeseriesEnvelope` | `urn:cerebro:report-envelope:timeseries:v1` | `timeseries_summary` |
+
+## Section Fragments
+
+| ID | Version | Schema Name | Schema URL | Description |
+|---|---|---|---|---|
+| `lineage` | `1.0.0` | `PlatformReportSectionLineage` | `urn:cerebro:report-section-fragment:lineage:v1` | Reusable lineage metadata embedded in report section summaries and emissions. |
+| `materialization` | `1.0.0` | `PlatformReportSectionMaterialization` | `urn:cerebro:report-section-fragment:materialization:v1` | Reusable delivery and truncation metadata embedded in report section summaries and emissions. |
+| `telemetry` | `1.0.0` | `PlatformReportSectionTelemetry` | `urn:cerebro:report-section-fragment:telemetry:v1` | Reusable execution telemetry embedded in report section summaries and emissions. |
 
 ## Benchmark Packs
 

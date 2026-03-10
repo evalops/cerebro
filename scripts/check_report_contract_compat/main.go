@@ -34,18 +34,23 @@ func main() {
 	}
 
 	report := graph.CompareReportContractCatalogs(baselineCatalog, currentCatalog, time.Now().UTC())
-	fmt.Printf("baseline_ref=%s baseline_section_envelopes=%d current_section_envelopes=%d baseline_benchmark_packs=%d current_benchmark_packs=%d added_envelopes=%d removed_envelopes=%d added_packs=%d removed_packs=%d breaking=%d violations=%d\n",
+	fmt.Printf("baseline_ref=%s baseline_section_envelopes=%d current_section_envelopes=%d baseline_section_fragments=%d current_section_fragments=%d baseline_benchmark_packs=%d current_benchmark_packs=%d added_envelopes=%d removed_envelopes=%d added_fragments=%d removed_fragments=%d added_packs=%d removed_packs=%d breaking=%d violations=%d diffs=%d\n",
 		baselineRef,
 		report.BaselineSectionEnvelopes,
 		report.CurrentSectionEnvelopes,
+		report.BaselineSectionFragments,
+		report.CurrentSectionFragments,
 		report.BaselineBenchmarkPacks,
 		report.CurrentBenchmarkPacks,
 		len(report.AddedSectionEnvelopes),
 		len(report.RemovedSectionEnvelopes),
+		len(report.AddedSectionFragments),
+		len(report.RemovedSectionFragments),
 		len(report.AddedBenchmarkPacks),
 		len(report.RemovedBenchmarkPacks),
 		len(report.BreakingChanges),
 		len(report.VersioningViolations),
+		len(report.DiffSummaries),
 	)
 	for _, issue := range report.BreakingChanges {
 		fmt.Printf("breaking_change contract_type=%s contract_id=%s type=%s detail=%s prev=%s curr=%s\n",
@@ -55,6 +60,17 @@ func main() {
 			issue.Detail,
 			issue.PreviousVersion,
 			issue.CurrentVersion,
+		)
+	}
+	for _, diff := range report.DiffSummaries {
+		fmt.Printf("diff_summary contract_type=%s contract_id=%s prev=%s curr=%s added=%s removed=%s changed=%s\n",
+			diff.ContractType,
+			diff.ContractID,
+			diff.PreviousVersion,
+			diff.CurrentVersion,
+			strings.Join(diff.AddedPaths, ","),
+			strings.Join(diff.RemovedPaths, ","),
+			strings.Join(diff.ChangedPaths, ","),
 		)
 	}
 	if len(report.VersioningViolations) > 0 {

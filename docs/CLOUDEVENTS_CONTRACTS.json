@@ -455,6 +455,8 @@
         "started_at",
         "requested_by",
         "cache_key",
+        "cache_status",
+        "cache_source_run_id",
         "job_id",
         "job_status_url",
         "parameter_count",
@@ -495,6 +497,12 @@
             "type": "integer"
           },
           "cache_key": {
+            "type": "string"
+          },
+          "cache_source_run_id": {
+            "type": "string"
+          },
+          "cache_status": {
             "type": "string"
           },
           "cancel_reason": {
@@ -645,6 +653,8 @@
         "started_at",
         "requested_by",
         "cache_key",
+        "cache_status",
+        "cache_source_run_id",
         "job_id",
         "job_status_url",
         "parameter_count",
@@ -686,6 +696,12 @@
             "type": "integer"
           },
           "cache_key": {
+            "type": "string"
+          },
+          "cache_source_run_id": {
+            "type": "string"
+          },
+          "cache_status": {
             "type": "string"
           },
           "completed_at": {
@@ -839,6 +855,8 @@
         "started_at",
         "requested_by",
         "cache_key",
+        "cache_status",
+        "cache_source_run_id",
         "job_id",
         "job_status_url",
         "parameter_count",
@@ -878,6 +896,12 @@
             "type": "integer"
           },
           "cache_key": {
+            "type": "string"
+          },
+          "cache_source_run_id": {
+            "type": "string"
+          },
+          "cache_status": {
             "type": "string"
           },
           "completed_at": {
@@ -1022,6 +1046,8 @@
       "optional_data_keys": [
         "requested_by",
         "cache_key",
+        "cache_status",
+        "cache_source_run_id",
         "job_id",
         "job_status_url",
         "parameter_count",
@@ -1061,6 +1087,12 @@
             "type": "integer"
           },
           "cache_key": {
+            "type": "string"
+          },
+          "cache_source_run_id": {
+            "type": "string"
+          },
+          "cache_status": {
             "type": "string"
           },
           "event_count": {
@@ -1198,6 +1230,9 @@
         "field_count",
         "field_keys",
         "measure_ids",
+        "lineage",
+        "materialization",
+        "telemetry",
         "snapshot_id",
         "tenant_id",
         "traceparent"
@@ -1226,6 +1261,12 @@
           },
           "item_count": {
             "type": "integer"
+          },
+          "lineage": {
+            "type": "object"
+          },
+          "materialization": {
+            "type": "object"
           },
           "measure_ids": {
             "items": {
@@ -1256,6 +1297,9 @@
           },
           "status_url": {
             "type": "string"
+          },
+          "telemetry": {
+            "type": "object"
           },
           "tenant_id": {
             "type": "string"
@@ -1291,6 +1335,8 @@
       "optional_data_keys": [
         "requested_by",
         "cache_key",
+        "cache_status",
+        "cache_source_run_id",
         "job_id",
         "job_status_url",
         "parameter_count",
@@ -1330,6 +1376,12 @@
             "type": "integer"
           },
           "cache_key": {
+            "type": "string"
+          },
+          "cache_source_run_id": {
+            "type": "string"
+          },
+          "cache_status": {
             "type": "string"
           },
           "event_count": {

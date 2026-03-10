@@ -5608,6 +5608,43 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /api/v1/platform/intelligence/section-fragments:
+    get:
+      tags:
+        - Platform
+      summary: List reusable report section metadata fragments
+      description: Return typed fragment definitions for stable section metadata blocks such as lineage, materialization, and runtime telemetry.
+      responses:
+        '200':
+          description: Platform report section-fragment catalog
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformReportSectionFragmentCatalog'
+  /api/v1/platform/intelligence/section-fragments/{fragment_id}:
+    get:
+      tags:
+        - Platform
+      summary: Get one report section metadata fragment
+      parameters:
+        - name: fragment_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Platform report section-fragment definition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformReportSectionFragmentDefinition'
+        '404':
+          description: Section-fragment definition not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/platform/intelligence/benchmark-packs:
     get:
       tags:
@@ -10405,6 +10442,18 @@ components:
           type: array
           items:
             type: string
+        supporting_edge_count:
+          type: integer
+        supporting_edge_ids:
+          type: array
+          items:
+            type: string
+        valid_at:
+          type: string
+          format: date-time
+        recorded_at:
+          type: string
+          format: date-time
         ids_truncated:
           type: boolean
     PlatformReportSectionMaterialization:
@@ -10417,6 +10466,25 @@ components:
           type: array
           items:
             type: string
+    PlatformReportSectionTelemetry:
+      type: object
+      additionalProperties: false
+      properties:
+        materialization_duration_ms:
+          type: integer
+          format: int64
+        cache_status:
+          type: string
+          enum:
+            - hit
+            - miss
+        cache_source_run_id:
+          type: string
+        retry_backoff_ms:
+          type: integer
+          format: int64
+      required:
+        - materialization_duration_ms
     PlatformReportSectionResult:
       type: object
       additionalProperties: false
@@ -10449,6 +10517,8 @@ components:
           $ref: '#/components/schemas/PlatformReportSectionLineage'
         materialization:
           $ref: '#/components/schemas/PlatformReportSectionMaterialization'
+        telemetry:
+          $ref: '#/components/schemas/PlatformReportSectionTelemetry'
       required:
         - key
         - title
@@ -10559,6 +10629,13 @@ components:
         time_slice:
           $ref: '#/components/schemas/PlatformReportTimeSlice'
         cache_key:
+          type: string
+        cache_status:
+          type: string
+          enum:
+            - hit
+            - miss
+        cache_source_run_id:
           type: string
         job_id:
           type: string
@@ -12189,6 +12266,48 @@ components:
           type: array
           items:
             type: string
+        json_schema:
+          type: object
+          additionalProperties: true
+      required:
+        - id
+        - version
+        - title
+        - schema_name
+        - schema_url
+    PlatformReportSectionFragmentCatalog:
+      type: object
+      additionalProperties: false
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        count:
+          type: integer
+        fragments:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformReportSectionFragmentDefinition'
+      required:
+        - generated_at
+        - count
+        - fragments
+    PlatformReportSectionFragmentDefinition:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        version:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        schema_name:
+          type: string
+        schema_url:
+          type: string
         json_schema:
           type: object
           additionalProperties: true

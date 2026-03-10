@@ -127,6 +127,7 @@ Report-definition rule:
 Report-execution rule:
 - Report definitions and report runs are different resources.
 - `ReportRun` captures typed parameters, execution mode, time slice, cache key, job linkage, section summaries, and optional snapshot metadata.
+- `ReportRun` should expose cache execution semantics (`cache_status`, `cache_source_run_id`) so reused derived artifacts remain inspectable rather than silently memoized.
 - `ReportRunAttempt` and `ReportRunEvent` are first-class history resources so execution state is inspectable without scraping webhook delivery logs.
 - runs are actively controllable through retry/cancel operations rather than being inspect-only artifacts.
 - `ReportRun` is a durable control-plane resource: run metadata is persisted separately from materialized result payloads so restart recovery does not erase execution history.
@@ -146,8 +147,11 @@ Section-contract rule:
 - `ReportSectionResult` should advertise a stable `envelope_kind` for downstream renderers, generated tools, and compatibility checks.
 - Object-backed sections should expose stable `field_keys` so UI/tool composition can reason about section shape without inspecting arbitrary payloads.
 - Section metadata should expose graph-aware lineage samples (`claim_ids`, `evidence_ids`, `source_ids`, plus counts) when the payload references durable graph nodes.
+- Section lineage should expose sampled supporting edge IDs plus bitemporal selectors (`valid_at`, `recorded_at`) when a run is executed against a point-in-time graph slice.
 - Section metadata should expose stable truncation/materialization hints so downstream clients do not need report-specific parsers to detect partial output.
+- Section metadata should expose runtime telemetry (`materialization_duration_ms`, cache status, retry backoff) through one stable fragment contract.
 - Section-envelope definitions should be discoverable through the section-envelope registry with stable schema names and schema URLs.
+- Reusable section metadata fragments should be discoverable through a fragment registry so lineage/materialization/telemetry contracts stay versioned and diffable.
 - Benchmark overlays should be discoverable through the benchmark-pack registry instead of being embedded ad hoc into individual report handlers.
 - Generated report contract catalogs should remain derivable from the same registries so docs, compatibility checks, and downstream tooling bind to one canonical source.
 - New section envelopes should be added deliberately and eventually generated as their own typed schemas rather than proliferating report-specific ad hoc objects.

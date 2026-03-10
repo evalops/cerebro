@@ -252,6 +252,7 @@ Cerebro should standardize on these report-layer primitives:
 - `ReportRunEvent`
 - `ReportContractCatalog`
 - `ReportSectionEnvelopeDefinition`
+- `ReportSectionFragmentDefinition`
 - `BenchmarkPack`
 
 ### Required Invariants
@@ -261,6 +262,7 @@ Cerebro should standardize on these report-layer primitives:
 - execution history must be durable enough to survive server restart without relying on webhook delivery logs.
 - retry/cancel semantics must be attached to durable run resources rather than ad hoc handler behavior.
 - every section should resolve to a known `envelope_kind`, and every reusable threshold overlay should resolve to a known benchmark-pack ID.
+- reusable section metadata (`lineage`, `materialization`, `telemetry`) should resolve to stable fragment IDs and versioned schema URLs.
 - new envelope families and benchmark packs should carry stable schema names and schema URLs so codegen and compatibility checks can bind them deterministically.
 - compatibility enforcement belongs in CI, not in reviewer memory.
 
@@ -306,13 +308,15 @@ Implemented now:
 - API startup restores persisted report runs and retained materialized results.
 - report lifecycle events are emitted for queue/start/complete/fail and snapshot materialization.
 - section summaries expose `envelope_kind` and stable `field_keys` for stronger generated contracts.
+- section summaries now expose typed lineage/materialization/telemetry fragments, including cache-hit/cache-miss state, retry backoff, supporting edge samples, and bitemporal selectors.
+- report-contract catalogs now publish section fragment definitions and compatibility reports include field-level diff summaries.
 
 Still missing:
 
-- run-attempt resources and execution event history surfaces
-- explicit graph snapshot/schema version capture on runs
-- typed JSON Schema catalogs for each section envelope kind
-- retention tiers, storage classes, and reaping policy for report snapshots
+- section-level partial-failure classification separate from truncation
+- configurable lineage sample limits by report family
+- typed JSON Schema catalogs for concrete envelope payload examples
+- retention tiers, storage classes, integrity checks, and reaping policy for report snapshots
 
 ### Optional future configuration surface
 

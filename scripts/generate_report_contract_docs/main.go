@@ -41,6 +41,7 @@ func renderMarkdown(catalog graph.ReportContractCatalog) string {
 	fmt.Fprintf(&b, "- Measures: **%d**\n", len(catalog.Measures))
 	fmt.Fprintf(&b, "- Checks: **%d**\n", len(catalog.Checks))
 	fmt.Fprintf(&b, "- Section envelopes: **%d**\n", len(catalog.SectionEnvelopes))
+	fmt.Fprintf(&b, "- Section fragments: **%d**\n", len(catalog.SectionFragments))
 	fmt.Fprintf(&b, "- Benchmark packs: **%d**\n\n", len(catalog.BenchmarkPacks))
 
 	b.WriteString("## Reports\n\n")
@@ -98,6 +99,19 @@ func renderMarkdown(catalog graph.ReportContractCatalog) string {
 			escapePipes(envelope.SchemaName),
 			escapePipes(envelope.SchemaURL),
 			joinCodeOrDash(envelope.CompatibleSectionKinds),
+		)
+	}
+
+	b.WriteString("\n## Section Fragments\n\n")
+	b.WriteString("| ID | Version | Schema Name | Schema URL | Description |\n")
+	b.WriteString("|---|---|---|---|---|\n")
+	for _, fragment := range catalog.SectionFragments {
+		fmt.Fprintf(&b, "| `%s` | `%s` | `%s` | `%s` | %s |\n",
+			escapePipes(fragment.ID),
+			escapePipes(fragment.Version),
+			escapePipes(fragment.SchemaName),
+			escapePipes(fragment.SchemaURL),
+			textOrDash(fragment.Description),
 		)
 	}
 

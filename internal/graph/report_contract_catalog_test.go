@@ -70,3 +70,46 @@ func TestCompareReportContractCatalogs_BenchmarkChangeWithVersionBumpAvoidsViola
 		t.Fatalf("unexpected breaking-change payload: %+v", report.BreakingChanges[0])
 	}
 }
+
+func TestCompareReportContractCatalogs_FragmentChangeWithoutVersionBumpViolatesAndProducesDiffSummary(t *testing.T) {
+	now := time.Date(2026, 3, 10, 8, 15, 0, 0, time.UTC)
+	baseline := BuildReportContractCatalog(time.Time{})
+	current := BuildReportContractCatalog(time.Time{})
+	for i := range current.SectionFragments {
+		if current.SectionFragments[i].ID == "telemetry" {
+			properties, _ := current.SectionFragments[i].JSONSchema["properties"].(map[string]any)
+			properties["cache_tier"] = map[string]any{"type": "string"}
+			current.SectionFragments[i].JSONSchema["properties"] = properties
+			break
+		}
+	}
+
+	report := CompareReportContractCatalogs(baseline, current, now)
+	if report.Compatible {
+		t.Fatalf("expected incompatible report for fragment versioning violation, got %+v", report)
+	}
+	if len(report.VersioningViolations) != 1 {
+		t.Fatalf("expected one fragment versioning violation, got %+v", report.VersioningViolations)
+	}
+	violation := report.VersioningViolations[0]
+	if violation.ContractType != "section_fragment" || violation.ContractID != "telemetry" {
+		t.Fatalf("unexpected fragment violation payload: %+v", violation)
+	}
+	if len(report.DiffSummaries) != 1 {
+		t.Fatalf("expected one diff summary, got %+v", report.DiffSummaries)
+	}
+	diff := report.DiffSummaries[0]
+	if diff.ContractType != "section_fragment" || diff.ContractID != "telemetry" {
+		t.Fatalf("unexpected fragment diff summary: %+v", diff)
+	}
+	foundAddedPath := false
+	for _, path := range diff.AddedPaths {
+		if path == "$.json_schema.properties.cache_tier" {
+			foundAddedPath = true
+			break
+		}
+	}
+	if !foundAddedPath {
+		t.Fatalf("expected added path for cache_tier, got %+v", diff.AddedPaths)
+	}
+}
