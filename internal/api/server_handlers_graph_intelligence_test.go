@@ -1203,6 +1203,16 @@ func TestPlatformIntelligenceReportRunCancelAsync(t *testing.T) {
 	})
 
 	startedCh := make(chan struct{}, 1)
+	canceledEvents := make(chan webhooks.Event, 1)
+	s.app.Webhooks.Subscribe(func(_ context.Context, event webhooks.Event) error {
+		if event.Type == webhooks.EventPlatformReportRunCanceled {
+			select {
+			case canceledEvents <- event:
+			default:
+			}
+		}
+		return nil
+	})
 	s.platformReportHandlers["quality"] = func(w http.ResponseWriter, r *http.Request) {
 		select {
 		case startedCh <- struct{}{}:
@@ -1301,6 +1311,17 @@ func TestPlatformIntelligenceReportRunCancelAsync(t *testing.T) {
 	}
 	if got := jobBody["cancel_reason"]; got != "operator requested cancellation" {
 		t.Fatalf("expected job cancel reason, got %#v", got)
+	}
+	select {
+	case event := <-canceledEvents:
+		if got := event.Data["run_id"]; got != canceled["id"] {
+			t.Fatalf("expected canceled webhook run_id %v, got %#v", canceled["id"], got)
+		}
+		if got := event.Data["cancel_reason"]; got != "operator requested cancellation" {
+			t.Fatalf("expected canceled webhook cancel_reason, got %#v", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for canceled webhook event")
 	}
 
 	attemptsResp := do(t, s, http.MethodGet, statusURL+"/attempts", nil)

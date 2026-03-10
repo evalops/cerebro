@@ -879,7 +879,7 @@ func (s *Server) cancelPlatformIntelligenceReportRun(w http.ResponseWriter, r *h
 		s.cancelPlatformJob(stored.JobID, cancelReason)
 	}
 	if cancelAccepted {
-		s.emitAgentSDKReportProgress(stored)
+		s.emitPlatformReportRunLifecycleEvent(r.Context(), webhooks.EventPlatformReportRunCanceled, reportID, runID)
 		s.json(w, http.StatusAccepted, stored)
 		return
 	}
