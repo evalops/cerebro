@@ -1430,21 +1430,16 @@ func (s *Server) storePlatformReportRun(run *graph.ReportRun) error {
 	s.platformReportSaveMu.Lock()
 	defer s.platformReportSaveMu.Unlock()
 	s.platformReportRunMu.Lock()
-	previous, hadPrevious := s.platformReportRuns[run.ID]
-	s.platformReportRuns[run.ID] = graph.CloneReportRun(run)
 	snapshot := s.clonePlatformReportRunsLocked()
 	s.platformReportRunMu.Unlock()
+	snapshot[run.ID] = graph.CloneReportRun(run)
 	if err := s.persistPlatformReportRuns(snapshot); err != nil {
-		s.platformReportRunMu.Lock()
-		if hadPrevious {
-			s.platformReportRuns[run.ID] = graph.CloneReportRun(previous)
-		} else {
-			delete(s.platformReportRuns, run.ID)
-		}
-		s.platformReportRunMu.Unlock()
 		return fmt.Errorf("persist report run %q: %w", run.ID, err)
 	}
 	s.syncPlatformJobWithReportRun(run)
+	s.platformReportRunMu.Lock()
+	s.platformReportRuns[run.ID] = graph.CloneReportRun(run)
+	s.platformReportRunMu.Unlock()
 	return nil
 }
 
@@ -1462,19 +1457,18 @@ func (s *Server) updatePlatformReportRunSnapshot(runID string, apply func(*graph
 		s.platformReportRunMu.Unlock()
 		return nil, fmt.Errorf("report run not found: %s", runID)
 	}
-	previous := graph.CloneReportRun(run)
 	updated := graph.CloneReportRun(run)
 	apply(updated)
-	s.platformReportRuns[runID] = updated
 	snapshot := s.clonePlatformReportRunsLocked()
 	s.platformReportRunMu.Unlock()
+	snapshot[runID] = graph.CloneReportRun(updated)
 	if err := s.persistPlatformReportRuns(snapshot); err != nil {
-		s.platformReportRunMu.Lock()
-		s.platformReportRuns[runID] = previous
-		s.platformReportRunMu.Unlock()
 		return nil, fmt.Errorf("persist report run %q: %w", runID, err)
 	}
 	s.syncPlatformJobWithReportRun(updated)
+	s.platformReportRunMu.Lock()
+	s.platformReportRuns[runID] = graph.CloneReportRun(updated)
+	s.platformReportRunMu.Unlock()
 	return graph.CloneReportRun(updated), nil
 }
 
