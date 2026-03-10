@@ -202,7 +202,7 @@ func (s *Server) createSecurityAttackPathJob(w http.ResponseWriter, r *http.Requ
 	}, GetUserID(r.Context()))
 
 	// #nosec G118 -- platform jobs intentionally outlive the originating request and use job-owned cancellation.
-	go s.runPlatformJob(job.ID, func(_ context.Context) (any, error) {
+	s.startPlatformJob(job.ID, func(_ context.Context) (any, error) {
 		simulator := graph.NewAttackPathSimulator(s.app.SecurityGraph)
 		result := simulator.Simulate(maxDepth)
 		if req.Threshold > 0 {
@@ -462,7 +462,7 @@ func (s *Server) startPlatformReportRun(ctx context.Context, reportID string, re
 		s.emitPlatformReportRunLifecycleEvent(ctx, webhooks.EventPlatformReportRunQueued, reportID, run.ID)
 
 		// #nosec G118 -- async report runs intentionally detach from request lifetime and are canceled through the platform job.
-		go s.runPlatformJob(job.ID, func(jobCtx context.Context) (any, error) {
+		s.startPlatformJob(job.ID, func(jobCtx context.Context) (any, error) {
 			if err := s.executePlatformReportRun(jobCtx, run.ID, definition, req.Parameters, materializeResult); err != nil {
 				return nil, err
 			}
@@ -771,7 +771,7 @@ func (s *Server) retryPlatformIntelligenceReportRun(w http.ResponseWriter, r *ht
 			s.cancelPlatformJob(job.ID, cancelReason)
 		} else {
 			// #nosec G118 -- async retry execution intentionally detaches from request lifetime and is canceled through the platform job.
-			go s.runPlatformJob(job.ID, func(jobCtx context.Context) (any, error) {
+			s.startPlatformJob(job.ID, func(jobCtx context.Context) (any, error) {
 				if backoff > 0 {
 					timer := time.NewTimer(backoff)
 					defer timer.Stop()
@@ -1313,6 +1313,14 @@ func (s *Server) runPlatformJob(jobID string, runner func(context.Context) (any,
 	if cancel != nil {
 		cancel()
 	}
+}
+
+func (s *Server) startPlatformJob(jobID string, runner func(context.Context) (any, error)) {
+	s.platformJobWG.Add(1)
+	go func() {
+		defer s.platformJobWG.Done()
+		s.runPlatformJob(jobID, runner)
+	}()
 }
 
 func (s *Server) platformJobSnapshot(jobID string) (*platformJob, bool) {

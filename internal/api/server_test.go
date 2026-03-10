@@ -85,7 +85,11 @@ func newTestApp(t *testing.T) *app.App {
 // newTestServer creates a Server backed by the in-memory test app.
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
-	return NewServer(newTestApp(t))
+	s := NewServer(newTestApp(t))
+	t.Cleanup(func() {
+		s.Close()
+	})
+	return s
 }
 
 // do is a helper that sends a request to the test server and returns the response.

@@ -30,6 +30,7 @@ type Server struct {
 	crossTenantReplayMu      sync.Mutex
 	crossTenantReplay        map[string]time.Time
 	platformJobMu            sync.RWMutex
+	platformJobWG            sync.WaitGroup
 	platformJobs             map[string]*platformJob
 	platformReportHandlers   map[string]http.HandlerFunc
 	platformReportRunMu      sync.RWMutex
@@ -89,14 +90,37 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.router.ServeHTTP(w, r)
 }
 
+func (s *Server) Close() {
+	if s == nil {
+		return
+	}
+	if s.rateLimiter != nil {
+		s.rateLimiter.Close()
+	}
+	jobIDs := make([]string, 0)
+	s.platformJobMu.RLock()
+	for jobID, job := range s.platformJobs {
+		if job == nil {
+			continue
+		}
+		switch job.Status {
+		case "succeeded", "failed", "canceled":
+			continue
+		default:
+			jobIDs = append(jobIDs, jobID)
+		}
+	}
+	s.platformJobMu.RUnlock()
+	for _, jobID := range jobIDs {
+		s.cancelPlatformJob(jobID, "server shutdown")
+	}
+	s.platformJobWG.Wait()
+}
+
 func (s *Server) Run() error {
 	addr := fmt.Sprintf(":%d", s.app.Config.Port)
 	s.app.Logger.Info("starting server", "addr", addr)
-	defer func() {
-		if s.rateLimiter != nil {
-			s.rateLimiter.Close()
-		}
-	}()
+	defer s.Close()
 
 	srv := &http.Server{
 		Addr:         addr,
