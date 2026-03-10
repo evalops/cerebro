@@ -13,6 +13,8 @@ import (
 
 const graphSnapshotDiffStorageClass = "local_diff_store"
 
+const maxGraphSnapshotDiffByteSizeIterations = 16
+
 // GraphSnapshotDiffStore persists materialized graph snapshot diff artifacts.
 type GraphSnapshotDiffStore struct {
 	basePath string
@@ -45,16 +47,8 @@ func (s *GraphSnapshotDiffStore) Save(record *GraphSnapshotDiffRecord) (*GraphSn
 	}
 	sum := sha256.Sum256(hashPayload)
 	stored.IntegrityHash = "sha256:" + hex.EncodeToString(sum[:])
-	for i := 0; i < 2; i++ {
-		finalPayload, err := json.Marshal(stored)
-		if err != nil {
-			return nil, fmt.Errorf("marshal materialized graph snapshot diff: %w", err)
-		}
-		size := int64(len(finalPayload))
-		if stored.ByteSize == size {
-			break
-		}
-		stored.ByteSize = size
+	if err := stabilizeGraphSnapshotDiffByteSize(&stored); err != nil {
+		return nil, err
 	}
 	if err := writeJSONAtomic(s.pathForDiffID(stored.ID), stored); err != nil {
 		return nil, err
@@ -85,4 +79,22 @@ func (s *GraphSnapshotDiffStore) Load(diffID string) (*GraphSnapshotDiffRecord, 
 
 func (s *GraphSnapshotDiffStore) pathForDiffID(diffID string) string {
 	return filepath.Join(s.basePath, sanitizeReportFileName(diffID)+".json")
+}
+
+func stabilizeGraphSnapshotDiffByteSize(record *GraphSnapshotDiffRecord) error {
+	if record == nil {
+		return fmt.Errorf("graph snapshot diff record is required")
+	}
+	for i := 0; i < maxGraphSnapshotDiffByteSizeIterations; i++ {
+		payload, err := json.Marshal(record)
+		if err != nil {
+			return fmt.Errorf("marshal materialized graph snapshot diff: %w", err)
+		}
+		size := int64(len(payload))
+		if record.ByteSize == size {
+			return nil
+		}
+		record.ByteSize = size
+	}
+	return fmt.Errorf("compute stable graph snapshot diff byte size")
 }
