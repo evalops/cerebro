@@ -228,7 +228,7 @@ func WriteClaim(g *Graph, req ClaimWriteRequest) (ClaimWriteResult, error) {
 	}
 
 	sourceID := ""
-	if request.SourceID != "" || request.SourceName != "" || request.SourceType != "" {
+	if request.SourceID != "" || request.SourceName != "" || request.SourceType != "" || request.SourceURL != "" || request.TrustTier != "" || request.ReliabilityScore > 0 {
 		sourceID = firstNonEmpty(request.SourceID, buildSourceNodeID(request.SourceType, request.SourceName))
 		sourceProperties := map[string]any{
 			"source_type":       firstNonEmpty(request.SourceType, "system"),
@@ -445,9 +445,15 @@ func normalizeClaimWriteRequest(req ClaimWriteRequest) (ClaimWriteRequest, error
 	out.Summary = strings.TrimSpace(req.Summary)
 	out.SourceID = strings.TrimSpace(req.SourceID)
 	out.SourceName = strings.TrimSpace(req.SourceName)
-	out.SourceType = normalizeSourceType(req.SourceType)
+	out.SourceType = strings.TrimSpace(req.SourceType)
+	if out.SourceType != "" {
+		out.SourceType = normalizeSourceType(req.SourceType)
+	}
 	out.SourceURL = strings.TrimSpace(req.SourceURL)
-	out.TrustTier = normalizeTrustTier(req.TrustTier)
+	out.TrustTier = strings.TrimSpace(req.TrustTier)
+	if out.TrustTier != "" {
+		out.TrustTier = normalizeTrustTier(req.TrustTier)
+	}
 	out.SourceSystem = strings.TrimSpace(req.SourceSystem)
 	out.SourceEventID = strings.TrimSpace(req.SourceEventID)
 	out.SupersedesClaimID = strings.TrimSpace(req.SupersedesClaimID)
