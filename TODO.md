@@ -5,6 +5,102 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 20 - Report History Resources + Lineage/Storage Semantics + Contract Registries (2026-03-09)
+
+### Review findings
+- [x] Gap: `ReportRun` persistence existed, but there was no first-class way to inspect execution-attempt history or lifecycle history as durable resources.
+- [x] Gap: runs and snapshots carried structural metadata, but they still lacked explicit graph lineage and storage/retention semantics needed for replay, audit, and report portability.
+- [x] Gap: typed section envelopes and benchmark packs were implied by report definitions, but the platform still lacked discoverable registries for those contracts.
+- [x] Gap: OpenAPI had typed report definitions and run resources, but not explicit typed components for envelope families, benchmark-pack families, attempt history, or event history.
+- [x] Gap: the backlog was still describing contract registries and lineage metadata as future work even though they had become the next gating primitive for deeper report extensibility.
+
+### Research synthesis to adopt
+- [x] OpenMetadata result-history pattern: definitions, parameterized runs, attempt history, and lifecycle output should stay as distinct resources with stable IDs and typed retrieval contracts.
+- [x] PROV-O derivation pattern: every derived report artifact should carry graph lineage, execution timestamps, and retention/storage semantics rather than collapsing provenance into flat event payloads.
+- [x] OpenLineage facet discipline: extension registries should publish stable schema names/URLs so downstream generated tools can bind contracts without depending on handler-local conventions.
+- [x] Backstage task-history rule: execution history should be inspectable directly instead of inferred from webhook traces or job state alone.
+
+### Execution plan
+- [x] Add durable execution-history resources:
+  - [x] add `ReportRunAttempt`
+  - [x] add `ReportRunEvent`
+  - [x] persist attempts/events alongside report runs
+  - [x] add `GET /api/v1/platform/intelligence/reports/{id}/runs/{run_id}/attempts`
+  - [x] add `GET /api/v1/platform/intelligence/reports/{id}/runs/{run_id}/events`
+- [x] Add lineage/storage semantics to runs and snapshots:
+  - [x] add `graph_snapshot_id`
+  - [x] add `graph_built_at`
+  - [x] add `graph_schema_version`
+  - [x] add `ontology_contract_version`
+  - [x] add `report_definition_version`
+  - [x] add `storage_class`
+  - [x] add `retention_tier`
+  - [x] add `materialized_result_available`
+  - [x] add `result_truncated`
+- [x] Add discoverable contract registries:
+  - [x] add section-envelope registry helpers
+  - [x] add benchmark-pack registry helpers
+  - [x] add `GET /api/v1/platform/intelligence/section-envelopes`
+  - [x] add `GET /api/v1/platform/intelligence/section-envelopes/{envelope_id}`
+  - [x] add `GET /api/v1/platform/intelligence/benchmark-packs`
+  - [x] add `GET /api/v1/platform/intelligence/benchmark-packs/{pack_id}`
+- [x] Tighten typed contract surface:
+  - [x] extend `PlatformReportDefinition` with report-definition version and section benchmark/envelope bindings
+  - [x] add typed OpenAPI schemas for attempts/events/lineage/storage
+  - [x] add concrete OpenAPI schema components for envelope families and benchmark-pack families
+  - [x] extend lifecycle CloudEvent contract docs for the deeper report metadata
+- [x] Add regression coverage:
+  - [x] graph-level lineage/storage helper tests
+  - [x] graph-level contract-registry tests
+  - [x] graph-level persistence round-trip coverage for attempts/events/lineage/storage
+  - [x] API-level registry endpoint coverage
+  - [x] API-level attempt/event resource coverage
+  - [x] API-level restart persistence coverage for report history resources
+
+### Detailed follow-on backlog
+- [ ] Add active execution control:
+  - [ ] `POST /api/v1/platform/intelligence/reports/{id}/runs/{run_id}:retry`
+  - [ ] `POST /api/v1/platform/intelligence/reports/{id}/runs/{run_id}:cancel`
+  - [ ] explicit attempt classification (`transient`, `deterministic`, `cancelled`, `superseded`)
+  - [ ] retry policy metadata and backoff semantics
+  - [ ] cancellation propagation into platform jobs
+- [ ] Add section-level execution telemetry:
+  - [ ] per-section duration
+  - [ ] per-section cache hit/miss
+  - [ ] per-section evidence/claim/source counts
+  - [ ] per-section lineage refs to claim/evidence/source IDs
+  - [ ] per-section partial-failure status and truncation semantics
+- [ ] Add stronger contract-generation and compatibility gates:
+  - [ ] generate section-envelope registries from typed schema components instead of duplicating JSON Schema fragments
+  - [ ] generate benchmark-pack docs/examples from registry definitions
+  - [ ] add CI compatibility checks for envelope schema evolution
+  - [ ] add CI compatibility checks for benchmark-pack threshold changes
+  - [ ] generate report-definition diffs when measure/check/section contracts drift
+- [ ] Deepen reusable benchmark semantics:
+  - [ ] support benchmark inheritance and overrides
+  - [ ] support benchmark scope families (`platform`, `security`, `org`, `admin`)
+  - [ ] add rationale/citation metadata per band
+  - [ ] add provenance for benchmark sources and approval history
+  - [ ] attach benchmark outcomes to generated recommendations
+- [ ] Deepen report-run storage policy:
+  - [ ] snapshot expiration sweeper
+  - [ ] storage-tier migration path beyond local filesystem
+  - [ ] configurable retention by report family
+  - [ ] metadata-only downgrade path for old snapshots
+  - [ ] integrity verification and repair for missing snapshot payloads
+- [ ] Deepen graph/report coupling where it creates actual leverage:
+  - [ ] materialize report runs and snapshots as graph workflow/artifact nodes
+  - [ ] link report sections to supporting claims/evidence/source nodes
+  - [ ] link accepted recommendations to `action` and `decision` writes
+  - [ ] materialize benchmark-band results as annotations/outcomes when useful
+  - [ ] expose report-to-graph derivation chains in query/simulation flows
+- [ ] Add richer report package composition:
+  - [ ] reusable report packs bundling definitions + benchmark packs + extension defaults
+  - [ ] report family manifests for `platform`, `security`, and `org`
+  - [ ] generated SDK bindings for report registries and run resources
+  - [ ] stable section rendering hints separate from UI implementation details
+  - [ ] typed report export formats with snapshot references and integrity hashes
+
 ## Deep Review Cycle 19 - Durable Report Runs + Lifecycle Events + Typed Section Metadata (2026-03-09)
 
 ### Review findings

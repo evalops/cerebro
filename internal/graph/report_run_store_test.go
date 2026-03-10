@@ -43,7 +43,25 @@ func TestReportRunStoreRoundTrip(t *testing.T) {
 		Sections:      BuildReportSectionResults(definition, result),
 		Snapshot:      snapshot,
 		Result:        result,
+		Lineage: ReportLineage{
+			GraphSnapshotID:         "graph_snapshot:test",
+			GraphBuiltAt:            timePtr(now.Add(-1 * time.Hour)),
+			GraphSchemaVersion:      SchemaVersion(),
+			OntologyContractVersion: GraphOntologyContractVersion,
+			ReportDefinitionVersion: "1.0.0",
+		},
+		Storage: BuildReportStoragePolicy(true, false),
 	}
+	run.Attempts = []ReportRunAttempt{
+		NewReportRunAttempt(run.ID, 1, ReportRunStatusSucceeded, "api.request", "platform.inline", "host-a", "alice", "", run.SubmittedAt),
+	}
+	run.LatestAttemptID = run.Attempts[0].ID
+	run.AttemptCount = 1
+	AppendReportRunEvent(run, "platform.report_run.queued", ReportRunStatusQueued, "api.request", "alice", run.SubmittedAt, map[string]any{"report_id": run.ReportID})
+	AppendReportRunEvent(run, "platform.report_run.completed", ReportRunStatusSucceeded, "api.request", "alice", now, map[string]any{"report_id": run.ReportID})
+	run.EventCount = len(run.Events)
+	run.Snapshot.Lineage = CloneReportLineage(run.Lineage)
+	run.Snapshot.Storage = CloneReportStoragePolicy(run.Storage)
 
 	stateDir := t.TempDir()
 	store := NewReportRunStore(filepath.Join(stateDir, "state.json"), filepath.Join(stateDir, "snapshots"))
@@ -80,6 +98,24 @@ func TestReportRunStoreRoundTrip(t *testing.T) {
 	}
 	if len(loaded.Sections[0].FieldKeys) != 2 {
 		t.Fatalf("expected field key capture, got %+v", loaded.Sections[0])
+	}
+	if loaded.Lineage.GraphSnapshotID != "graph_snapshot:test" {
+		t.Fatalf("expected restored lineage graph snapshot id, got %+v", loaded.Lineage)
+	}
+	if loaded.Storage.StorageClass != "local_durable" {
+		t.Fatalf("expected restored storage class local_durable, got %+v", loaded.Storage)
+	}
+	if len(loaded.Attempts) != 1 || loaded.Attempts[0].ExecutionSurface != "platform.inline" {
+		t.Fatalf("expected restored attempts, got %+v", loaded.Attempts)
+	}
+	if len(loaded.Events) != 2 || loaded.Events[1].Type != "platform.report_run.completed" {
+		t.Fatalf("expected restored events, got %+v", loaded.Events)
+	}
+	if loaded.Snapshot.Lineage.GraphSnapshotID != "graph_snapshot:test" {
+		t.Fatalf("expected restored snapshot lineage, got %+v", loaded.Snapshot.Lineage)
+	}
+	if loaded.Snapshot.Storage.StorageClass != "local_durable" {
+		t.Fatalf("expected restored snapshot storage, got %+v", loaded.Snapshot.Storage)
 	}
 }
 

@@ -29,8 +29,10 @@ type persistedReportRunStore struct {
 }
 
 type persistedReportRunRecord struct {
-	Run          *ReportRun `json:"run"`
-	SnapshotFile string     `json:"snapshot_file,omitempty"`
+	Run          *ReportRun         `json:"run"`
+	SnapshotFile string             `json:"snapshot_file,omitempty"`
+	Attempts     []ReportRunAttempt `json:"attempts,omitempty"`
+	Events       []ReportRunEvent   `json:"events,omitempty"`
 }
 
 type persistedReportSnapshotPayload struct {
@@ -91,6 +93,10 @@ func (s *ReportRunStore) Load() (map[string]*ReportRun, error) {
 			continue
 		}
 		run := CloneReportRun(record.Run)
+		run.Attempts = CloneReportRunAttempts(record.Attempts)
+		run.Events = CloneReportRunEvents(record.Events)
+		run.AttemptCount = len(run.Attempts)
+		run.EventCount = len(run.Events)
 		if run.Snapshot != nil && strings.TrimSpace(record.SnapshotFile) != "" {
 			run.Snapshot.StoragePath = filepath.Join(s.snapshotDir, strings.TrimSpace(record.SnapshotFile))
 			payload, err := loadReportSnapshotPayload(run.Snapshot.StoragePath)
@@ -126,6 +132,8 @@ func (s *ReportRunStore) SaveAll(runs map[string]*ReportRun) error {
 			continue
 		}
 		record := persistedReportRunRecord{Run: run}
+		record.Attempts = CloneReportRunAttempts(run.Attempts)
+		record.Events = CloneReportRunEvents(run.Events)
 		if run.Snapshot != nil {
 			snapshotPath := strings.TrimSpace(run.Snapshot.StoragePath)
 			if snapshotPath == "" {

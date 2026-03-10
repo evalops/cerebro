@@ -4939,6 +4939,80 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlatformReportCheckCatalog'
+  /api/v1/platform/intelligence/section-envelopes:
+    get:
+      tags:
+        - Platform
+      summary: List reusable report section-envelope contracts
+      description: Return typed envelope definitions for report sections, including schema names, schema URLs, compatible section kinds, and JSON schema fragments.
+      responses:
+        '200':
+          description: Platform report section-envelope catalog
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformReportSectionEnvelopeCatalog'
+  /api/v1/platform/intelligence/section-envelopes/{envelope_id}:
+    get:
+      tags:
+        - Platform
+      summary: Get one report section-envelope contract
+      parameters:
+        - name: envelope_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Platform report section-envelope definition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformReportSectionEnvelopeDefinition'
+        '404':
+          description: Section-envelope definition not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/platform/intelligence/benchmark-packs:
+    get:
+      tags:
+        - Platform
+      summary: List reusable benchmark packs
+      description: Return reusable benchmark threshold packs for report overlays and typed score interpretation.
+      responses:
+        '200':
+          description: Platform benchmark pack catalog
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformBenchmarkPackCatalog'
+  /api/v1/platform/intelligence/benchmark-packs/{pack_id}:
+    get:
+      tags:
+        - Platform
+      summary: Get one benchmark pack
+      parameters:
+        - name: pack_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Platform benchmark pack
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformBenchmarkPack'
+        '404':
+          description: Benchmark pack not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/platform/intelligence/reports:
     get:
       tags:
@@ -5071,6 +5145,64 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlatformReportRun'
+        '404':
+          description: Report run not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/platform/intelligence/reports/{id}/runs/{run_id}/attempts:
+    get:
+      tags:
+        - Platform
+      summary: List execution attempts for one platform intelligence report run
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: run_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Platform report-run attempt collection
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformReportRunAttemptCollection'
+        '404':
+          description: Report run not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/platform/intelligence/reports/{id}/runs/{run_id}/events:
+    get:
+      tags:
+        - Platform
+      summary: List lifecycle events for one platform intelligence report run
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: run_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Platform report-run event collection
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformReportRunEventCollection'
         '404':
           description: Report run not found
           content:
@@ -8888,6 +9020,10 @@ components:
         expires_at:
           type: string
           format: date-time
+        lineage:
+          $ref: '#/components/schemas/PlatformReportLineage'
+        storage:
+          $ref: '#/components/schemas/PlatformReportStoragePolicy'
       required:
         - id
         - result_schema
@@ -8950,12 +9086,22 @@ components:
           type: string
         status_url:
           type: string
+        latest_attempt_id:
+          type: string
+        attempt_count:
+          type: integer
+        event_count:
+          type: integer
         snapshot:
           $ref: '#/components/schemas/PlatformReportSnapshot'
         sections:
           type: array
           items:
             $ref: '#/components/schemas/PlatformReportSectionResult'
+        lineage:
+          $ref: '#/components/schemas/PlatformReportLineage'
+        storage:
+          $ref: '#/components/schemas/PlatformReportStoragePolicy'
         error:
           type: string
       required:
@@ -8989,6 +9135,145 @@ components:
         - report_id
         - count
         - runs
+    PlatformReportLineage:
+      type: object
+      additionalProperties: false
+      properties:
+        graph_snapshot_id:
+          type: string
+        graph_built_at:
+          type: string
+          format: date-time
+        graph_schema_version:
+          type: integer
+          format: int64
+        ontology_contract_version:
+          type: string
+        report_definition_version:
+          type: string
+    PlatformReportStoragePolicy:
+      type: object
+      additionalProperties: false
+      properties:
+        storage_class:
+          type: string
+        retention_tier:
+          type: string
+        materialized_result_available:
+          type: boolean
+        result_truncated:
+          type: boolean
+      required:
+        - materialized_result_available
+    PlatformReportRunAttempt:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        run_id:
+          type: string
+        attempt_number:
+          type: integer
+        status:
+          type: string
+        trigger_surface:
+          type: string
+        execution_surface:
+          type: string
+        execution_host:
+          type: string
+        requested_by:
+          type: string
+        submitted_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        job_id:
+          type: string
+        error:
+          type: string
+      required:
+        - id
+        - run_id
+        - attempt_number
+        - status
+        - submitted_at
+    PlatformReportRunAttemptCollection:
+      type: object
+      additionalProperties: false
+      properties:
+        report_id:
+          type: string
+        run_id:
+          type: string
+        count:
+          type: integer
+        attempts:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformReportRunAttempt'
+      required:
+        - report_id
+        - run_id
+        - count
+        - attempts
+    PlatformReportRunEvent:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        run_id:
+          type: string
+        attempt_id:
+          type: string
+        sequence:
+          type: integer
+        type:
+          type: string
+        status:
+          type: string
+        trigger_surface:
+          type: string
+        actor:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        data:
+          type: object
+          additionalProperties: true
+      required:
+        - id
+        - run_id
+        - sequence
+        - type
+        - timestamp
+    PlatformReportRunEventCollection:
+      type: object
+      additionalProperties: false
+      properties:
+        report_id:
+          type: string
+        run_id:
+          type: string
+        count:
+          type: integer
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformReportRunEvent'
+      required:
+        - report_id
+        - run_id
+        - count
+        - events
     SecurityAttackPathJobRequest:
       type: object
       additionalProperties: false
@@ -10339,11 +10624,138 @@ components:
         - generated_at
         - count
         - checks
+    PlatformReportSectionEnvelopeCatalog:
+      type: object
+      additionalProperties: false
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        count:
+          type: integer
+        envelopes:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformReportSectionEnvelopeDefinition'
+      required:
+        - generated_at
+        - count
+        - envelopes
+    PlatformReportSectionEnvelopeDefinition:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        schema_name:
+          type: string
+        schema_url:
+          type: string
+        compatible_section_kinds:
+          type: array
+          items:
+            type: string
+        json_schema:
+          type: object
+          additionalProperties: true
+      required:
+        - id
+        - title
+        - schema_name
+        - schema_url
+    PlatformBenchmarkBand:
+      type: object
+      additionalProperties: false
+      properties:
+        label:
+          type: string
+        status:
+          type: string
+        min_value:
+          type: number
+        max_value:
+          type: number
+        description:
+          type: string
+      required:
+        - label
+        - status
+    PlatformBenchmarkMeasureBinding:
+      type: object
+      additionalProperties: false
+      properties:
+        measure_id:
+          type: string
+        direction:
+          type: string
+        unit:
+          type: string
+        bands:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformBenchmarkBand'
+        description:
+          type: string
+      required:
+        - measure_id
+        - direction
+    PlatformBenchmarkPack:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        version:
+          type: string
+        title:
+          type: string
+        scope:
+          type: string
+        description:
+          type: string
+        schema_name:
+          type: string
+        schema_url:
+          type: string
+        measure_bindings:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformBenchmarkMeasureBinding'
+      required:
+        - id
+        - version
+        - title
+        - scope
+        - schema_name
+        - schema_url
+    PlatformBenchmarkPackCatalog:
+      type: object
+      additionalProperties: false
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        count:
+          type: integer
+        packs:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformBenchmarkPack'
+      required:
+        - generated_at
+        - count
+        - packs
     PlatformReportDefinition:
       type: object
       additionalProperties: false
       properties:
         id:
+          type: string
+        version:
           type: string
         title:
           type: string
@@ -10457,6 +10869,14 @@ components:
           type: array
           items:
             type: string
+        envelope_kind:
+          type: string
+        envelope_schema:
+          type: string
+        benchmark_pack_ids:
+          type: array
+          items:
+            type: string
       required:
         - key
         - title
@@ -10490,3 +10910,244 @@ components:
       required:
         - key
         - scope
+    PlatformMeasureValue:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        value:
+          oneOf:
+            - type: string
+            - type: number
+            - type: integer
+            - type: boolean
+        unit:
+          type: string
+        status:
+          type: string
+        summary:
+          type: string
+      required:
+        - id
+        - value
+    PlatformSummaryEnvelope:
+      type: object
+      additionalProperties: false
+      properties:
+        headline:
+          type: string
+        highlights:
+          type: array
+          items:
+            type: string
+        measures:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformMeasureValue'
+      required:
+        - headline
+        - measures
+    PlatformTimeseriesEnvelope:
+      type: object
+      additionalProperties: false
+      properties:
+        points:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              timestamp:
+                type: string
+                format: date-time
+              values:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PlatformMeasureValue'
+            required:
+              - timestamp
+              - values
+      required:
+        - points
+    PlatformDistributionEnvelope:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              dimension:
+                type: string
+              measures:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PlatformMeasureValue'
+            required:
+              - dimension
+              - measures
+      required:
+        - items
+    PlatformRankingEnvelope:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              id:
+                type: string
+              title:
+                type: string
+              rank:
+                type: integer
+              score:
+                type: number
+              summary:
+                type: string
+              measure_values:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PlatformMeasureValue'
+            required:
+              - id
+              - title
+              - rank
+      required:
+        - items
+    PlatformNetworkSliceEnvelope:
+      type: object
+      additionalProperties: false
+      properties:
+        nodes:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              id:
+                type: string
+              kind:
+                type: string
+              name:
+                type: string
+            required:
+              - id
+              - kind
+        edges:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              source:
+                type: string
+              target:
+                type: string
+              kind:
+                type: string
+            required:
+              - source
+              - target
+              - kind
+      required:
+        - nodes
+        - edges
+    PlatformRecommendationsEnvelope:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              id:
+                type: string
+              title:
+                type: string
+              priority:
+                type: string
+              summary:
+                type: string
+              target_ids:
+                type: array
+                items:
+                  type: string
+              benchmark_pack_id:
+                type: string
+            required:
+              - id
+              - title
+              - priority
+      required:
+        - items
+    PlatformEvidenceListEnvelope:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              evidence_id:
+                type: string
+              source_system:
+                type: string
+              summary:
+                type: string
+              observed_at:
+                type: string
+                format: date-time
+              confidence:
+                type: number
+            required:
+              - evidence_id
+              - source_system
+      required:
+        - items
+    PlatformNarrativeBlockEnvelope:
+      type: object
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+        body:
+          type: string
+        citations:
+          type: array
+          items:
+            type: string
+        document_id:
+          type: string
+      required:
+        - body
+    PlatformDecisionIntelligenceBenchmarkPack:
+      allOf:
+        - $ref: '#/components/schemas/PlatformBenchmarkPack'
+    PlatformGraphQualityBenchmarkPack:
+      allOf:
+        - $ref: '#/components/schemas/PlatformBenchmarkPack'
+    PlatformMetadataQualityBenchmarkPack:
+      allOf:
+        - $ref: '#/components/schemas/PlatformBenchmarkPack'
+    PlatformClaimConflictBenchmarkPack:
+      allOf:
+        - $ref: '#/components/schemas/PlatformBenchmarkPack'
+    PlatformGraphLeverageBenchmarkPack:
+      allOf:
+        - $ref: '#/components/schemas/PlatformBenchmarkPack'
+    PlatformWeeklyCalibrationBenchmarkPack:
+      allOf:
+        - $ref: '#/components/schemas/PlatformBenchmarkPack'

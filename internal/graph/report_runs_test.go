@@ -90,3 +90,83 @@ func TestBuildReportSnapshotAndSections(t *testing.T) {
 		t.Fatalf("expected stable cache key, got %q and %q", cacheKeyA, cacheKeyB)
 	}
 }
+
+func TestBuildReportLineageAndStoragePolicy(t *testing.T) {
+	g := New()
+	builtAt := time.Date(2026, 3, 10, 4, 30, 0, 0, time.UTC)
+	g.SetMetadata(Metadata{
+		BuiltAt:   builtAt,
+		NodeCount: 12,
+		EdgeCount: 7,
+		Providers: []string{"github", "okta"},
+		Accounts:  []string{"acct-a"},
+	})
+
+	lineage := BuildReportLineage(g, ReportDefinition{ID: "quality", Version: "2.1.0"})
+	if lineage.GraphSnapshotID == "" {
+		t.Fatal("expected graph snapshot id")
+	}
+	if lineage.GraphBuiltAt == nil || !lineage.GraphBuiltAt.Equal(builtAt) {
+		t.Fatalf("expected graph built at %s, got %+v", builtAt, lineage.GraphBuiltAt)
+	}
+	if lineage.GraphSchemaVersion == 0 {
+		t.Fatal("expected graph schema version")
+	}
+	if lineage.OntologyContractVersion == "" {
+		t.Fatal("expected ontology contract version")
+	}
+	if lineage.ReportDefinitionVersion != "2.1.0" {
+		t.Fatalf("expected report definition version 2.1.0, got %q", lineage.ReportDefinitionVersion)
+	}
+
+	storage := BuildReportStoragePolicy(true, false)
+	if storage.StorageClass != "local_durable" {
+		t.Fatalf("expected local_durable storage class, got %q", storage.StorageClass)
+	}
+	if storage.RetentionTier != "short_term" {
+		t.Fatalf("expected short_term retention tier, got %q", storage.RetentionTier)
+	}
+	if !storage.MaterializedResultAvailable {
+		t.Fatal("expected materialized result availability")
+	}
+
+	metadataOnly := BuildReportStoragePolicy(false, false)
+	if metadataOnly.StorageClass != "metadata_only" {
+		t.Fatalf("expected metadata_only storage class, got %q", metadataOnly.StorageClass)
+	}
+	if metadataOnly.MaterializedResultAvailable {
+		t.Fatal("expected metadata-only policy to disable materialized result")
+	}
+}
+
+func TestReportRunAttemptAndEventCollections(t *testing.T) {
+	run := &ReportRun{
+		ID:            "report_run:test",
+		ReportID:      "quality",
+		Status:        ReportRunStatusQueued,
+		ExecutionMode: ReportExecutionModeSync,
+		SubmittedAt:   time.Date(2026, 3, 10, 5, 0, 0, 0, time.UTC),
+	}
+	run.Attempts = append(run.Attempts, NewReportRunAttempt(run.ID, 1, run.Status, "api.request", "platform.inline", "host-a", "alice", "", run.SubmittedAt))
+	run.LatestAttemptID = run.Attempts[0].ID
+	AppendReportRunEvent(run, "platform.report_run.queued", run.Status, "api.request", "alice", run.SubmittedAt, map[string]any{"report_id": run.ReportID})
+	StartLatestReportRunAttempt(run, run.SubmittedAt.Add(10*time.Millisecond))
+	CompleteLatestReportRunAttempt(run, ReportRunStatusSucceeded, run.SubmittedAt.Add(20*time.Millisecond), "")
+	AppendReportRunEvent(run, "platform.report_run.completed", ReportRunStatusSucceeded, "api.request", "alice", run.SubmittedAt.Add(20*time.Millisecond), map[string]any{"report_id": run.ReportID})
+
+	attempts := ReportRunAttemptCollectionSnapshot(run.ReportID, run.ID, run.Attempts)
+	if attempts.Count != 1 || len(attempts.Attempts) != 1 {
+		t.Fatalf("expected one attempt, got %+v", attempts)
+	}
+	if attempts.Attempts[0].Status != ReportRunStatusSucceeded {
+		t.Fatalf("expected succeeded attempt, got %+v", attempts.Attempts[0])
+	}
+
+	events := ReportRunEventCollectionSnapshot(run.ReportID, run.ID, run.Events)
+	if events.Count != 2 || len(events.Events) != 2 {
+		t.Fatalf("expected two events, got %+v", events)
+	}
+	if events.Events[0].Type != "platform.report_run.queued" || events.Events[1].Type != "platform.report_run.completed" {
+		t.Fatalf("unexpected event ordering: %+v", events.Events)
+	}
+}

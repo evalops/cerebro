@@ -55,59 +55,73 @@ type ReportSectionResult struct {
 
 // ReportSnapshot stores materialization metadata for one report result.
 type ReportSnapshot struct {
-	ID           string     `json:"id"`
-	ResultSchema string     `json:"result_schema"`
-	GeneratedAt  time.Time  `json:"generated_at"`
-	RecordedAt   time.Time  `json:"recorded_at"`
-	ContentHash  string     `json:"content_hash"`
-	ByteSize     int        `json:"byte_size"`
-	SectionCount int        `json:"section_count"`
-	Retained     bool       `json:"retained"`
-	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
-	StoragePath  string     `json:"-"`
+	ID           string              `json:"id"`
+	ResultSchema string              `json:"result_schema"`
+	GeneratedAt  time.Time           `json:"generated_at"`
+	RecordedAt   time.Time           `json:"recorded_at"`
+	ContentHash  string              `json:"content_hash"`
+	ByteSize     int                 `json:"byte_size"`
+	SectionCount int                 `json:"section_count"`
+	Retained     bool                `json:"retained"`
+	ExpiresAt    *time.Time          `json:"expires_at,omitempty"`
+	Lineage      ReportLineage       `json:"lineage,omitempty"`
+	Storage      ReportStoragePolicy `json:"storage,omitempty"`
+	StoragePath  string              `json:"-"`
 }
 
 // ReportRun represents one instantiated execution of a report definition.
 type ReportRun struct {
-	ID            string                 `json:"id"`
-	ReportID      string                 `json:"report_id"`
-	Status        string                 `json:"status"`
-	ExecutionMode string                 `json:"execution_mode"`
-	SubmittedAt   time.Time              `json:"submitted_at"`
-	StartedAt     *time.Time             `json:"started_at,omitempty"`
-	CompletedAt   *time.Time             `json:"completed_at,omitempty"`
-	RequestedBy   string                 `json:"requested_by,omitempty"`
-	Parameters    []ReportParameterValue `json:"parameters,omitempty"`
-	TimeSlice     ReportTimeSlice        `json:"time_slice,omitempty"`
-	CacheKey      string                 `json:"cache_key,omitempty"`
-	JobID         string                 `json:"job_id,omitempty"`
-	JobStatusURL  string                 `json:"job_status_url,omitempty"`
-	StatusURL     string                 `json:"status_url"`
-	Snapshot      *ReportSnapshot        `json:"snapshot,omitempty"`
-	Sections      []ReportSectionResult  `json:"sections,omitempty"`
-	Result        map[string]any         `json:"result,omitempty"`
-	Error         string                 `json:"error,omitempty"`
+	ID              string                 `json:"id"`
+	ReportID        string                 `json:"report_id"`
+	Status          string                 `json:"status"`
+	ExecutionMode   string                 `json:"execution_mode"`
+	SubmittedAt     time.Time              `json:"submitted_at"`
+	StartedAt       *time.Time             `json:"started_at,omitempty"`
+	CompletedAt     *time.Time             `json:"completed_at,omitempty"`
+	RequestedBy     string                 `json:"requested_by,omitempty"`
+	Parameters      []ReportParameterValue `json:"parameters,omitempty"`
+	TimeSlice       ReportTimeSlice        `json:"time_slice,omitempty"`
+	CacheKey        string                 `json:"cache_key,omitempty"`
+	JobID           string                 `json:"job_id,omitempty"`
+	JobStatusURL    string                 `json:"job_status_url,omitempty"`
+	StatusURL       string                 `json:"status_url"`
+	LatestAttemptID string                 `json:"latest_attempt_id,omitempty"`
+	AttemptCount    int                    `json:"attempt_count,omitempty"`
+	EventCount      int                    `json:"event_count,omitempty"`
+	Lineage         ReportLineage          `json:"lineage,omitempty"`
+	Storage         ReportStoragePolicy    `json:"storage,omitempty"`
+	Snapshot        *ReportSnapshot        `json:"snapshot,omitempty"`
+	Sections        []ReportSectionResult  `json:"sections,omitempty"`
+	Result          map[string]any         `json:"result,omitempty"`
+	Error           string                 `json:"error,omitempty"`
+	Attempts        []ReportRunAttempt     `json:"-"`
+	Events          []ReportRunEvent       `json:"-"`
 }
 
 // ReportRunSummary is the lightweight list representation of a report run.
 type ReportRunSummary struct {
-	ID            string                 `json:"id"`
-	ReportID      string                 `json:"report_id"`
-	Status        string                 `json:"status"`
-	ExecutionMode string                 `json:"execution_mode"`
-	SubmittedAt   time.Time              `json:"submitted_at"`
-	StartedAt     *time.Time             `json:"started_at,omitempty"`
-	CompletedAt   *time.Time             `json:"completed_at,omitempty"`
-	RequestedBy   string                 `json:"requested_by,omitempty"`
-	Parameters    []ReportParameterValue `json:"parameters,omitempty"`
-	TimeSlice     ReportTimeSlice        `json:"time_slice,omitempty"`
-	CacheKey      string                 `json:"cache_key,omitempty"`
-	JobID         string                 `json:"job_id,omitempty"`
-	JobStatusURL  string                 `json:"job_status_url,omitempty"`
-	StatusURL     string                 `json:"status_url"`
-	Snapshot      *ReportSnapshot        `json:"snapshot,omitempty"`
-	Sections      []ReportSectionResult  `json:"sections,omitempty"`
-	Error         string                 `json:"error,omitempty"`
+	ID              string                 `json:"id"`
+	ReportID        string                 `json:"report_id"`
+	Status          string                 `json:"status"`
+	ExecutionMode   string                 `json:"execution_mode"`
+	SubmittedAt     time.Time              `json:"submitted_at"`
+	StartedAt       *time.Time             `json:"started_at,omitempty"`
+	CompletedAt     *time.Time             `json:"completed_at,omitempty"`
+	RequestedBy     string                 `json:"requested_by,omitempty"`
+	Parameters      []ReportParameterValue `json:"parameters,omitempty"`
+	TimeSlice       ReportTimeSlice        `json:"time_slice,omitempty"`
+	CacheKey        string                 `json:"cache_key,omitempty"`
+	JobID           string                 `json:"job_id,omitempty"`
+	JobStatusURL    string                 `json:"job_status_url,omitempty"`
+	StatusURL       string                 `json:"status_url"`
+	LatestAttemptID string                 `json:"latest_attempt_id,omitempty"`
+	AttemptCount    int                    `json:"attempt_count,omitempty"`
+	EventCount      int                    `json:"event_count,omitempty"`
+	Lineage         ReportLineage          `json:"lineage,omitempty"`
+	Storage         ReportStoragePolicy    `json:"storage,omitempty"`
+	Snapshot        *ReportSnapshot        `json:"snapshot,omitempty"`
+	Sections        []ReportSectionResult  `json:"sections,omitempty"`
+	Error           string                 `json:"error,omitempty"`
 }
 
 // ReportRunCollection is the list response for report runs.
@@ -307,6 +321,7 @@ func BuildReportSnapshot(runID string, definition ReportDefinition, result map[s
 		SectionCount: len(definition.Sections),
 		Retained:     retained,
 		ExpiresAt:    expiresAt,
+		Storage:      BuildReportStoragePolicy(true, false),
 	}, nil
 }
 
@@ -333,23 +348,28 @@ func BuildReportRunCacheKey(reportID string, values []ReportParameterValue) (str
 // SummarizeReportRun strips the variable report payload while preserving execution metadata.
 func SummarizeReportRun(run ReportRun) ReportRunSummary {
 	return ReportRunSummary{
-		ID:            run.ID,
-		ReportID:      run.ReportID,
-		Status:        run.Status,
-		ExecutionMode: run.ExecutionMode,
-		SubmittedAt:   run.SubmittedAt,
-		StartedAt:     cloneTimePtr(run.StartedAt),
-		CompletedAt:   cloneTimePtr(run.CompletedAt),
-		RequestedBy:   run.RequestedBy,
-		Parameters:    CloneReportParameterValues(run.Parameters),
-		TimeSlice:     cloneReportTimeSlice(run.TimeSlice),
-		CacheKey:      run.CacheKey,
-		JobID:         run.JobID,
-		JobStatusURL:  run.JobStatusURL,
-		StatusURL:     run.StatusURL,
-		Snapshot:      cloneReportSnapshot(run.Snapshot),
-		Sections:      CloneReportSectionResults(run.Sections),
-		Error:         run.Error,
+		ID:              run.ID,
+		ReportID:        run.ReportID,
+		Status:          run.Status,
+		ExecutionMode:   run.ExecutionMode,
+		SubmittedAt:     run.SubmittedAt,
+		StartedAt:       cloneTimePtr(run.StartedAt),
+		CompletedAt:     cloneTimePtr(run.CompletedAt),
+		RequestedBy:     run.RequestedBy,
+		Parameters:      CloneReportParameterValues(run.Parameters),
+		TimeSlice:       cloneReportTimeSlice(run.TimeSlice),
+		CacheKey:        run.CacheKey,
+		JobID:           run.JobID,
+		JobStatusURL:    run.JobStatusURL,
+		StatusURL:       run.StatusURL,
+		LatestAttemptID: run.LatestAttemptID,
+		AttemptCount:    len(run.Attempts),
+		EventCount:      len(run.Events),
+		Lineage:         CloneReportLineage(run.Lineage),
+		Storage:         CloneReportStoragePolicy(run.Storage),
+		Snapshot:        cloneReportSnapshot(run.Snapshot),
+		Sections:        CloneReportSectionResults(run.Sections),
+		Error:           run.Error,
 	}
 }
 
@@ -363,9 +383,15 @@ func CloneReportRun(run *ReportRun) *ReportRun {
 	cloned.CompletedAt = cloneTimePtr(run.CompletedAt)
 	cloned.Parameters = CloneReportParameterValues(run.Parameters)
 	cloned.TimeSlice = cloneReportTimeSlice(run.TimeSlice)
+	cloned.Lineage = CloneReportLineage(run.Lineage)
+	cloned.Storage = CloneReportStoragePolicy(run.Storage)
 	cloned.Snapshot = cloneReportSnapshot(run.Snapshot)
 	cloned.Sections = CloneReportSectionResults(run.Sections)
 	cloned.Result = cloneReportResult(run.Result)
+	cloned.Attempts = CloneReportRunAttempts(run.Attempts)
+	cloned.Events = CloneReportRunEvents(run.Events)
+	cloned.AttemptCount = len(cloned.Attempts)
+	cloned.EventCount = len(cloned.Events)
 	return &cloned
 }
 
@@ -403,6 +429,8 @@ func cloneReportSnapshot(snapshot *ReportSnapshot) *ReportSnapshot {
 	}
 	cloned := *snapshot
 	cloned.ExpiresAt = cloneTimePtr(snapshot.ExpiresAt)
+	cloned.Lineage = CloneReportLineage(snapshot.Lineage)
+	cloned.Storage = CloneReportStoragePolicy(snapshot.Storage)
 	return &cloned
 }
 

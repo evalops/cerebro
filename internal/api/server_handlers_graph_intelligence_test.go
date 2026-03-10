@@ -305,6 +305,58 @@ func TestPlatformIntelligenceCheckCatalog(t *testing.T) {
 	}
 }
 
+func TestPlatformIntelligenceSectionEnvelopeCatalog(t *testing.T) {
+	s := newTestServer(t)
+
+	w := do(t, s, http.MethodGet, "/api/v1/platform/intelligence/section-envelopes", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	body := decodeJSON(t, w)
+	if count, ok := body["count"].(float64); !ok || int(count) < 8 {
+		t.Fatalf("expected at least 8 section envelopes, got %#v", body["count"])
+	}
+	envelopes, ok := body["envelopes"].([]any)
+	if !ok || len(envelopes) == 0 {
+		t.Fatalf("expected envelopes array, got %#v", body["envelopes"])
+	}
+
+	getResp := do(t, s, http.MethodGet, "/api/v1/platform/intelligence/section-envelopes/summary", nil)
+	if getResp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for summary envelope, got %d: %s", getResp.Code, getResp.Body.String())
+	}
+	getBody := decodeJSON(t, getResp)
+	if got := getBody["schema_name"]; got != "PlatformSummaryEnvelope" {
+		t.Fatalf("expected PlatformSummaryEnvelope schema, got %#v", got)
+	}
+}
+
+func TestPlatformIntelligenceBenchmarkPackCatalog(t *testing.T) {
+	s := newTestServer(t)
+
+	w := do(t, s, http.MethodGet, "/api/v1/platform/intelligence/benchmark-packs", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	body := decodeJSON(t, w)
+	if count, ok := body["count"].(float64); !ok || int(count) < 6 {
+		t.Fatalf("expected at least 6 benchmark packs, got %#v", body["count"])
+	}
+	packs, ok := body["packs"].([]any)
+	if !ok || len(packs) == 0 {
+		t.Fatalf("expected packs array, got %#v", body["packs"])
+	}
+
+	getResp := do(t, s, http.MethodGet, "/api/v1/platform/intelligence/benchmark-packs/graph-quality.default", nil)
+	if getResp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for graph-quality benchmark pack, got %d: %s", getResp.Code, getResp.Body.String())
+	}
+	getBody := decodeJSON(t, getResp)
+	if got := getBody["schema_name"]; got != "PlatformGraphQualityBenchmarkPack" {
+		t.Fatalf("expected PlatformGraphQualityBenchmarkPack schema, got %#v", got)
+	}
+}
+
 func TestPlatformIntelligenceReportRunSync(t *testing.T) {
 	s := newTestServer(t)
 	g := s.app.SecurityGraph
@@ -319,6 +371,11 @@ func TestPlatformIntelligenceReportRunSync(t *testing.T) {
 			"observed_at": now.Format(time.RFC3339),
 			"valid_from":  now.Format(time.RFC3339),
 		},
+	})
+	g.SetMetadata(graph.Metadata{
+		BuiltAt:   now.Add(30 * time.Minute),
+		NodeCount: 1,
+		Providers: []string{"test"},
 	})
 
 	w := do(t, s, http.MethodPost, "/api/v1/platform/intelligence/reports/quality/runs", map[string]any{
@@ -339,6 +396,35 @@ func TestPlatformIntelligenceReportRunSync(t *testing.T) {
 	}
 	if _, ok := body["snapshot"].(map[string]any); !ok {
 		t.Fatalf("expected snapshot metadata, got %#v", body["snapshot"])
+	}
+	lineage, ok := body["lineage"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected lineage metadata, got %#v", body["lineage"])
+	}
+	if got := lineage["report_definition_version"]; got != graph.DefaultReportDefinitionVersion {
+		t.Fatalf("expected default report definition version, got %#v", got)
+	}
+	if got := lineage["graph_snapshot_id"]; got == "" {
+		t.Fatalf("expected graph snapshot id, got %#v", got)
+	}
+	storage, ok := body["storage"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected storage metadata, got %#v", body["storage"])
+	}
+	if got := storage["storage_class"]; got != "local_durable" {
+		t.Fatalf("expected local_durable storage class, got %#v", got)
+	}
+	if got := storage["materialized_result_available"]; got != true {
+		t.Fatalf("expected materialized result availability, got %#v", got)
+	}
+	if got := body["latest_attempt_id"]; got == "" {
+		t.Fatalf("expected latest_attempt_id, got %#v", got)
+	}
+	if got := body["attempt_count"]; got != float64(1) {
+		t.Fatalf("expected attempt_count=1, got %#v", got)
+	}
+	if got := body["event_count"]; got != float64(4) {
+		t.Fatalf("expected event_count=4, got %#v", got)
 	}
 	statusURL, _ := body["status_url"].(string)
 	if statusURL == "" {
@@ -367,6 +453,66 @@ func TestPlatformIntelligenceReportRunSync(t *testing.T) {
 	if _, ok := runBody["result"].(map[string]any); !ok {
 		t.Fatalf("expected materialized result object, got %#v", runBody["result"])
 	}
+	snapshot, ok := runBody["snapshot"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected snapshot object, got %#v", runBody["snapshot"])
+	}
+	if snapshotLineage, ok := snapshot["lineage"].(map[string]any); !ok || snapshotLineage["graph_snapshot_id"] == "" {
+		t.Fatalf("expected snapshot lineage, got %#v", snapshot["lineage"])
+	}
+	if snapshotStorage, ok := snapshot["storage"].(map[string]any); !ok || snapshotStorage["storage_class"] != "local_durable" {
+		t.Fatalf("expected snapshot storage metadata, got %#v", snapshot["storage"])
+	}
+
+	attemptsResp := do(t, s, http.MethodGet, statusURL+"/attempts", nil)
+	if attemptsResp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for attempts lookup, got %d: %s", attemptsResp.Code, attemptsResp.Body.String())
+	}
+	attemptsBody := decodeJSON(t, attemptsResp)
+	if got := attemptsBody["count"]; got != float64(1) {
+		t.Fatalf("expected one attempt, got %#v", got)
+	}
+	attempts, ok := attemptsBody["attempts"].([]any)
+	if !ok || len(attempts) != 1 {
+		t.Fatalf("expected one attempt entry, got %#v", attemptsBody["attempts"])
+	}
+	attempt, ok := attempts[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected attempt object, got %#v", attempts[0])
+	}
+	if got := attempt["status"]; got != graph.ReportRunStatusSucceeded {
+		t.Fatalf("expected attempt succeeded, got %#v", got)
+	}
+	if got := attempt["execution_surface"]; got != "platform.inline" {
+		t.Fatalf("expected inline execution surface, got %#v", got)
+	}
+
+	eventsResp := do(t, s, http.MethodGet, statusURL+"/events", nil)
+	if eventsResp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for events lookup, got %d: %s", eventsResp.Code, eventsResp.Body.String())
+	}
+	eventsBody := decodeJSON(t, eventsResp)
+	if got := eventsBody["count"]; got != float64(4) {
+		t.Fatalf("expected four lifecycle events, got %#v", got)
+	}
+	events, ok := eventsBody["events"].([]any)
+	if !ok || len(events) != 4 {
+		t.Fatalf("expected four event entries, got %#v", eventsBody["events"])
+	}
+	firstEvent, ok := events[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected first event object, got %#v", events[0])
+	}
+	if got := firstEvent["type"]; got != string(webhooks.EventPlatformReportRunQueued) {
+		t.Fatalf("expected queued event first, got %#v", got)
+	}
+	lastEvent, ok := events[len(events)-1].(map[string]any)
+	if !ok {
+		t.Fatalf("expected last event object, got %#v", events[len(events)-1])
+	}
+	if got := lastEvent["type"]; got != string(webhooks.EventPlatformReportRunCompleted) {
+		t.Fatalf("expected completed event last, got %#v", got)
+	}
 
 	listResp := do(t, s, http.MethodGet, "/api/v1/platform/intelligence/reports/quality/runs", nil)
 	if listResp.Code != http.StatusOK {
@@ -393,6 +539,11 @@ func TestPlatformIntelligenceReportRunAsync(t *testing.T) {
 			"observed_at":   now.Format(time.RFC3339),
 			"valid_from":    now.Format(time.RFC3339),
 		},
+	})
+	g.SetMetadata(graph.Metadata{
+		BuiltAt:   now.Add(20 * time.Minute),
+		NodeCount: 1,
+		Providers: []string{"test"},
 	})
 
 	w := do(t, s, http.MethodPost, "/api/v1/platform/intelligence/reports/metadata-quality/runs", map[string]any{
@@ -429,6 +580,32 @@ func TestPlatformIntelligenceReportRunAsync(t *testing.T) {
 	if _, ok := runBody["result"].(map[string]any); !ok {
 		t.Fatalf("expected async result payload, got %#v", runBody["result"])
 	}
+	if got := runBody["attempt_count"]; got != float64(1) {
+		t.Fatalf("expected one attempt, got %#v", got)
+	}
+	if got := runBody["event_count"]; got != float64(4) {
+		t.Fatalf("expected four lifecycle events, got %#v", got)
+	}
+
+	attemptsResp := do(t, s, http.MethodGet, statusURL+"/attempts", nil)
+	if attemptsResp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for async attempts lookup, got %d: %s", attemptsResp.Code, attemptsResp.Body.String())
+	}
+	attemptsBody := decodeJSON(t, attemptsResp)
+	attempts, ok := attemptsBody["attempts"].([]any)
+	if !ok || len(attempts) != 1 {
+		t.Fatalf("expected one async attempt, got %#v", attemptsBody["attempts"])
+	}
+	attempt, ok := attempts[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected attempt object, got %#v", attempts[0])
+	}
+	if got := attempt["execution_surface"]; got != "platform.job" {
+		t.Fatalf("expected job execution surface, got %#v", got)
+	}
+	if got := attempt["job_id"]; got == "" {
+		t.Fatalf("expected job_id on async attempt, got %#v", got)
+	}
 
 	jobResp := do(t, s, http.MethodGet, jobURL, nil)
 	if jobResp.Code != http.StatusOK {
@@ -455,6 +632,11 @@ func TestPlatformIntelligenceReportRunPersistsAcrossServerRestart(t *testing.T) 
 			"observed_at": now.Format(time.RFC3339),
 			"valid_from":  now.Format(time.RFC3339),
 		},
+	})
+	g.SetMetadata(graph.Metadata{
+		BuiltAt:   now.Add(15 * time.Minute),
+		NodeCount: 1,
+		Providers: []string{"test"},
 	})
 
 	createResp := do(t, s1, http.MethodPost, "/api/v1/platform/intelligence/reports/quality/runs", map[string]any{
@@ -483,6 +665,22 @@ func TestPlatformIntelligenceReportRunPersistsAcrossServerRestart(t *testing.T) 
 	}
 	if _, ok := runBody["result"].(map[string]any); !ok {
 		t.Fatalf("expected restored result payload, got %#v", runBody["result"])
+	}
+	attemptsResp := do(t, s2, http.MethodGet, statusURL+"/attempts", nil)
+	if attemptsResp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for restored attempts, got %d: %s", attemptsResp.Code, attemptsResp.Body.String())
+	}
+	attemptsBody := decodeJSON(t, attemptsResp)
+	if got := attemptsBody["count"]; got != float64(1) {
+		t.Fatalf("expected persisted attempt count=1, got %#v", got)
+	}
+	eventsResp := do(t, s2, http.MethodGet, statusURL+"/events", nil)
+	if eventsResp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for restored events, got %d: %s", eventsResp.Code, eventsResp.Body.String())
+	}
+	eventsBody := decodeJSON(t, eventsResp)
+	if got := eventsBody["count"]; got != float64(4) {
+		t.Fatalf("expected persisted event count=4, got %#v", got)
 	}
 }
 
@@ -532,6 +730,12 @@ func TestPlatformIntelligenceReportRunLifecycleEvents(t *testing.T) {
 	if queued.Data["report_id"] != "quality" {
 		t.Fatalf("expected queued report_id quality, got %#v", queued.Data["report_id"])
 	}
+	if queued.Data["attempt_count"] != 1 {
+		t.Fatalf("expected queued attempt_count=1, got %#v", queued.Data["attempt_count"])
+	}
+	if queued.Data["storage_class"] != "local_durable" {
+		t.Fatalf("expected queued storage_class local_durable, got %#v", queued.Data["storage_class"])
+	}
 
 	started := <-eventsCh
 	if started.Type != webhooks.EventPlatformReportRunStarted {
@@ -539,6 +743,9 @@ func TestPlatformIntelligenceReportRunLifecycleEvents(t *testing.T) {
 	}
 	if started.Data["status"] != graph.ReportRunStatusRunning {
 		t.Fatalf("expected started status running, got %#v", started.Data["status"])
+	}
+	if started.Data["execution_surface"] != "platform.inline" {
+		t.Fatalf("expected started execution_surface platform.inline, got %#v", started.Data["execution_surface"])
 	}
 
 	snapshot := <-eventsCh
@@ -560,6 +767,9 @@ func TestPlatformIntelligenceReportRunLifecycleEvents(t *testing.T) {
 	}
 	if completed.Data["materialized_result"] != true {
 		t.Fatalf("expected completed event to mark materialized_result=true, got %#v", completed.Data["materialized_result"])
+	}
+	if completed.Data["report_definition_version"] != graph.DefaultReportDefinitionVersion {
+		t.Fatalf("expected completed event report definition version, got %#v", completed.Data["report_definition_version"])
 	}
 }
 
