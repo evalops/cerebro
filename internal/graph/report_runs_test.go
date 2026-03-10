@@ -52,7 +52,7 @@ func TestBuildReportSnapshotAndSections(t *testing.T) {
 	}
 	now := time.Date(2026, 3, 9, 19, 15, 0, 0, time.UTC)
 
-	sections := BuildReportSectionResults(definition, result)
+	sections := BuildReportSectionResults(definition, result, nil)
 	if len(sections) != 2 {
 		t.Fatalf("expected 2 sections, got %d", len(sections))
 	}
@@ -136,6 +136,64 @@ func TestBuildReportLineageAndStoragePolicy(t *testing.T) {
 	}
 	if metadataOnly.MaterializedResultAvailable {
 		t.Fatal("expected metadata-only policy to disable materialized result")
+	}
+}
+
+func TestBuildReportSectionResultsIncludesLineageAndTruncationSignals(t *testing.T) {
+	g := New()
+	g.AddNode(&Node{ID: "claim:payments:tier", Kind: NodeKindClaim, Name: "Payments tier claim"})
+	g.AddNode(&Node{ID: "evidence:runbook", Kind: NodeKindEvidence, Name: "Runbook"})
+	g.AddNode(&Node{ID: "source:github", Kind: NodeKindSource, Name: "GitHub"})
+	g.AddEdge(&Edge{ID: "claim-based-on", Source: "claim:payments:tier", Target: "evidence:runbook", Kind: EdgeKindBasedOn})
+	g.AddEdge(&Edge{ID: "claim-asserted-by", Source: "claim:payments:tier", Target: "source:github", Kind: EdgeKindAssertedBy})
+
+	definition := ReportDefinition{
+		ID: "claim-conflicts",
+		Sections: []ReportSection{
+			{Key: "conflicts", Title: "Conflicts", Kind: "table"},
+		},
+	}
+	result := map[string]any{
+		"conflicts": []any{
+			map[string]any{
+				"claim_ids":             []any{"claim:payments:tier"},
+				"returned_conflicts":    1,
+				"conflicts_truncated":   true,
+				"partial_results":       true,
+				"supporting_evidence":   []any{"evidence:runbook"},
+				"asserting_source_ids":  []any{"source:github"},
+				"non_graph_identifier":  "not-a-node",
+				"irrelevant_plain_text": "payments",
+			},
+		},
+	}
+
+	sections := BuildReportSectionResults(definition, result, g)
+	if len(sections) != 1 {
+		t.Fatalf("expected one section, got %d", len(sections))
+	}
+	lineage := sections[0].Lineage
+	if lineage == nil {
+		t.Fatalf("expected lineage metadata, got %+v", sections[0])
+	}
+	if lineage.ReferencedNodeCount != 3 {
+		t.Fatalf("expected referenced_node_count=3, got %+v", lineage)
+	}
+	if lineage.ClaimCount != 1 || len(lineage.ClaimIDs) != 1 || lineage.ClaimIDs[0] != "claim:payments:tier" {
+		t.Fatalf("expected one claim lineage ref, got %+v", lineage)
+	}
+	if lineage.EvidenceCount != 1 || len(lineage.EvidenceIDs) != 1 || lineage.EvidenceIDs[0] != "evidence:runbook" {
+		t.Fatalf("expected one evidence lineage ref, got %+v", lineage)
+	}
+	if lineage.SourceCount != 1 || len(lineage.SourceIDs) != 1 || lineage.SourceIDs[0] != "source:github" {
+		t.Fatalf("expected one source lineage ref, got %+v", lineage)
+	}
+	materialization := sections[0].Materialization
+	if materialization == nil || !materialization.Truncated {
+		t.Fatalf("expected truncation materialization metadata, got %+v", sections[0].Materialization)
+	}
+	if len(materialization.TruncationSignals) != 2 {
+		t.Fatalf("expected truncation signals, got %+v", materialization)
 	}
 }
 
