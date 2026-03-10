@@ -13,6 +13,7 @@ Graph-specific architecture references:
 - [Agent SDK Package Auto-Generation](./AGENT_SDK_PACKAGES_AUTOGEN.md)
 - [Graph Report Extensibility Research](./GRAPH_REPORT_EXTENSIBILITY_RESEARCH.md)
 - [Graph Asset Deepening Research](./GRAPH_ASSET_DEEPENING_RESEARCH.md)
+- [Graph Entity Facet Architecture](./GRAPH_ENTITY_FACET_ARCHITECTURE.md)
 - [Graph Ontology Architecture](./GRAPH_ONTOLOGY_ARCHITECTURE.md)
 - [Graph World Model Architecture](./GRAPH_WORLD_MODEL_ARCHITECTURE.md)
 - [Platform Transition Architecture](./PLATFORM_TRANSITION_ARCHITECTURE.md)

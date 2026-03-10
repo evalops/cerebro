@@ -5,6 +5,73 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 33 - Canonical Entity Identity + Facet Modules + Entity Summary Report (2026-03-10)
+
+### Review findings
+- [x] Gap: typed entity reads existed, but they still treated provider/source IDs as the public identity surface instead of separating canonical platform identity from external refs.
+- [x] Gap: asset deepening was still trapped inside `properties`; there was no typed facet layer for ownership, exposure, encryption, logging, versioning, or sensitivity modules.
+- [x] Gap: posture and support were visible at the claim layer, but entity detail still lacked a normalized posture block for “why is this asset risky / supported”.
+- [x] Gap: asset pages still had no first-class report surface built from platform primitives, which left a risk of backsliding into bespoke asset endpoint trees.
+- [x] Gap: the asset-deepening backlog needed sharper external guidance on per-family control packs and modular support facets.
+
+### Research synthesis to adopt
+- [x] Backstage rule: canonical refs should be stable and serializable, with relations layered on top instead of inventing identity shape per source.
+- [x] DataHub rule: ownership and asset summaries should be typed modules/aspects, not loose strings or page-specific payload glue.
+- [x] OpenMetadata rule: deep entities need strict typed fragments and typed cross-entity refs, not larger `additionalProperties` blobs.
+- [x] Cartography rule: one resource family should accumulate composable support fragments instead of one giant provider payload.
+- [x] Steampipe rule: one asset family should expose a reusable pack of small control modules (public access, encryption, logging, versioning, lifecycle) rather than one monolithic posture object.
+
+### Execution plan
+- [x] Add canonical entity identity surfaces:
+  - [x] add `canonical_ref` to typed entity records
+  - [x] add `external_refs` for source-native identity
+  - [x] add `aliases` for explicit alternate identity records
+- [x] Add schema-backed facet modules:
+  - [x] add built-in facet contracts for `ownership`, `exposure`, `data_sensitivity`
+  - [x] add first deep family pack for `bucket_public_access`, `bucket_encryption`, `bucket_logging`, `bucket_versioning`
+  - [x] materialize facet records directly on entity detail
+- [x] Add normalized posture/support summary on entities:
+  - [x] add typed `posture` summary on entity detail
+  - [x] include support/dispute/staleness signals on posture claims
+  - [x] keep raw config in `properties` while exposing normalized posture separately
+- [x] Add report-level asset view:
+  - [x] add `graph.BuildEntitySummaryReport(...)`
+  - [x] register `entity-summary` in the platform report catalog
+  - [x] expose `GET /api/v1/platform/intelligence/entity-summary`
+  - [x] make the report runnable through the existing report-run substrate
+- [x] Tighten contracts/docs/tests:
+  - [x] extend OpenAPI for canonical refs, external refs, aliases, facets, posture, and entity-summary
+  - [x] add focused graph/API regression coverage for entity detail/report enrichment
+  - [x] add [GRAPH_ENTITY_FACET_ARCHITECTURE.md](./docs/GRAPH_ENTITY_FACET_ARCHITECTURE.md)
+  - [x] deepen [GRAPH_ASSET_DEEPENING_RESEARCH.md](./docs/GRAPH_ASSET_DEEPENING_RESEARCH.md) with the Steampipe control-pack pattern
+
+### Detailed follow-on backlog
+- [ ] Track A - Facet contract generation + compatibility
+  - Exit criteria:
+  - [ ] generate machine-readable facet catalogs from one canonical registry
+  - [ ] add facet compatibility checks in CI similar to CloudEvents and report contracts
+  - [ ] generate facet docs/examples so schema names and field keys stop being hand-maintained
+- [ ] Track B - Bucket subresource deepening
+  - Exit criteria:
+  - [ ] add promoted subresource nodes for bucket policy statements / public-access controls when evidence and explanation need durable IDs
+  - [ ] connect bucket subresources to evidence/claims instead of storing all posture only on the bucket node
+  - [ ] expose bucket-family explanation paths that traverse bucket -> subresource -> claim -> evidence
+- [ ] Track C - Write-side posture normalization
+  - Exit criteria:
+  - [ ] add normalization jobs or ingest hooks that convert raw asset config into durable posture claims automatically
+  - [ ] make entity detail and entity-summary prefer durable claims over read-time derivation when both exist
+  - [ ] emit lifecycle events for normalized posture claim creation/update
+- [ ] Track D - Broader facet packs
+  - Exit criteria:
+  - [ ] add first-class facet packs for `database`, `service`, and `instance`
+  - [ ] keep field names and assessments durable across providers where semantics match
+  - [ ] add provider-specific external ref coverage without losing canonical platform identity
+- [ ] Track E - Entity summary module overlays
+  - Exit criteria:
+  - [ ] add docs/links, timeline, remediation, and subresource modules to `entity-summary`
+  - [ ] bind report modules to facet IDs and posture predicates rather than provider property names
+  - [ ] support module overlays/benchmark packs without inventing new asset-specific endpoint trees
+
 ## Deep Review Cycle 32 - Append-Only Claim Adjudication + Proof Objects + Knowledge Diffs + Asset Entity Surface (2026-03-10)
 
 ### Review findings

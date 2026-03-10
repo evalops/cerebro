@@ -14,22 +14,23 @@ const (
 
 // EntityQueryOptions tunes typed entity/resource reads over the graph substrate.
 type EntityQueryOptions struct {
-	ID           string               `json:"id,omitempty"`
-	Kinds        []NodeKind           `json:"kinds,omitempty"`
-	Categories   []NodeKindCategory   `json:"categories,omitempty"`
-	Capabilities []NodeKindCapability `json:"capabilities,omitempty"`
-	Provider     string               `json:"provider,omitempty"`
-	Account      string               `json:"account,omitempty"`
-	Region       string               `json:"region,omitempty"`
-	Risk         RiskLevel            `json:"risk,omitempty"`
-	Search       string               `json:"search,omitempty"`
-	TagKey       string               `json:"tag_key,omitempty"`
-	TagValue     string               `json:"tag_value,omitempty"`
-	HasFindings  *bool                `json:"has_findings,omitempty"`
-	ValidAt      time.Time            `json:"valid_at,omitempty"`
-	RecordedAt   time.Time            `json:"recorded_at,omitempty"`
-	Limit        int                  `json:"limit,omitempty"`
-	Offset       int                  `json:"offset,omitempty"`
+	ID            string               `json:"id,omitempty"`
+	Kinds         []NodeKind           `json:"kinds,omitempty"`
+	Categories    []NodeKindCategory   `json:"categories,omitempty"`
+	Capabilities  []NodeKindCapability `json:"capabilities,omitempty"`
+	Provider      string               `json:"provider,omitempty"`
+	Account       string               `json:"account,omitempty"`
+	Region        string               `json:"region,omitempty"`
+	Risk          RiskLevel            `json:"risk,omitempty"`
+	Search        string               `json:"search,omitempty"`
+	TagKey        string               `json:"tag_key,omitempty"`
+	TagValue      string               `json:"tag_value,omitempty"`
+	HasFindings   *bool                `json:"has_findings,omitempty"`
+	ValidAt       time.Time            `json:"valid_at,omitempty"`
+	RecordedAt    time.Time            `json:"recorded_at,omitempty"`
+	Limit         int                  `json:"limit,omitempty"`
+	Offset        int                  `json:"offset,omitempty"`
+	IncludeDetail bool                 `json:"-"`
 }
 
 // EntityQueryFilters echoes the applied entity filters.
@@ -100,11 +101,16 @@ type EntityRecord struct {
 	Risk          RiskLevel                     `json:"risk,omitempty"`
 	Categories    []NodeKindCategory            `json:"categories,omitempty"`
 	Capabilities  []NodeKindCapability          `json:"capabilities,omitempty"`
+	CanonicalRef  EntityCanonicalRef            `json:"canonical_ref"`
+	ExternalRefs  []EntityExternalRef           `json:"external_refs,omitempty"`
+	Aliases       []EntityAliasRecord           `json:"aliases,omitempty"`
 	Tags          map[string]string             `json:"tags,omitempty"`
 	Findings      []string                      `json:"findings,omitempty"`
 	Temporal      EntityTemporalMetadata        `json:"temporal"`
 	Links         EntityLinkSummary             `json:"links"`
 	Knowledge     EntityKnowledgeSupportSummary `json:"knowledge"`
+	Facets        []EntityFacetRecord           `json:"facets,omitempty"`
+	Posture       *EntityPostureSummary         `json:"posture,omitempty"`
 	Relationships []EntityRelationshipSummary   `json:"relationships,omitempty"`
 	Properties    map[string]any                `json:"properties,omitempty"`
 }
@@ -168,7 +174,7 @@ func QueryEntities(g *Graph, opts EntityQueryOptions) EntityCollection {
 		if node == nil || !entityQueryAllowedNodeKind(node.Kind) {
 			continue
 		}
-		record := buildEntityRecord(g, node, query.ValidAt, query.RecordedAt)
+		record := buildEntityRecord(g, node, query.ValidAt, query.RecordedAt, query.IncludeDetail)
 		if !entityMatchesQuery(record, query) {
 			continue
 		}
@@ -215,16 +221,22 @@ func GetEntityRecord(g *Graph, id string, validAt, recordedAt time.Time) (Entity
 	if id == "" {
 		return EntityRecord{}, false
 	}
-	result := QueryEntities(g, EntityQueryOptions{
-		ID:         id,
-		ValidAt:    validAt,
-		RecordedAt: recordedAt,
-		Limit:      1,
-	})
-	if len(result.Entities) == 0 {
+	if g == nil {
 		return EntityRecord{}, false
 	}
-	return result.Entities[0], true
+	if validAt.IsZero() {
+		validAt = temporalNowUTC()
+	}
+	if recordedAt.IsZero() {
+		recordedAt = temporalNowUTC()
+	}
+	for _, node := range g.GetAllNodesBitemporal(validAt.UTC(), recordedAt.UTC()) {
+		if node == nil || node.ID != id || !entityQueryAllowedNodeKind(node.Kind) {
+			continue
+		}
+		return buildEntityRecord(g, node, validAt.UTC(), recordedAt.UTC(), true), true
+	}
+	return EntityRecord{}, false
 }
 
 func normalizeEntityQueryOptions(opts EntityQueryOptions) EntityQueryOptions {
@@ -261,18 +273,21 @@ func normalizeEntityQueryOptions(opts EntityQueryOptions) EntityQueryOptions {
 	return opts
 }
 
-func buildEntityRecord(g *Graph, node *Node, validAt, recordedAt time.Time) EntityRecord {
+func buildEntityRecord(g *Graph, node *Node, validAt, recordedAt time.Time, includeDetail bool) EntityRecord {
 	record := EntityRecord{
-		ID:         node.ID,
-		Kind:       node.Kind,
-		Name:       strings.TrimSpace(node.Name),
-		Provider:   strings.TrimSpace(node.Provider),
-		Account:    strings.TrimSpace(node.Account),
-		Region:     strings.TrimSpace(node.Region),
-		Risk:       node.Risk,
-		Tags:       cloneStringMap(node.Tags),
-		Findings:   append([]string(nil), node.Findings...),
-		Properties: cloneAnyMap(node.Properties),
+		ID:           node.ID,
+		Kind:         node.Kind,
+		Name:         strings.TrimSpace(node.Name),
+		Provider:     strings.TrimSpace(node.Provider),
+		Account:      strings.TrimSpace(node.Account),
+		Region:       strings.TrimSpace(node.Region),
+		Risk:         node.Risk,
+		CanonicalRef: buildEntityCanonicalRef(node),
+		ExternalRefs: buildEntityExternalRefs(node),
+		Aliases:      buildEntityAliasRecords(g, node, validAt, recordedAt),
+		Tags:         cloneStringMap(node.Tags),
+		Findings:     append([]string(nil), node.Findings...),
+		Properties:   cloneAnyMap(node.Properties),
 	}
 	if def, ok := GlobalSchemaRegistry().NodeKindDefinition(node.Kind); ok {
 		record.Categories = append([]NodeKindCategory(nil), def.Categories...)
@@ -285,6 +300,16 @@ func buildEntityRecord(g *Graph, node *Node, validAt, recordedAt time.Time) Enti
 		OutgoingCount: len(g.GetOutEdgesBitemporal(node.ID, validAt, recordedAt)),
 	}
 	record.Knowledge = buildEntityKnowledgeSupportSummary(g, node.ID, validAt, recordedAt)
+	if includeDetail {
+		claims := collectClaimRecords(g, ClaimQueryOptions{
+			SubjectID:  node.ID,
+			ValidAt:    validAt,
+			RecordedAt: recordedAt,
+			Limit:      maxClaimQueryLimit,
+		})
+		record.Facets = buildEntityFacetRecords(g, node, validAt, recordedAt, claims)
+		record.Posture = buildEntityPostureSummary(claims, validAt)
+	}
 	return record
 }
 

@@ -388,6 +388,7 @@ func (s *Server) setupRoutes() {
 				r.Get("/quality", s.graphIntelligenceQuality)
 				r.Get("/metadata-quality", s.graphIntelligenceMetadataQuality)
 				r.Get("/claim-conflicts", s.graphIntelligenceClaimConflicts)
+				r.Get("/entity-summary", s.graphIntelligenceEntitySummary)
 				r.Get("/leverage", s.graphIntelligenceLeverage)
 				r.Get("/calibration/weekly", s.graphIntelligenceWeeklyCalibration)
 			})

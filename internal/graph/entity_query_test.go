@@ -39,23 +39,50 @@ func TestQueryEntitiesFiltersAndKnowledgeSupport(t *testing.T) {
 		Properties: cloneAnyMap(baseProps),
 	})
 	g.AddNode(&Node{
-		ID:         "bucket:logs",
-		Kind:       NodeKindBucket,
-		Name:       "Audit Logs",
-		Provider:   "aws",
-		Account:    "123456789012",
-		Region:     "us-east-1",
-		Risk:       RiskLow,
-		Tags:       map[string]string{"env": "prod"},
-		Properties: cloneAnyMap(baseProps),
+		ID:       "arn:aws:s3:::logs",
+		Kind:     NodeKindBucket,
+		Name:     "Audit Logs",
+		Provider: "aws",
+		Account:  "123456789012",
+		Region:   "us-east-1",
+		Risk:     RiskLow,
+		Tags:     map[string]string{"env": "prod"},
+		Properties: map[string]any{
+			"observed_at":         baseAt.UTC().Format(time.RFC3339),
+			"valid_from":          baseAt.UTC().Format(time.RFC3339),
+			"recorded_at":         baseAt.UTC().Format(time.RFC3339),
+			"transaction_from":    baseAt.UTC().Format(time.RFC3339),
+			"block_public_acls":   true,
+			"block_public_policy": true,
+			"logging_enabled":     true,
+			"versioning_status":   "Enabled",
+			"encrypted":           true,
+			"bucket_name":         "logs",
+		},
 	})
 	g.AddNode(&Node{ID: "person:alice@example.com", Kind: NodeKindPerson, Name: "Alice", Properties: cloneAnyMap(baseProps)})
 	g.AddNode(&Node{ID: "person:bob@example.com", Kind: NodeKindPerson, Name: "Bob", Properties: cloneAnyMap(baseProps)})
+	g.AddNode(&Node{ID: "identity_alias:slack:payments-owner", Kind: NodeKindIdentityAlias, Name: "payments-owner", Properties: map[string]any{
+		"alias_type":       "slack",
+		"source_system":    "slack",
+		"observed_at":      baseAt.UTC().Format(time.RFC3339),
+		"valid_from":       baseAt.UTC().Format(time.RFC3339),
+		"recorded_at":      baseAt.UTC().Format(time.RFC3339),
+		"transaction_from": baseAt.UTC().Format(time.RFC3339),
+	}})
 	g.AddEdge(&Edge{
 		ID:         "service:payments->database:payments:depends_on",
 		Source:     "service:payments",
 		Target:     "database:payments",
 		Kind:       EdgeKindDependsOn,
+		Effect:     EdgeEffectAllow,
+		Properties: cloneAnyMap(baseProps),
+	})
+	g.AddEdge(&Edge{
+		ID:         "identity_alias:slack:payments-owner->person:alice@example.com:alias_of",
+		Source:     "identity_alias:slack:payments-owner",
+		Target:     "person:alice@example.com",
+		Kind:       EdgeKindAliasOf,
 		Effect:     EdgeEffectAllow,
 		Properties: cloneAnyMap(baseProps),
 	})
@@ -109,6 +136,34 @@ func TestQueryEntitiesFiltersAndKnowledgeSupport(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("write bob claim: %v", err)
 	}
+	if _, err := WriteClaim(g, ClaimWriteRequest{
+		ID:              "claim:logs:encrypted:true",
+		SubjectID:       "arn:aws:s3:::logs",
+		Predicate:       "encrypted",
+		ObjectValue:     "true",
+		EvidenceIDs:     []string{"evidence:runbook"},
+		SourceSystem:    "aws",
+		ObservedAt:      baseAt.Add(50 * time.Minute),
+		ValidFrom:       baseAt.Add(50 * time.Minute),
+		RecordedAt:      baseAt.Add(50 * time.Minute),
+		TransactionFrom: baseAt.Add(50 * time.Minute),
+	}); err != nil {
+		t.Fatalf("write encrypted claim: %v", err)
+	}
+	if _, err := WriteClaim(g, ClaimWriteRequest{
+		ID:              "claim:logs:public_access:false",
+		SubjectID:       "arn:aws:s3:::logs",
+		Predicate:       "public_access",
+		ObjectValue:     "false",
+		EvidenceIDs:     []string{"evidence:runbook"},
+		SourceSystem:    "aws",
+		ObservedAt:      baseAt.Add(55 * time.Minute),
+		ValidFrom:       baseAt.Add(55 * time.Minute),
+		RecordedAt:      baseAt.Add(55 * time.Minute),
+		TransactionFrom: baseAt.Add(55 * time.Minute),
+	}); err != nil {
+		t.Fatalf("write public access claim: %v", err)
+	}
 
 	collection := QueryEntities(g, EntityQueryOptions{
 		Categories: []NodeKindCategory{NodeCategoryResource},
@@ -122,7 +177,7 @@ func TestQueryEntitiesFiltersAndKnowledgeSupport(t *testing.T) {
 	if collection.Count != 3 {
 		t.Fatalf("expected three resource entities, got %#v", collection)
 	}
-	if collection.Summary.ResourceEntities != 3 || collection.Summary.KnowledgeBackedEntities != 1 {
+	if collection.Summary.ResourceEntities != 3 || collection.Summary.KnowledgeBackedEntities != 2 {
 		t.Fatalf("unexpected summary: %#v", collection.Summary)
 	}
 	if collection.Entities[0].ID != "service:payments" {
@@ -157,6 +212,45 @@ func TestQueryEntitiesFiltersAndKnowledgeSupport(t *testing.T) {
 	})
 	if filtered.Count != 2 {
 		t.Fatalf("expected bucket and database for sensitive-data filter, got %#v", filtered.Entities)
+	}
+
+	bucketDetail, ok := GetEntityRecord(g, "arn:aws:s3:::logs", baseAt.Add(2*time.Hour), baseAt.Add(2*time.Hour))
+	if !ok {
+		t.Fatal("expected bucket detail")
+	}
+	if bucketDetail.CanonicalRef.Namespace != "aws/123456789012/us-east-1" {
+		t.Fatalf("unexpected canonical namespace: %#v", bucketDetail.CanonicalRef)
+	}
+	if len(bucketDetail.ExternalRefs) == 0 || bucketDetail.ExternalRefs[0].Type != "arn" {
+		t.Fatalf("expected ARN external ref, got %#v", bucketDetail.ExternalRefs)
+	}
+	if len(bucketDetail.Facets) < 4 {
+		t.Fatalf("expected bucket facets, got %#v", bucketDetail.Facets)
+	}
+	if bucketDetail.Posture == nil || bucketDetail.Posture.ActiveClaimCount != 2 {
+		t.Fatalf("expected bucket posture claims, got %#v", bucketDetail.Posture)
+	}
+	personDetail, ok := GetEntityRecord(g, "person:alice@example.com", baseAt.Add(2*time.Hour), baseAt.Add(2*time.Hour))
+	if !ok {
+		t.Fatal("expected person detail")
+	}
+	if len(personDetail.Aliases) != 1 || personDetail.Aliases[0].AliasType != "slack" {
+		t.Fatalf("expected incoming alias detail, got %#v", personDetail.Aliases)
+	}
+	report, ok := BuildEntitySummaryReport(g, EntitySummaryReportOptions{
+		EntityID:         "arn:aws:s3:::logs",
+		ValidAt:          baseAt.Add(2 * time.Hour),
+		RecordedAt:       baseAt.Add(2 * time.Hour),
+		MaxPostureClaims: 1,
+	})
+	if !ok {
+		t.Fatal("expected entity summary report")
+	}
+	if report.Overview.Headline != "Audit Logs" {
+		t.Fatalf("unexpected report overview: %#v", report.Overview)
+	}
+	if len(report.Facets.Items) == 0 || len(report.Posture.Claims) != 1 {
+		t.Fatalf("expected report facet/posture modules, got %#v", report)
 	}
 }
 
