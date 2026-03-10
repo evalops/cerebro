@@ -29,10 +29,11 @@ func (s *Server) setupMiddleware() {
 	// forwarded headers, which an untrusted client could spoof.
 	if s.app.Config.RateLimitEnabled {
 		rlCfg := RateLimitConfig{
-			RequestsPerWindow: s.app.Config.RateLimitRequests,
-			Window:            s.app.Config.RateLimitWindow,
-			Enabled:           true,
-			TrustedProxyCIDRs: s.app.Config.RateLimitTrustedProxies,
+			RequestsPerWindow:  s.app.Config.RateLimitRequests,
+			Window:             s.app.Config.RateLimitWindow,
+			Enabled:            true,
+			CredentialProvider: s.app.APICredentialsSnapshot,
+			TrustedProxyCIDRs:  s.app.Config.RateLimitTrustedProxies,
 		}
 		s.rateLimiter = NewRateLimiter(rlCfg)
 		s.router.Use(RateLimitMiddlewareWithLimiter(rlCfg, s.rateLimiter))
@@ -44,9 +45,11 @@ func (s *Server) setupMiddleware() {
 
 	if s.app.Config.APIAuthEnabled {
 		s.router.Use(APIKeyAuth(AuthConfig{
-			Enabled:        true,
-			APIKeys:        s.app.Config.APIKeys,
-			APIKeyProvider: s.app.APIKeysSnapshot,
+			Enabled:            true,
+			APIKeys:            s.app.Config.APIKeys,
+			APIKeyProvider:     s.app.APIKeysSnapshot,
+			Credentials:        s.app.Config.APICredentials,
+			CredentialProvider: s.app.APICredentialsSnapshot,
 		}))
 	}
 

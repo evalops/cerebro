@@ -1,13 +1,17 @@
 package api
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/evalops/cerebro/internal/apiauth"
 	"github.com/evalops/cerebro/internal/auth"
 	"github.com/evalops/cerebro/internal/graph"
 	"github.com/evalops/cerebro/internal/policy"
@@ -242,6 +246,155 @@ func TestAgentSDKInvokeHonorsPerToolPermissions(t *testing.T) {
 	}
 }
 
+func TestAgentSDKMCPReportToolEmitsProgress(t *testing.T) {
+	s := newTestServer(t)
+	server := httptest.NewServer(s)
+	defer server.Close()
+
+	sessionID := "session-progress"
+	streamCtx, cancelStream := context.WithCancel(context.Background())
+	defer cancelStream()
+
+	streamReq, err := http.NewRequestWithContext(streamCtx, http.MethodGet, server.URL+"/api/v1/mcp", nil)
+	if err != nil {
+		t.Fatalf("build mcp stream request: %v", err)
+	}
+	streamReq.Header.Set("Mcp-Session-Id", sessionID)
+	streamResp, err := server.Client().Do(streamReq)
+	if err != nil {
+		t.Fatalf("open mcp stream: %v", err)
+	}
+	defer func() { _ = streamResp.Body.Close() }()
+
+	progressCh := make(chan string, 1)
+	go func() {
+		scanner := bufio.NewScanner(streamResp.Body)
+		var payload strings.Builder
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(line, "data: ") {
+				payload.WriteString(strings.TrimPrefix(line, "data: "))
+				continue
+			}
+			if line == "" {
+				message := payload.String()
+				payload.Reset()
+				if strings.Contains(message, "notifications/progress") {
+					progressCh <- message
+					return
+				}
+			}
+		}
+	}()
+
+	callResp := doAuthenticatedHTTP(t, server.URL, http.MethodPost, "/api/v1/mcp", map[string]any{
+		"jsonrpc": "2.0",
+		"id":      "call-1",
+		"method":  "tools/call",
+		"params": map[string]any{
+			"name": "cerebro_report",
+			"arguments": map[string]any{
+				"report_id":          "quality",
+				"execution_mode":     "async",
+				"materialize_result": false,
+			},
+			"_meta": map[string]any{
+				"progressToken": "progress-1",
+			},
+		},
+	}, map[string]string{"Mcp-Session-Id": sessionID})
+	if callResp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for report tool call, got %d: %s", callResp.Code, callResp.Body.String())
+	}
+	callBody := decodeJSON(t, callResp)
+	callResult, ok := callBody["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected result object, got %#v", callBody["result"])
+	}
+	structured, ok := callResult["structuredContent"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected structured content, got %#v", callResult["structuredContent"])
+	}
+	if structured["report_id"] != "quality" {
+		t.Fatalf("expected report_id quality, got %#v", structured["report_id"])
+	}
+
+	select {
+	case payload := <-progressCh:
+		if !strings.Contains(payload, "\"progressToken\":\"progress-1\"") {
+			t.Fatalf("expected progress token in payload, got %s", payload)
+		}
+		if !strings.Contains(payload, "\"report_id\":\"quality\"") {
+			t.Fatalf("expected report id in payload, got %s", payload)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for MCP progress notification")
+	}
+}
+
+func TestAgentSDKClaimWriteEnrichesAttributionMetadata(t *testing.T) {
+	a := newTestApp(t)
+	a.Config.APIAuthEnabled = true
+	a.Config.APICredentials = map[string]apiauth.Credential{
+		"sdk-key": {
+			ID:              "cred-sdk",
+			Name:            "SDK Test Client",
+			UserID:          "writer-user",
+			Kind:            "sdk_client",
+			ClientID:        "client-123",
+			Enabled:         true,
+			RateLimitBucket: "client-123",
+		},
+	}
+	a.Config.APIKeys = map[string]string{"sdk-key": "writer-user"}
+	if err := a.RBAC.CreateUser(&auth.User{
+		ID:      "writer-user",
+		Email:   "writer@example.com",
+		Name:    "Writer",
+		RoleIDs: []string{"admin"},
+	}); err != nil {
+		t.Fatalf("create writer user: %v", err)
+	}
+
+	a.SecurityGraph.AddNode(&graph.Node{ID: "customer:acme", Kind: graph.NodeKindCustomer, Name: "Acme"})
+	a.SecurityGraph.AddNode(&graph.Node{ID: "evidence:signal", Kind: graph.NodeKindEvidence, Name: "Signal"})
+	s := NewServer(a)
+
+	req := newAuthenticatedRequest(t, http.MethodPost, "/api/v1/agent-sdk/claims", map[string]any{
+		"subject_id":   "customer:acme",
+		"predicate":    "churning",
+		"object_value": "true",
+		"evidence_ids": []string{"evidence:signal"},
+	}, "sdk-key")
+	req.Header.Set("traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00")
+	resp := httptest.NewRecorder()
+	s.ServeHTTP(resp, req)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for enriched claim write, got %d: %s", resp.Code, resp.Body.String())
+	}
+	body := decodeJSON(t, resp)
+	claimID, _ := body["claim_id"].(string)
+	if claimID == "" {
+		t.Fatalf("expected claim_id in response, got %#v", body)
+	}
+	node, ok := a.SecurityGraph.GetNode(claimID)
+	if !ok || node == nil {
+		t.Fatalf("expected stored claim node %q", claimID)
+	}
+	if node.Properties["api_credential_id"] != "cred-sdk" {
+		t.Fatalf("expected api_credential_id cred-sdk, got %#v", node.Properties["api_credential_id"])
+	}
+	if node.Properties["sdk_client_id"] != "client-123" {
+		t.Fatalf("expected sdk_client_id client-123, got %#v", node.Properties["sdk_client_id"])
+	}
+	if node.Properties["agent_sdk_tool_id"] != "cerebro_claim" {
+		t.Fatalf("expected agent_sdk_tool_id cerebro_claim, got %#v", node.Properties["agent_sdk_tool_id"])
+	}
+	if node.Properties["traceparent"] != "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00" {
+		t.Fatalf("expected traceparent to be preserved, got %#v", node.Properties["traceparent"])
+	}
+}
+
 func containsAgentSDKTool(tools []map[string]any, id string) bool {
 	for _, tool := range tools {
 		if toolID, _ := tool["id"].(string); toolID == id {
@@ -274,4 +427,34 @@ func newAuthenticatedRequest(t *testing.T, method, path string, body any, apiKey
 		req.Header.Set("Content-Type", "application/json")
 	}
 	return req
+}
+
+func doAuthenticatedHTTP(t *testing.T, baseURL, method, path string, body any, headers map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+	payload, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal authenticated http body: %v", err)
+	}
+	req, err := http.NewRequest(method, baseURL+path, bytes.NewReader(payload))
+	if err != nil {
+		t.Fatalf("build authenticated http request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("execute authenticated http request: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	recorder := httptest.NewRecorder()
+	recorder.Code = resp.StatusCode
+	for key, values := range resp.Header {
+		for _, value := range values {
+			recorder.Header().Add(key, value)
+		}
+	}
+	_, _ = recorder.Body.ReadFrom(resp.Body)
+	return recorder
 }

@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/evalops/cerebro/internal/apiauth"
 	"github.com/evalops/cerebro/internal/findings"
 	"github.com/evalops/cerebro/internal/snowflake"
 )
@@ -389,6 +390,7 @@ type Config struct {
 	// API Authentication
 	APIAuthEnabled                      bool
 	APIKeys                             map[string]string
+	APICredentials                      map[string]apiauth.Credential
 	SecretsReloadInterval               time.Duration
 	RBACStateFile                       string
 	PlatformReportRunStateFile          string
@@ -414,6 +416,17 @@ type Config struct {
 
 func LoadConfig() *Config {
 	apiKeys := parseAPIKeys(getEnv("API_KEYS", ""))
+	apiCredentials, err := apiauth.ParseCredentialsJSON(getEnv("API_CREDENTIALS_JSON", ""))
+	if err != nil {
+		apiCredentials = map[string]apiauth.Credential{}
+	}
+	if len(apiCredentials) == 0 {
+		apiCredentials = make(map[string]apiauth.Credential, len(apiKeys))
+		for key, userID := range apiKeys {
+			apiCredentials[key] = apiauth.DefaultCredentialForAPIKey(key, userID)
+		}
+	}
+	apiKeys = apiauth.CredentialsToUserMap(apiCredentials)
 	apiAuthEnabled := getEnvBool("API_AUTH_ENABLED", len(apiKeys) > 0)
 
 	cfg := &Config{
@@ -667,6 +680,7 @@ func LoadConfig() *Config {
 		CORSAllowedOrigins:                  splitCSV(getEnv("API_CORS_ALLOWED_ORIGINS", "")),
 		APIAuthEnabled:                      apiAuthEnabled,
 		APIKeys:                             apiKeys,
+		APICredentials:                      apiCredentials,
 		SecretsReloadInterval:               getEnvDuration("CEREBRO_SECRETS_RELOAD_INTERVAL", 0),
 		RBACStateFile:                       getEnv("RBAC_STATE_FILE", ""),
 		PlatformReportRunStateFile:          getEnv("PLATFORM_REPORT_RUN_STATE_FILE", filepath.Join(".cerebro", "report-runs", "state.json")),

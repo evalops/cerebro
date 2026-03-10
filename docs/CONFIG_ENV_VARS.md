@@ -2,7 +2,7 @@
 
 Generated from `internal/app/app_config.go` (`LoadConfig`) via `go run ./scripts/generate_config_docs/main.go`.
 
-Total variables: **273**
+Total variables: **274**
 
 | Variable | Reader(s) | Default(s) | Config Field(s) |
 |---|---|---|---|
@@ -22,6 +22,7 @@ Total variables: **273**
 | `ANTHROPIC_API_KEY` | `getEnv` | `""` | `AnthropicAPIKey` |
 | `API_AUTH_ENABLED` | `getEnvBool` | `len(apiKeys) > 0` | `-` |
 | `API_CORS_ALLOWED_ORIGINS` | `getEnv` | `""` | `CORSAllowedOrigins` |
+| `API_CREDENTIALS_JSON` | `getEnv` | `""` | `-` |
 | `API_KEYS` | `getEnv` | `""` | `-` |
 | `API_PORT` | `getEnvInt` | `8080` | `Port` |
 | `AUTH0_CLIENT_ID` | `getEnv` | `""` | `Auth0ClientID` |

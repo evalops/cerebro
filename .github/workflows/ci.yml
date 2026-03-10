@@ -386,6 +386,39 @@ jobs:
       - name: Enforce report contract compatibility
         run: go run ./scripts/check_report_contract_compat/main.go --require-baseline
 
+  agent-sdk-docs-drift:
+    name: agent-sdk-docs-drift
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+
+      - name: Regenerate Agent SDK contract catalog
+        run: go run ./scripts/generate_agent_sdk_docs/main.go
+
+      - name: Verify generated Agent SDK docs are committed
+        run: git diff --exit-code -- docs/AGENT_SDK_AUTOGEN.md docs/AGENT_SDK_CONTRACTS.json
+
+  agent-sdk-contract-compat:
+    name: agent-sdk-contract-compat
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 2
+
+      - name: Set up Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+
+      - name: Enforce Agent SDK contract compatibility
+        run: go run ./scripts/check_agent_sdk_contract_compat/main.go --require-baseline
+
   api-auth-smoke:
     name: api-auth-smoke
     runs-on: blacksmith-4vcpu-ubuntu-2404

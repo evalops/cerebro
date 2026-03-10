@@ -1,13 +1,12 @@
 package app
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"log/slog"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/evalops/cerebro/internal/apiauth"
 	"github.com/evalops/cerebro/internal/envutil"
 )
 
@@ -122,8 +121,7 @@ func parseAPIKeys(value string) map[string]string {
 }
 
 func defaultAPIUserID(key string) string {
-	sum := sha256.Sum256([]byte(key))
-	return "api-key-" + hex.EncodeToString(sum[:8])
+	return apiauth.DefaultUserIDForKey(key)
 }
 
 func parseLogLevel(level string) slog.Level {

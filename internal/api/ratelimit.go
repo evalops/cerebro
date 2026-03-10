@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/evalops/cerebro/internal/apiauth"
 )
 
 // RateLimiter implements a token bucket rate limiter
@@ -30,10 +32,11 @@ type bucket struct {
 
 // RateLimitConfig configures the rate limiter
 type RateLimitConfig struct {
-	RequestsPerWindow int
-	Window            time.Duration
-	MaxBuckets        int
-	Enabled           bool
+	RequestsPerWindow  int
+	Window             time.Duration
+	MaxBuckets         int
+	Enabled            bool
+	CredentialProvider func() map[string]apiauth.Credential
 	// TrustedProxyCIDRs lists CIDR ranges whose RemoteAddr is considered a
 	// trusted reverse proxy. Forwarded headers (X-Forwarded-For, X-Real-IP)
 	// are only honoured when the direct peer is within one of these ranges.
@@ -184,7 +187,7 @@ func RateLimitMiddlewareWithLimiter(cfg RateLimitConfig, rl *RateLimiter) func(h
 			}
 
 			// Use API key or IP as rate limit key
-			key := getClientKeyTrusted(r, trustedNets)
+			key := getClientKeyTrusted(r, trustedNets, cfg.CredentialProvider)
 
 			allowed, remaining, reset := rl.Allow(key)
 
@@ -217,10 +220,25 @@ func retryAfterSeconds(reset time.Time) int64 {
 // falls back to RemoteAddr (safe default).
 // getClientKeyTrusted returns the rate-limit key, honouring forwarded headers
 // only when the direct peer (RemoteAddr) is within a trusted CIDR.
-func getClientKeyTrusted(r *http.Request, trustedNets []*net.IPNet) string {
+func getClientKeyTrusted(r *http.Request, trustedNets []*net.IPNet, credentialProviders ...func() map[string]apiauth.Credential) string {
 	// Canonicalize API key extraction across Authorization and X-API-Key
 	// so the same key always maps to the same rate limit bucket.
 	if key, err := extractAPIKeyStrict(r); err == nil && key != "" {
+		var credentialProvider func() map[string]apiauth.Credential
+		if len(credentialProviders) > 0 {
+			credentialProvider = credentialProviders[0]
+		}
+		if credentialProvider != nil {
+			if credential, ok := credentialProvider()[key]; ok {
+				bucket := strings.TrimSpace(credential.RateLimitBucket)
+				if bucket == "" {
+					bucket = strings.TrimSpace(credential.ID)
+				}
+				if bucket != "" {
+					return "credential:" + bucket
+				}
+			}
+		}
 		return "apikey:" + key
 	}
 

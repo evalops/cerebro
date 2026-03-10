@@ -297,20 +297,36 @@ func (s *Server) createPlatformIntelligenceReportRun(w http.ResponseWriter, r *h
 		s.error(w, http.StatusBadRequest, "report id required")
 		return
 	}
-	definition, ok := graph.GetReportDefinition(reportID)
-	if !ok {
-		s.error(w, http.StatusNotFound, "report definition not found")
-		return
-	}
-
 	var req platformReportRunRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
 		s.error(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if err := graph.ValidateReportParameterValues(definition, req.Parameters); err != nil {
-		s.error(w, http.StatusBadRequest, err.Error())
+	run, status, err := s.startPlatformReportRun(r.Context(), reportID, req, strings.TrimSpace(GetUserID(r.Context())), "api.request")
+	if err != nil {
+		if run != nil {
+			w.Header().Set("Location", run.StatusURL)
+			s.json(w, status, run)
+			return
+		}
+		s.error(w, status, err.Error())
 		return
+	}
+	if run == nil {
+		s.error(w, http.StatusInternalServerError, "report run not created")
+		return
+	}
+	w.Header().Set("Location", run.StatusURL)
+	s.json(w, status, run)
+}
+
+func (s *Server) startPlatformReportRun(ctx context.Context, reportID string, req platformReportRunRequest, requestedBy, triggerSurface string) (*graph.ReportRun, int, error) {
+	definition, ok := graph.GetReportDefinition(reportID)
+	if !ok {
+		return nil, http.StatusNotFound, fmt.Errorf("report definition not found")
+	}
+	if err := graph.ValidateReportParameterValues(definition, req.Parameters); err != nil {
+		return nil, http.StatusBadRequest, err
 	}
 
 	executionMode := strings.ToLower(strings.TrimSpace(req.ExecutionMode))
@@ -318,8 +334,7 @@ func (s *Server) createPlatformIntelligenceReportRun(w http.ResponseWriter, r *h
 		executionMode = graph.ReportExecutionModeSync
 	}
 	if executionMode != graph.ReportExecutionModeSync && executionMode != graph.ReportExecutionModeAsync {
-		s.error(w, http.StatusBadRequest, "execution_mode must be one of sync, async")
-		return
+		return nil, http.StatusBadRequest, fmt.Errorf("execution_mode must be one of sync, async")
 	}
 	materializeResult := true
 	if req.MaterializeResult != nil {
@@ -333,20 +348,22 @@ func (s *Server) createPlatformIntelligenceReportRun(w http.ResponseWriter, r *h
 
 	cacheKey, err := graph.BuildReportRunCacheKey(reportID, req.Parameters)
 	if err != nil {
-		s.error(w, http.StatusInternalServerError, err.Error())
-		return
+		return nil, http.StatusInternalServerError, err
 	}
 
 	now := time.Now().UTC()
 	lineage := graph.BuildReportLineage(s.app.SecurityGraph, definition)
 	storagePolicy := graph.BuildReportStoragePolicy(materializeResult, false)
+	if strings.TrimSpace(requestedBy) == "" {
+		requestedBy = strings.TrimSpace(GetUserID(ctx))
+	}
 	run := &graph.ReportRun{
 		ID:            "report_run:" + uuid.NewString(),
 		ReportID:      reportID,
 		Status:        graph.ReportRunStatusQueued,
 		ExecutionMode: executionMode,
 		SubmittedAt:   now,
-		RequestedBy:   strings.TrimSpace(GetUserID(r.Context())),
+		RequestedBy:   strings.TrimSpace(requestedBy),
 		Parameters:    graph.CloneReportParameterValues(req.Parameters),
 		TimeSlice:     graph.ExtractReportTimeSlice(req.Parameters),
 		CacheKey:      cacheKey,
@@ -355,7 +372,9 @@ func (s *Server) createPlatformIntelligenceReportRun(w http.ResponseWriter, r *h
 		Storage:       storagePolicy,
 	}
 	run.StatusURL = "/api/v1/platform/intelligence/reports/" + reportID + "/runs/" + run.ID
-	triggerSurface := "api.request"
+	if triggerSurface == "" {
+		triggerSurface = "api.request"
+	}
 	executionSurface := reportExecutionSurface(executionMode)
 	run.Attempts = []graph.ReportRunAttempt{
 		graph.NewReportRunAttempt(run.ID, 1, run.Status, triggerSurface, executionSurface, platformExecutionHost(), run.RequestedBy, "", now),
@@ -367,11 +386,15 @@ func (s *Server) createPlatformIntelligenceReportRun(w http.ResponseWriter, r *h
 		"execution_mode":      executionMode,
 		"execution_surface":   executionSurface,
 		"materialized_result": materializeResult,
+		"api_credential_id":   strings.TrimSpace(GetAPICredentialID(ctx)),
+		"api_client_id":       strings.TrimSpace(GetAPIClientID(ctx)),
+		"traceparent":         strings.TrimSpace(GetTraceparent(ctx)),
 	})
 	run.EventCount = len(run.Events)
+	s.bindAgentSDKReportProgress(run.ID, ctx)
 
 	if executionMode == graph.ReportExecutionModeAsync {
-		job := s.newPlatformJob(r.Context(), "platform.report_run", map[string]any{
+		job := s.newPlatformJob(ctx, "platform.report_run", map[string]any{
 			"report_id":       reportID,
 			"run_id":          run.ID,
 			"cache_key":       cacheKey,
@@ -381,10 +404,9 @@ func (s *Server) createPlatformIntelligenceReportRun(w http.ResponseWriter, r *h
 		run.JobStatusURL = job.StatusURL
 		run.Attempts[0].JobID = job.ID
 		if err := s.storePlatformReportRun(run); err != nil {
-			s.error(w, http.StatusInternalServerError, err.Error())
-			return
+			return nil, http.StatusInternalServerError, err
 		}
-		s.emitPlatformReportRunLifecycleEvent(r.Context(), webhooks.EventPlatformReportRunQueued, reportID, run.ID)
+		s.emitPlatformReportRunLifecycleEvent(ctx, webhooks.EventPlatformReportRunQueued, reportID, run.ID)
 
 		// #nosec G118 -- async report runs intentionally detach from request lifetime and are canceled through the platform job.
 		go s.runPlatformJob(job.ID, func(jobCtx context.Context) (any, error) {
@@ -397,34 +419,25 @@ func (s *Server) createPlatformIntelligenceReportRun(w http.ResponseWriter, r *h
 			}
 			return graph.SummarizeReportRun(*stored), nil
 		})
-
-		w.Header().Set("Location", run.StatusURL)
-		s.json(w, http.StatusAccepted, run)
-		return
+		return run, http.StatusAccepted, nil
 	}
 
 	if err := s.storePlatformReportRun(run); err != nil {
-		s.error(w, http.StatusInternalServerError, err.Error())
-		return
+		return nil, http.StatusInternalServerError, err
 	}
-	s.emitPlatformReportRunLifecycleEvent(r.Context(), webhooks.EventPlatformReportRunQueued, reportID, run.ID)
-	if err := s.executePlatformReportRun(r.Context(), run.ID, definition, req.Parameters, materializeResult); err != nil {
+	s.emitPlatformReportRunLifecycleEvent(ctx, webhooks.EventPlatformReportRunQueued, reportID, run.ID)
+	if err := s.executePlatformReportRun(ctx, run.ID, definition, req.Parameters, materializeResult); err != nil {
 		stored, _ := s.platformReportRunSnapshot(reportID, run.ID)
 		if stored != nil {
-			w.Header().Set("Location", stored.StatusURL)
-			s.json(w, http.StatusInternalServerError, stored)
-			return
+			return stored, http.StatusInternalServerError, err
 		}
-		s.error(w, http.StatusInternalServerError, err.Error())
-		return
+		return nil, http.StatusInternalServerError, err
 	}
 	stored, _ := s.platformReportRunSnapshot(reportID, run.ID)
 	if stored == nil {
-		s.error(w, http.StatusInternalServerError, "report run disappeared after execution")
-		return
+		return nil, http.StatusInternalServerError, fmt.Errorf("report run disappeared after execution")
 	}
-	w.Header().Set("Location", stored.StatusURL)
-	s.json(w, http.StatusCreated, stored)
+	return stored, http.StatusCreated, nil
 }
 
 func (s *Server) getPlatformIntelligenceReportRun(w http.ResponseWriter, r *http.Request) {
@@ -1307,6 +1320,7 @@ func (s *Server) emitPlatformReportRunLifecycleEvent(ctx context.Context, eventT
 		return
 	}
 	s.emitPlatformLifecycleEvent(ctx, eventType, platformReportRunEventPayload(run))
+	s.emitAgentSDKReportProgress(run)
 }
 
 func (s *Server) emitPlatformReportSnapshotLifecycleEvent(ctx context.Context, reportID, runID string) {

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -16,33 +15,18 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/evalops/cerebro/internal/agents"
+	"github.com/evalops/cerebro/internal/agentsdk"
 	"github.com/evalops/cerebro/internal/graph"
 )
 
-const agentSDKMCPProtocolVersion = "2025-06-18"
+const agentSDKMCPProtocolVersion = agentsdk.ProtocolVersion
 
 type agentSDKToolBinding struct {
-	ID                 string         `json:"id"`
-	ToolName           string         `json:"tool_name"`
-	SDKMethod          string         `json:"sdk_method,omitempty"`
-	Title              string         `json:"title,omitempty"`
-	Description        string         `json:"description"`
-	Category           string         `json:"category,omitempty"`
-	HTTPMethod         string         `json:"http_method,omitempty"`
-	HTTPPath           string         `json:"http_path,omitempty"`
-	RequiredPermission string         `json:"required_permission,omitempty"`
-	InputSchema        map[string]any `json:"input_schema,omitempty"`
-	RequiresApproval   bool           `json:"requires_approval,omitempty"`
-	tool               agents.Tool
+	agentsdk.ToolDefinition
+	tool agents.Tool
 }
 
-type agentSDKResourceDefinition struct {
-	URI                string `json:"uri"`
-	Name               string `json:"name"`
-	Description        string `json:"description,omitempty"`
-	MimeType           string `json:"mime_type,omitempty"`
-	RequiredPermission string `json:"required_permission,omitempty"`
-}
+type agentSDKResourceDefinition = agentsdk.ResourceDefinition
 
 type agentSDKMCPRequest struct {
 	JSONRPC string          `json:"jsonrpc"`
@@ -56,6 +40,8 @@ type agentSDKMCPResponse struct {
 	ID      any               `json:"id,omitempty"`
 	Result  any               `json:"result,omitempty"`
 	Error   *agentSDKMCPError `json:"error,omitempty"`
+	Method  string            `json:"method,omitempty"`
+	Params  any               `json:"params,omitempty"`
 }
 
 type agentSDKMCPError struct {
@@ -66,29 +52,30 @@ type agentSDKMCPError struct {
 type agentSDKMCPToolCallParams struct {
 	Name      string          `json:"name"`
 	Arguments json.RawMessage `json:"arguments,omitempty"`
+	Meta      map[string]any  `json:"_meta,omitempty"`
 }
 
 type agentSDKMCPResourceReadParams struct {
 	URI string `json:"uri"`
 }
 
-type agentSDKToolMetadata struct {
-	ID                 string         `json:"id"`
-	ToolName           string         `json:"tool_name"`
-	SDKMethod          string         `json:"sdk_method,omitempty"`
-	Title              string         `json:"title,omitempty"`
-	Description        string         `json:"description"`
-	Category           string         `json:"category,omitempty"`
-	HTTPMethod         string         `json:"http_method,omitempty"`
-	HTTPPath           string         `json:"http_path,omitempty"`
-	RequiredPermission string         `json:"required_permission,omitempty"`
-	InputSchema        map[string]any `json:"input_schema,omitempty"`
-	RequiresApproval   bool           `json:"requires_approval,omitempty"`
+type agentSDKReportRequest struct {
+	ReportID          string                       `json:"report_id,omitempty"`
+	ExecutionMode     string                       `json:"execution_mode,omitempty"`
+	MaterializeResult *bool                        `json:"materialize_result,omitempty"`
+	Parameters        []graph.ReportParameterValue `json:"parameters,omitempty"`
+	RetryPolicy       *graph.ReportRetryPolicy     `json:"retry_policy,omitempty"`
 }
 
 type agentSDKPermissionError struct {
 	Permission string
 }
+
+const (
+	contextKeyAgentSDKInvocationSurface contextKey = "agent_sdk_invocation_surface"
+	contextKeyAgentSDKMCPSessionID      contextKey = "agent_sdk_mcp_session_id"
+	contextKeyAgentSDKProgressToken     contextKey = "agent_sdk_progress_token"
+)
 
 func (e *agentSDKPermissionError) Error() string {
 	if e == nil || strings.TrimSpace(e.Permission) == "" {
@@ -98,12 +85,12 @@ func (e *agentSDKPermissionError) Error() string {
 }
 
 func (s *Server) listAgentSDKTools(w http.ResponseWriter, r *http.Request) {
-	visible := make([]agentSDKToolMetadata, 0)
+	visible := make([]agentsdk.ToolDefinition, 0)
 	for _, binding := range s.agentSDKToolCatalog() {
 		if !s.agentSDKHasPermission(r.Context(), binding.RequiredPermission) {
 			continue
 		}
-		visible = append(visible, binding.metadata())
+		visible = append(visible, binding.ToolDefinition)
 	}
 	s.json(w, http.StatusOK, visible)
 }
@@ -116,22 +103,30 @@ func (s *Server) agentSDKCallTool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	binding, result, raw, err := s.invokeAgentSDKTool(r.Context(), toolID, args)
+	ctx := agentSDKContextWithInvocation(r.Context(), "agent_sdk.http.tools.call")
+	binding, result, raw, err := s.invokeAgentSDKTool(ctx, toolID, args)
 	if err != nil {
 		s.handleAgentSDKToolError(w, err)
 		return
 	}
 
 	s.json(w, http.StatusOK, map[string]any{
-		"tool_id":     binding.ID,
-		"tool_name":   binding.ToolName,
-		"sdk_method":  binding.SDKMethod,
-		"result":      result,
-		"raw_result":  raw,
-		"invoked_at":  time.Now().UTC(),
-		"approval":    binding.RequiresApproval,
-		"http_method": binding.HTTPMethod,
-		"http_path":   binding.HTTPPath,
+		"tool_id":           binding.ID,
+		"tool_name":         binding.ToolName,
+		"sdk_method":        binding.SDKMethod,
+		"result":            result,
+		"raw_result":        raw,
+		"invoked_at":        time.Now().UTC(),
+		"approval":          binding.RequiresApproval,
+		"http_method":       binding.HTTPMethod,
+		"http_path":         binding.HTTPPath,
+		"execution_kind":    binding.ExecutionKind,
+		"supports_async":    binding.SupportsAsync,
+		"supports_progress": binding.SupportsProgress,
+		"status_resource":   binding.StatusResource,
+		"api_credential_id": GetAPICredentialID(ctx),
+		"api_client_id":     GetAPIClientID(ctx),
+		"traceparent":       GetTraceparent(ctx),
 	})
 }
 
@@ -151,7 +146,8 @@ func (s *Server) agentSDKContext(w http.ResponseWriter, r *http.Request) {
 		s.error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	_, result, _, invokeErr := s.invokeAgentSDKTool(r.Context(), "cerebro_context", args)
+	ctx := agentSDKContextWithInvocation(r.Context(), "agent_sdk.http.context")
+	_, result, _, invokeErr := s.invokeAgentSDKTool(ctx, "cerebro_context", args)
 	if invokeErr != nil {
 		s.handleAgentSDKToolError(w, invokeErr)
 		return
@@ -160,7 +156,28 @@ func (s *Server) agentSDKContext(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) agentSDKReport(w http.ResponseWriter, r *http.Request) {
-	s.agentSDKToolHTTPProxy(w, r, "cerebro_report", http.StatusOK)
+	var req agentSDKReportRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		s.error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	ctx := agentSDKContextWithInvocation(r.Context(), "agent_sdk.http.report")
+	run, status, err := s.executeAgentSDKReportRequest(ctx, req)
+	if err != nil {
+		if run != nil {
+			w.Header().Set("Location", run.StatusURL)
+			s.json(w, status, run)
+			return
+		}
+		s.error(w, status, err.Error())
+		return
+	}
+	if run == nil {
+		s.error(w, http.StatusInternalServerError, "report run not created")
+		return
+	}
+	w.Header().Set("Location", run.StatusURL)
+	s.json(w, status, run)
 }
 
 func (s *Server) agentSDKQuality(w http.ResponseWriter, r *http.Request) {
@@ -184,23 +201,23 @@ func (s *Server) agentSDKSimulate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) agentSDKObservation(w http.ResponseWriter, r *http.Request) {
-	s.graphWriteObservation(w, r)
+	s.graphWriteObservation(w, s.enrichAgentSDKWriteRequest(r, "cerebro_observe"))
 }
 
 func (s *Server) agentSDKClaim(w http.ResponseWriter, r *http.Request) {
-	s.platformWriteClaim(w, r)
+	s.platformWriteClaim(w, s.enrichAgentSDKWriteRequest(r, "cerebro_claim"))
 }
 
 func (s *Server) agentSDKDecision(w http.ResponseWriter, r *http.Request) {
-	s.platformWriteDecision(w, r)
+	s.platformWriteDecision(w, s.enrichAgentSDKWriteRequest(r, "cerebro_decide"))
 }
 
 func (s *Server) agentSDKOutcome(w http.ResponseWriter, r *http.Request) {
-	s.graphWriteOutcome(w, r)
+	s.graphWriteOutcome(w, s.enrichAgentSDKWriteRequest(r, "cerebro_outcome"))
 }
 
 func (s *Server) agentSDKAnnotation(w http.ResponseWriter, r *http.Request) {
-	s.graphAnnotateEntity(w, r)
+	s.graphAnnotateEntity(w, s.enrichAgentSDKWriteRequest(r, "cerebro_annotate"))
 }
 
 func (s *Server) agentSDKResolveIdentity(w http.ResponseWriter, r *http.Request) {
@@ -227,6 +244,9 @@ func (s *Server) agentSDKMCPStream(w http.ResponseWriter, r *http.Request) {
 		sessionID = uuid.NewString()
 	}
 
+	notifyCh, cancel := s.registerAgentSDKMCPSession(sessionID)
+	defer cancel()
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -241,6 +261,26 @@ func (s *Server) agentSDKMCPStream(w http.ResponseWriter, r *http.Request) {
 	})
 	_, _ = fmt.Fprintf(w, "event: ready\ndata: %s\n\n", payload)
 	flusher.Flush()
+
+	keepAlive := time.NewTicker(15 * time.Second)
+	defer keepAlive.Stop()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case message := <-notifyCh:
+			encoded, err := json.Marshal(message)
+			if err != nil {
+				continue
+			}
+			_, _ = fmt.Fprintf(w, "event: message\ndata: %s\n\n", encoded)
+			flusher.Flush()
+		case <-keepAlive.C:
+			_, _ = fmt.Fprint(w, ": keepalive\n\n")
+			flusher.Flush()
+		}
+	}
 }
 
 func (s *Server) agentSDKMCP(w http.ResponseWriter, r *http.Request) {
@@ -270,7 +310,8 @@ func (s *Server) agentSDKMCP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, mcpErr := s.dispatchAgentSDKMCP(r, req)
+	ctx := agentSDKContextWithSession(r.Context(), sessionID)
+	result, mcpErr := s.dispatchAgentSDKMCP(r.WithContext(ctx), req)
 	resp := agentSDKMCPResponse{
 		JSONRPC: "2.0",
 		ID:      req.ID,
@@ -287,12 +328,26 @@ func (s *Server) agentSDKToolHTTPProxy(w http.ResponseWriter, r *http.Request, t
 		return
 	}
 
-	_, result, _, invokeErr := s.invokeAgentSDKTool(r.Context(), toolID, args)
+	ctx := agentSDKContextWithInvocation(r.Context(), "agent_sdk.http.typed")
+	_, result, _, invokeErr := s.invokeAgentSDKTool(ctx, toolID, args)
 	if invokeErr != nil {
 		s.handleAgentSDKToolError(w, invokeErr)
 		return
 	}
 	s.json(w, status, result)
+}
+
+func (s *Server) executeAgentSDKReportRequest(ctx context.Context, req agentSDKReportRequest) (*graph.ReportRun, int, error) {
+	reportID := strings.TrimSpace(req.ReportID)
+	if reportID == "" {
+		reportID = "insights"
+	}
+	return s.startPlatformReportRun(ctx, reportID, platformReportRunRequest{
+		ExecutionMode:     req.ExecutionMode,
+		MaterializeResult: req.MaterializeResult,
+		Parameters:        graph.CloneReportParameterValues(req.Parameters),
+		RetryPolicy:       req.RetryPolicy,
+	}, strings.TrimSpace(GetUserID(ctx)), agentSDKInvocationSurface(ctx))
 }
 
 func (s *Server) invokeAgentSDKTool(ctx context.Context, toolID string, args json.RawMessage) (agentSDKToolBinding, any, string, error) {
@@ -302,6 +357,17 @@ func (s *Server) invokeAgentSDKTool(ctx context.Context, toolID string, args jso
 	}
 	if err := s.authorizeAgentSDKTool(ctx, binding.RequiredPermission); err != nil {
 		return binding, nil, "", err
+	}
+	if binding.ExecutionKind == agentsdk.ExecutionKindReportRun {
+		run, _, err := s.executeAgentSDKReportRequest(ctx, agentSDKReportRequestFromArgs(args))
+		if err != nil {
+			return binding, nil, "", err
+		}
+		raw, marshalErr := marshalAgentSDKResult(run)
+		if marshalErr != nil {
+			return binding, nil, "", marshalErr
+		}
+		return binding, run, raw, nil
 	}
 	if err := binding.tool.ValidateExecution(false); err != nil {
 		return binding, nil, "", err
@@ -353,205 +419,41 @@ func (s *Server) lookupAgentSDKTool(toolID string) (agentSDKToolBinding, bool) {
 
 func (s *Server) agentSDKToolCatalog() []agentSDKToolBinding {
 	tools := s.app.AgentSDKTools()
-	bindings := make([]agentSDKToolBinding, 0, len(tools))
+	definitions := agentsdk.BuildToolCatalog(tools)
+	toolsByName := make(map[string]agents.Tool, len(tools))
 	for _, tool := range tools {
-		alias := agentSDKAliasForTool(tool.Name)
-		bindings = append(bindings, agentSDKToolBinding{
-			ID:                 alias.ID,
-			ToolName:           tool.Name,
-			SDKMethod:          alias.SDKMethod,
-			Title:              firstNonEmpty(alias.Title, humanizeAgentSDKToolName(alias.ID)),
-			Description:        strings.TrimSpace(tool.Description),
-			Category:           alias.Category,
-			HTTPMethod:         alias.HTTPMethod,
-			HTTPPath:           alias.HTTPPath,
-			RequiredPermission: alias.RequiredPermission,
-			InputSchema:        cloneJSONMap(tool.Parameters),
-			RequiresApproval:   tool.RequiresApproval,
-			tool:               tool,
-		})
+		toolsByName[strings.TrimSpace(tool.Name)] = tool
 	}
-	sort.SliceStable(bindings, func(i, j int) bool {
-		return bindings[i].ID < bindings[j].ID
-	})
+	bindings := make([]agentSDKToolBinding, 0, len(definitions))
+	for _, definition := range definitions {
+		binding := agentSDKToolBinding{ToolDefinition: definition}
+		if tool, ok := toolsByName[strings.TrimSpace(definition.ToolName)]; ok {
+			binding.tool = tool
+		}
+		bindings = append(bindings, binding)
+	}
 	return bindings
 }
 
-func (b agentSDKToolBinding) metadata() agentSDKToolMetadata {
-	return agentSDKToolMetadata{
-		ID:                 b.ID,
-		ToolName:           b.ToolName,
-		SDKMethod:          b.SDKMethod,
-		Title:              b.Title,
-		Description:        b.Description,
-		Category:           b.Category,
-		HTTPMethod:         b.HTTPMethod,
-		HTTPPath:           b.HTTPPath,
-		RequiredPermission: b.RequiredPermission,
-		InputSchema:        b.InputSchema,
-		RequiresApproval:   b.RequiresApproval,
+func (s *Server) visibleAgentSDKCatalog(ctx context.Context) agentsdk.Catalog {
+	catalog := agentsdk.BuildCatalog(s.app.AgentSDKTools(), time.Now().UTC())
+	visibleTools := make([]agentsdk.ToolDefinition, 0, len(catalog.Tools))
+	for _, tool := range catalog.Tools {
+		if !s.agentSDKHasPermission(ctx, tool.RequiredPermission) {
+			continue
+		}
+		visibleTools = append(visibleTools, tool)
 	}
-}
-
-func agentSDKAliasForTool(name string) agentSDKToolBinding {
-	if alias, ok := agentSDKAliasMap()[strings.TrimSpace(name)]; ok {
-		return alias
+	catalog.Tools = visibleTools
+	visibleResources := make([]agentsdk.ResourceDefinition, 0, len(catalog.Resources))
+	for _, resource := range catalog.Resources {
+		if !s.agentSDKHasPermission(ctx, resource.RequiredPermission) {
+			continue
+		}
+		visibleResources = append(visibleResources, resource)
 	}
-	return agentSDKToolBinding{
-		ID:                 sanitizeAgentSDKToolID(name),
-		SDKMethod:          strings.TrimPrefix(sanitizeAgentSDKToolID(name), "cerebro_"),
-		Title:              humanizeAgentSDKToolName(sanitizeAgentSDKToolID(name)),
-		Category:           "query",
-		RequiredPermission: inferAgentSDKPermission(name),
-	}
-}
-
-func agentSDKAliasMap() map[string]agentSDKToolBinding {
-	return map[string]agentSDKToolBinding{
-		"insight_card": {
-			ID:                 "cerebro_context",
-			SDKMethod:          "context",
-			Title:              "Entity Context Card",
-			Category:           "query",
-			HTTPMethod:         http.MethodGet,
-			HTTPPath:           "/api/v1/agent-sdk/context/{entity_id}",
-			RequiredPermission: "sdk.context.read",
-		},
-		"cerebro.intelligence_report": {
-			ID:                 "cerebro_report",
-			SDKMethod:          "report",
-			Title:              "Intelligence Report",
-			Category:           "query",
-			HTTPMethod:         http.MethodPost,
-			HTTPPath:           "/api/v1/agent-sdk/report",
-			RequiredPermission: "sdk.context.read",
-		},
-		"cerebro.graph_quality_report": {
-			ID:                 "cerebro_quality",
-			SDKMethod:          "quality",
-			Title:              "Graph Quality Report",
-			Category:           "query",
-			HTTPMethod:         http.MethodGet,
-			HTTPPath:           "/api/v1/agent-sdk/quality",
-			RequiredPermission: "sdk.context.read",
-		},
-		"cerebro.graph_leverage_report": {
-			ID:                 "cerebro_leverage",
-			SDKMethod:          "leverage",
-			Title:              "Graph Leverage Report",
-			Category:           "query",
-			HTTPMethod:         http.MethodGet,
-			HTTPPath:           "/api/v1/agent-sdk/leverage",
-			RequiredPermission: "sdk.context.read",
-		},
-		"cerebro.graph_query_templates": {
-			ID:                 "cerebro_templates",
-			SDKMethod:          "templates",
-			Title:              "Graph Query Templates",
-			Category:           "query",
-			HTTPMethod:         http.MethodGet,
-			HTTPPath:           "/api/v1/agent-sdk/templates",
-			RequiredPermission: "sdk.context.read",
-		},
-		"evaluate_policy": {
-			ID:                 "cerebro_check",
-			SDKMethod:          "check",
-			Title:              "Pre-Action Policy Check",
-			Category:           "enforcement",
-			HTTPMethod:         http.MethodPost,
-			HTTPPath:           "/api/v1/agent-sdk/check",
-			RequiredPermission: "sdk.enforcement.run",
-		},
-		"simulate": {
-			ID:                 "cerebro_simulate",
-			SDKMethod:          "simulate",
-			Title:              "Scenario Simulation",
-			Category:           "enforcement",
-			HTTPMethod:         http.MethodPost,
-			HTTPPath:           "/api/v1/agent-sdk/simulate",
-			RequiredPermission: "sdk.enforcement.run",
-		},
-		"cerebro.record_observation": {
-			ID:                 "cerebro_observe",
-			SDKMethod:          "observe",
-			Title:              "Record Observation",
-			Category:           "writeback",
-			HTTPMethod:         http.MethodPost,
-			HTTPPath:           "/api/v1/agent-sdk/observations",
-			RequiredPermission: "sdk.worldmodel.write",
-		},
-		"cerebro.write_claim": {
-			ID:                 "cerebro_claim",
-			SDKMethod:          "claim",
-			Title:              "Write World Model Claim",
-			Category:           "writeback",
-			HTTPMethod:         http.MethodPost,
-			HTTPPath:           "/api/v1/agent-sdk/claims",
-			RequiredPermission: "sdk.worldmodel.write",
-		},
-		"cerebro.record_decision": {
-			ID:                 "cerebro_decide",
-			SDKMethod:          "decide",
-			Title:              "Record Decision",
-			Category:           "writeback",
-			HTTPMethod:         http.MethodPost,
-			HTTPPath:           "/api/v1/agent-sdk/decisions",
-			RequiredPermission: "sdk.worldmodel.write",
-		},
-		"cerebro.record_outcome": {
-			ID:                 "cerebro_outcome",
-			SDKMethod:          "outcome",
-			Title:              "Record Outcome",
-			Category:           "writeback",
-			HTTPMethod:         http.MethodPost,
-			HTTPPath:           "/api/v1/agent-sdk/outcomes",
-			RequiredPermission: "sdk.worldmodel.write",
-		},
-		"cerebro.annotate_entity": {
-			ID:                 "cerebro_annotate",
-			SDKMethod:          "annotate",
-			Title:              "Annotate Entity",
-			Category:           "writeback",
-			HTTPMethod:         http.MethodPost,
-			HTTPPath:           "/api/v1/agent-sdk/annotations",
-			RequiredPermission: "sdk.worldmodel.write",
-		},
-		"cerebro.resolve_identity": {
-			ID:                 "cerebro_resolve_identity",
-			SDKMethod:          "resolve_identity",
-			Title:              "Resolve Identity",
-			Category:           "writeback",
-			HTTPMethod:         http.MethodPost,
-			HTTPPath:           "/api/v1/agent-sdk/identity/resolve",
-			RequiredPermission: "sdk.worldmodel.write",
-		},
-	}
-}
-
-func agentSDKResources() []agentSDKResourceDefinition {
-	return []agentSDKResourceDefinition{
-		{
-			URI:                "cerebro://schema/node-kinds",
-			Name:               "Node Kinds",
-			Description:        "Registered graph node kind schema definitions",
-			MimeType:           "application/json",
-			RequiredPermission: "sdk.schema.read",
-		},
-		{
-			URI:                "cerebro://schema/edge-kinds",
-			Name:               "Edge Kinds",
-			Description:        "Registered graph edge kind schema definitions",
-			MimeType:           "application/json",
-			RequiredPermission: "sdk.schema.read",
-		},
-		{
-			URI:                "cerebro://tools/catalog",
-			Name:               "Agent Tool Catalog",
-			Description:        "Discovered Agent SDK tool catalog with JSON Schema parameters",
-			MimeType:           "application/json",
-			RequiredPermission: "sdk.schema.read",
-		},
-	}
+	catalog.Resources = visibleResources
+	return catalog
 }
 
 func (s *Server) dispatchAgentSDKMCP(r *http.Request, req agentSDKMCPRequest) (any, *agentSDKMCPError) {
@@ -578,10 +480,13 @@ func (s *Server) dispatchAgentSDKMCP(r *http.Request, req agentSDKMCPRequest) (a
 				continue
 			}
 			tools = append(tools, map[string]any{
-				"name":        binding.ID,
-				"title":       binding.Title,
-				"description": binding.Description,
-				"inputSchema": binding.InputSchema,
+				"name":             binding.ID,
+				"title":            binding.Title,
+				"description":      binding.Description,
+				"inputSchema":      binding.InputSchema,
+				"supportsAsync":    binding.SupportsAsync,
+				"supportsProgress": binding.SupportsProgress,
+				"statusResource":   binding.StatusResource,
 			})
 		}
 		return map[string]any{"tools": tools}, nil
@@ -590,7 +495,8 @@ func (s *Server) dispatchAgentSDKMCP(r *http.Request, req agentSDKMCPRequest) (a
 		if err := decodeOptionalJSON(req.Params, &params); err != nil {
 			return nil, &agentSDKMCPError{Code: -32602, Message: "invalid tools/call params"}
 		}
-		binding, result, raw, err := s.invokeAgentSDKTool(r.Context(), params.Name, params.Arguments)
+		ctx := agentSDKContextWithProgress(r.Context(), strings.TrimSpace(agentSDKMCPSessionID(r.Context())), params.ProgressToken(), "mcp.tools.call")
+		binding, result, raw, err := s.invokeAgentSDKTool(ctx, params.Name, params.Arguments)
 		if err != nil {
 			return nil, agentSDKMCPErrorFromInvoke(err)
 		}
@@ -603,7 +509,7 @@ func (s *Server) dispatchAgentSDKMCP(r *http.Request, req agentSDKMCPRequest) (a
 		}, nil
 	case "resources/list":
 		resources := make([]map[string]any, 0)
-		for _, resource := range agentSDKResources() {
+		for _, resource := range agentsdk.Resources() {
 			if !s.agentSDKHasPermission(r.Context(), resource.RequiredPermission) {
 				continue
 			}
@@ -625,21 +531,40 @@ func (s *Server) dispatchAgentSDKMCP(r *http.Request, req agentSDKMCPRequest) (a
 			return nil, agentSDKMCPErrorFromInvoke(err)
 		}
 		return map[string]any{
-			"contents": []map[string]any{
-				{
-					"uri":      resource.URI,
-					"mimeType": resource.MimeType,
-					"text":     payload,
-				},
-			},
+			"contents": []map[string]any{{
+				"uri":      resource.URI,
+				"mimeType": resource.MimeType,
+				"text":     payload,
+			}},
 		}, nil
 	default:
 		return nil, &agentSDKMCPError{Code: -32601, Message: "method not found"}
 	}
 }
 
+func (params agentSDKMCPToolCallParams) ProgressToken() string {
+	if len(params.Meta) == 0 {
+		return ""
+	}
+	for _, key := range []string{"progressToken", "progress_token"} {
+		if value, ok := params.Meta[key]; ok {
+			switch typed := value.(type) {
+			case string:
+				return strings.TrimSpace(typed)
+			case float64:
+				return strconv.FormatInt(int64(typed), 10)
+			case int64:
+				return strconv.FormatInt(typed, 10)
+			case int:
+				return strconv.Itoa(typed)
+			}
+		}
+	}
+	return ""
+}
+
 func (s *Server) readAgentSDKResource(r *http.Request, uri string) (agentSDKResourceDefinition, string, error) {
-	for _, resource := range agentSDKResources() {
+	for _, resource := range agentsdk.Resources() {
 		if resource.URI != uri {
 			continue
 		}
@@ -649,19 +574,16 @@ func (s *Server) readAgentSDKResource(r *http.Request, uri string) (agentSDKReso
 
 		var payload any
 		switch resource.URI {
+		case "cerebro://agent-sdk/catalog":
+			payload = s.visibleAgentSDKCatalog(r.Context())
 		case "cerebro://schema/node-kinds":
 			payload = graph.RegisteredNodeKinds()
 		case "cerebro://schema/edge-kinds":
 			payload = graph.RegisteredEdgeKinds()
 		case "cerebro://tools/catalog":
-			visible := make([]agentSDKToolMetadata, 0)
-			for _, binding := range s.agentSDKToolCatalog() {
-				if !s.agentSDKHasPermission(r.Context(), binding.RequiredPermission) {
-					continue
-				}
-				visible = append(visible, binding.metadata())
-			}
-			payload = visible
+			payload = s.visibleAgentSDKCatalog(r.Context()).Tools
+		case "cerebro://reports/catalog":
+			payload = graph.ReportCatalogSnapshot(time.Now().UTC())
 		default:
 			return agentSDKResourceDefinition{}, "", fmt.Errorf("resource not found: %s", uri)
 		}
@@ -781,43 +703,18 @@ func decodeAgentSDKToolResult(raw string) any {
 	return raw
 }
 
-func sanitizeAgentSDKToolID(name string) string {
-	normalized := strings.TrimSpace(strings.ToLower(name))
-	if normalized == "" {
-		return "cerebro_tool"
-	}
-	replacer := strings.NewReplacer(".", "_", "-", "_", ":", "_", "/", "_")
-	normalized = replacer.Replace(normalized)
-	if !strings.HasPrefix(normalized, "cerebro_") {
-		normalized = "cerebro_" + normalized
-	}
-	return normalized
+func agentSDKReportRequestFromArgs(args json.RawMessage) agentSDKReportRequest {
+	request := agentSDKReportRequest{}
+	_ = decodeOptionalJSON(normalizeAgentSDKRawArgs(args), &request)
+	return request
 }
 
-func humanizeAgentSDKToolName(id string) string {
-	trimmed := strings.TrimPrefix(strings.TrimSpace(id), "cerebro_")
-	if trimmed == "" {
-		return "Cerebro Tool"
+func marshalAgentSDKResult(value any) (string, error) {
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return "", err
 	}
-	parts := strings.Split(trimmed, "_")
-	for i, part := range parts {
-		if part == "" {
-			continue
-		}
-		parts[i] = strings.ToUpper(part[:1]) + part[1:]
-	}
-	return strings.Join(parts, " ")
-}
-
-func inferAgentSDKPermission(name string) string {
-	switch strings.TrimSpace(name) {
-	case "evaluate_policy", "simulate", "cerebro.simulate", "cerebro.access_review":
-		return "sdk.enforcement.run"
-	case "cerebro.record_observation", "cerebro.write_claim", "cerebro.record_decision", "cerebro.record_outcome", "cerebro.annotate_entity", "cerebro.resolve_identity", "cerebro.split_identity", "cerebro.identity_review", "cerebro.actuate_recommendation":
-		return "sdk.worldmodel.write"
-	default:
-		return "sdk.context.read"
-	}
+	return string(payload), nil
 }
 
 func agentSDKContextSectionsFromRequest(r *http.Request) []string {
@@ -871,4 +768,42 @@ func removeString(values []string, target string) []string {
 
 func bytesTrimSpace(value []byte) []byte {
 	return []byte(strings.TrimSpace(string(value)))
+}
+
+func agentSDKContextWithInvocation(ctx context.Context, surface string) context.Context {
+	return context.WithValue(ctx, contextKeyAgentSDKInvocationSurface, strings.TrimSpace(surface))
+}
+
+func agentSDKContextWithSession(ctx context.Context, sessionID string) context.Context {
+	return context.WithValue(ctx, contextKeyAgentSDKMCPSessionID, strings.TrimSpace(sessionID))
+}
+
+func agentSDKContextWithProgress(ctx context.Context, sessionID, progressToken, surface string) context.Context {
+	ctx = agentSDKContextWithInvocation(ctx, surface)
+	ctx = agentSDKContextWithSession(ctx, sessionID)
+	if strings.TrimSpace(progressToken) != "" {
+		ctx = context.WithValue(ctx, contextKeyAgentSDKProgressToken, strings.TrimSpace(progressToken))
+	}
+	return ctx
+}
+
+func agentSDKInvocationSurface(ctx context.Context) string {
+	if value, ok := ctx.Value(contextKeyAgentSDKInvocationSurface).(string); ok && strings.TrimSpace(value) != "" {
+		return strings.TrimSpace(value)
+	}
+	return "agent_sdk.request"
+}
+
+func agentSDKMCPSessionID(ctx context.Context) string {
+	if value, ok := ctx.Value(contextKeyAgentSDKMCPSessionID).(string); ok {
+		return strings.TrimSpace(value)
+	}
+	return ""
+}
+
+func agentSDKProgressToken(ctx context.Context) string {
+	if value, ok := ctx.Value(contextKeyAgentSDKProgressToken).(string); ok {
+		return strings.TrimSpace(value)
+	}
+	return ""
 }

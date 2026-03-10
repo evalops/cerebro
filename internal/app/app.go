@@ -147,6 +147,7 @@ type App struct {
 	securityGraphInitMu  sync.Mutex
 	reloadMu             sync.Mutex
 	apiKeys              atomic.Value // map[string]string
+	apiCredentials       atomic.Value // map[string]apiauth.Credential
 	secretsLoader        secretsLoader
 
 	// Cached table list from Snowflake (shared by graph builder + policy coverage)
@@ -191,7 +192,11 @@ func NewWithOptions(ctx context.Context, opts ...Option) (*App, error) {
 		Logger: logger,
 	}
 	app.secretsLoader = options.secretsLoader
-	app.setAPIKeys(cfg.APIKeys)
+	if len(cfg.APICredentials) > 0 || len(cfg.APIKeys) == 0 {
+		app.setAPICredentials(cfg.APICredentials)
+	} else {
+		app.setAPIKeys(cfg.APIKeys)
+	}
 
 	if err := app.initialize(ctx); err != nil {
 		return nil, err

@@ -5,6 +5,63 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 23 - Agent SDK Contract Governance + Progress Runtime + Structured Credentials (2026-03-09)
+
+### Review findings
+- [x] Gap: the new Agent SDK gateway existed as a first-class surface, but it still lacked generated contract artifacts and a compatibility gate comparable to the report and CloudEvents surfaces.
+- [x] Gap: `cerebro_report` had a durable async execution model, but MCP consumers still needed explicit progress binding to the underlying report-run lifecycle instead of transport-local polling.
+- [x] Gap: SDK API authentication was still effectively secret-string centric; it needed stable credential IDs, client IDs, and rate-limit buckets for attribution and governance.
+- [x] Gap: the middleware response-writer wrapper stripped streaming interfaces from SSE routes, which made the new MCP progress path fail under real middleware composition.
+- [x] Gap: the repo had no consumer-grade client bindings for the Agent SDK surface, which meant the public contract was still mostly server-side and doc-driven.
+
+### Research synthesis to adopt
+- [x] MCP Streamable HTTP discipline: progress and long-running execution should ride one stable session + notification channel, not a parallel custom stream protocol.
+- [x] OpenMetadata/OpenLineage contract lesson: machine-readable generated catalogs plus compatibility checks are the real API boundary for extension ecosystems, not prose docs alone.
+- [x] Platform governance rule: stable credential identity should be separate from raw shared-secret material so audit, rate limiting, and attribution can survive key rotation.
+
+### Execution plan
+- [x] Generate and govern the Agent SDK contract surface:
+  - [x] add `internal/agentsdk` catalog + compatibility helpers
+  - [x] generate `docs/AGENT_SDK_AUTOGEN.md`
+  - [x] generate `docs/AGENT_SDK_CONTRACTS.json`
+  - [x] add `scripts/check_agent_sdk_contract_compat/main.go`
+  - [x] add Make targets and CI jobs for docs drift + compatibility enforcement
+- [x] Deepen MCP/runtime behavior:
+  - [x] route `cerebro_report` through the durable `ReportRun` substrate
+  - [x] bind MCP progress tokens to report-run IDs
+  - [x] emit `notifications/progress` from report-run lifecycle changes
+  - [x] fix middleware streaming compatibility by preserving `http.Flusher`/stream-capable writer behavior
+- [x] Deepen SDK auth/attribution:
+  - [x] add structured `API_CREDENTIALS_JSON` parsing and fallback from `API_KEYS`
+  - [x] propagate stable credential/client metadata through auth and rate limiting
+  - [x] enrich Agent SDK write surfaces with SDK attribution metadata before delegating to platform handlers
+  - [x] propagate `traceparent` through the SDK path and into write/report artifacts where available
+- [x] Add consumer bindings and regression coverage:
+  - [x] add in-repo client bindings for Agent SDK tool discovery/call, report execution, and MCP
+  - [x] add API tests for MCP progress delivery and SDK attribution enrichment
+  - [x] add catalog/compatibility tests for the generated Agent SDK surface
+
+### Detailed follow-on backlog
+- [ ] Externalize SDK packages cleanly:
+  - [ ] publish a non-`internal` Go SDK package
+  - [ ] add generated Python models + client helpers from the contract catalog
+  - [ ] add generated TypeScript models + client helpers from the contract catalog
+  - [ ] generate versioned changelogs from Agent SDK compatibility diffs
+- [ ] Deepen report/runtime streaming:
+  - [ ] stream section-level completion events, not just coarse report-run progress
+  - [ ] expose partial section payloads when materialization policy allows
+  - [ ] extend progress notifications with cache-hit/miss and attempt/backoff metadata
+  - [ ] stream simulation status through the same runtime contract where applicable
+- [ ] Deepen SDK governance:
+  - [ ] scoped credential provisioning and rotation UX
+  - [ ] per-tool and per-tenant throttling policies
+  - [ ] signed request support for higher-trust agent clients
+  - [ ] audit/report surfaces for SDK client usage, failures, and approval pressure
+- [ ] Deepen SDK discovery and auth metadata:
+  - [ ] add `.well-known/oauth-protected-resource`
+  - [ ] add machine-readable auth-scope metadata per tool/resource
+  - [ ] expose generated examples and schema URLs directly from the live catalog endpoints
+
 ## Deep Review Cycle 22 - Agent SDK Gateway + MCP Transport + Shared Tool Registry (2026-03-09)
 
 ### Review findings

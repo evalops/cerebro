@@ -91,7 +91,11 @@ func New(cfg Config) (*Client, error) {
 }
 
 func (c *Client) doJSON(ctx context.Context, method, endpoint string, query url.Values, body interface{}, out interface{}) error {
-	resp, err := c.do(ctx, method, endpoint, query, body)
+	return c.doJSONWithHeaders(ctx, method, endpoint, query, nil, body, out)
+}
+
+func (c *Client) doJSONWithHeaders(ctx context.Context, method, endpoint string, query url.Values, headers http.Header, body interface{}, out interface{}) error {
+	resp, err := c.doWithHeaders(ctx, method, endpoint, query, headers, body)
 	if err != nil {
 		return err
 	}
@@ -109,7 +113,11 @@ func (c *Client) doJSON(ctx context.Context, method, endpoint string, query url.
 }
 
 func (c *Client) doBytes(ctx context.Context, method, endpoint string, query url.Values, body interface{}) ([]byte, http.Header, error) {
-	resp, err := c.do(ctx, method, endpoint, query, body)
+	return c.doBytesWithHeaders(ctx, method, endpoint, query, nil, body)
+}
+
+func (c *Client) doBytesWithHeaders(ctx context.Context, method, endpoint string, query url.Values, headers http.Header, body interface{}) ([]byte, http.Header, error) {
+	resp, err := c.doWithHeaders(ctx, method, endpoint, query, headers, body)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -123,7 +131,7 @@ func (c *Client) doBytes(ctx context.Context, method, endpoint string, query url
 	return data, resp.Header.Clone(), nil
 }
 
-func (c *Client) do(ctx context.Context, method, endpoint string, query url.Values, body interface{}) (*http.Response, error) {
+func (c *Client) doWithHeaders(ctx context.Context, method, endpoint string, query url.Values, headers http.Header, body interface{}) (*http.Response, error) {
 	bodyReader := io.Reader(nil)
 	if body != nil {
 		payload, err := json.Marshal(body)
@@ -146,6 +154,12 @@ func (c *Client) do(ctx context.Context, method, endpoint string, query url.Valu
 	}
 	if c.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+	for key, values := range headers {
+		req.Header.Del(key)
+		for _, value := range values {
+			req.Header.Add(key, value)
+		}
 	}
 
 	resp, err := c.httpClient.Do(req)
