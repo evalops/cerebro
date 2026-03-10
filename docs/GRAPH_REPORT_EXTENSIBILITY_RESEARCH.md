@@ -35,6 +35,14 @@ The report substrate now includes:
   - `POST /api/v1/platform/intelligence/reports/{id}/runs/{run_id}:retry`
   - `POST /api/v1/platform/intelligence/reports/{id}/runs/{run_id}:cancel`
   - retry policy metadata and typed attempt classification
+- resource-shaped execution control:
+  - `GET /api/v1/platform/intelligence/reports/{id}/runs/{run_id}/control`
+  - `GET|PUT /api/v1/platform/intelligence/reports/{id}/runs/{run_id}/retry-policy`
+  - explicit cancel-request metadata and scheduled attempt state
+- graph snapshot resources derived from current graph state plus persisted report lineage:
+  - `GET /api/v1/platform/graph/snapshots`
+  - `GET /api/v1/platform/graph/snapshots/current`
+  - `GET /api/v1/platform/graph/snapshots/{snapshot_id}`
 - explicit lineage/storage metadata on runs and snapshots:
   - `graph_snapshot_id`
   - `graph_built_at`
@@ -46,12 +54,13 @@ The report substrate now includes:
   - `materialized_result_available`
   - `result_truncated`
 - typed OpenAPI schema components for concrete envelope families and benchmark-pack families
+- typed section payload contracts that separate strict envelope matches from flexible JSON fallbacks
 - generated report contract artifacts:
   - `docs/GRAPH_REPORT_CONTRACTS_AUTOGEN.md`
   - `docs/GRAPH_REPORT_CONTRACTS.json`
 - CI compatibility checks for section-envelope and benchmark-pack evolution
 
-The next gap is not "add more report endpoints." It is to deepen section telemetry/provenance and storage/retention policy while continuing to reduce hand-maintained contract duplication.
+The next gap is not "add more report endpoints." It is to harden policy-driven execution control, durable graph snapshot storage beyond report-derived references, and deeper runtime validation/autogeneration for section payload contracts.
 
 ## Primary External Patterns
 

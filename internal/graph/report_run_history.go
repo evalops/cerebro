@@ -25,6 +25,14 @@ const (
 	ReportAttemptClassDeterministic = "deterministic"
 	ReportAttemptClassCancelled     = "cancelled"
 	ReportAttemptClassSuperseded    = "superseded"
+
+	ReportAttemptStatusQueued     = "queued"
+	ReportAttemptStatusScheduled  = "scheduled"
+	ReportAttemptStatusRunning    = "running"
+	ReportAttemptStatusSucceeded  = "succeeded"
+	ReportAttemptStatusFailed     = "failed"
+	ReportAttemptStatusCanceled   = "canceled"
+	ReportAttemptStatusSuperseded = "superseded"
 )
 
 // ReportLineage captures the graph/platform lineage context used to produce a report artifact.
@@ -94,6 +102,40 @@ type ReportRunEventCollection struct {
 	RunID    string           `json:"run_id"`
 	Count    int              `json:"count"`
 	Events   []ReportRunEvent `json:"events"`
+}
+
+// ReportRunRetryPolicyState is the typed retry-policy control resource for one report run.
+type ReportRunRetryPolicyState struct {
+	ReportID            string            `json:"report_id"`
+	RunID               string            `json:"run_id"`
+	RetryPolicy         ReportRetryPolicy `json:"retry_policy"`
+	AttemptCount        int               `json:"attempt_count"`
+	RemainingAttempts   int               `json:"remaining_attempts"`
+	Exhausted           bool              `json:"exhausted"`
+	LatestAttemptID     string            `json:"latest_attempt_id,omitempty"`
+	LatestAttemptStatus string            `json:"latest_attempt_status,omitempty"`
+}
+
+// ReportRunControl summarizes current execution-control state and allowed actions.
+type ReportRunControl struct {
+	ReportID            string                    `json:"report_id"`
+	RunID               string                    `json:"run_id"`
+	Status              string                    `json:"status"`
+	ExecutionMode       string                    `json:"execution_mode"`
+	Terminal            bool                      `json:"terminal"`
+	Cancelable          bool                      `json:"cancelable"`
+	Retryable           bool                      `json:"retryable"`
+	AllowedActions      []string                  `json:"allowed_actions,omitempty"`
+	LatestAttemptID     string                    `json:"latest_attempt_id,omitempty"`
+	LatestAttemptStatus string                    `json:"latest_attempt_status,omitempty"`
+	LatestAttemptNumber int                       `json:"latest_attempt_number,omitempty"`
+	ScheduledFor        *time.Time                `json:"scheduled_for,omitempty"`
+	CancelRequestedAt   *time.Time                `json:"cancel_requested_at,omitempty"`
+	CancelRequestedBy   string                    `json:"cancel_requested_by,omitempty"`
+	CancelReason        string                    `json:"cancel_reason,omitempty"`
+	RetryPolicy         ReportRetryPolicy         `json:"retry_policy,omitempty"`
+	RemainingAttempts   int                       `json:"remaining_attempts"`
+	RetryPolicyState    ReportRunRetryPolicyState `json:"retry_policy_state"`
 }
 
 // BuildReportLineage returns the graph lineage context associated with one report execution.
@@ -181,7 +223,7 @@ func NewReportRunAttempt(runID string, attemptNumber int, status, triggerSurface
 		ID:               fmt.Sprintf("%s:attempt:%d", strings.TrimSpace(runID), attemptNumber),
 		RunID:            strings.TrimSpace(runID),
 		AttemptNumber:    attemptNumber,
-		Status:           strings.TrimSpace(status),
+		Status:           normalizeReportAttemptStatus(status),
 		TriggerSurface:   strings.TrimSpace(triggerSurface),
 		ExecutionSurface: strings.TrimSpace(executionSurface),
 		ExecutionHost:    strings.TrimSpace(executionHost),
@@ -228,9 +270,34 @@ func StartLatestReportRunAttempt(run *ReportRun, at time.Time) {
 		if run.Attempts[i].ID != run.LatestAttemptID && strings.TrimSpace(run.LatestAttemptID) != "" {
 			continue
 		}
-		run.Attempts[i].Status = ReportRunStatusRunning
+		if !reportAttemptTransitionAllowed(run.Attempts[i].Status, ReportAttemptStatusRunning) {
+			return
+		}
+		run.Attempts[i].Status = ReportAttemptStatusRunning
 		run.Attempts[i].StartedAt = &at
 		run.Attempts[i].Error = ""
+		return
+	}
+}
+
+// ScheduleLatestReportRunAttempt marks the latest attempt as waiting on retry backoff.
+func ScheduleLatestReportRunAttempt(run *ReportRun, scheduledFor time.Time) {
+	if run == nil || len(run.Attempts) == 0 {
+		return
+	}
+	if scheduledFor.IsZero() {
+		scheduledFor = time.Now().UTC()
+	}
+	scheduledFor = scheduledFor.UTC()
+	for i := len(run.Attempts) - 1; i >= 0; i-- {
+		if run.Attempts[i].ID != run.LatestAttemptID && strings.TrimSpace(run.LatestAttemptID) != "" {
+			continue
+		}
+		if !reportAttemptTransitionAllowed(run.Attempts[i].Status, ReportAttemptStatusScheduled) {
+			return
+		}
+		run.Attempts[i].Status = ReportAttemptStatusScheduled
+		run.Attempts[i].ScheduledFor = &scheduledFor
 		return
 	}
 }
@@ -248,7 +315,11 @@ func CompleteLatestReportRunAttempt(run *ReportRun, status string, completedAt t
 		if run.Attempts[i].ID != run.LatestAttemptID && strings.TrimSpace(run.LatestAttemptID) != "" {
 			continue
 		}
-		run.Attempts[i].Status = strings.TrimSpace(status)
+		nextStatus := normalizeReportAttemptStatus(status)
+		if !reportAttemptTransitionAllowed(run.Attempts[i].Status, nextStatus) {
+			return
+		}
+		run.Attempts[i].Status = nextStatus
 		run.Attempts[i].CompletedAt = &completedAt
 		run.Attempts[i].Error = strings.TrimSpace(errMessage)
 		run.Attempts[i].Classification = strings.TrimSpace(classification)
@@ -317,6 +388,76 @@ func CloneReportStoragePolicy(policy ReportStoragePolicy) ReportStoragePolicy {
 	}
 }
 
+// ReportRunRemainingAttempts returns how many more attempts may be created under the current policy.
+func ReportRunRemainingAttempts(run *ReportRun) int {
+	if run == nil {
+		return 0
+	}
+	policy := NormalizeReportRetryPolicy(run.RetryPolicy)
+	remaining := policy.MaxAttempts - len(run.Attempts)
+	if remaining < 0 {
+		return 0
+	}
+	return remaining
+}
+
+// ReportRunRetryPolicyStateSnapshot returns the typed retry-policy resource for one run.
+func ReportRunRetryPolicyStateSnapshot(reportID string, run *ReportRun) ReportRunRetryPolicyState {
+	state := ReportRunRetryPolicyState{
+		ReportID:    strings.TrimSpace(reportID),
+		RetryPolicy: NormalizeReportRetryPolicy(ReportRetryPolicy{}),
+	}
+	if run == nil {
+		return state
+	}
+	state.RunID = strings.TrimSpace(run.ID)
+	state.RetryPolicy = NormalizeReportRetryPolicy(run.RetryPolicy)
+	state.AttemptCount = len(run.Attempts)
+	state.RemainingAttempts = ReportRunRemainingAttempts(run)
+	state.Exhausted = state.RemainingAttempts == 0
+	state.LatestAttemptID = strings.TrimSpace(run.LatestAttemptID)
+	if attempt := LatestReportRunAttempt(run); attempt != nil {
+		state.LatestAttemptStatus = normalizeReportAttemptStatus(attempt.Status)
+	}
+	return state
+}
+
+// ReportRunControlSnapshot returns the typed execution-control resource for one run.
+func ReportRunControlSnapshot(reportID string, run *ReportRun) ReportRunControl {
+	control := ReportRunControl{
+		ReportID:         strings.TrimSpace(reportID),
+		RetryPolicyState: ReportRunRetryPolicyStateSnapshot(reportID, run),
+	}
+	if run == nil {
+		return control
+	}
+	control.RunID = strings.TrimSpace(run.ID)
+	control.Status = strings.TrimSpace(run.Status)
+	control.ExecutionMode = strings.TrimSpace(run.ExecutionMode)
+	control.Terminal = reportRunTerminal(run.Status)
+	control.CancelRequestedAt = cloneTimePtr(run.CancelRequestedAt)
+	control.CancelRequestedBy = strings.TrimSpace(run.CancelRequestedBy)
+	control.CancelReason = strings.TrimSpace(run.CancelReason)
+	control.RetryPolicy = NormalizeReportRetryPolicy(run.RetryPolicy)
+	control.RemainingAttempts = ReportRunRemainingAttempts(run)
+	control.LatestAttemptID = strings.TrimSpace(run.LatestAttemptID)
+	if attempt := LatestReportRunAttempt(run); attempt != nil {
+		control.LatestAttemptStatus = normalizeReportAttemptStatus(attempt.Status)
+		control.LatestAttemptNumber = attempt.AttemptNumber
+		control.ScheduledFor = cloneTimePtr(attempt.ScheduledFor)
+	}
+	control.Cancelable = reportRunCancelable(run)
+	control.Retryable = reportRunRetryable(run)
+	if control.Cancelable {
+		control.AllowedActions = append(control.AllowedActions, "cancel")
+	}
+	if control.Retryable {
+		control.AllowedActions = append(control.AllowedActions, "retry")
+	}
+	control.AllowedActions = append(control.AllowedActions, "update_retry_policy")
+	return control
+}
+
 // ReportRunAttemptCollectionSnapshot returns a typed snapshot of attempt history.
 func ReportRunAttemptCollectionSnapshot(reportID, runID string, attempts []ReportRunAttempt) ReportRunAttemptCollection {
 	cloned := CloneReportRunAttempts(attempts)
@@ -362,4 +503,64 @@ func buildReportGraphSnapshotID(meta Metadata) string {
 	)
 	sum := sha256.Sum256([]byte(payload))
 	return "graph_snapshot:" + hex.EncodeToString(sum[:12])
+}
+
+func normalizeReportAttemptStatus(status string) string {
+	switch strings.TrimSpace(status) {
+	case ReportAttemptStatusQueued,
+		ReportAttemptStatusScheduled,
+		ReportAttemptStatusRunning,
+		ReportAttemptStatusSucceeded,
+		ReportAttemptStatusFailed,
+		ReportAttemptStatusCanceled,
+		ReportAttemptStatusSuperseded:
+		return strings.TrimSpace(status)
+	default:
+		return ReportAttemptStatusQueued
+	}
+}
+
+func reportAttemptTransitionAllowed(current, next string) bool {
+	current = normalizeReportAttemptStatus(current)
+	next = normalizeReportAttemptStatus(next)
+	switch current {
+	case ReportAttemptStatusQueued:
+		return next == ReportAttemptStatusScheduled || next == ReportAttemptStatusRunning || next == ReportAttemptStatusCanceled || next == ReportAttemptStatusSuperseded
+	case ReportAttemptStatusScheduled:
+		return next == ReportAttemptStatusRunning || next == ReportAttemptStatusCanceled || next == ReportAttemptStatusSuperseded
+	case ReportAttemptStatusRunning:
+		return next == ReportAttemptStatusSucceeded || next == ReportAttemptStatusFailed || next == ReportAttemptStatusCanceled
+	case ReportAttemptStatusSucceeded, ReportAttemptStatusFailed, ReportAttemptStatusCanceled, ReportAttemptStatusSuperseded:
+		return current == next
+	default:
+		return false
+	}
+}
+
+func reportRunTerminal(status string) bool {
+	switch strings.TrimSpace(status) {
+	case ReportRunStatusSucceeded, ReportRunStatusFailed, ReportRunStatusCanceled:
+		return true
+	default:
+		return false
+	}
+}
+
+func reportRunCancelable(run *ReportRun) bool {
+	if run == nil || reportRunTerminal(run.Status) || run.CancelRequestedAt != nil {
+		return false
+	}
+	return strings.TrimSpace(run.Status) == ReportRunStatusQueued || strings.TrimSpace(run.Status) == ReportRunStatusRunning
+}
+
+func reportRunRetryable(run *ReportRun) bool {
+	if run == nil || ReportRunRemainingAttempts(run) == 0 {
+		return false
+	}
+	switch strings.TrimSpace(run.Status) {
+	case ReportRunStatusFailed, ReportRunStatusCanceled:
+		return true
+	default:
+		return false
+	}
 }

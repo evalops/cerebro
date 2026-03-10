@@ -5,6 +5,57 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 27 - Report Execution Control + Graph Snapshot Resources + Payload Contracts (2026-03-10)
+
+### Review findings
+- [x] Gap: durable report runs exposed retry and cancel verbs, but execution control was still operation-shaped instead of resource-shaped, leaving retry policy and allowed actions implicit.
+- [x] Gap: report lineage carried `graph_snapshot_id`, but the platform still lacked a typed graph snapshot resource that clients could inspect independently of one report run.
+- [x] Gap: section envelopes existed in registries, but section payload contracts were still too implicit at runtime and too loose in OpenAPI for downstream SDK/UI consumers.
+
+### Research synthesis to adopt
+- [x] Control-plane rule: long-lived execution resources need their own control state, not just state-changing verbs.
+- [x] Lineage navigation rule: IDs in lineage metadata should resolve to inspectable platform resources wherever possible.
+- [x] Payload honesty rule: section metadata should distinguish between strict typed envelope matches and flexible JSON fallbacks instead of pretending all report sections are equally structured.
+
+### Execution plan
+- [x] Add resource-shaped report execution control:
+  - [x] add typed `ReportRunControl` snapshot
+  - [x] add typed `ReportRunRetryPolicyState` snapshot
+  - [x] expose `GET /api/v1/platform/intelligence/reports/{id}/runs/{run_id}/control`
+  - [x] expose `GET|PUT /api/v1/platform/intelligence/reports/{id}/runs/{run_id}/retry-policy`
+- [x] Tighten attempt/cancel semantics:
+  - [x] add explicit attempt statuses including `scheduled`
+  - [x] propagate scheduled retry state when async backoff is active
+  - [x] persist cancel-request metadata (`cancel_requested_at`, `cancel_requested_by`, `cancel_reason`)
+  - [x] make cancellation preserve operator intent instead of degrading to generic context-canceled errors
+- [x] Add graph snapshot resources:
+  - [x] add typed `GraphSnapshotRecord` / `GraphSnapshotCollection`
+  - [x] derive snapshot catalog from current graph metadata plus persisted report lineage
+  - [x] expose `GET /api/v1/platform/graph/snapshots`
+  - [x] expose `GET /api/v1/platform/graph/snapshots/current`
+  - [x] expose `GET /api/v1/platform/graph/snapshots/{snapshot_id}`
+- [x] Tighten section payload contracts:
+  - [x] record actual payload contract metadata on `ReportSectionResult`
+  - [x] distinguish strict envelope matches from flexible JSON fallback contracts
+  - [x] extend OpenAPI with typed section payload unions and explicit payload schema metadata
+- [x] Regenerate/validate contract surfaces:
+  - [x] extend CloudEvents contract payloads for cancel/control/snapshot URL metadata
+  - [x] extend API and graph regression coverage for control, retry-policy, cancel, snapshot, and payload-contract behavior
+
+### Detailed follow-on backlog
+- [ ] Execution-control hardening:
+  - [ ] add pause/resume semantics for scheduled attempts if deferred execution grows beyond simple backoff
+  - [ ] expose cancel provenance on platform jobs and report-run events through one typed control fragment
+  - [ ] add policy-controlled automatic retry surfaces instead of manual retry only
+- [ ] Snapshot/runtime hardening:
+  - [ ] persist graph snapshot manifests independently of report runs once the graph has its own durable storage layer
+  - [ ] expose graph snapshot diffs/version ancestry as first-class platform resources
+  - [ ] attach report snapshots to graph snapshot retention/integrity policy instead of report-local retention only
+- [ ] Payload/autogen hardening:
+  - [ ] generate concrete section payload examples per envelope family
+  - [ ] add deeper runtime validation for strict envelope matches beyond top-level required-field/type checks
+  - [ ] move section payload contract generation fully into the report contract autogen pipeline
+
 ## Deep Review Cycle 26 - Report Section Telemetry + Cache Reuse + Fragment Governance (2026-03-10)
 
 ### Review findings

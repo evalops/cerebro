@@ -127,6 +127,33 @@ func (s *Server) platformGraphTemplates(w http.ResponseWriter, r *http.Request) 
 	s.graphQueryTemplates(w, r)
 }
 
+func (s *Server) listPlatformGraphSnapshots(w http.ResponseWriter, _ *http.Request) {
+	s.json(w, http.StatusOK, s.platformGraphSnapshotCollection())
+}
+
+func (s *Server) getCurrentPlatformGraphSnapshot(w http.ResponseWriter, _ *http.Request) {
+	current := graph.CurrentGraphSnapshotRecord(s.app.SecurityGraph)
+	if current == nil {
+		s.error(w, http.StatusNotFound, "graph snapshot not available")
+		return
+	}
+	s.json(w, http.StatusOK, current)
+}
+
+func (s *Server) getPlatformGraphSnapshot(w http.ResponseWriter, r *http.Request) {
+	snapshotID := strings.TrimSpace(chi.URLParam(r, "snapshot_id"))
+	if snapshotID == "" {
+		s.error(w, http.StatusBadRequest, "snapshot id required")
+		return
+	}
+	snapshot, ok := s.platformGraphSnapshot(snapshotID)
+	if !ok {
+		s.error(w, http.StatusNotFound, "graph snapshot not found")
+		return
+	}
+	s.json(w, http.StatusOK, snapshot)
+}
+
 func (s *Server) platformWriteClaim(w http.ResponseWriter, r *http.Request) {
 	s.graphWriteClaim(w, r)
 }
@@ -401,7 +428,7 @@ func (s *Server) startPlatformReportRun(ctx context.Context, reportID string, re
 	}
 	executionSurface := reportExecutionSurface(executionMode)
 	run.Attempts = []graph.ReportRunAttempt{
-		graph.NewReportRunAttempt(run.ID, 1, run.Status, triggerSurface, executionSurface, platformExecutionHost(), run.RequestedBy, "", now),
+		graph.NewReportRunAttempt(run.ID, 1, graph.ReportAttemptStatusQueued, triggerSurface, executionSurface, platformExecutionHost(), run.RequestedBy, "", now),
 	}
 	run.LatestAttemptID = run.Attempts[0].ID
 	run.AttemptCount = len(run.Attempts)
@@ -511,6 +538,71 @@ func (s *Server) listPlatformIntelligenceReportRunEvents(w http.ResponseWriter, 
 	s.json(w, http.StatusOK, graph.ReportRunEventCollectionSnapshot(reportID, runID, run.Events))
 }
 
+func (s *Server) getPlatformIntelligenceReportRunControl(w http.ResponseWriter, r *http.Request) {
+	reportID := strings.TrimSpace(chi.URLParam(r, "id"))
+	runID := platformReportRunIDParam(r)
+	if reportID == "" || runID == "" {
+		s.error(w, http.StatusBadRequest, "report id and run id are required")
+		return
+	}
+	run, ok := s.platformReportRunSnapshot(reportID, runID)
+	if !ok {
+		s.error(w, http.StatusNotFound, "report run not found")
+		return
+	}
+	s.json(w, http.StatusOK, graph.ReportRunControlSnapshot(reportID, run))
+}
+
+func (s *Server) getPlatformIntelligenceReportRunRetryPolicy(w http.ResponseWriter, r *http.Request) {
+	reportID := strings.TrimSpace(chi.URLParam(r, "id"))
+	runID := platformReportRunIDParam(r)
+	if reportID == "" || runID == "" {
+		s.error(w, http.StatusBadRequest, "report id and run id are required")
+		return
+	}
+	run, ok := s.platformReportRunSnapshot(reportID, runID)
+	if !ok {
+		s.error(w, http.StatusNotFound, "report run not found")
+		return
+	}
+	s.json(w, http.StatusOK, graph.ReportRunRetryPolicyStateSnapshot(reportID, run))
+}
+
+func (s *Server) updatePlatformIntelligenceReportRunRetryPolicy(w http.ResponseWriter, r *http.Request) {
+	reportID := strings.TrimSpace(chi.URLParam(r, "id"))
+	runID := platformReportRunIDParam(r)
+	if reportID == "" || runID == "" {
+		s.error(w, http.StatusBadRequest, "report id and run id are required")
+		return
+	}
+	if _, ok := graph.GetReportDefinition(reportID); !ok {
+		s.error(w, http.StatusNotFound, "report definition not found")
+		return
+	}
+	if _, ok := s.platformReportRunSnapshot(reportID, runID); !ok {
+		s.error(w, http.StatusNotFound, "report run not found")
+		return
+	}
+	var policy graph.ReportRetryPolicy
+	if err := json.NewDecoder(r.Body).Decode(&policy); err != nil {
+		s.error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	policy = graph.NormalizeReportRetryPolicy(policy)
+	stored, err := s.updatePlatformReportRunSnapshot(runID, func(updated *graph.ReportRun) {
+		updated.RetryPolicy = policy
+	})
+	if err != nil {
+		s.error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if stored == nil {
+		s.error(w, http.StatusInternalServerError, "report run disappeared after retry policy update")
+		return
+	}
+	s.json(w, http.StatusOK, graph.ReportRunRetryPolicyStateSnapshot(reportID, stored))
+}
+
 func (s *Server) retryPlatformIntelligenceReportRun(w http.ResponseWriter, r *http.Request) {
 	reportID := strings.TrimSpace(chi.URLParam(r, "id"))
 	runID := platformReportRunIDParam(r)
@@ -602,6 +694,7 @@ func (s *Server) retryPlatformIntelligenceReportRun(w http.ResponseWriter, r *ht
 	if backoff > 0 {
 		scheduledFor := now.Add(backoff)
 		attempt.ScheduledFor = &scheduledFor
+		attempt.Status = graph.ReportAttemptStatusScheduled
 	}
 
 	if err := s.updatePlatformReportRun(runID, func(stored *graph.ReportRun) {
@@ -622,6 +715,9 @@ func (s *Server) retryPlatformIntelligenceReportRun(w http.ResponseWriter, r *ht
 		stored.StartedAt = nil
 		stored.CompletedAt = nil
 		stored.Error = ""
+		stored.CancelRequestedAt = nil
+		stored.CancelRequestedBy = ""
+		stored.CancelReason = ""
 		stored.Sections = nil
 		stored.Snapshot = nil
 		stored.Result = nil
@@ -754,8 +850,12 @@ func (s *Server) cancelPlatformIntelligenceReportRun(w http.ResponseWriter, r *h
 	if actor == "" {
 		actor = run.RequestedBy
 	}
+	cancelAccepted := run.Status == graph.ReportRunStatusRunning
 
 	stored, err := s.updatePlatformReportRunSnapshot(runID, func(stored *graph.ReportRun) {
+		stored.CancelRequestedAt = &canceledAt
+		stored.CancelRequestedBy = actor
+		stored.CancelReason = cancelReason
 		stored.Status = graph.ReportRunStatusCanceled
 		stored.CompletedAt = &canceledAt
 		stored.Error = cancelReason
@@ -777,6 +877,11 @@ func (s *Server) cancelPlatformIntelligenceReportRun(w http.ResponseWriter, r *h
 	}
 	if stored.JobID != "" {
 		s.cancelPlatformJob(stored.JobID, cancelReason)
+	}
+	if cancelAccepted {
+		s.emitAgentSDKReportProgress(stored)
+		s.json(w, http.StatusAccepted, stored)
+		return
 	}
 	s.emitPlatformReportRunLifecycleEvent(r.Context(), webhooks.EventPlatformReportRunCanceled, reportID, runID)
 	w.Header().Set("Location", stored.StatusURL)
@@ -812,6 +917,9 @@ func (s *Server) executePlatformReportRun(ctx context.Context, runID string, def
 	if !ok || executionRun == nil {
 		return fmt.Errorf("report run disappeared before execution: %s", runID)
 	}
+	if platformReportCancellationRequested(executionRun) {
+		return context.Canceled
+	}
 	cacheSource, err := s.refreshPlatformReportRunCacheBinding(runID, executionRun)
 	if err != nil {
 		return err
@@ -825,21 +933,29 @@ func (s *Server) executePlatformReportRun(ctx context.Context, runID string, def
 		result, err = s.executePlatformReport(ctx, definition.ID, parameters)
 	}
 	completedAt := time.Now().UTC()
+	latestRun, ok := s.platformReportRunSnapshot(definition.ID, runID)
+	if ok && latestRun != nil && platformReportCancellationRequested(latestRun) {
+		return context.Canceled
+	}
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			alreadyCanceled := false
+			cancelReason := err.Error()
 			if updateErr := s.updatePlatformReportRun(runID, func(run *graph.ReportRun) {
 				if run.Status == graph.ReportRunStatusCanceled {
 					alreadyCanceled = true
 					return
 				}
+				if strings.TrimSpace(run.CancelReason) != "" {
+					cancelReason = strings.TrimSpace(run.CancelReason)
+				}
 				run.Status = graph.ReportRunStatusCanceled
 				run.CompletedAt = &completedAt
-				run.Error = err.Error()
-				graph.CompleteLatestReportRunAttempt(run, run.Status, completedAt, err.Error(), graph.ReportAttemptClassCancelled)
+				run.Error = cancelReason
+				graph.CompleteLatestReportRunAttempt(run, run.Status, completedAt, cancelReason, graph.ReportAttemptClassCancelled)
 				graph.AppendReportRunEvent(run, string(webhooks.EventPlatformReportRunCanceled), run.Status, platformReportTriggerSurface(run), run.RequestedBy, completedAt, map[string]any{
 					"report_id":     run.ReportID,
-					"cancel_reason": err.Error(),
+					"cancel_reason": cancelReason,
 				})
 				run.AttemptCount = len(run.Attempts)
 				run.EventCount = len(run.Events)
@@ -1526,6 +1642,24 @@ func (s *Server) clonePlatformReportRunsLocked() map[string]*graph.ReportRun {
 	return cloned
 }
 
+func (s *Server) platformGraphSnapshotCollection() graph.GraphSnapshotCollection {
+	s.platformReportRunMu.RLock()
+	runs := s.clonePlatformReportRunsLocked()
+	s.platformReportRunMu.RUnlock()
+	return graph.GraphSnapshotCollectionSnapshot(s.app.SecurityGraph, runs, time.Now().UTC())
+}
+
+func (s *Server) platformGraphSnapshot(snapshotID string) (*graph.GraphSnapshotRecord, bool) {
+	collection := s.platformGraphSnapshotCollection()
+	for i := range collection.Snapshots {
+		if strings.TrimSpace(collection.Snapshots[i].ID) == strings.TrimSpace(snapshotID) {
+			snapshot := collection.Snapshots[i]
+			return &snapshot, true
+		}
+	}
+	return nil, false
+}
+
 func (s *Server) persistPlatformReportRuns(runs map[string]*graph.ReportRun) error {
 	if s == nil || s.platformReportStore == nil {
 		return nil
@@ -1616,8 +1750,18 @@ func platformReportRunEventPayload(run *graph.ReportRun) map[string]any {
 			payload["cancel_reason"] = run.Error
 		}
 	}
+	if run.CancelRequestedAt != nil {
+		payload["cancel_requested_at"] = normalizeRFC3339(*run.CancelRequestedAt)
+	}
+	if run.CancelRequestedBy != "" {
+		payload["cancel_requested_by"] = run.CancelRequestedBy
+	}
+	if run.CancelReason != "" {
+		payload["cancel_reason"] = run.CancelReason
+	}
 	if run.Lineage.GraphSnapshotID != "" {
 		payload["graph_snapshot_id"] = run.Lineage.GraphSnapshotID
+		payload["graph_snapshot_url"] = "/api/v1/platform/graph/snapshots/" + run.Lineage.GraphSnapshotID
 	}
 	if run.Lineage.GraphBuiltAt != nil {
 		payload["graph_built_at"] = normalizeRFC3339(*run.Lineage.GraphBuiltAt)
@@ -1639,6 +1783,9 @@ func platformReportRunEventPayload(run *graph.ReportRun) map[string]any {
 		}
 		if attempt.Classification != "" {
 			payload["attempt_classification"] = attempt.Classification
+		}
+		if attempt.Status != "" {
+			payload["latest_attempt_status"] = attempt.Status
 		}
 		if attempt.RetryOfAttemptID != "" {
 			payload["retry_of_attempt_id"] = attempt.RetryOfAttemptID
@@ -1688,6 +1835,7 @@ func platformReportSnapshotEventPayload(run *graph.ReportRun) map[string]any {
 	}
 	if run.Snapshot.Lineage.GraphSnapshotID != "" {
 		payload["graph_snapshot_id"] = run.Snapshot.Lineage.GraphSnapshotID
+		payload["graph_snapshot_url"] = "/api/v1/platform/graph/snapshots/" + run.Snapshot.Lineage.GraphSnapshotID
 	}
 	if run.Snapshot.Lineage.GraphBuiltAt != nil {
 		payload["graph_built_at"] = normalizeRFC3339(*run.Snapshot.Lineage.GraphBuiltAt)
@@ -1710,6 +1858,7 @@ func platformReportSectionEventPayload(run *graph.ReportRun, section graph.Repor
 		"emitted_at":       normalizeRFC3339(emission.EmittedAt),
 		"progress_percent": emission.ProgressPercent,
 		"envelope_kind":    emission.Section.EnvelopeKind,
+		"envelope_schema":  emission.Section.EnvelopeSchema,
 		"content_type":     emission.Section.ContentType,
 		"item_count":       emission.Section.ItemCount,
 		"field_count":      emission.Section.FieldCount,
@@ -1763,6 +1912,15 @@ func platformReportSectionMetadataPayload(section graph.ReportSectionResult) map
 		}
 		payload["lineage"] = lineage
 	}
+	if section.PayloadSchema != "" {
+		payload["payload_schema"] = section.PayloadSchema
+	}
+	if section.PayloadSchemaURL != "" {
+		payload["payload_schema_url"] = section.PayloadSchemaURL
+	}
+	if section.PayloadStrict {
+		payload["payload_strict"] = true
+	}
 	if section.Materialization != nil {
 		materialization := map[string]any{
 			"truncated": section.Materialization.Truncated,
@@ -1796,6 +1954,13 @@ func platformExecutionHost() string {
 		return ""
 	}
 	return strings.TrimSpace(host)
+}
+
+func platformReportCancellationRequested(run *graph.ReportRun) bool {
+	if run == nil {
+		return false
+	}
+	return run.CancelRequestedAt != nil || strings.TrimSpace(run.Status) == graph.ReportRunStatusCanceled
 }
 
 func reportExecutionSurface(executionMode string) string {

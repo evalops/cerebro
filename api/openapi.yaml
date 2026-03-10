@@ -5545,6 +5545,61 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+  /api/v1/platform/graph/snapshots:
+    get:
+      tags:
+        - Platform
+      summary: List durable graph snapshot resources
+      description: Return graph-state resources referenced by report lineage, including the current graph build and persisted report-run lineage snapshots.
+      responses:
+        '200':
+          description: Graph snapshot collection
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformGraphSnapshotCollection'
+  /api/v1/platform/graph/snapshots/current:
+    get:
+      tags:
+        - Platform
+      summary: Get the current graph snapshot resource
+      responses:
+        '200':
+          description: Current graph snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformGraphSnapshotRecord'
+        '404':
+          description: Current graph snapshot not available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/platform/graph/snapshots/{snapshot_id}:
+    get:
+      tags:
+        - Platform
+      summary: Get one graph snapshot resource
+      parameters:
+        - name: snapshot_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Graph snapshot resource
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformGraphSnapshotRecord'
+        '404':
+          description: Graph snapshot not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/platform/intelligence/measures:
     get:
       tags:
@@ -5820,6 +5875,104 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /api/v1/platform/intelligence/reports/{id}/runs/{run_id}/control:
+    get:
+      tags:
+        - Platform
+      summary: Get execution control state for one platform intelligence report run
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: run_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Platform report run control state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformReportRunControl'
+        '404':
+          description: Report run not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/v1/platform/intelligence/reports/{id}/runs/{run_id}/retry-policy:
+    get:
+      tags:
+        - Platform
+      summary: Get retry policy state for one platform intelligence report run
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: run_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Platform report run retry policy state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformReportRunRetryPolicyState'
+        '404':
+          description: Report run not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    put:
+      tags:
+        - Platform
+      summary: Update retry policy for one platform intelligence report run
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: run_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlatformReportRetryPolicy'
+      responses:
+        '200':
+          description: Updated platform report run retry policy state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformReportRunRetryPolicyState'
+        '400':
+          description: Invalid retry policy request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Report run not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/platform/intelligence/reports/{id}/runs/{run_id}:retry:
     post:
       tags:
@@ -5905,7 +6058,13 @@ paths:
               $ref: '#/components/schemas/PlatformReportCancelRequest'
       responses:
         '200':
-          description: Report run canceled
+          description: Report run canceled before or during queueing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformReportRun'
+        '202':
+          description: Cancellation accepted for a running report run
           content:
             application/json:
               schema:
@@ -10497,6 +10656,14 @@ components:
           type: string
         envelope_kind:
           type: string
+        envelope_schema:
+          type: string
+        payload_schema:
+          type: string
+        payload_schema_url:
+          type: string
+        payload_strict:
+          type: boolean
         present:
           type: boolean
         content_type:
@@ -10538,8 +10705,7 @@ components:
         section:
           $ref: '#/components/schemas/PlatformReportSectionResult'
         payload:
-          type: object
-          additionalProperties: true
+          $ref: '#/components/schemas/PlatformReportSectionPayload'
       required:
         - sequence
         - emitted_at
@@ -10649,6 +10815,13 @@ components:
           type: integer
         event_count:
           type: integer
+        cancel_requested_at:
+          type: string
+          format: date-time
+        cancel_requested_by:
+          type: string
+        cancel_reason:
+          type: string
         snapshot:
           $ref: '#/components/schemas/PlatformReportSnapshot'
         sections:
@@ -10736,6 +10909,14 @@ components:
           type: integer
         status:
           type: string
+          enum:
+            - queued
+            - scheduled
+            - running
+            - succeeded
+            - failed
+            - canceled
+            - superseded
         classification:
           type: string
           enum:
@@ -10780,6 +10961,90 @@ components:
         - attempt_number
         - status
         - submitted_at
+    PlatformReportRunRetryPolicyState:
+      type: object
+      additionalProperties: false
+      properties:
+        report_id:
+          type: string
+        run_id:
+          type: string
+        retry_policy:
+          $ref: '#/components/schemas/PlatformReportRetryPolicy'
+        attempt_count:
+          type: integer
+        remaining_attempts:
+          type: integer
+        exhausted:
+          type: boolean
+        latest_attempt_id:
+          type: string
+        latest_attempt_status:
+          type: string
+      required:
+        - report_id
+        - run_id
+        - retry_policy
+        - attempt_count
+        - remaining_attempts
+        - exhausted
+    PlatformReportRunControl:
+      type: object
+      additionalProperties: false
+      properties:
+        report_id:
+          type: string
+        run_id:
+          type: string
+        status:
+          type: string
+        execution_mode:
+          type: string
+          enum:
+            - sync
+            - async
+        terminal:
+          type: boolean
+        cancelable:
+          type: boolean
+        retryable:
+          type: boolean
+        allowed_actions:
+          type: array
+          items:
+            type: string
+        latest_attempt_id:
+          type: string
+        latest_attempt_status:
+          type: string
+        latest_attempt_number:
+          type: integer
+        scheduled_for:
+          type: string
+          format: date-time
+        cancel_requested_at:
+          type: string
+          format: date-time
+        cancel_requested_by:
+          type: string
+        cancel_reason:
+          type: string
+        retry_policy:
+          $ref: '#/components/schemas/PlatformReportRetryPolicy'
+        remaining_attempts:
+          type: integer
+        retry_policy_state:
+          $ref: '#/components/schemas/PlatformReportRunRetryPolicyState'
+      required:
+        - report_id
+        - run_id
+        - status
+        - execution_mode
+        - terminal
+        - cancelable
+        - retryable
+        - remaining_attempts
+        - retry_policy_state
     PlatformReportRunAttemptCollection:
       type: object
       additionalProperties: false
@@ -10879,6 +11144,70 @@ components:
         - run_id
         - report_id
         - timestamp
+    PlatformGraphSnapshotRecord:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        built_at:
+          type: string
+          format: date-time
+        current:
+          type: boolean
+        node_count:
+          type: integer
+        edge_count:
+          type: integer
+        providers:
+          type: array
+          items:
+            type: string
+        accounts:
+          type: array
+          items:
+            type: string
+        build_duration_ms:
+          type: integer
+          format: int64
+        graph_schema_version:
+          type: integer
+          format: int64
+        ontology_contract_version:
+          type: string
+        observed_run_count:
+          type: integer
+        observed_materializations:
+          type: integer
+        observed_report_ids:
+          type: array
+          items:
+            type: string
+        first_observed_at:
+          type: string
+          format: date-time
+        last_observed_at:
+          type: string
+          format: date-time
+      required:
+        - id
+    PlatformGraphSnapshotCollection:
+      type: object
+      additionalProperties: false
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        count:
+          type: integer
+        snapshots:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformGraphSnapshotRecord'
+      required:
+        - generated_at
+        - count
+        - snapshots
     SecurityAttackPathJobRequest:
       type: object
       additionalProperties: false
@@ -12783,6 +13112,40 @@ components:
           type: string
       required:
         - body
+    PlatformFlexibleStringValue:
+      type: string
+    PlatformFlexibleNumberValue:
+      oneOf:
+        - type: number
+        - type: integer
+    PlatformFlexibleBooleanValue:
+      type: boolean
+    PlatformFlexibleArrayValue:
+      type: array
+      items:
+        $ref: '#/components/schemas/PlatformFlexibleValue'
+    PlatformFlexibleObjectValue:
+      type: object
+      additionalProperties:
+        $ref: '#/components/schemas/PlatformFlexibleValue'
+    PlatformFlexibleValue:
+      oneOf:
+        - $ref: '#/components/schemas/PlatformFlexibleStringValue'
+        - $ref: '#/components/schemas/PlatformFlexibleNumberValue'
+        - $ref: '#/components/schemas/PlatformFlexibleBooleanValue'
+        - $ref: '#/components/schemas/PlatformFlexibleArrayValue'
+        - $ref: '#/components/schemas/PlatformFlexibleObjectValue'
+    PlatformReportSectionPayload:
+      oneOf:
+        - $ref: '#/components/schemas/PlatformSummaryEnvelope'
+        - $ref: '#/components/schemas/PlatformTimeseriesEnvelope'
+        - $ref: '#/components/schemas/PlatformDistributionEnvelope'
+        - $ref: '#/components/schemas/PlatformRankingEnvelope'
+        - $ref: '#/components/schemas/PlatformNetworkSliceEnvelope'
+        - $ref: '#/components/schemas/PlatformRecommendationsEnvelope'
+        - $ref: '#/components/schemas/PlatformEvidenceListEnvelope'
+        - $ref: '#/components/schemas/PlatformNarrativeBlockEnvelope'
+        - $ref: '#/components/schemas/PlatformFlexibleValue'
     PlatformDecisionIntelligenceBenchmarkPack:
       allOf:
         - $ref: '#/components/schemas/PlatformBenchmarkPack'

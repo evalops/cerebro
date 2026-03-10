@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/evalops/cerebro/internal/graph"
 )
@@ -118,9 +119,24 @@ func (s *Server) emitAgentSDKReportProgress(run *graph.ReportRun) {
 			"cache_source_run_id": run.CacheSourceRunID,
 		},
 	}
-	if attempt := graph.LatestReportRunAttempt(run); attempt != nil && attempt.RetryBackoffMS > 0 {
+	if run.CancelRequestedAt != nil {
 		paramsData, _ := params["data"].(map[string]any)
-		paramsData["retry_backoff_ms"] = attempt.RetryBackoffMS
+		paramsData["cancel_requested_at"] = run.CancelRequestedAt.UTC().Format(time.RFC3339)
+	}
+	if run.CancelRequestedBy != "" {
+		paramsData, _ := params["data"].(map[string]any)
+		paramsData["cancel_requested_by"] = run.CancelRequestedBy
+	}
+	if run.CancelReason != "" {
+		paramsData, _ := params["data"].(map[string]any)
+		paramsData["cancel_reason"] = run.CancelReason
+	}
+	if attempt := graph.LatestReportRunAttempt(run); attempt != nil {
+		paramsData, _ := params["data"].(map[string]any)
+		paramsData["latest_attempt_status"] = attempt.Status
+		if attempt.RetryBackoffMS > 0 {
+			paramsData["retry_backoff_ms"] = attempt.RetryBackoffMS
+		}
 	}
 	s.emitAgentSDKMCPNotification(subscription.SessionID, agentSDKMCPResponse{
 		JSONRPC: "2.0",

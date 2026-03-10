@@ -359,6 +359,54 @@ func TestBuildReportSectionResultsWithOptionsIncludesTelemetryAndBitemporalSuppo
 	}
 }
 
+func TestBuildReportSectionResultsTracksActualPayloadContract(t *testing.T) {
+	definition := ReportDefinition{
+		ID: "quality",
+		Sections: []ReportSection{
+			{
+				Key:            "summary",
+				Title:          "Summary",
+				Kind:           "scorecard",
+				EnvelopeKind:   "summary",
+				EnvelopeSchema: "PlatformSummaryEnvelope",
+			},
+			{
+				Key:            "raw_scope",
+				Title:          "Raw Scope",
+				Kind:           "context",
+				EnvelopeKind:   "summary",
+				EnvelopeSchema: "PlatformSummaryEnvelope",
+			},
+		},
+	}
+	result := map[string]any{
+		"summary": map[string]any{
+			"headline": "Healthy graph",
+			"measures": []any{map[string]any{"id": "coverage", "value": 98.2}},
+		},
+		"raw_scope": map[string]any{
+			"entity_id": "service:payments",
+		},
+	}
+
+	sections := BuildReportSectionResults(definition, result, nil)
+	if len(sections) != 2 {
+		t.Fatalf("expected two sections, got %d", len(sections))
+	}
+	if got := sections[0].PayloadSchema; got != "PlatformSummaryEnvelope" {
+		t.Fatalf("expected typed summary payload schema, got %q", got)
+	}
+	if !sections[0].PayloadStrict {
+		t.Fatalf("expected typed summary payload to be strict, got %+v", sections[0])
+	}
+	if got := sections[1].PayloadSchema; got != "PlatformFlexibleObjectValue" {
+		t.Fatalf("expected raw scope payload to fall back to flexible object contract, got %q", got)
+	}
+	if sections[1].PayloadStrict {
+		t.Fatalf("expected raw scope payload to remain non-strict, got %+v", sections[1])
+	}
+}
+
 func TestReportRunAttemptAndEventCollections(t *testing.T) {
 	run := &ReportRun{
 		ID:            "report_run:test",
@@ -388,6 +436,51 @@ func TestReportRunAttemptAndEventCollections(t *testing.T) {
 	}
 	if events.Events[0].Type != "platform.report_run.queued" || events.Events[1].Type != "platform.report_run.completed" {
 		t.Fatalf("unexpected event ordering: %+v", events.Events)
+	}
+}
+
+func TestReportRunControlAndRetryPolicySnapshots(t *testing.T) {
+	now := time.Date(2026, 3, 10, 8, 0, 0, 0, time.UTC)
+	run := &ReportRun{
+		ID:                "report_run:test",
+		ReportID:          "quality",
+		Status:            ReportRunStatusRunning,
+		ExecutionMode:     ReportExecutionModeAsync,
+		SubmittedAt:       now.Add(-time.Minute),
+		RetryPolicy:       ReportRetryPolicy{MaxAttempts: 4, BaseBackoffMS: 1000, MaxBackoffMS: 2000},
+		CancelRequestedAt: &now,
+		CancelRequestedBy: "alice@example.com",
+		CancelReason:      "operator requested cancellation",
+	}
+	run.Attempts = []ReportRunAttempt{
+		NewReportRunAttempt(run.ID, 1, ReportAttemptStatusFailed, "api.request", "platform.job", "host-a", "alice@example.com", "", now.Add(-2*time.Minute)),
+		NewReportRunAttempt(run.ID, 2, ReportAttemptStatusScheduled, "api.retry", "platform.job", "host-a", "alice@example.com", "", now.Add(-30*time.Second)),
+	}
+	run.Attempts[1].RetryBackoffMS = 1000
+	scheduledFor := now.Add(30 * time.Second)
+	run.Attempts[1].ScheduledFor = &scheduledFor
+	run.LatestAttemptID = run.Attempts[1].ID
+
+	retryState := ReportRunRetryPolicyStateSnapshot(run.ReportID, run)
+	if retryState.RemainingAttempts != 2 {
+		t.Fatalf("expected remaining_attempts=2, got %+v", retryState)
+	}
+	if retryState.LatestAttemptStatus != ReportAttemptStatusScheduled {
+		t.Fatalf("expected latest_attempt_status=scheduled, got %+v", retryState)
+	}
+
+	control := ReportRunControlSnapshot(run.ReportID, run)
+	if control.Cancelable {
+		t.Fatalf("expected run with outstanding cancel request to stop exposing cancel action, got %+v", control)
+	}
+	if control.Retryable {
+		t.Fatalf("expected running run to not be retryable, got %+v", control)
+	}
+	if control.CancelRequestedAt == nil || !control.CancelRequestedAt.Equal(now) {
+		t.Fatalf("expected cancel_requested_at=%s, got %+v", now, control.CancelRequestedAt)
+	}
+	if control.LatestAttemptStatus != ReportAttemptStatusScheduled {
+		t.Fatalf("expected control latest_attempt_status=scheduled, got %+v", control)
 	}
 }
 
@@ -450,5 +543,47 @@ func TestCloneReportRunAttemptsClonesRetrySchedulingMetadata(t *testing.T) {
 	}
 	if cloned[0].Classification != ReportAttemptClassTransient || cloned[0].RetryBackoffMS != 5000 {
 		t.Fatalf("expected retry metadata to survive clone, got %+v", cloned[0])
+	}
+}
+
+func TestGraphSnapshotCollectionSnapshotIncludesCurrentAndObservedRuns(t *testing.T) {
+	g := New()
+	builtAt := time.Date(2026, 3, 10, 10, 0, 0, 0, time.UTC)
+	g.SetMetadata(Metadata{
+		BuiltAt:       builtAt,
+		NodeCount:     12,
+		EdgeCount:     7,
+		Providers:     []string{"github"},
+		Accounts:      []string{"acct-a"},
+		BuildDuration: 3 * time.Second,
+	})
+	lineage := BuildReportLineage(g, ReportDefinition{ID: "quality", Version: "1.2.0"})
+	run := &ReportRun{
+		ID:          "report_run:test",
+		ReportID:    "quality",
+		SubmittedAt: builtAt.Add(5 * time.Minute),
+		Lineage:     lineage,
+		Snapshot: &ReportSnapshot{
+			ID:          "report_snapshot:test",
+			GeneratedAt: builtAt.Add(6 * time.Minute),
+			Lineage:     lineage,
+		},
+	}
+	collection := GraphSnapshotCollectionSnapshot(g, map[string]*ReportRun{run.ID: run}, builtAt.Add(10*time.Minute))
+	if collection.Count != 1 {
+		t.Fatalf("expected one snapshot record, got %+v", collection)
+	}
+	record := collection.Snapshots[0]
+	if !record.Current {
+		t.Fatalf("expected current snapshot flag, got %+v", record)
+	}
+	if record.ObservedRunCount != 2 {
+		t.Fatalf("expected observed_run_count=2 from run lineage + snapshot lineage, got %+v", record)
+	}
+	if record.ObservedMaterializations != 1 {
+		t.Fatalf("expected observed_materializations=1, got %+v", record)
+	}
+	if len(record.ObservedReportIDs) != 1 || record.ObservedReportIDs[0] != "quality" {
+		t.Fatalf("expected observed report ids to include quality, got %+v", record)
 	}
 }

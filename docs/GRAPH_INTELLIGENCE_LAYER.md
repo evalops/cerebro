@@ -67,10 +67,16 @@ Current endpoint:
 - `GET /api/v1/platform/intelligence/reports/{id}/runs`
 - `POST /api/v1/platform/intelligence/reports/{id}/runs`
 - `GET /api/v1/platform/intelligence/reports/{id}/runs/{run_id}`
+- `GET /api/v1/platform/intelligence/reports/{id}/runs/{run_id}/control`
+- `GET /api/v1/platform/intelligence/reports/{id}/runs/{run_id}/retry-policy`
+- `PUT /api/v1/platform/intelligence/reports/{id}/runs/{run_id}/retry-policy`
 - `POST /api/v1/platform/intelligence/reports/{id}/runs/{run_id}:retry`
 - `POST /api/v1/platform/intelligence/reports/{id}/runs/{run_id}:cancel`
 - `GET /api/v1/platform/intelligence/reports/{id}/runs/{run_id}/attempts`
 - `GET /api/v1/platform/intelligence/reports/{id}/runs/{run_id}/events`
+- `GET /api/v1/platform/graph/snapshots`
+- `GET /api/v1/platform/graph/snapshots/current`
+- `GET /api/v1/platform/graph/snapshots/{snapshot_id}`
 - `GET /api/v1/platform/intelligence/insights`
 - `GET /api/v1/platform/intelligence/quality`
 - `GET /api/v1/platform/intelligence/metadata-quality`
@@ -129,10 +135,13 @@ Report-execution rule:
 - `ReportRun` captures typed parameters, execution mode, time slice, cache key, job linkage, section summaries, and optional snapshot metadata.
 - `ReportRun` should expose cache execution semantics (`cache_status`, `cache_source_run_id`) so reused derived artifacts remain inspectable rather than silently memoized.
 - `ReportRunAttempt` and `ReportRunEvent` are first-class history resources so execution state is inspectable without scraping webhook delivery logs.
+- `ReportRunControl` and `ReportRunRetryPolicyState` make execution control queryable as typed resources instead of forcing clients to infer it from raw run status.
 - runs are actively controllable through retry/cancel operations rather than being inspect-only artifacts.
 - `ReportRun` is a durable control-plane resource: run metadata is persisted separately from materialized result payloads so restart recovery does not erase execution history.
 - `ReportSnapshot` is a retained derived artifact with content hash, recording timestamps, lineage metadata, and storage-backed materialization metadata.
+- `GraphSnapshotRecord` is the graph-state resource that durable report lineage points at; report runs should not be the only place a `graph_snapshot_id` can be inspected.
 - retry policy (`max_attempts`, `base_backoff_ms`, `max_backoff_ms`) and attempt classification (`transient`, `deterministic`, `cancelled`, `superseded`) are part of the durable execution contract.
+- attempt status is distinct from run status and should surface `scheduled` when async backoff is active.
 - Runs and snapshots should always expose:
   - graph lineage (`graph_snapshot_id`, `graph_built_at`, `graph_schema_version`, `ontology_contract_version`, `report_definition_version`)
   - storage semantics (`storage_class`, `retention_tier`, `materialized_result_available`, `result_truncated`)
@@ -145,6 +154,7 @@ Lifecycle/event rule:
 
 Section-contract rule:
 - `ReportSectionResult` should advertise a stable `envelope_kind` for downstream renderers, generated tools, and compatibility checks.
+- `ReportSectionResult` should advertise both the expected envelope contract and the actual payload contract so clients can tell strict typed sections from flexible JSON fallback sections.
 - Object-backed sections should expose stable `field_keys` so UI/tool composition can reason about section shape without inspecting arbitrary payloads.
 - Section metadata should expose graph-aware lineage samples (`claim_ids`, `evidence_ids`, `source_ids`, plus counts) when the payload references durable graph nodes.
 - Section lineage should expose sampled supporting edge IDs plus bitemporal selectors (`valid_at`, `recorded_at`) when a run is executed against a point-in-time graph slice.
@@ -155,6 +165,7 @@ Section-contract rule:
 - Benchmark overlays should be discoverable through the benchmark-pack registry instead of being embedded ad hoc into individual report handlers.
 - Generated report contract catalogs should remain derivable from the same registries so docs, compatibility checks, and downstream tooling bind to one canonical source.
 - New section envelopes should be added deliberately and eventually generated as their own typed schemas rather than proliferating report-specific ad hoc objects.
+- Strict section payload contracts should only be claimed when the runtime can actually prove the payload matches the declared envelope; otherwise surface an explicit flexible-value contract instead of lying.
 
 ### 2) Power Query API
 Read-only, bounded graph exploration for analysts and advanced workflows.
