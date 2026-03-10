@@ -58,11 +58,17 @@ Primary interface for product surfaces and automations.
 Current endpoint:
 - `GET /api/v1/platform/intelligence/measures`
 - `GET /api/v1/platform/intelligence/checks`
+- `GET /api/v1/platform/intelligence/section-envelopes`
+- `GET /api/v1/platform/intelligence/section-envelopes/{envelope_id}`
+- `GET /api/v1/platform/intelligence/benchmark-packs`
+- `GET /api/v1/platform/intelligence/benchmark-packs/{pack_id}`
 - `GET /api/v1/platform/intelligence/reports`
 - `GET /api/v1/platform/intelligence/reports/{id}`
 - `GET /api/v1/platform/intelligence/reports/{id}/runs`
 - `POST /api/v1/platform/intelligence/reports/{id}/runs`
 - `GET /api/v1/platform/intelligence/reports/{id}/runs/{run_id}`
+- `GET /api/v1/platform/intelligence/reports/{id}/runs/{run_id}/attempts`
+- `GET /api/v1/platform/intelligence/reports/{id}/runs/{run_id}/events`
 - `GET /api/v1/platform/intelligence/insights`
 - `GET /api/v1/platform/intelligence/quality`
 - `GET /api/v1/platform/intelligence/metadata-quality`
@@ -119,8 +125,12 @@ Report-definition rule:
 Report-execution rule:
 - Report definitions and report runs are different resources.
 - `ReportRun` captures typed parameters, execution mode, time slice, cache key, job linkage, section summaries, and optional snapshot metadata.
+- `ReportRunAttempt` and `ReportRunEvent` are first-class history resources so execution state is inspectable without scraping webhook delivery logs.
 - `ReportRun` is a durable control-plane resource: run metadata is persisted separately from materialized result payloads so restart recovery does not erase execution history.
-- `ReportSnapshot` is a retained derived artifact with content hash, recording timestamps, and storage-backed materialization metadata.
+- `ReportSnapshot` is a retained derived artifact with content hash, recording timestamps, lineage metadata, and storage-backed materialization metadata.
+- Runs and snapshots should always expose:
+  - graph lineage (`graph_snapshot_id`, `graph_built_at`, `graph_schema_version`, `ontology_contract_version`, `report_definition_version`)
+  - storage semantics (`storage_class`, `retention_tier`, `materialized_result_available`, `result_truncated`)
 - Long-running or future high-cost reports should converge on the same run resource + platform job linkage rather than invent report-specific async endpoints.
 
 Lifecycle/event rule:
@@ -131,6 +141,8 @@ Lifecycle/event rule:
 Section-contract rule:
 - `ReportSectionResult` should advertise a stable `envelope_kind` for downstream renderers, generated tools, and compatibility checks.
 - Object-backed sections should expose stable `field_keys` so UI/tool composition can reason about section shape without inspecting arbitrary payloads.
+- Section-envelope definitions should be discoverable through the section-envelope registry with stable schema names and schema URLs.
+- Benchmark overlays should be discoverable through the benchmark-pack registry instead of being embedded ad hoc into individual report handlers.
 - New section envelopes should be added deliberately and eventually generated as their own typed schemas rather than proliferating report-specific ad hoc objects.
 
 ### 2) Power Query API

@@ -458,6 +458,20 @@
         "job_id",
         "job_status_url",
         "parameter_count",
+        "latest_attempt_id",
+        "attempt_count",
+        "event_count",
+        "trigger_surface",
+        "execution_surface",
+        "execution_host",
+        "storage_class",
+        "retention_tier",
+        "result_truncated",
+        "graph_snapshot_id",
+        "graph_built_at",
+        "graph_schema_version",
+        "ontology_contract_version",
+        "report_definition_version",
         "snapshot_id",
         "result_schema",
         "section_count",
@@ -467,6 +481,9 @@
       "data_schema": {
         "additionalProperties": false,
         "properties": {
+          "attempt_count": {
+            "type": "integer"
+          },
           "cache_key": {
             "type": "string"
           },
@@ -474,7 +491,26 @@
             "format": "date-time",
             "type": "string"
           },
+          "event_count": {
+            "type": "integer"
+          },
+          "execution_host": {
+            "type": "string"
+          },
           "execution_mode": {
+            "type": "string"
+          },
+          "execution_surface": {
+            "type": "string"
+          },
+          "graph_built_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "graph_schema_version": {
+            "type": "integer"
+          },
+          "graph_snapshot_id": {
             "type": "string"
           },
           "job_id": {
@@ -483,11 +519,20 @@
           "job_status_url": {
             "type": "string"
           },
+          "latest_attempt_id": {
+            "type": "string"
+          },
           "materialized_result": {
             "type": "boolean"
           },
+          "ontology_contract_version": {
+            "type": "string"
+          },
           "parameter_count": {
             "type": "integer"
+          },
+          "report_definition_version": {
+            "type": "string"
           },
           "report_id": {
             "type": "string"
@@ -496,6 +541,12 @@
             "type": "string"
           },
           "result_schema": {
+            "type": "string"
+          },
+          "result_truncated": {
+            "type": "boolean"
+          },
+          "retention_tier": {
             "type": "string"
           },
           "run_id": {
@@ -517,6 +568,9 @@
           "status_url": {
             "type": "string"
           },
+          "storage_class": {
+            "type": "string"
+          },
           "submitted_at": {
             "format": "date-time",
             "type": "string"
@@ -525,6 +579,9 @@
             "type": "string"
           },
           "traceparent": {
+            "type": "string"
+          },
+          "trigger_surface": {
             "type": "string"
           }
         },
@@ -563,12 +620,29 @@
         "job_status_url",
         "parameter_count",
         "materialized_result",
+        "latest_attempt_id",
+        "attempt_count",
+        "event_count",
+        "trigger_surface",
+        "execution_surface",
+        "execution_host",
+        "storage_class",
+        "retention_tier",
+        "result_truncated",
+        "graph_snapshot_id",
+        "graph_built_at",
+        "graph_schema_version",
+        "ontology_contract_version",
+        "report_definition_version",
         "tenant_id",
         "traceparent"
       ],
       "data_schema": {
         "additionalProperties": false,
         "properties": {
+          "attempt_count": {
+            "type": "integer"
+          },
           "cache_key": {
             "type": "string"
           },
@@ -579,7 +653,26 @@
           "error": {
             "type": "string"
           },
+          "event_count": {
+            "type": "integer"
+          },
+          "execution_host": {
+            "type": "string"
+          },
           "execution_mode": {
+            "type": "string"
+          },
+          "execution_surface": {
+            "type": "string"
+          },
+          "graph_built_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "graph_schema_version": {
+            "type": "integer"
+          },
+          "graph_snapshot_id": {
             "type": "string"
           },
           "job_id": {
@@ -588,16 +681,31 @@
           "job_status_url": {
             "type": "string"
           },
+          "latest_attempt_id": {
+            "type": "string"
+          },
           "materialized_result": {
             "type": "boolean"
           },
+          "ontology_contract_version": {
+            "type": "string"
+          },
           "parameter_count": {
             "type": "integer"
+          },
+          "report_definition_version": {
+            "type": "string"
           },
           "report_id": {
             "type": "string"
           },
           "requested_by": {
+            "type": "string"
+          },
+          "result_truncated": {
+            "type": "boolean"
+          },
+          "retention_tier": {
             "type": "string"
           },
           "run_id": {
@@ -613,6 +721,9 @@
           "status_url": {
             "type": "string"
           },
+          "storage_class": {
+            "type": "string"
+          },
           "submitted_at": {
             "format": "date-time",
             "type": "string"
@@ -621,6 +732,9 @@
             "type": "string"
           },
           "traceparent": {
+            "type": "string"
+          },
+          "trigger_surface": {
             "type": "string"
           }
         },
@@ -656,16 +770,52 @@
         "job_status_url",
         "parameter_count",
         "materialized_result",
+        "latest_attempt_id",
+        "attempt_count",
+        "event_count",
+        "trigger_surface",
+        "execution_surface",
+        "execution_host",
+        "storage_class",
+        "retention_tier",
+        "result_truncated",
+        "graph_snapshot_id",
+        "graph_built_at",
+        "graph_schema_version",
+        "ontology_contract_version",
+        "report_definition_version",
         "tenant_id",
         "traceparent"
       ],
       "data_schema": {
         "additionalProperties": false,
         "properties": {
+          "attempt_count": {
+            "type": "integer"
+          },
           "cache_key": {
             "type": "string"
           },
+          "event_count": {
+            "type": "integer"
+          },
+          "execution_host": {
+            "type": "string"
+          },
           "execution_mode": {
+            "type": "string"
+          },
+          "execution_surface": {
+            "type": "string"
+          },
+          "graph_built_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "graph_schema_version": {
+            "type": "integer"
+          },
+          "graph_snapshot_id": {
             "type": "string"
           },
           "job_id": {
@@ -674,16 +824,31 @@
           "job_status_url": {
             "type": "string"
           },
+          "latest_attempt_id": {
+            "type": "string"
+          },
           "materialized_result": {
             "type": "boolean"
           },
+          "ontology_contract_version": {
+            "type": "string"
+          },
           "parameter_count": {
             "type": "integer"
+          },
+          "report_definition_version": {
+            "type": "string"
           },
           "report_id": {
             "type": "string"
           },
           "requested_by": {
+            "type": "string"
+          },
+          "result_truncated": {
+            "type": "boolean"
+          },
+          "retention_tier": {
             "type": "string"
           },
           "run_id": {
@@ -695,6 +860,9 @@
           "status_url": {
             "type": "string"
           },
+          "storage_class": {
+            "type": "string"
+          },
           "submitted_at": {
             "format": "date-time",
             "type": "string"
@@ -703,6 +871,9 @@
             "type": "string"
           },
           "traceparent": {
+            "type": "string"
+          },
+          "trigger_surface": {
             "type": "string"
           }
         },
@@ -737,16 +908,52 @@
         "job_status_url",
         "parameter_count",
         "materialized_result",
+        "latest_attempt_id",
+        "attempt_count",
+        "event_count",
+        "trigger_surface",
+        "execution_surface",
+        "execution_host",
+        "storage_class",
+        "retention_tier",
+        "result_truncated",
+        "graph_snapshot_id",
+        "graph_built_at",
+        "graph_schema_version",
+        "ontology_contract_version",
+        "report_definition_version",
         "tenant_id",
         "traceparent"
       ],
       "data_schema": {
         "additionalProperties": false,
         "properties": {
+          "attempt_count": {
+            "type": "integer"
+          },
           "cache_key": {
             "type": "string"
           },
+          "event_count": {
+            "type": "integer"
+          },
+          "execution_host": {
+            "type": "string"
+          },
           "execution_mode": {
+            "type": "string"
+          },
+          "execution_surface": {
+            "type": "string"
+          },
+          "graph_built_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "graph_schema_version": {
+            "type": "integer"
+          },
+          "graph_snapshot_id": {
             "type": "string"
           },
           "job_id": {
@@ -755,16 +962,31 @@
           "job_status_url": {
             "type": "string"
           },
+          "latest_attempt_id": {
+            "type": "string"
+          },
           "materialized_result": {
             "type": "boolean"
           },
+          "ontology_contract_version": {
+            "type": "string"
+          },
           "parameter_count": {
             "type": "integer"
+          },
+          "report_definition_version": {
+            "type": "string"
           },
           "report_id": {
             "type": "string"
           },
           "requested_by": {
+            "type": "string"
+          },
+          "result_truncated": {
+            "type": "boolean"
+          },
+          "retention_tier": {
             "type": "string"
           },
           "run_id": {
@@ -780,6 +1002,9 @@
           "status_url": {
             "type": "string"
           },
+          "storage_class": {
+            "type": "string"
+          },
           "submitted_at": {
             "format": "date-time",
             "type": "string"
@@ -788,6 +1013,9 @@
             "type": "string"
           },
           "traceparent": {
+            "type": "string"
+          },
+          "trigger_surface": {
             "type": "string"
           }
         },
@@ -823,6 +1051,15 @@
       "optional_data_keys": [
         "expires_at",
         "cache_key",
+        "storage_class",
+        "retention_tier",
+        "materialized_result",
+        "result_truncated",
+        "graph_snapshot_id",
+        "graph_built_at",
+        "graph_schema_version",
+        "ontology_contract_version",
+        "report_definition_version",
         "tenant_id",
         "traceparent"
       ],
@@ -846,8 +1083,27 @@
             "format": "date-time",
             "type": "string"
           },
+          "graph_built_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "graph_schema_version": {
+            "type": "integer"
+          },
+          "graph_snapshot_id": {
+            "type": "string"
+          },
+          "materialized_result": {
+            "type": "boolean"
+          },
+          "ontology_contract_version": {
+            "type": "string"
+          },
           "recorded_at": {
             "format": "date-time",
+            "type": "string"
+          },
+          "report_definition_version": {
             "type": "string"
           },
           "report_id": {
@@ -856,8 +1112,14 @@
           "result_schema": {
             "type": "string"
           },
+          "result_truncated": {
+            "type": "boolean"
+          },
           "retained": {
             "type": "boolean"
+          },
+          "retention_tier": {
+            "type": "string"
           },
           "run_id": {
             "type": "string"
@@ -869,6 +1131,9 @@
             "type": "string"
           },
           "status_url": {
+            "type": "string"
+          },
+          "storage_class": {
             "type": "string"
           },
           "tenant_id": {

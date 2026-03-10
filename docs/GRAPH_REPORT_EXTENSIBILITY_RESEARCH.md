@@ -24,6 +24,27 @@ The gap is that these are still mostly endpoint-shaped products of individual ha
 - durable run/snapshot provenance
 - autogeneration from one definition registry
 
+## Current Adoption State
+
+The report substrate now includes:
+
+- discoverable `ReportDefinition`, measure, check, section-envelope, and benchmark-pack registries
+- durable `ReportRun` resources with persisted `ReportSnapshot` payload artifacts
+- first-class `ReportRunAttempt` and `ReportRunEvent` resources for execution history
+- explicit lineage/storage metadata on runs and snapshots:
+  - `graph_snapshot_id`
+  - `graph_built_at`
+  - `graph_schema_version`
+  - `ontology_contract_version`
+  - `report_definition_version`
+  - `storage_class`
+  - `retention_tier`
+  - `materialized_result_available`
+  - `result_truncated`
+- typed OpenAPI schema components for concrete envelope families and benchmark-pack families
+
+The next gap is not "add more report endpoints." It is to make contract generation, compatibility checking, and graph/report derivation more automatic and less hand-maintained.
+
 ## Primary External Patterns
 
 ### 1) W3C RDF Data Cube
@@ -201,6 +222,8 @@ Derived reports should be composed from:
 - typed sections/modules
 - versioned extension points
 - report runs with provenance and time scope
+- report attempts/events with durable execution history
+- typed section envelopes and benchmark overlays
 
 ### Canonical Report Model
 
@@ -216,8 +239,18 @@ Cerebro should standardize on these report-layer primitives:
 - `ReportSectionResult`
 - `ReportRecommendation`
 - `ReportSnapshot`
+- `ReportRunAttempt`
+- `ReportRunEvent`
+- `ReportSectionEnvelopeDefinition`
+- `BenchmarkPack`
 
 ### Required Invariants
+
+- `ReportDefinition` owns the canonical contract; run resources may not invent new parameters, sections, or benchmark bindings at execution time.
+- `ReportRun` and `ReportSnapshot` must carry lineage/storage metadata sufficient to answer what graph state and contract version produced the artifact.
+- execution history must be durable enough to survive server restart without relying on webhook delivery logs.
+- every section should resolve to a known `envelope_kind`, and every reusable threshold overlay should resolve to a known benchmark-pack ID.
+- new envelope families and benchmark packs should carry stable schema names and schema URLs so codegen and compatibility checks can bind them deterministically.
 
 - every report definition has a stable `id`
 - every measure has a stable `id`, value type, and optional unit

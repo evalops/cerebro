@@ -174,7 +174,7 @@ Rationale:
   - `/api/v1/platform/identity/*`: alias resolution, merge/split review, calibration
 - `/api/v1/platform/schema/*`: ontology modules, health, registration, compatibility
 - `/api/v1/platform/ingest/*`: contracts, validation, dead-letter, pipeline health
-- `/api/v1/platform/intelligence/*`: quality, freshness, contradiction, coverage, calibration
+- `/api/v1/platform/intelligence/*`: quality, freshness, contradiction, coverage, calibration, report registries, benchmark/section contracts, and durable report execution history
 - `/api/v1/platform/simulations/*`: graph mutation simulation, scenario evaluation, change impact
 - `/api/v1/platform/jobs/*`: async execution objects and status
 
@@ -732,6 +732,7 @@ Current security mapping:
 2. Use jobs as a core platform/control-plane primitive.
    - any operation expected to exceed 2 seconds p95 or fan out across more than one provider or source must expose an execution resource
    - provider syncs, graph rebuilds, scans, attack-path analysis, rule discovery, cross-tenant pattern building, and large simulations should return job resources
+   - derived report executions should expose both platform job linkage and report-native execution history (`runs`, `attempts`, `events`) so job state does not become the only audit surface
 
 3. Keep shared reasoning separate from vertical views.
    - platform simulation APIs return generic traversal, impact, and contradiction primitives

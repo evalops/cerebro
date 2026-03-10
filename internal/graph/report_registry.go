@@ -2,6 +2,7 @@ package graph
 
 import (
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -35,11 +36,14 @@ type ReportMeasure struct {
 
 // ReportSection describes one composable section in a report payload.
 type ReportSection struct {
-	Key         string   `json:"key"`
-	Title       string   `json:"title"`
-	Kind        string   `json:"kind"`
-	Description string   `json:"description,omitempty"`
-	Measures    []string `json:"measures,omitempty"`
+	Key              string   `json:"key"`
+	Title            string   `json:"title"`
+	Kind             string   `json:"kind"`
+	EnvelopeKind     string   `json:"envelope_kind,omitempty"`
+	EnvelopeSchema   string   `json:"envelope_schema,omitempty"`
+	Description      string   `json:"description,omitempty"`
+	Measures         []string `json:"measures,omitempty"`
+	BenchmarkPackIDs []string `json:"benchmark_pack_ids,omitempty"`
 }
 
 // ReportCheck describes one reusable quality or health check embodied by a report.
@@ -60,6 +64,7 @@ type ReportExtensionPoint struct {
 // ReportDefinition describes one built-in, extensible report surface.
 type ReportDefinition struct {
 	ID              string                 `json:"id"`
+	Version         string                 `json:"version,omitempty"`
 	Title           string                 `json:"title"`
 	Category        string                 `json:"category"`
 	Description     string                 `json:"description,omitempty"`
@@ -127,7 +132,7 @@ var defaultReportDefinitions = []ReportDefinition{
 			{Key: "scope", Title: "Scope", Kind: "context", Description: "Selected entity and time-window context."},
 			{Key: "schema_health", Title: "Schema Health", Kind: "health_summary", Description: "Ontology and schema drift context for the current run."},
 			{Key: "outcome_feedback", Title: "Outcome Feedback", Kind: "calibration_summary", Description: "Observed outcome feedback feeding intelligence confidence."},
-			{Key: "insights", Title: "Insights", Kind: "ranked_findings", Description: "Prioritized insights with evidence and suggested actions.", Measures: []string{"risk_score", "coverage", "confidence"}},
+			{Key: "insights", Title: "Insights", Kind: "ranked_findings", Description: "Prioritized insights with evidence and suggested actions.", Measures: []string{"risk_score", "coverage", "confidence"}, BenchmarkPackIDs: []string{"decision-intelligence.default"}},
 		},
 		Checks: []ReportCheck{
 			{ID: "schema_conformance", Title: "Schema Conformance", Severity: "high", Description: "Confidence should be reduced when ontology writes are invalid or drifting."},
@@ -165,13 +170,13 @@ var defaultReportDefinitions = []ReportDefinition{
 			{ID: "closure_rate_percent", Label: "Closure Rate", ValueType: "number", Unit: "percent", Description: "Share of decisions linked to outcomes or evaluations."},
 		},
 		Sections: []ReportSection{
-			{Key: "summary", Title: "Summary", Kind: "scorecard", Measures: []string{"maturity_score"}},
+			{Key: "summary", Title: "Summary", Kind: "scorecard", Measures: []string{"maturity_score"}, BenchmarkPackIDs: []string{"graph-quality.default"}},
 			{Key: "ontology", Title: "Ontology", Kind: "health_breakdown", Measures: []string{"coverage_percent", "conformance_percent"}},
 			{Key: "identity", Title: "Identity", Kind: "health_breakdown", Measures: []string{"linkage_percent"}},
 			{Key: "temporal", Title: "Temporal", Kind: "health_breakdown", Measures: []string{"metadata_completeness_percent"}},
 			{Key: "writeback", Title: "Write-Back", Kind: "health_breakdown", Measures: []string{"closure_rate_percent"}},
 			{Key: "domain_coverage", Title: "Domain Coverage", Kind: "distribution"},
-			{Key: "recommendations", Title: "Recommendations", Kind: "action_list"},
+			{Key: "recommendations", Title: "Recommendations", Kind: "action_list", BenchmarkPackIDs: []string{"graph-quality.default"}},
 		},
 		Checks: []ReportCheck{
 			{ID: "ontology_conformance", Title: "Ontology Conformance", Severity: "high", Description: "Unknown or invalid kinds should fail the graph quality bar."},
@@ -206,10 +211,10 @@ var defaultReportDefinitions = []ReportDefinition{
 			{ID: "profiled_kinds", Label: "Profiled Kinds", ValueType: "integer", Description: "Number of kinds with explicit metadata profiles."},
 		},
 		Sections: []ReportSection{
-			{Key: "summary", Title: "Summary", Kind: "scorecard", Measures: []string{"required_key_coverage_percent", "timestamp_validity_percent", "enum_validity_percent", "profiled_kinds"}},
+			{Key: "summary", Title: "Summary", Kind: "scorecard", Measures: []string{"required_key_coverage_percent", "timestamp_validity_percent", "enum_validity_percent", "profiled_kinds"}, BenchmarkPackIDs: []string{"metadata-quality.default"}},
 			{Key: "kinds", Title: "Per-Kind Quality", Kind: "breakdown_table", Description: "Per-kind metadata completeness and validation errors."},
 			{Key: "unprofiled_kinds", Title: "Unprofiled Kinds", Kind: "ranked_backlog", Description: "High-volume kinds missing metadata profiles."},
-			{Key: "recommendations", Title: "Recommendations", Kind: "action_list"},
+			{Key: "recommendations", Title: "Recommendations", Kind: "action_list", BenchmarkPackIDs: []string{"metadata-quality.default"}},
 		},
 		Checks: []ReportCheck{
 			{ID: "metadata_profiles", Title: "Metadata Profiles", Severity: "high", Description: "Priority kinds should define required keys, timestamp keys, and enum constraints."},
@@ -248,9 +253,9 @@ var defaultReportDefinitions = []ReportDefinition{
 			{ID: "stale_claims", Label: "Stale Claims", ValueType: "integer", Description: "Claims beyond the requested staleness threshold."},
 		},
 		Sections: []ReportSection{
-			{Key: "summary", Title: "Summary", Kind: "scorecard", Measures: []string{"conflict_groups", "conflicting_claims", "unsupported_claims", "sourceless_claims", "stale_claims"}},
+			{Key: "summary", Title: "Summary", Kind: "scorecard", Measures: []string{"conflict_groups", "conflicting_claims", "unsupported_claims", "sourceless_claims", "stale_claims"}, BenchmarkPackIDs: []string{"claim-conflicts.default"}},
 			{Key: "conflicts", Title: "Conflict Groups", Kind: "contradiction_groups", Description: "Subject/predicate contradiction groups with conflicting values, sources, and timestamps."},
-			{Key: "recommendations", Title: "Recommendations", Kind: "action_list"},
+			{Key: "recommendations", Title: "Recommendations", Kind: "action_list", BenchmarkPackIDs: []string{"claim-conflicts.default"}},
 		},
 		Checks: []ReportCheck{
 			{ID: "supportability", Title: "Supportability", Severity: "high", Description: "Claims should be backed by evidence nodes or observations."},
@@ -293,7 +298,7 @@ var defaultReportDefinitions = []ReportDefinition{
 			{ID: "actuation_coverage_percent", Label: "Actuation Coverage", ValueType: "number", Unit: "percent", Description: "Share of actions linked to targets, decisions, and outcomes."},
 		},
 		Sections: []ReportSection{
-			{Key: "summary", Title: "Summary", Kind: "scorecard", Measures: []string{"leverage_score"}},
+			{Key: "summary", Title: "Summary", Kind: "scorecard", Measures: []string{"leverage_score"}, BenchmarkPackIDs: []string{"graph-leverage.default"}},
 			{Key: "quality", Title: "Quality", Kind: "embedded_report"},
 			{Key: "identity", Title: "Identity", Kind: "embedded_report"},
 			{Key: "ingestion", Title: "Ingestion", Kind: "coverage_breakdown", Measures: []string{"coverage_percent"}},
@@ -303,7 +308,7 @@ var defaultReportDefinitions = []ReportDefinition{
 			{Key: "predictive", Title: "Predictive", Kind: "readiness_summary", Measures: []string{"readiness_score"}},
 			{Key: "query", Title: "Query", Kind: "capability_summary"},
 			{Key: "actuation", Title: "Actuation", Kind: "readiness_summary", Measures: []string{"actuation_coverage_percent"}},
-			{Key: "recommendations", Title: "Recommendations", Kind: "action_list"},
+			{Key: "recommendations", Title: "Recommendations", Kind: "action_list", BenchmarkPackIDs: []string{"graph-leverage.default"}},
 		},
 		Checks: []ReportCheck{
 			{ID: "source_coverage", Title: "Source Coverage", Severity: "high", Description: "Leverage weakens quickly when ingest breadth misses core operating systems."},
@@ -343,7 +348,7 @@ var defaultReportDefinitions = []ReportDefinition{
 			{ID: "canonical_kind_coverage_percent", Label: "Canonical Kind Coverage", ValueType: "number", Unit: "percent", Description: "Ontology trend coverage for the selected trend horizon."},
 		},
 		Sections: []ReportSection{
-			{Key: "risk_feedback", Title: "Risk Feedback", Kind: "backtest_summary", Measures: []string{"outcome_count", "rule_signal_count"}},
+			{Key: "risk_feedback", Title: "Risk Feedback", Kind: "backtest_summary", Measures: []string{"outcome_count", "rule_signal_count"}, BenchmarkPackIDs: []string{"weekly-calibration.default"}},
 			{Key: "identity", Title: "Identity", Kind: "calibration_summary", Measures: []string{"precision_percent", "review_coverage_percent"}},
 			{Key: "ontology", Title: "Ontology Trend", Kind: "timeseries_summary", Measures: []string{"canonical_kind_coverage_percent"}},
 		},
@@ -473,6 +478,7 @@ func cloneReportDefinition(definition ReportDefinition) ReportDefinition {
 	cloned.Sections = append([]ReportSection(nil), definition.Sections...)
 	for i := range cloned.Sections {
 		cloned.Sections[i].Measures = append([]string(nil), definition.Sections[i].Measures...)
+		cloned.Sections[i].BenchmarkPackIDs = append([]string(nil), definition.Sections[i].BenchmarkPackIDs...)
 	}
 	cloned.Checks = append([]ReportCheck(nil), definition.Checks...)
 	cloned.ExtensionPoints = append([]ReportExtensionPoint(nil), definition.ExtensionPoints...)
@@ -480,6 +486,9 @@ func cloneReportDefinition(definition ReportDefinition) ReportDefinition {
 }
 
 func normalizeReportDefinition(definition ReportDefinition) ReportDefinition {
+	if strings.TrimSpace(definition.Version) == "" {
+		definition.Version = DefaultReportDefinitionVersion
+	}
 	if !definition.Endpoint.JobCapable {
 		definition.Endpoint.JobCapable = true
 	}
@@ -488,6 +497,14 @@ func normalizeReportDefinition(definition ReportDefinition) ReportDefinition {
 	}
 	if definition.Endpoint.RunPathTemplate == "" {
 		definition.Endpoint.RunPathTemplate = "/api/v1/platform/intelligence/reports/{id}/runs"
+	}
+	for i := range definition.Sections {
+		if strings.TrimSpace(definition.Sections[i].EnvelopeKind) == "" {
+			definition.Sections[i].EnvelopeKind = reportEnvelopeKindForSection(definition.Sections[i].Kind)
+		}
+		if envelope, ok := GetReportSectionEnvelopeDefinition(definition.Sections[i].EnvelopeKind); ok && strings.TrimSpace(definition.Sections[i].EnvelopeSchema) == "" {
+			definition.Sections[i].EnvelopeSchema = envelope.SchemaName
+		}
 	}
 	return definition
 }
