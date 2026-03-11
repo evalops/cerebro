@@ -13,13 +13,6 @@ import (
 
 var appShutdownTimeout = 30 * time.Second
 
-func newShutdownPhaseContext(timeout time.Duration) (context.Context, context.CancelFunc) {
-	if timeout <= 0 {
-		return context.WithCancel(context.Background())
-	}
-	return context.WithTimeout(context.Background(), timeout)
-}
-
 func (a *App) initRepositories() {
 	a.FindingsRepo = nil
 	a.TicketsRepo = nil
@@ -218,7 +211,15 @@ func (a *App) Close() error {
 		}
 		// Drain gets its own phase budget so earlier shutdown work does not silently
 		// shorten the configured consumer drain window.
-		drainCtx, drainCancel := newShutdownPhaseContext(drainTimeout)
+		var (
+			drainCtx    context.Context
+			drainCancel context.CancelFunc
+		)
+		if drainTimeout <= 0 {
+			drainCtx, drainCancel = context.WithCancel(context.Background())
+		} else {
+			drainCtx, drainCancel = context.WithTimeout(context.Background(), drainTimeout)
+		}
 		if err := a.TapConsumer.Drain(drainCtx); err != nil {
 			errs = append(errs, fmt.Errorf("tap consumer drain: %w", err))
 			if a.Logger != nil {

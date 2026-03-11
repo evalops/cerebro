@@ -38,7 +38,7 @@ func (a *App) initRBAC() {
 
 func (a *App) initThreatIntel(ctx context.Context) {
 	a.ThreatIntel = threatintel.NewThreatIntelService()
-	syncCtx, syncCancel := context.WithCancel(context.Background())
+	syncCtx, syncCancel := context.WithCancel(backgroundWorkContext(ctx))
 	a.threatIntelSyncCancel = syncCancel
 	a.threatIntelSyncWG.Add(1)
 
@@ -431,7 +431,7 @@ func (a *App) initSecurityGraph(ctx context.Context) {
 	a.setSecurityGraph(securityGraph)
 	a.Propagation = graph.NewPropagationEngine(securityGraph)
 
-	graphCtx, cancel := context.WithCancel(context.Background())
+	graphCtx, cancel := context.WithCancel(backgroundWorkContext(ctx))
 	a.graphCancel = cancel
 	a.setGraphBuildState(GraphBuildBuilding, time.Time{}, nil)
 
@@ -465,10 +465,17 @@ func (a *App) initSecurityGraph(ctx context.Context) {
 			}
 		}
 
-		emitCtx := context.Background()
+		emitCtx := graphCtx
 		a.emitGraphRebuiltEvent(emitCtx, meta, meta.BuildDuration)
 		a.emitGraphMutationEvent(emitCtx, a.SecurityGraphBuilder.LastMutation(), "startup")
 	}()
+}
+
+func backgroundWorkContext(ctx context.Context) context.Context {
+	if ctx == nil {
+		return context.Background()
+	}
+	return context.WithoutCancel(ctx)
 }
 
 func (a *App) configureGraphSchemaValidation(g *graph.Graph) {
