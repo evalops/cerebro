@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -400,26 +401,26 @@ func TestConsumerHandleMessageExtendsAckWaitWhileProcessing(t *testing.T) {
 		t.Fatalf("marshal cloud event: %v", err)
 	}
 
-	acked := 0
-	inProgressCalls := 0
+	var acked atomic.Int64
+	var inProgressCalls atomic.Int64
 	result := consumer.handleMessage(context.Background(), "ensemble.tap.test.event", payload, func() error {
-		acked++
+		acked.Add(1)
 		return nil
 	}, func() error {
 		t.Fatal("expected message to be acked, not nacked")
 		return nil
 	}, func() error {
-		inProgressCalls++
+		inProgressCalls.Add(1)
 		return nil
 	})
 
 	if !result.Processed {
 		t.Fatal("expected message to be processed successfully")
 	}
-	if acked != 1 {
-		t.Fatalf("expected one ack, got %d", acked)
+	if acked.Load() != 1 {
+		t.Fatalf("expected one ack, got %d", acked.Load())
 	}
-	if inProgressCalls == 0 {
+	if inProgressCalls.Load() == 0 {
 		t.Fatal("expected at least one in-progress heartbeat")
 	}
 }
