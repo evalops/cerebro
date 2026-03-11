@@ -263,7 +263,8 @@ func (a *App) graphOntologySLOHealthCheck() health.Checker {
 			Timestamp: start,
 		}
 
-		if a == nil || a.SecurityGraph == nil {
+		securityGraph := a.CurrentSecurityGraph()
+		if a == nil || securityGraph == nil {
 			result.Status = health.StatusUnknown
 			result.Message = "security graph not initialized"
 			result.Latency = time.Since(start)
@@ -271,7 +272,7 @@ func (a *App) graphOntologySLOHealthCheck() health.Checker {
 		}
 
 		thresholds := a.graphOntologySLOThresholds()
-		slo := graph.BuildGraphOntologySLO(a.SecurityGraph, time.Now().UTC(), 7)
+		slo := graph.BuildGraphOntologySLO(securityGraph, time.Now().UTC(), 7)
 		status, message := evaluateGraphOntologySLOStatus(slo, thresholds)
 		result.Status = status
 		result.Message = message
@@ -419,9 +420,10 @@ func (a *App) initSecurityGraph(ctx context.Context) {
 
 	source := graph.NewSnowflakeSource(a.Warehouse)
 	a.SecurityGraphBuilder = graph.NewBuilder(source, a.Logger)
-	a.SecurityGraph = a.SecurityGraphBuilder.Graph()
-	a.configureGraphSchemaValidation(a.SecurityGraph)
-	a.Propagation = graph.NewPropagationEngine(a.SecurityGraph)
+	securityGraph := a.SecurityGraphBuilder.Graph()
+	a.configureGraphSchemaValidation(securityGraph)
+	a.setSecurityGraph(securityGraph)
+	a.Propagation = graph.NewPropagationEngine(securityGraph)
 
 	graphCtx := ctx
 	if graphCtx == nil {
@@ -440,7 +442,7 @@ func (a *App) initSecurityGraph(ctx context.Context) {
 			a.Logger.Error("failed to build security graph", "error", err)
 			return
 		}
-		meta := a.SecurityGraph.Metadata()
+		meta := securityGraph.Metadata()
 		a.setGraphBuildState(GraphBuildSuccess, meta.BuiltAt, nil)
 		a.Logger.Info("security graph built",
 			"nodes", meta.NodeCount,
@@ -448,7 +450,7 @@ func (a *App) initSecurityGraph(ctx context.Context) {
 			"duration", meta.BuildDuration,
 		)
 		if a.Config != nil && a.Config.GraphMigrateLegacyActivityOnStart {
-			migration := graph.MigrateLegacyActivityNodes(a.SecurityGraph, graph.LegacyActivityMigrationOptions{Now: time.Now().UTC()})
+			migration := graph.MigrateLegacyActivityNodes(securityGraph, graph.LegacyActivityMigrationOptions{Now: time.Now().UTC()})
 			if migration.Migrated > 0 || migration.Scanned > 0 {
 				a.Logger.Info("migrated legacy activity nodes",
 					"scanned", migration.Scanned,
@@ -485,7 +487,8 @@ func (a *App) WaitForGraph(ctx context.Context) bool {
 	}
 	select {
 	case <-a.graphReady:
-		return a.SecurityGraph != nil && a.SecurityGraph.NodeCount() > 0
+		securityGraph := a.CurrentSecurityGraph()
+		return securityGraph != nil && securityGraph.NodeCount() > 0
 	case <-ctx.Done():
 		return false
 	}
@@ -503,7 +506,11 @@ func (a *App) RebuildSecurityGraph(ctx context.Context) error {
 		return err
 	}
 
-	meta := a.SecurityGraph.Metadata()
+	securityGraph := a.CurrentSecurityGraph()
+	if securityGraph == nil {
+		return fmt.Errorf("security graph not initialized")
+	}
+	meta := securityGraph.Metadata()
 	a.Logger.Info("security graph rebuilt",
 		"nodes", meta.NodeCount,
 		"edges", meta.EdgeCount,

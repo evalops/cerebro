@@ -29,12 +29,13 @@ type OrgTopologyPolicyScanResult struct {
 // ScanOrgTopologyPolicies evaluates policy rules against graph-derived organizational topology assets.
 func (a *App) ScanOrgTopologyPolicies(ctx context.Context) OrgTopologyPolicyScanResult {
 	result := OrgTopologyPolicyScanResult{Findings: make([]policy.Finding, 0)}
-	if a == nil || a.Policy == nil || a.SecurityGraph == nil {
+	securityGraph := a.CurrentSecurityGraph()
+	if a == nil || a.Policy == nil || securityGraph == nil {
 		return result
 	}
 
-	orgHealth := graph.ComputeOrgHealthScore(a.SecurityGraph)
-	assets := buildOrgTopologyPolicyAssets(a.SecurityGraph, orgHealth)
+	orgHealth := graph.ComputeOrgHealthScore(securityGraph)
+	assets := buildOrgTopologyPolicyAssets(securityGraph, orgHealth)
 	result.Assets = len(assets)
 	if len(assets) == 0 {
 		return result

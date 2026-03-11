@@ -62,7 +62,8 @@ func (a *App) toolCerebroEvaluatePolicy(ctx context.Context, args json.RawMessag
 
 	var propagationResult *graph.PropagationResult
 	if decision != "deny" && req.ProposedChange != nil {
-		if a.SecurityGraph == nil {
+		securityGraph := a.CurrentSecurityGraph()
+		if securityGraph == nil {
 			return "", fmt.Errorf("graph platform not initialized")
 		}
 
@@ -85,7 +86,7 @@ func (a *App) toolCerebroEvaluatePolicy(ctx context.Context, args json.RawMessag
 				options = append(options, graph.WithApprovalARRThreshold(*req.ProposedChange.ApprovalARRThreshold))
 			}
 
-			engine := graph.NewPropagationEngine(a.SecurityGraph, options...)
+			engine := graph.NewPropagationEngine(securityGraph, options...)
 			propagationResult, err = engine.Evaluate(&graph.ChangeProposal{
 				ID:     strings.TrimSpace(req.ProposedChange.ID),
 				Source: strings.TrimSpace(req.ProposedChange.Source),

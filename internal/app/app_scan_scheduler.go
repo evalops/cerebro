@@ -80,9 +80,10 @@ func (a *App) initScheduler(_ context.Context) {
 			if err := a.SecurityGraphBuilder.Build(ctx); err != nil {
 				return err
 			}
-			a.SecurityGraph = a.SecurityGraphBuilder.Graph()
-			a.configureGraphSchemaValidation(a.SecurityGraph)
-			meta := a.SecurityGraph.Metadata()
+			securityGraph := a.SecurityGraphBuilder.Graph()
+			a.configureGraphSchemaValidation(securityGraph)
+			a.setSecurityGraph(securityGraph)
+			meta := securityGraph.Metadata()
 			a.Logger.Info("security graph rebuilt",
 				"nodes", meta.NodeCount,
 				"edges", meta.EdgeCount,
@@ -98,9 +99,10 @@ func (a *App) initScheduler(_ context.Context) {
 			return nil
 		}
 
-		a.SecurityGraph = a.SecurityGraphBuilder.Graph()
-		a.configureGraphSchemaValidation(a.SecurityGraph)
-		meta := a.SecurityGraph.Metadata()
+		securityGraph := a.SecurityGraphBuilder.Graph()
+		a.configureGraphSchemaValidation(securityGraph)
+		a.setSecurityGraph(securityGraph)
+		meta := securityGraph.Metadata()
 		a.Logger.Info("security graph incrementally updated",
 			"events", summary.EventsProcessed,
 			"nodes_added", summary.NodesAdded,
@@ -463,7 +465,7 @@ func (a *App) runScheduledScan(ctx context.Context, tables []string) error {
 		}
 	}
 
-	if a.SecurityGraph != nil {
+	if securityGraph := a.CurrentSecurityGraph(); securityGraph != nil {
 		graphCtx := ctx
 		cancel := func() {}
 		if tuning.GraphWaitTimeout > 0 {
@@ -472,7 +474,7 @@ func (a *App) runScheduledScan(ctx context.Context, tables []string) error {
 		graphReady := a.WaitForGraph(graphCtx)
 		cancel()
 		if graphReady {
-			graphResult := a.Scanner.AnalyzeGraph(ctx, a.SecurityGraph)
+			graphResult := a.Scanner.AnalyzeGraph(ctx, securityGraph)
 			if graphResult != nil {
 				graphPaths = graphResult.AttackPathStats.TotalPaths
 				for _, f := range graphResult.ToxicCombinations {

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/evalops/cerebro/internal/graph"
 	"github.com/evalops/cerebro/internal/metrics"
 )
 
@@ -52,6 +53,24 @@ func (a *App) setGraphBuildState(state GraphBuildState, builtAt time.Time, err e
 	}
 }
 
+func (a *App) CurrentSecurityGraph() *graph.Graph {
+	if a == nil {
+		return nil
+	}
+	a.securityGraphInitMu.RLock()
+	defer a.securityGraphInitMu.RUnlock()
+	return a.SecurityGraph
+}
+
+func (a *App) setSecurityGraph(g *graph.Graph) {
+	if a == nil {
+		return
+	}
+	a.securityGraphInitMu.Lock()
+	defer a.securityGraphInitMu.Unlock()
+	a.SecurityGraph = g
+}
+
 func (a *App) GraphBuildSnapshot() GraphBuildSnapshot {
 	if a == nil {
 		return GraphBuildSnapshot{}
@@ -60,8 +79,8 @@ func (a *App) GraphBuildSnapshot() GraphBuildSnapshot {
 	defer a.graphBuildMu.RUnlock()
 
 	nodeCount := 0
-	if a.SecurityGraph != nil {
-		nodeCount = a.SecurityGraph.NodeCount()
+	if securityGraph := a.CurrentSecurityGraph(); securityGraph != nil {
+		nodeCount = securityGraph.NodeCount()
 	}
 	return GraphBuildSnapshot{
 		State:       a.graphBuildState,
