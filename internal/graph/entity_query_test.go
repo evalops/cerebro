@@ -429,13 +429,15 @@ func TestNormalizeEntityAssetSupportPromotesMultipleBucketPolicyStatements(t *te
 	baseAt := time.Date(2026, 3, 10, 14, 0, 0, 0, time.UTC)
 	bucketID := "arn:aws:s3:::public-bucket"
 	props := map[string]any{
-		"observed_at":                    baseAt.UTC().Format(time.RFC3339),
-		"valid_from":                     baseAt.UTC().Format(time.RFC3339),
-		"recorded_at":                    baseAt.UTC().Format(time.RFC3339),
-		"transaction_from":               baseAt.UTC().Format(time.RFC3339),
-		"all_users_access":               true,
-		"all_authenticated_users_access": true,
-		"bucket_name":                    "public-bucket",
+		"observed_at":                     baseAt.UTC().Format(time.RFC3339),
+		"valid_from":                      baseAt.UTC().Format(time.RFC3339),
+		"recorded_at":                     baseAt.UTC().Format(time.RFC3339),
+		"transaction_from":                baseAt.UTC().Format(time.RFC3339),
+		"all_users_access":                true,
+		"all_users_actions":               []string{"s3:GetObject"},
+		"all_authenticated_users_access":  true,
+		"all_authenticated_users_actions": []string{"s3:GetObject", "s3:ListBucket"},
+		"bucket_name":                     "public-bucket",
 	}
 	g.AddNode(&Node{
 		ID:         bucketID,
@@ -457,10 +459,12 @@ func TestNormalizeEntityAssetSupportPromotesMultipleBucketPolicyStatements(t *te
 		t.Fatal("expected bucket detail")
 	}
 	statementCount := 0
+	actionCounts := make(map[string]int)
 	publicAccessFacetMatched := false
 	for _, subresource := range detail.Subresources {
 		if subresource.Kind == NodeKindBucketPolicyStatement {
 			statementCount++
+			actionCounts[readString(subresource.Fields, "principal_type")] = int(readFloat(subresource.Fields, "action_count"))
 		}
 	}
 	for _, facet := range detail.Facets {
@@ -474,6 +478,9 @@ func TestNormalizeEntityAssetSupportPromotesMultipleBucketPolicyStatements(t *te
 	}
 	if statementCount != 2 {
 		t.Fatalf("expected two policy statement subresources, got %#v", detail.Subresources)
+	}
+	if actionCounts["all_users"] != 1 || actionCounts["all_authenticated_users"] != 2 {
+		t.Fatalf("expected per-principal action counts, got %#v", actionCounts)
 	}
 	if !publicAccessFacetMatched {
 		t.Fatalf("expected bucket_public_access facet, got %#v", detail.Facets)

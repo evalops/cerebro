@@ -392,13 +392,14 @@ func ensureBucketPublicAccessBlockSupport(g *Graph, bucket *Node, meta entityNor
 func ensureBucketPolicyStatementSupport(g *Graph, bucket *Node, meta entityNormalizationContext) ([]string, int, int, int) {
 	candidates := []struct {
 		field         string
+		actionsField  string
 		principal     string
 		principalType string
 		suffix        string
 	}{
-		{field: "anonymous_access", principal: "anonymous", principalType: "anonymous", suffix: "anonymous"},
-		{field: "all_users_access", principal: "allUsers", principalType: "all_users", suffix: "all-users"},
-		{field: "all_authenticated_users_access", principal: "allAuthenticatedUsers", principalType: "all_authenticated_users", suffix: "all-authenticated-users"},
+		{field: "anonymous_access", actionsField: "anonymous_actions", principal: "anonymous", principalType: "anonymous", suffix: "anonymous"},
+		{field: "all_users_access", actionsField: "all_users_actions", principal: "allUsers", principalType: "all_users", suffix: "all-users"},
+		{field: "all_authenticated_users_access", actionsField: "all_authenticated_users_actions", principal: "allAuthenticatedUsers", principalType: "all_authenticated_users", suffix: "all-authenticated-users"},
 	}
 	claimIDs := make([]string, 0, len(candidates))
 	createdSubresources := 0
@@ -415,7 +416,7 @@ func ensureBucketPolicyStatementSupport(g *Graph, bucket *Node, meta entityNorma
 			"principal":      candidate.principal,
 			"principal_type": candidate.principalType,
 			"public_access":  true,
-			"action_count":   len(stringSliceFromValue(bucket.Properties["anonymous_actions"])),
+			"action_count":   len(stringSliceFromValue(bucket.Properties[candidate.actionsField])),
 			"assessment":     "fail",
 			"summary":        fmt.Sprintf("Bucket policy statement grants access to %s", candidate.principal),
 		}
