@@ -64,13 +64,22 @@ func (fs *FileStore) load() error {
 		return fmt.Errorf("unmarshal: %w", err)
 	}
 
-	// Load into in-memory store
+	// Load into in-memory store while applying the same retention, capacity,
+	// and metrics invariants as live mutations.
 	fs.store.mu.Lock()
+	now := time.Now()
 	for _, f := range findings {
 		f.Status = normalizeStatus(f.Status)
 		EnrichFinding(f)
 		fs.store.findings[f.ID] = f
 	}
+	if fs.store.resolvedRetention > 0 {
+		_ = fs.store.cleanupResolvedBeforeLocked(now.Add(-fs.store.resolvedRetention))
+	}
+	if fs.store.maxFindings > 0 && len(fs.store.findings) > fs.store.maxFindings {
+		fs.store.evictToCapacity()
+	}
+	fs.store.updateMetricsLocked()
 	fs.store.mu.Unlock()
 
 	return nil
@@ -199,6 +208,7 @@ func (fs *FileStore) Close() error {
 func (fs *FileStore) Clear() error {
 	fs.store.mu.Lock()
 	fs.store.findings = make(map[string]*Finding)
+	fs.store.updateMetricsLocked()
 	fs.store.mu.Unlock()
 
 	fs.mu.Lock()
@@ -232,6 +242,7 @@ func (fs *FileStore) Cleanup(maxAge time.Duration) int {
 		}
 	}
 
+	fs.store.updateMetricsLocked()
 	if removed > 0 {
 		fs.mu.Lock()
 		fs.dirty = true

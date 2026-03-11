@@ -2,12 +2,15 @@ package findings
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/evalops/cerebro/internal/metrics"
 	"github.com/evalops/cerebro/internal/policy"
+	dto "github.com/prometheus/client_model/go"
 )
 
 func TestFileStore(t *testing.T) {
@@ -166,4 +169,90 @@ func TestDefaultFilePath(t *testing.T) {
 	if !filepath.IsAbs(path) {
 		t.Error("path should be absolute")
 	}
+}
+
+func TestFileStoreLoadEnforcesCapacityAndMetrics(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "findings.json")
+	now := time.Now().UTC()
+	findings := []*Finding{
+		{ID: "resolved-old", PolicyID: "policy", Severity: "low", Status: "RESOLVED", LastSeen: now.Add(-3 * time.Hour)},
+		{ID: "suppressed-mid", PolicyID: "policy", Severity: "medium", Status: "SUPPRESSED", LastSeen: now.Add(-2 * time.Hour)},
+		{ID: "open-new", PolicyID: "policy", Severity: "high", Status: "OPEN", LastSeen: now.Add(-1 * time.Hour)},
+	}
+	data, err := json.Marshal(findings)
+	if err != nil {
+		t.Fatalf("marshal findings: %v", err)
+	}
+	if err := os.WriteFile(filePath, data, 0600); err != nil {
+		t.Fatalf("write findings file: %v", err)
+	}
+
+	fs := &FileStore{
+		store:    NewStoreWithConfig(StoreConfig{MaxFindings: 2}),
+		filePath: filePath,
+		done:     make(chan struct{}),
+	}
+	if err := fs.load(); err != nil {
+		t.Fatalf("load findings: %v", err)
+	}
+	if got := fs.store.Len(); got != 2 {
+		t.Fatalf("loaded findings = %d, want 2", got)
+	}
+	if _, ok := fs.Get("resolved-old"); ok {
+		t.Fatal("expected resolved finding to be evicted at load-time capacity enforcement")
+	}
+	if got := findingsStoreSizeMetricValue(t); got != 2 {
+		t.Fatalf("findings store size metric = %.0f, want 2", got)
+	}
+}
+
+func TestFileStoreLoadAppliesResolvedRetention(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "findings.json")
+	now := time.Now().UTC()
+	findings := []*Finding{
+		{ID: "resolved-expired", PolicyID: "policy", Severity: "low", Status: "RESOLVED", LastSeen: now.Add(-72 * time.Hour)},
+		{ID: "open-current", PolicyID: "policy", Severity: "high", Status: "OPEN", LastSeen: now.Add(-1 * time.Hour)},
+	}
+	data, err := json.Marshal(findings)
+	if err != nil {
+		t.Fatalf("marshal findings: %v", err)
+	}
+	if err := os.WriteFile(filePath, data, 0600); err != nil {
+		t.Fatalf("write findings file: %v", err)
+	}
+
+	fs := &FileStore{
+		store: NewStoreWithConfig(StoreConfig{
+			MaxFindings:       10,
+			ResolvedRetention: 24 * time.Hour,
+		}),
+		filePath: filePath,
+		done:     make(chan struct{}),
+	}
+	if err := fs.load(); err != nil {
+		t.Fatalf("load findings: %v", err)
+	}
+	if _, ok := fs.Get("resolved-expired"); ok {
+		t.Fatal("expected resolved finding older than retention to be removed during load")
+	}
+	if _, ok := fs.Get("open-current"); !ok {
+		t.Fatal("expected current open finding to remain after load")
+	}
+	if got := findingsStoreSizeMetricValue(t); got != 1 {
+		t.Fatalf("findings store size metric = %.0f, want 1", got)
+	}
+}
+
+func findingsStoreSizeMetricValue(t *testing.T) float64 {
+	t.Helper()
+	metric := &dto.Metric{}
+	if err := metrics.FindingsStoreSize.Write(metric); err != nil {
+		t.Fatalf("read findings store size metric: %v", err)
+	}
+	if metric.Gauge == nil {
+		t.Fatal("expected findings store size gauge metric")
+	}
+	return metric.GetGauge().GetValue()
 }

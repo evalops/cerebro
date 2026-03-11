@@ -160,6 +160,8 @@ func (t *providerResilientTransport) RoundTrip(req *http.Request) (*http.Respons
 		if !decision.Retryable {
 			if err == nil {
 				t.circuit.recordSuccess()
+			} else {
+				t.circuit.releaseHalfOpenProbe()
 			}
 			return resp, err
 		}
@@ -168,6 +170,9 @@ func (t *providerResilientTransport) RoundTrip(req *http.Request) (*http.Respons
 			t.circuit.recordFailure()
 		}
 		if attempt == attempts {
+			if !decision.CountsAsFailure {
+				t.circuit.releaseHalfOpenProbe()
+			}
 			return resp, err
 		}
 
@@ -180,6 +185,7 @@ func (t *providerResilientTransport) RoundTrip(req *http.Request) (*http.Respons
 			delay = providerRetryDelay(t.options.RetryBackoff, t.options.RetryMaxBackoff, attempt)
 		}
 		if err := t.sleep(req.Context(), delay); err != nil {
+			t.circuit.releaseHalfOpenProbe()
 			return nil, err
 		}
 	}
@@ -252,6 +258,15 @@ func (c *providerCircuitBreaker) recordSuccess() {
 	if c.state != providerCircuitClosed {
 		c.state = providerCircuitClosed
 		metrics.SetProviderCircuitState(c.provider, string(c.state))
+	}
+}
+
+func (c *providerCircuitBreaker) releaseHalfOpenProbe() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.state == providerCircuitHalfOpen {
+		c.halfOpenInFlight = false
 	}
 }
 
