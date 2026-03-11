@@ -4,7 +4,6 @@ Generated from `api/openapi.yaml` via `go run ./scripts/generate_api_contract_do
 
 - Catalog API version: **devex.cerebro/v1alpha1**
 - Catalog kind: **HTTPAPIContractCatalog**
-- Generated at: **2026-03-11T15:24:41Z**
 - Endpoints: **291**
 
 ## Endpoint Summary

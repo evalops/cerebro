@@ -14821,6 +14821,7 @@ components:
         - generated_at
         - filter
         - count
+        - entries
     SecurityAttackPathJobRequest:
       type: object
       additionalProperties: false

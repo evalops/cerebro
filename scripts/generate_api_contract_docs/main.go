@@ -17,12 +17,7 @@ const (
 )
 
 func main() {
-	info, err := os.Stat(openAPIPath)
-	if err != nil {
-		fatalf("stat %s: %v", openAPIPath, err)
-	}
-	generatedAt := info.ModTime().UTC().Truncate(time.Second)
-	catalog, err := apicontractcompat.BuildCatalogFromFile(openAPIPath, generatedAt)
+	catalog, err := apicontractcompat.BuildCatalogFromFile(openAPIPath, time.Time{})
 	if err != nil {
 		fatalf("build api contract catalog: %v", err)
 	}
@@ -45,7 +40,9 @@ func renderMarkdown(catalog apicontractcompat.Catalog) string {
 	b.WriteString("Generated from `api/openapi.yaml` via `go run ./scripts/generate_api_contract_docs/main.go`.\n\n")
 	fmt.Fprintf(&b, "- Catalog API version: **%s**\n", escape(catalog.APIVersion))
 	fmt.Fprintf(&b, "- Catalog kind: **%s**\n", escape(catalog.Kind))
-	fmt.Fprintf(&b, "- Generated at: **%s**\n", catalog.GeneratedAt.UTC().Format(time.RFC3339))
+	if !catalog.GeneratedAt.IsZero() {
+		fmt.Fprintf(&b, "- Generated at: **%s**\n", catalog.GeneratedAt.UTC().Format(time.RFC3339))
+	}
 	fmt.Fprintf(&b, "- Endpoints: **%d**\n\n", catalog.EndpointCount)
 
 	b.WriteString("## Endpoint Summary\n\n")

@@ -15,7 +15,7 @@ import (
 type Catalog struct {
 	APIVersion    string             `json:"api_version"`
 	Kind          string             `json:"kind"`
-	GeneratedAt   time.Time          `json:"generated_at"`
+	GeneratedAt   time.Time          `json:"generated_at,omitempty"`
 	EndpointCount int                `json:"endpoint_count"`
 	Endpoints     []EndpointContract `json:"endpoints"`
 }
@@ -86,9 +86,6 @@ func BuildCatalogFromFile(path string, generatedAt time.Time) (Catalog, error) {
 }
 
 func BuildCatalogFromYAML(payload []byte, generatedAt time.Time) (Catalog, error) {
-	if generatedAt.IsZero() {
-		generatedAt = time.Now().UTC()
-	}
 	var root map[string]any
 	if err := yaml.Unmarshal(payload, &root); err != nil {
 		return Catalog{}, fmt.Errorf("decode openapi yaml: %w", err)
