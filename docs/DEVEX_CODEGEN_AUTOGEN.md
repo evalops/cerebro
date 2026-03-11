@@ -4,7 +4,7 @@ Generated from `devex/codegen_catalog.json` via `go run ./scripts/generate_devex
 
 - Catalog API version: **devex.cerebro/v1alpha1**
 - Catalog kind: **CodegenCatalog**
-- Families: **8**
+- Families: **9**
 
 ## CI to Local Map
 
@@ -12,6 +12,7 @@ Generated from `devex/codegen_catalog.json` via `go run ./scripts/generate_devex
 |---|---|---|---|---|
 | `openapi` | `openapi-sync` | `openapi-check` | `openapi-route-parity` | `api/openapi.yaml` |
 | `config-docs` | `config-docs` | `config-docs-check` | `config-docs-drift` | `docs/CONFIG_ENV_VARS.md` |
+| `api-contracts` | `api-contract-docs` | `api-contract-compat`, `api-contract-docs-check` | `api-contract-compat`, `api-contract-docs-drift` | `docs/API_CONTRACTS.json`, `docs/API_CONTRACTS_AUTOGEN.md` |
 | `ontology-docs` | `ontology-docs` | `graph-ontology-guardrails`, `ontology-docs-check` | `graph-ontology-guardrails`, `ontology-docs-drift` | `docs/GRAPH_ONTOLOGY_AUTOGEN.md` |
 | `cloudevents` | `cloudevents-docs` | `cloudevents-contract-compat`, `cloudevents-docs-check` | `cloudevents-contract-compat`, `cloudevents-docs-drift` | `docs/CLOUDEVENTS_AUTOGEN.md`, `docs/CLOUDEVENTS_CONTRACTS.json` |
 | `report-contracts` | `report-contract-docs` | `report-contract-compat`, `report-contract-docs-check` | `report-contract-compat`, `report-contract-docs-drift` | `docs/GRAPH_REPORT_CONTRACTS.json`, `docs/GRAPH_REPORT_CONTRACTS_AUTOGEN.md` |
@@ -44,6 +45,19 @@ Generates the environment/config reference from the live config loading surface.
 - Triggers: `docs/CONFIG_ENV_VARS.md`, `internal/app/app_config.go`, `internal/config/**`, `scripts/generate_config_docs/**`
 - Outputs: `docs/CONFIG_ENV_VARS.md`
 - CI jobs: `config-docs-drift`
+
+### `api-contracts`
+
+Generates the machine-readable HTTP API baseline and enforces OpenAPI compatibility across endpoint evolution.
+
+- Change reason: HTTP API route or schema surface changed
+- Generator: `api-contract-docs` -> `api-contract-docs`
+- Checks:
+  - `api-contract-docs-check` -> `api-contract-docs-check`
+  - `api-contract-compat` -> `go run ./scripts/check_api_contract_compat/main.go --require-baseline --base-ref={base_ref}`
+- Triggers: `api/openapi.yaml`, `docs/API_CONTRACTS.json`, `docs/API_CONTRACTS_AUTOGEN.md`, `internal/api/**`, `internal/apicontractcompat/**`, `scripts/check_api_contract_compat/**`, `scripts/generate_api_contract_docs/**`
+- Outputs: `docs/API_CONTRACTS.json`, `docs/API_CONTRACTS_AUTOGEN.md`
+- CI jobs: `api-contract-compat`, `api-contract-docs-drift`
 
 ### `ontology-docs`
 

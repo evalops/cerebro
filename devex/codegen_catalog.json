@@ -81,6 +81,64 @@
       ]
     },
     {
+      "id": "api-contracts",
+      "title": "HTTP API Contracts",
+      "summary": "Generates the machine-readable HTTP API baseline and enforces OpenAPI compatibility across endpoint evolution.",
+      "change_reason": "HTTP API route or schema surface changed",
+      "triggers": [
+        "api/openapi.yaml",
+        "internal/api/**",
+        "scripts/generate_api_contract_docs/**",
+        "scripts/check_api_contract_compat/**",
+        "internal/apicontractcompat/**",
+        "docs/API_CONTRACTS_AUTOGEN.md",
+        "docs/API_CONTRACTS.json"
+      ],
+      "generator": {
+        "make_target": "api-contract-docs",
+        "command": [
+          "go",
+          "run",
+          "./scripts/generate_api_contract_docs/main.go"
+        ],
+        "summary": "Regenerate the HTTP API contract catalog artifacts."
+      },
+      "checks": [
+        {
+          "key": "api-contract-docs-check",
+          "summary": "Verify generated HTTP API contract docs are up to date",
+          "make_target": "api-contract-docs-check",
+          "command": [
+            "make",
+            "api-contract-docs-check"
+          ],
+          "include_in_pr_generated_step": true
+        },
+        {
+          "key": "api-contract-compat",
+          "summary": "Enforce HTTP API contract compatibility",
+          "command": [
+            "go",
+            "run",
+            "./scripts/check_api_contract_compat/main.go",
+            "--require-baseline",
+            "--base-ref={base_ref}"
+          ],
+          "env": {
+            "API_CONTRACT_BASE_REF": "{base_ref}"
+          }
+        }
+      ],
+      "outputs": [
+        "docs/API_CONTRACTS_AUTOGEN.md",
+        "docs/API_CONTRACTS.json"
+      ],
+      "ci_jobs": [
+        "api-contract-docs-drift",
+        "api-contract-compat"
+      ]
+    },
+    {
       "id": "ontology-docs",
       "title": "Graph Ontology Docs",
       "summary": "Generates ontology reference docs and runs guardrails for ingest-schema drift.",

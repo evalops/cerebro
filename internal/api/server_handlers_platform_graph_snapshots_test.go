@@ -289,6 +289,84 @@ func TestPlatformGraphDiffRequiresMaterializedSnapshots(t *testing.T) {
 	}
 }
 
+func TestPlatformGraphChangelogAndDiffDetailsEndpoints(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("GRAPH_SNAPSHOT_PATH", dir)
+
+	base := time.Date(2026, 3, 7, 0, 0, 0, 0, time.UTC)
+	older := &graph.Snapshot{
+		Version:   "1.0",
+		CreatedAt: base.Add(5 * time.Minute),
+		Metadata: graph.Metadata{
+			BuiltAt:   base,
+			NodeCount: 1,
+			EdgeCount: 0,
+			Providers: []string{"aws"},
+			Accounts:  []string{"acct-a"},
+		},
+		Nodes: []*graph.Node{
+			{ID: "service:payments", Kind: graph.NodeKindService, Name: "Payments", Provider: "aws", Account: "acct-a"},
+		},
+	}
+	newer := &graph.Snapshot{
+		Version:   "1.0",
+		CreatedAt: base.Add(65 * time.Minute),
+		Metadata: graph.Metadata{
+			BuiltAt:   base.Add(1 * time.Hour),
+			NodeCount: 2,
+			EdgeCount: 1,
+			Providers: []string{"aws"},
+			Accounts:  []string{"acct-a"},
+		},
+		Nodes: []*graph.Node{
+			{ID: "service:payments", Kind: graph.NodeKindService, Name: "Payments", Provider: "aws", Account: "acct-a"},
+			{ID: "bucket:logs", Kind: graph.NodeKindBucket, Name: "Logs", Provider: "aws", Account: "acct-a", Properties: map[string]any{"source_system": "aws"}},
+		},
+		Edges: []*graph.Edge{
+			{ID: "service:payments->bucket:logs:targets", Source: "service:payments", Target: "bucket:logs", Kind: graph.EdgeKindTargets},
+		},
+	}
+	mustSaveGraphSnapshot(t, dir, older)
+	mustSaveGraphSnapshot(t, dir, newer)
+
+	s := newTestServer(t)
+	changelog := do(t, s, http.MethodGet, "/api/v1/platform/graph/changelog?last=7d&provider=aws", nil)
+	if changelog.Code != http.StatusOK {
+		t.Fatalf("expected 200 for graph changelog, got %d: %s", changelog.Code, changelog.Body.String())
+	}
+	changelogBody := decodeJSON(t, changelog)
+	if changelogBody["count"] != float64(1) {
+		t.Fatalf("expected one changelog entry, got %#v", changelogBody["count"])
+	}
+	entries, ok := changelogBody["entries"].([]any)
+	if !ok || len(entries) != 1 {
+		t.Fatalf("expected one changelog entry, got %#v", changelogBody["entries"])
+	}
+	entry := entries[0].(map[string]any)
+	diffID, _ := entry["diff_id"].(string)
+	if diffID == "" {
+		t.Fatalf("expected diff_id on changelog entry, got %#v", entry)
+	}
+	attribution := entry["attribution"].(map[string]any)
+	if providers, ok := attribution["providers"].([]any); !ok || len(providers) != 1 || providers[0] != "aws" {
+		t.Fatalf("expected aws attribution, got %#v", attribution)
+	}
+
+	details := do(t, s, http.MethodGet, "/api/v1/platform/graph/diffs/"+diffID+"/details?provider=aws&kind=bucket", nil)
+	if details.Code != http.StatusOK {
+		t.Fatalf("expected 200 for diff details, got %d: %s", details.Code, details.Body.String())
+	}
+	detailsBody := decodeJSON(t, details)
+	detailSummary := detailsBody["summary"].(map[string]any)
+	if detailSummary["nodes_added"] != float64(1) || detailSummary["edges_added"] != float64(1) {
+		t.Fatalf("unexpected filtered detail summary: %#v", detailSummary)
+	}
+	filter := detailsBody["filter"].(map[string]any)
+	if filter["provider"] != "aws" || filter["kind"] != string(graph.NodeKindBucket) {
+		t.Fatalf("unexpected detail filter echo: %#v", filter)
+	}
+}
+
 func mustSaveGraphSnapshot(t *testing.T, dir string, snapshot *graph.Snapshot) {
 	t.Helper()
 	path := filepath.Join(dir, fmt.Sprintf("graph-%s.json.gz", snapshot.CreatedAt.Format("20060102-150405")))

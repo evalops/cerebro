@@ -2,6 +2,7 @@ package app
 
 import (
 	"log/slog"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -146,6 +147,41 @@ func splitCSV(s string) []string {
 		}
 	}
 	return result
+}
+
+func parseDurationEnvMap(prefix string) map[string]time.Duration {
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		return nil
+	}
+	out := make(map[string]time.Duration)
+	for _, entry := range os.Environ() {
+		parts := strings.SplitN(entry, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		if !strings.HasPrefix(key, prefix) || len(key) <= len(prefix) {
+			continue
+		}
+		value := strings.TrimSpace(parts[1])
+		if value == "" {
+			continue
+		}
+		duration, err := time.ParseDuration(value)
+		if err != nil {
+			continue
+		}
+		suffix := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(key, prefix)))
+		if suffix == "" {
+			continue
+		}
+		out[suffix] = duration
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // defaultScanTables returns the comprehensive list of tables to scan

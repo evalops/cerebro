@@ -1,4 +1,4 @@
-.PHONY: build run test sync clean dev serve policy-list docker-build trivy-db security-scan security-scan-built security-scan-source vendor vendor-check oss-audit openapi-check openapi-sync config-docs config-docs-check ontology-docs ontology-docs-check cloudevents-docs cloudevents-docs-check cloudevents-contract-compat report-contract-docs report-contract-docs-check report-contract-compat entity-facet-docs entity-facet-docs-check entity-facet-contract-compat agent-sdk-docs agent-sdk-docs-check agent-sdk-contract-compat agent-sdk-packages agent-sdk-packages-check graph-ontology-guardrails gosec govulncheck devex-codegen devex-codegen-check devex-changed devex-pr platform-up platform-down platform-logs platform-smoke hooks
+.PHONY: build run test sync clean dev serve policy-list docker-build trivy-db security-scan security-scan-built security-scan-source vendor vendor-check oss-audit openapi-check openapi-sync api-contract-docs api-contract-docs-check api-contract-compat config-docs config-docs-check ontology-docs ontology-docs-check cloudevents-docs cloudevents-docs-check cloudevents-contract-compat report-contract-docs report-contract-docs-check report-contract-compat entity-facet-docs entity-facet-docs-check entity-facet-contract-compat agent-sdk-docs agent-sdk-docs-check agent-sdk-contract-compat agent-sdk-packages agent-sdk-packages-check graph-ontology-guardrails gosec govulncheck devex-codegen devex-codegen-check devex-changed devex-pr platform-up platform-down platform-logs platform-smoke hooks
 
 # Version info
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -142,6 +142,15 @@ openapi-sync:
 
 openapi-lint:
 	npx --yes @stoplight/spectral-cli@6 lint --ruleset .spectral.yaml api/openapi.yaml
+
+api-contract-docs:
+	go run ./scripts/generate_api_contract_docs/main.go
+
+api-contract-docs-check: api-contract-docs
+	git diff --exit-code -- docs/API_CONTRACTS_AUTOGEN.md docs/API_CONTRACTS.json
+
+api-contract-compat:
+	go run ./scripts/check_api_contract_compat/main.go
 
 config-docs:
 	go run ./scripts/generate_config_docs/main.go

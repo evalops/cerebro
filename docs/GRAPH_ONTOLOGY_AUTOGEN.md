@@ -152,9 +152,9 @@ Generated from `graph.RegisteredNodeKinds()`, `graph.RegisteredEdgeKinds()`, and
 | Domain | Source Patterns | Node Kinds |
 |---|---|---|
 | `calendar` | `ensemble.tap.calendar.meeting.recorded` | `meeting`, `service` |
-| `ci` | `ensemble.tap.ci.deploy.completed`, `ensemble.tap.ci.pipeline.completed` | `deployment_run`, `pipeline_run`, `service`, `workload` |
+| `ci` | `ensemble.tap.ci.deploy.completed`, `ensemble.tap.ci.pipeline.completed` | `ci_workflow`, `deployment_run`, `pipeline_run`, `service`, `workload` |
 | `docs` | `ensemble.tap.docs.page.edited` | `document`, `evidence` |
-| `github` | `ensemble.tap.github.check_run.completed`, `ensemble.tap.github.pull_request.merged`, `ensemble.tap.github.pull_request.opened`, `ensemble.tap.github.pull_request.review_submitted` | `check_run`, `pull_request`, `service` |
+| `github` | `ensemble.tap.github.check_run.completed`, `ensemble.tap.github.pull_request.merged`, `ensemble.tap.github.pull_request.opened`, `ensemble.tap.github.pull_request.review_submitted` | `check_run`, `ci_workflow`, `pull_request`, `repository`, `service` |
 | `incident` | `ensemble.tap.incident.timeline.*` | `action`, `evidence`, `incident`, `service` |
 | `jira` | `ensemble.tap.jira.issue.transitioned` | `action`, `ticket` |
 | `sales` | `ensemble.tap.sales.call.logged` | `action`, `contact` |
@@ -163,7 +163,7 @@ Generated from `graph.RegisteredNodeKinds()`, `graph.RegisteredEdgeKinds()`, and
 
 ## Unmapped Built-in Node Kinds
 
-Total unmapped kinds: **45**
+Total unmapped kinds: **43**
 
 - `activity`
 - `application`
@@ -173,7 +173,6 @@ Total unmapped kinds: **45**
 - `bucket_policy_statement`
 - `bucket_public_access_block`
 - `bucket_versioning_config`
-- `ci_workflow`
 - `claim`
 - `cluster_role`
 - `cluster_role_binding`
@@ -202,7 +201,6 @@ Total unmapped kinds: **45**
 - `persistent_volume`
 - `person`
 - `pod`
-- `repository`
 - `role`
 - `scp`
 - `secret`

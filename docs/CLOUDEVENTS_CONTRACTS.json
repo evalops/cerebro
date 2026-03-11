@@ -1931,10 +1931,12 @@
       "apiVersion": "cerebro.graphingest/v1alpha1",
       "contractVersion": "1.0.0",
       "node_kinds": [
+        "ci_workflow",
         "pipeline_run",
         "service"
       ],
       "edge_kinds": [
+        "based_on",
         "interacted_with",
         "targets"
       ],
@@ -2035,19 +2037,22 @@
       "contractVersion": "1.0.0",
       "node_kinds": [
         "check_run",
+        "ci_workflow",
+        "repository",
         "service"
       ],
       "edge_kinds": [
+        "based_on",
         "interacted_with",
         "targets"
       ],
       "required_data_keys": [
         "actor_email",
+        "check_name",
         "check_run_id",
         "repository"
       ],
       "optional_data_keys": [
-        "check_name",
         "commit_sha",
         "conclusion",
         "status",
@@ -2071,6 +2076,7 @@
         },
         "required": [
           "actor_email",
+          "check_name",
           "check_run_id",
           "repository"
         ],
@@ -2086,6 +2092,7 @@
       "contractVersion": "1.0.0",
       "node_kinds": [
         "pull_request",
+        "repository",
         "service"
       ],
       "edge_kinds": [
@@ -2131,6 +2138,7 @@
       "contractVersion": "1.0.0",
       "node_kinds": [
         "pull_request",
+        "repository",
         "service"
       ],
       "edge_kinds": [
@@ -2176,6 +2184,7 @@
       "contractVersion": "1.0.0",
       "node_kinds": [
         "pull_request",
+        "repository",
         "service"
       ],
       "edge_kinds": [
@@ -2517,6 +2526,7 @@
     "author_email",
     "call_id",
     "channel_id",
+    "check_name",
     "check_run_id",
     "contact_id",
     "deploy_id",
@@ -2547,7 +2557,6 @@
     "branch",
     "change_summary",
     "channel_name",
-    "check_name",
     "commit_sha",
     "completed_at",
     "conclusion",

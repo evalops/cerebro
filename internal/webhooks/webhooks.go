@@ -162,6 +162,7 @@ const (
 	EventPlatformReportRunCanceled          EventType = "platform.report_run.canceled"
 	EventPlatformReportSectionEmitted       EventType = "platform.report_run.section_emitted"
 	EventPlatformReportSnapshotMaterialized EventType = "platform.report_snapshot.materialized"
+	EventPlatformGraphChangelogComputed     EventType = "platform.graph_changelog.computed"
 )
 
 var defaultEventTypes = []EventType{
@@ -206,6 +207,7 @@ var defaultEventTypes = []EventType{
 	EventPlatformReportRunCanceled,
 	EventPlatformReportSectionEmitted,
 	EventPlatformReportSnapshotMaterialized,
+	EventPlatformGraphChangelogComputed,
 }
 
 // DefaultEventTypes returns the list of webhook event types registered by default.
@@ -442,7 +444,7 @@ func isValidEventType(e EventType) bool {
 		EventPlatformOutcomeRecorded, EventPlatformActionRecorded, EventPlatformReportRunQueued,
 		EventPlatformReportRunStarted, EventPlatformReportRunCompleted, EventPlatformReportRunFailed,
 		EventPlatformReportRunCanceled, EventPlatformReportSectionEmitted,
-		EventPlatformReportSnapshotMaterialized:
+		EventPlatformReportSnapshotMaterialized, EventPlatformGraphChangelogComputed:
 		return true
 	default:
 		return false
