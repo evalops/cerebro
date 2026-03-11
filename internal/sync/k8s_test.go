@@ -288,6 +288,13 @@ func TestPodSpecToMapDerivedSignals(t *testing.T) {
 	})
 }
 
+func TestBuildTypedNamespacedID_UsesMissingNamespacePlaceholder(t *testing.T) {
+	got := buildTypedNamespacedID("prod-cluster", "Pod", "", "payments-api")
+	if got != "prod-cluster/pod/_missing_namespace/payments-api" {
+		t.Fatalf("expected placeholder namespace segment, got %q", got)
+	}
+}
+
 func TestServiceAccountSubjects(t *testing.T) {
 	subjects := []rbacv1.Subject{
 		{Kind: "User", Name: "alice"},

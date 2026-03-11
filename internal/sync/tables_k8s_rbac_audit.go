@@ -472,9 +472,11 @@ func buildTypedNamespacedID(clusterName, resourceType, namespace, name string) s
 	if resourceType != "" {
 		parts = append(parts, strings.ToLower(strings.TrimSpace(resourceType)))
 	}
-	if namespace != "" {
-		parts = append(parts, namespace)
+	namespace = strings.TrimSpace(namespace)
+	if namespace == "" {
+		namespace = "_missing_namespace"
 	}
+	parts = append(parts, namespace)
 	if name != "" {
 		parts = append(parts, name)
 	}
