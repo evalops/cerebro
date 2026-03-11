@@ -270,6 +270,47 @@ func TestProviderResilientTransportReturnsNilResponseWhenRetrySleepFails(t *test
 	}
 }
 
+func TestProviderResilientTransportDoesNotOpenCircuitOnRateLimitResponses(t *testing.T) {
+	transport := &providerResilientTransport{
+		base: providerRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusTooManyRequests,
+				Header:     http.Header{"Retry-After": []string{"0"}},
+				Body:       io.NopCloser(strings.NewReader("rate limited")),
+			}, nil
+		}),
+		options: ProviderHTTPClientOptions{
+			Provider:                "okta",
+			RetryAttempts:           1,
+			RetryBackoff:            time.Millisecond,
+			RetryMaxBackoff:         time.Millisecond,
+			CircuitFailureThreshold: 2,
+			CircuitOpenTimeout:      time.Minute,
+		},
+		circuit: newProviderCircuitBreaker("okta", 2, time.Minute),
+		sleep:   func(context.Context, time.Duration) error { return nil },
+	}
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://example.com", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+
+	for attempt := 0; attempt < 3; attempt++ {
+		resp, err := transport.RoundTrip(req)
+		if err != nil {
+			t.Fatalf("expected retryable 429 response, got error %v", err)
+		}
+		if resp == nil || resp.StatusCode != http.StatusTooManyRequests {
+			t.Fatalf("expected 429 response, got %#v", resp)
+		}
+		closeTestResponse(t, resp)
+	}
+	if err := transport.circuit.beforeRequest(); err != nil {
+		t.Fatalf("expected circuit to remain closed after repeated 429s, got %v", err)
+	}
+}
+
 func TestProviderConstructorsAvoidInlineHTTPClientTimeoutAllocations(t *testing.T) {
 	providersDir := providersDirectory(t)
 	entries, err := os.ReadDir(providersDir)

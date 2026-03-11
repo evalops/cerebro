@@ -134,6 +134,12 @@ type providerResilientTransport struct {
 	sleep   func(context.Context, time.Duration) error
 }
 
+type providerRetryDecision struct {
+	Retryable       bool
+	Delay           time.Duration
+	CountsAsFailure bool
+}
+
 func (t *providerResilientTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	attempts := t.options.RetryAttempts
 	if attempts <= 0 {
@@ -150,15 +156,17 @@ func (t *providerResilientTransport) RoundTrip(req *http.Request) (*http.Respons
 		}
 
 		resp, err := t.base.RoundTrip(currentReq)
-		retryable, retryDelay := classifyProviderHTTPRetry(resp, err)
-		if !retryable {
+		decision := classifyProviderHTTPRetry(resp, err)
+		if !decision.Retryable {
 			if err == nil {
 				t.circuit.recordSuccess()
 			}
 			return resp, err
 		}
 
-		t.circuit.recordFailure()
+		if decision.CountsAsFailure {
+			t.circuit.recordFailure()
+		}
 		if attempt == attempts {
 			return resp, err
 		}
@@ -167,7 +175,7 @@ func (t *providerResilientTransport) RoundTrip(req *http.Request) (*http.Respons
 			drainAndCloseBody(resp.Body)
 		}
 
-		delay := retryDelay
+		delay := decision.Delay
 		if delay <= 0 {
 			delay = providerRetryDelay(t.options.RetryBackoff, t.options.RetryMaxBackoff, attempt)
 		}
@@ -274,14 +282,14 @@ func (c *providerCircuitBreaker) recordFailure() {
 	}
 }
 
-func classifyProviderHTTPRetry(resp *http.Response, err error) (bool, time.Duration) {
+func classifyProviderHTTPRetry(resp *http.Response, err error) providerRetryDecision {
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return false, 0
+			return providerRetryDecision{}
 		}
 		var netErr net.Error
 		if errors.As(err, &netErr) && netErr.Timeout() {
-			return true, 0
+			return providerRetryDecision{Retryable: true, CountsAsFailure: true}
 		}
 		lower := strings.ToLower(err.Error())
 		if strings.Contains(lower, "timeout") ||
@@ -289,21 +297,23 @@ func classifyProviderHTTPRetry(resp *http.Response, err error) (bool, time.Durat
 			strings.Contains(lower, "connection refused") ||
 			strings.Contains(lower, "server misbehaving") ||
 			strings.Contains(lower, "eof") {
-			return true, 0
+			return providerRetryDecision{Retryable: true, CountsAsFailure: true}
 		}
-		return false, 0
+		return providerRetryDecision{}
 	}
 	if resp == nil {
-		return false, 0
+		return providerRetryDecision{}
 	}
 	switch resp.StatusCode {
-	case http.StatusRequestTimeout, http.StatusTooManyRequests, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
-		return true, retryAfterDelay(resp.Header)
+	case http.StatusTooManyRequests:
+		return providerRetryDecision{Retryable: true, Delay: retryAfterDelay(resp.Header)}
+	case http.StatusRequestTimeout, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return providerRetryDecision{Retryable: true, Delay: retryAfterDelay(resp.Header), CountsAsFailure: true}
 	}
 	if resp.StatusCode >= 500 {
-		return true, retryAfterDelay(resp.Header)
+		return providerRetryDecision{Retryable: true, Delay: retryAfterDelay(resp.Header), CountsAsFailure: true}
 	}
-	return false, 0
+	return providerRetryDecision{}
 }
 
 func providerRetryDelay(base, max time.Duration, attempt int) time.Duration {
