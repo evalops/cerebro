@@ -2,7 +2,7 @@
 
 Generated from `internal/app/app_config.go` (`LoadConfig`) via `go run ./scripts/generate_config_docs/main.go`.
 
-Total variables: **283**
+Total variables: **284**
 
 | Variable | Reader(s) | Default(s) | Config Field(s) |
 |---|---|---|---|
@@ -39,6 +39,7 @@ Total variables: **283**
 | `BAMBOOHR_URL` | `getEnv` | `""` | `BambooHRURL` |
 | `CEREBRO_ACCESS_REVIEW_RETENTION_DAYS` | `getEnvInt` | `365` | `AccessReviewRetentionDays` |
 | `CEREBRO_AUDIT_RETENTION_DAYS` | `getEnvInt` | `90` | `AuditRetentionDays` |
+| `CEREBRO_GRAPH_FRESHNESS_DEFAULT_SLA` | `getEnvDuration` | `6 * time.Hour` | `GraphFreshnessDefaultSLA` |
 | `CEREBRO_GRAPH_RETENTION_DAYS` | `getEnvInt` | `180` | `GraphRetentionDays` |
 | `CEREBRO_INIT_TIMEOUT` | `getEnvDuration` | `2 * time.Minute` | `InitTimeout` |
 | `CEREBRO_OTEL_ENABLED` | `getEnvBool` | `false` | `TracingEnabled` |

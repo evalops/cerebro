@@ -8,6 +8,12 @@ mappings:
   - name: github_pr_merged
     source: ensemble.tap.github.pull_request.merged
     nodes:
+      - id: 'repository:github:{{data.repository}}'
+        kind: repository
+        name: '{{data.repository}}'
+        provider: github
+        properties:
+          repository: '{{data.repository}}'
       - id: 'service:{{data.repository}}'
         kind: service
         name: '{{data.repository}}'
@@ -29,6 +35,14 @@ mappings:
       - source: '{{resolve(data.merged_by_email)}}'
         target: 'service:{{data.repository}}'
         kind: interacted_with
+        effect: allow
+      - source: 'repository:github:{{data.repository}}'
+        target: 'service:{{data.repository}}'
+        kind: targets
+        effect: allow
+      - source: 'pull_request:{{data.repository}}:{{data.number}}'
+        target: 'repository:github:{{data.repository}}'
+        kind: targets
         effect: allow
       - source: 'pull_request:{{data.repository}}:{{data.number}}'
         target: 'service:{{data.repository}}'
@@ -105,6 +119,12 @@ mappings:
   - name: github_pr_opened
     source: ensemble.tap.github.pull_request.opened
     nodes:
+      - id: 'repository:github:{{data.repository}}'
+        kind: repository
+        name: '{{data.repository}}'
+        provider: github
+        properties:
+          repository: '{{data.repository}}'
       - id: 'service:{{data.repository}}'
         kind: service
         name: '{{data.repository}}'
@@ -126,6 +146,14 @@ mappings:
         target: 'service:{{data.repository}}'
         kind: interacted_with
         effect: allow
+      - source: 'repository:github:{{data.repository}}'
+        target: 'service:{{data.repository}}'
+        kind: targets
+        effect: allow
+      - source: 'pull_request:{{data.repository}}:{{data.number}}'
+        target: 'repository:github:{{data.repository}}'
+        kind: targets
+        effect: allow
       - source: 'pull_request:{{data.repository}}:{{data.number}}'
         target: 'service:{{data.repository}}'
         kind: targets
@@ -133,6 +161,12 @@ mappings:
   - name: github_pr_review_submitted
     source: ensemble.tap.github.pull_request.review_submitted
     nodes:
+      - id: 'repository:github:{{data.repository}}'
+        kind: repository
+        name: '{{data.repository}}'
+        provider: github
+        properties:
+          repository: '{{data.repository}}'
       - id: 'service:{{data.repository}}'
         kind: service
         name: '{{data.repository}}'
@@ -154,19 +188,41 @@ mappings:
         target: 'service:{{data.repository}}'
         kind: interacted_with
         effect: allow
+      - source: 'repository:github:{{data.repository}}'
+        target: 'service:{{data.repository}}'
+        kind: targets
+        effect: allow
+      - source: 'pull_request:{{data.repository}}:{{data.number}}'
+        target: 'repository:github:{{data.repository}}'
+        kind: targets
+        effect: allow
       - source: 'pull_request:{{data.repository}}:{{data.number}}'
         target: 'service:{{data.repository}}'
         kind: targets
         effect: allow
   - name: github_check_run_completed
     source: ensemble.tap.github.check_run.completed
+    contractVersion: 2.0.0
     nodes:
+      - id: 'repository:github:{{data.repository}}'
+        kind: repository
+        name: '{{data.repository}}'
+        provider: github
+        properties:
+          repository: '{{data.repository}}'
       - id: 'service:{{data.repository}}'
         kind: service
         name: '{{data.repository}}'
         provider: github
         properties:
           service_id: '{{data.repository}}'
+      - id: 'ci_workflow:github:{{data.repository}}:{{data.check_name}}'
+        kind: ci_workflow
+        name: '{{data.check_name}}'
+        provider: github
+        properties:
+          repository: '{{data.repository}}'
+          workflow_name: '{{data.check_name}}'
       - id: 'check_run:{{data.repository}}:{{data.check_run_id}}'
         kind: check_run
         name: '{{data.check_name}}'
@@ -180,6 +236,22 @@ mappings:
           commit_sha: '{{data.commit_sha}}'
           url: '{{data.url}}'
     edges:
+      - source: 'repository:github:{{data.repository}}'
+        target: 'service:{{data.repository}}'
+        kind: targets
+        effect: allow
+      - source: 'ci_workflow:github:{{data.repository}}:{{data.check_name}}'
+        target: 'repository:github:{{data.repository}}'
+        kind: targets
+        effect: allow
+      - source: 'check_run:{{data.repository}}:{{data.check_run_id}}'
+        target: 'repository:github:{{data.repository}}'
+        kind: targets
+        effect: allow
+      - source: 'check_run:{{data.repository}}:{{data.check_run_id}}'
+        target: 'ci_workflow:github:{{data.repository}}:{{data.check_name}}'
+        kind: based_on
+        effect: allow
       - source: 'check_run:{{data.repository}}:{{data.check_run_id}}'
         target: 'service:{{data.repository}}'
         kind: targets
@@ -302,6 +374,14 @@ mappings:
         provider: ci
         properties:
           service_id: '{{data.service}}'
+      - id: 'ci_workflow:ci:{{data.service}}:{{data.pipeline_id}}'
+        kind: ci_workflow
+        name: '{{data.pipeline_name}}'
+        provider: ci
+        properties:
+          pipeline_id: '{{data.pipeline_id}}'
+          workflow_name: '{{data.pipeline_name}}'
+          service_id: '{{data.service}}'
       - id: 'pipeline_run:{{data.service}}:{{data.pipeline_id}}:{{data.run_id}}'
         kind: pipeline_run
         name: '{{data.pipeline_name}}'
@@ -316,6 +396,14 @@ mappings:
           completed_at: '{{data.completed_at}}'
           service_id: '{{data.service}}'
     edges:
+      - source: 'ci_workflow:ci:{{data.service}}:{{data.pipeline_id}}'
+        target: 'service:{{data.service}}'
+        kind: targets
+        effect: allow
+      - source: 'pipeline_run:{{data.service}}:{{data.pipeline_id}}:{{data.run_id}}'
+        target: 'ci_workflow:ci:{{data.service}}:{{data.pipeline_id}}'
+        kind: based_on
+        effect: allow
       - source: 'pipeline_run:{{data.service}}:{{data.pipeline_id}}:{{data.run_id}}'
         target: 'service:{{data.service}}'
         kind: targets

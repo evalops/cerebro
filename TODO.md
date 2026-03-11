@@ -5,6 +5,50 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 40 - API Contract Governance + Graph Freshness + Temporal/Changelog Surfaces (2026-03-10)
+
+### Review findings
+- [x] Gap: HTTP API compatibility was the only major public contract surface without a generated baseline and CI diff gate.
+- [x] Gap: graph freshness still answered only the aggregate question, not which provider or ontology slice had gone stale.
+- [x] Gap: graph snapshots and temporal history existed internally, but operators and agents could not ask what changed or reconstruct an entity at a point in time.
+- [x] Gap: the SCM ontology deepening work still lacked first-class `repository` and `ci_workflow` creation in declarative ingest mappings.
+
+### Execution plan
+- [x] Add HTTP API contract governance:
+  - [x] generate a typed HTTP API contract catalog from `api/openapi.yaml`
+  - [x] add compatibility diff logic for endpoints, params, request fields, response fields, and success codes
+  - [x] add `api-contract-docs` / `api-contract-compat` tooling plus CI jobs and codegen catalog wiring
+- [x] Add provider/kind freshness surfaces:
+  - [x] add graph freshness breakdowns by provider and node kind
+  - [x] expose `GET /api/v1/status/freshness` and embed freshness in `/status`
+  - [x] add per-provider freshness health/SLA evaluation and Prometheus gauges
+- [x] Expose graph changelog and temporal inspection:
+  - [x] add graph changelog and diff-details APIs with provider/kind attribution filters
+  - [x] emit graph changelog computed platform events
+  - [x] add entity point-in-time and temporal diff APIs
+  - [x] add Agent SDK tools for graph changelog and entity history
+- [x] Deepen SCM ingest mappings:
+  - [x] create first-class `repository` nodes from GitHub PR/check events
+  - [x] create first-class `ci_workflow` nodes from GitHub checks and CI pipeline events
+  - [x] add mapper coverage for the new SCM nodes and edges
+
+### Detailed follow-on backlog
+- [ ] Track A - Remaining ontology ingest depth (`#169`)
+  - Exit criteria:
+  - [ ] add K8s declarative ingest for `pod`, `deployment`, `namespace`, `cluster_role`, and `cluster_role_binding`
+  - [ ] add business-domain declarative ingest for `customer`, `company`, `deal`, `opportunity`, `subscription`, and `invoice`
+  - [ ] connect sync-produced K8s/business change events to the declarative graph ingest path where it creates leverage
+- [ ] Track B - Freshness and mutation explainability
+  - Exit criteria:
+  - [ ] attach changelog entries directly to freshness/report views so stale providers can show the last successful mutation window
+  - [ ] add time-slice aware diff summaries for higher-level report consumption
+  - [ ] add source-specific freshness burn-rate alerting beyond static SLA thresholds
+- [ ] Track C - Contract governance expansion
+  - Exit criteria:
+  - [ ] add versioning policy/reporting for API contract changes, not just breaking-change detection
+  - [ ] expose the API contract catalog over a typed platform endpoint
+  - [ ] add generated examples for the new temporal/changelog HTTP surfaces
+
 ## Deep Review Cycle 39 - Operational Hardening: Drain + Freshness + Startup Bounds (2026-03-10)
 
 ### Review findings

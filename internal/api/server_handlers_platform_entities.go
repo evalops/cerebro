@@ -13,7 +13,7 @@ import (
 )
 
 func (s *Server) listPlatformEntities(w http.ResponseWriter, r *http.Request) {
-	g := s.app.SecurityGraph
+	g := s.app.CurrentSecurityGraph()
 	if g == nil {
 		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
@@ -47,7 +47,7 @@ func (s *Server) getPlatformEntityFacet(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) getPlatformEntity(w http.ResponseWriter, r *http.Request) {
-	g := s.app.SecurityGraph
+	g := s.app.CurrentSecurityGraph()
 	if g == nil {
 		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
@@ -71,6 +71,73 @@ func (s *Server) getPlatformEntity(w http.ResponseWriter, r *http.Request) {
 	}
 
 	record, ok := graph.GetEntityRecord(g, entityID, validAt, recordedAt)
+	if !ok {
+		s.error(w, http.StatusNotFound, "entity not found")
+		return
+	}
+	s.json(w, http.StatusOK, record)
+}
+
+func (s *Server) getPlatformEntityAtTime(w http.ResponseWriter, r *http.Request) {
+	g := s.app.CurrentSecurityGraph()
+	if g == nil {
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
+		return
+	}
+
+	entityID := strings.TrimSpace(chi.URLParam(r, "entity_id"))
+	if entityID == "" {
+		s.error(w, http.StatusBadRequest, "entity id required")
+		return
+	}
+	timestamp, err := parseRequiredRFC3339Query(r, "timestamp")
+	if err != nil {
+		s.error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	recordedAt, err := parseOptionalRFC3339Query(r, "recorded_at")
+	if err != nil {
+		s.error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	record, ok := graph.GetEntityRecordAtTime(g, entityID, timestamp, recordedAt)
+	if !ok {
+		s.error(w, http.StatusNotFound, "entity not found")
+		return
+	}
+	s.json(w, http.StatusOK, record)
+}
+
+func (s *Server) getPlatformEntityTimeDiff(w http.ResponseWriter, r *http.Request) {
+	g := s.app.CurrentSecurityGraph()
+	if g == nil {
+		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
+		return
+	}
+
+	entityID := strings.TrimSpace(chi.URLParam(r, "entity_id"))
+	if entityID == "" {
+		s.error(w, http.StatusBadRequest, "entity id required")
+		return
+	}
+	from, err := parseRequiredRFC3339Query(r, "from")
+	if err != nil {
+		s.error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	to, err := parseRequiredRFC3339Query(r, "to")
+	if err != nil {
+		s.error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	recordedAt, err := parseOptionalRFC3339Query(r, "recorded_at")
+	if err != nil {
+		s.error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	record, ok := graph.GetEntityTimeDiff(g, entityID, from, to, recordedAt)
 	if !ok {
 		s.error(w, http.StatusNotFound, "entity not found")
 		return
@@ -174,4 +241,18 @@ func splitCSV(raw string) []string {
 		out = append(out, part)
 	}
 	return out
+}
+
+func parseRequiredRFC3339Query(r *http.Request, key string) (time.Time, error) {
+	if strings.TrimSpace(r.URL.Query().Get(key)) == "" {
+		return time.Time{}, errBadRequest(key + " is required")
+	}
+	parsed, err := parseOptionalRFC3339Query(r, key)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if parsed.IsZero() {
+		return time.Time{}, errBadRequest(key + " must be RFC3339")
+	}
+	return parsed, nil
 }

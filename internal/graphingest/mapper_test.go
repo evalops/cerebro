@@ -106,6 +106,13 @@ func TestMapperApply_GithubPRMerged(t *testing.T) {
 	if service.Kind != graph.NodeKindService {
 		t.Fatalf("expected service node kind %q, got %q", graph.NodeKindService, service.Kind)
 	}
+	repositoryNode, ok := g.GetNode("repository:github:payments-api")
+	if !ok || repositoryNode == nil {
+		t.Fatalf("expected repository node to be created, got %#v", repositoryNode)
+	}
+	if repositoryNode.Kind != graph.NodeKindRepository {
+		t.Fatalf("expected repository node kind %q, got %q", graph.NodeKindRepository, repositoryNode.Kind)
+	}
 	prNode, ok := g.GetNode("pull_request:payments-api:42")
 	if !ok || prNode == nil {
 		t.Fatalf("expected pull request node to be created, got %#v", prNode)
@@ -130,6 +137,19 @@ func TestMapperApply_GithubPRMerged(t *testing.T) {
 	}
 	if !foundContribution {
 		t.Fatalf("expected person -> service interacted_with edge, got %#v", outEdges)
+	}
+	foundRepositoryTarget := false
+	for _, edge := range g.GetOutEdges("pull_request:payments-api:42") {
+		if edge == nil {
+			continue
+		}
+		if edge.Kind == graph.EdgeKindTargets && edge.Target == "repository:github:payments-api" {
+			foundRepositoryTarget = true
+			break
+		}
+	}
+	if !foundRepositoryTarget {
+		t.Fatalf("expected pull request -> repository target edge, got %#v", g.GetOutEdges("pull_request:payments-api:42"))
 	}
 }
 
@@ -368,6 +388,136 @@ func TestMapperApply_SlackThreadMessageUsesActionKind(t *testing.T) {
 	}
 	if !targetFound {
 		t.Fatalf("expected slack action to target thread, got %#v", g.GetOutEdges("action:slack_message:C123:1700000000.000200"))
+	}
+}
+
+func TestMapperApply_GithubCheckRunCreatesRepositoryAndWorkflow(t *testing.T) {
+	config, err := LoadDefaultConfig()
+	if err != nil {
+		t.Fatalf("load default config failed: %v", err)
+	}
+	g := graph.New()
+	g.AddNode(&graph.Node{
+		ID:   "person:author@example.com",
+		Kind: graph.NodeKindPerson,
+		Name: "Author",
+		Properties: map[string]any{
+			"email": "author@example.com",
+		},
+	})
+
+	mapper, err := NewMapper(config, func(raw string, _ events.CloudEvent) string {
+		raw = strings.ToLower(strings.TrimSpace(raw))
+		if strings.Contains(raw, "@") {
+			return "person:" + raw
+		}
+		return raw
+	})
+	if err != nil {
+		t.Fatalf("new mapper failed: %v", err)
+	}
+
+	result, err := mapper.Apply(g, events.CloudEvent{
+		ID:     "evt-check-1",
+		Type:   "ensemble.tap.github.check_run.completed",
+		Time:   time.Date(2026, 3, 10, 15, 0, 0, 0, time.UTC),
+		Source: "urn:ensemble:tap",
+		Data: map[string]any{
+			"repository":   "payments-api",
+			"check_run_id": "123",
+			"check_name":   "build-and-test",
+			"status":       "completed",
+			"conclusion":   "success",
+			"actor_email":  "author@example.com",
+		},
+	})
+	if err != nil {
+		t.Fatalf("mapper apply failed: %v", err)
+	}
+	if !result.Matched {
+		t.Fatalf("expected mapping match, got %#v", result)
+	}
+
+	workflow, ok := g.GetNode("ci_workflow:github:payments-api:build-and-test")
+	if !ok || workflow == nil || workflow.Kind != graph.NodeKindCIWorkflow {
+		t.Fatalf("expected ci_workflow node, got %#v", workflow)
+	}
+	repositoryNode, ok := g.GetNode("repository:github:payments-api")
+	if !ok || repositoryNode == nil || repositoryNode.Kind != graph.NodeKindRepository {
+		t.Fatalf("expected repository node, got %#v", repositoryNode)
+	}
+	checkRun, ok := g.GetNode("check_run:payments-api:123")
+	if !ok || checkRun == nil {
+		t.Fatalf("expected check_run node, got %#v", checkRun)
+	}
+	foundWorkflowLink := false
+	for _, edge := range g.GetOutEdges("check_run:payments-api:123") {
+		if edge == nil {
+			continue
+		}
+		if edge.Kind == graph.EdgeKindBasedOn && edge.Target == "ci_workflow:github:payments-api:build-and-test" {
+			foundWorkflowLink = true
+			break
+		}
+	}
+	if !foundWorkflowLink {
+		t.Fatalf("expected check_run -> ci_workflow link, got %#v", g.GetOutEdges("check_run:payments-api:123"))
+	}
+}
+
+func TestMapperApply_CIPipelineCreatesWorkflow(t *testing.T) {
+	config, err := LoadDefaultConfig()
+	if err != nil {
+		t.Fatalf("load default config failed: %v", err)
+	}
+	g := graph.New()
+
+	mapper, err := NewMapper(config, nil)
+	if err != nil {
+		t.Fatalf("new mapper failed: %v", err)
+	}
+
+	result, err := mapper.Apply(g, events.CloudEvent{
+		ID:     "evt-pipeline-1",
+		Type:   "ensemble.tap.ci.pipeline.completed",
+		Time:   time.Date(2026, 3, 10, 16, 0, 0, 0, time.UTC),
+		Source: "urn:ensemble:tap",
+		Data: map[string]any{
+			"service":       "payments",
+			"pipeline_id":   "pipe-1",
+			"pipeline_name": "Deploy Payments",
+			"run_id":        "run-9",
+			"actor_email":   "build@example.com",
+			"status":        "success",
+		},
+	})
+	if err != nil {
+		t.Fatalf("mapper apply failed: %v", err)
+	}
+	if !result.Matched {
+		t.Fatalf("expected mapping match, got %#v", result)
+	}
+
+	workflow, ok := g.GetNode("ci_workflow:ci:payments:pipe-1")
+	if !ok || workflow == nil || workflow.Kind != graph.NodeKindCIWorkflow {
+		t.Fatalf("expected ci_workflow node, got %#v", workflow)
+	}
+	pipelineRun, ok := g.GetNode("pipeline_run:payments:pipe-1:run-9")
+	if !ok || pipelineRun == nil {
+		t.Fatalf("expected pipeline_run node, got %#v", pipelineRun)
+	}
+	foundWorkflowLink := false
+	for _, edge := range g.GetOutEdges("pipeline_run:payments:pipe-1:run-9") {
+		if edge == nil {
+			continue
+		}
+		if edge.Kind == graph.EdgeKindBasedOn && edge.Target == "ci_workflow:ci:payments:pipe-1" {
+			foundWorkflowLink = true
+			break
+		}
+	}
+	if !foundWorkflowLink {
+		t.Fatalf("expected pipeline_run -> ci_workflow link, got %#v", g.GetOutEdges("pipeline_run:payments:pipe-1:run-9"))
 	}
 }
 

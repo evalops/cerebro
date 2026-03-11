@@ -314,6 +314,30 @@ var (
 		},
 	)
 
+	GraphFreshnessByProvider = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "cerebro_graph_freshness_by_provider",
+			Help: "Freshness percent by provider based on observed_at coverage",
+		},
+		[]string{"provider"},
+	)
+
+	GraphOldestNodeAgeSeconds = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "cerebro_graph_oldest_node_age_seconds",
+			Help: "Age in seconds of the oldest observed active node by provider",
+		},
+		[]string{"provider"},
+	)
+
+	GraphProviderLastSyncTimestamp = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "cerebro_graph_last_sync_timestamp",
+			Help: "Unix timestamp of the most recent observed active node by provider",
+		},
+		[]string{"provider"},
+	)
+
 	EventProcessingDuration = prometheus.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "cerebro_event_processing_duration_seconds",
@@ -507,6 +531,9 @@ func Register() {
 			GraphBuildStatus,
 			GraphLastUpdateTimestamp,
 			GraphStalenessSeconds,
+			GraphFreshnessByProvider,
+			GraphOldestNodeAgeSeconds,
+			GraphProviderLastSyncTimestamp,
 			EventProcessingDuration,
 			// Notifications
 			NotificationsSent,
@@ -837,6 +864,26 @@ func SetGraphStaleness(age time.Duration) {
 		age = 0
 	}
 	GraphStalenessSeconds.Set(age.Seconds())
+}
+
+func ResetGraphFreshnessProviderMetrics() {
+	GraphFreshnessByProvider.Reset()
+	GraphOldestNodeAgeSeconds.Reset()
+	GraphProviderLastSyncTimestamp.Reset()
+}
+
+func SetGraphFreshnessProvider(provider string, freshnessPercent, oldestAgeSeconds float64, lastSync time.Time) {
+	provider = normalizeProvider(provider)
+	GraphFreshnessByProvider.WithLabelValues(provider).Set(freshnessPercent)
+	if oldestAgeSeconds < 0 {
+		oldestAgeSeconds = 0
+	}
+	GraphOldestNodeAgeSeconds.WithLabelValues(provider).Set(oldestAgeSeconds)
+	if lastSync.IsZero() {
+		GraphProviderLastSyncTimestamp.WithLabelValues(provider).Set(0)
+		return
+	}
+	GraphProviderLastSyncTimestamp.WithLabelValues(provider).Set(float64(lastSync.UTC().Unix()))
 }
 
 func ObserveEventProcessingDuration(duration time.Duration) {
