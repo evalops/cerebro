@@ -202,6 +202,7 @@ mappings:
         effect: allow
   - name: github_check_run_completed
     source: ensemble.tap.github.check_run.completed
+    contractVersion: 2.0.0
     nodes:
       - id: 'repository:github:{{data.repository}}'
         kind: repository

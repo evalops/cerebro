@@ -2034,7 +2034,7 @@
       "domain": "github",
       "wildcard_pattern": false,
       "apiVersion": "cerebro.graphingest/v1alpha1",
-      "contractVersion": "1.0.0",
+      "contractVersion": "2.0.0",
       "node_kinds": [
         "check_run",
         "ci_workflow",
