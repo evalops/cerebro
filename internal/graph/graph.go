@@ -433,6 +433,9 @@ func (g *Graph) Metadata() Metadata {
 func (g *Graph) BuildIndex() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	if g.indexBuilt {
+		return
+	}
 
 	// Initialize index maps
 	g.indexByKind = make(map[NodeKind][]*Node)
