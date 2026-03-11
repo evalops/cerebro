@@ -17,7 +17,12 @@ const (
 )
 
 func main() {
-	catalog, err := apicontractcompat.BuildCatalogFromFile(openAPIPath, time.Now().UTC())
+	info, err := os.Stat(openAPIPath)
+	if err != nil {
+		fatalf("stat %s: %v", openAPIPath, err)
+	}
+	generatedAt := info.ModTime().UTC().Truncate(time.Second)
+	catalog, err := apicontractcompat.BuildCatalogFromFile(openAPIPath, generatedAt)
 	if err != nil {
 		fatalf("build api contract catalog: %v", err)
 	}

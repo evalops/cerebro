@@ -1,7 +1,7 @@
 {
   "api_version": "devex.cerebro/v1alpha1",
   "kind": "HTTPAPIContractCatalog",
-  "generated_at": "2026-03-11T15:51:05.937564Z",
+  "generated_at": "2026-03-11T15:24:41Z",
   "endpoint_count": 291,
   "endpoints": [
     {
