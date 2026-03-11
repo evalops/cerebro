@@ -1,13 +1,16 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/evalops/cerebro/internal/graph"
+	"github.com/evalops/cerebro/internal/webhooks"
 )
 
 func TestPlatformGraphSnapshotAncestryAndDiffEndpoints(t *testing.T) {
@@ -330,6 +333,13 @@ func TestPlatformGraphChangelogAndDiffDetailsEndpoints(t *testing.T) {
 	mustSaveGraphSnapshot(t, dir, newer)
 
 	s := newTestServer(t)
+	changelogEvents := make(chan webhooks.Event, 2)
+	s.app.Webhooks.Subscribe(func(_ context.Context, event webhooks.Event) error {
+		if event.Type == webhooks.EventPlatformGraphChangelogComputed {
+			changelogEvents <- event
+		}
+		return nil
+	})
 	changelog := do(t, s, http.MethodGet, "/api/v1/platform/graph/changelog?last=7d&provider=aws", nil)
 	if changelog.Code != http.StatusOK {
 		t.Fatalf("expected 200 for graph changelog, got %d: %s", changelog.Code, changelog.Body.String())
@@ -351,6 +361,20 @@ func TestPlatformGraphChangelogAndDiffDetailsEndpoints(t *testing.T) {
 	if providers, ok := attribution["providers"].([]any); !ok || len(providers) != 1 || providers[0] != "aws" {
 		t.Fatalf("expected aws attribution, got %#v", attribution)
 	}
+	if got := entry["materialized"]; got != nil && got != false {
+		t.Fatalf("expected changelog read to stay non-materialized, got %#v", got)
+	}
+	diffURL, _ := entry["diff_url"].(string)
+	if diffURL == "" ||
+		!strings.HasPrefix(diffURL, "/api/v1/platform/graph/snapshots/") ||
+		!strings.Contains(diffURL, "/diffs/") {
+		t.Fatalf("expected changelog diff_url to use snapshot diff path, got %#v", diffURL)
+	}
+
+	artifact := do(t, s, http.MethodGet, "/api/v1/platform/graph/diffs/"+diffID, nil)
+	if artifact.Code != http.StatusNotFound {
+		t.Fatalf("expected changelog read to avoid diff artifact materialization, got %d: %s", artifact.Code, artifact.Body.String())
+	}
 
 	details := do(t, s, http.MethodGet, "/api/v1/platform/graph/diffs/"+diffID+"/details?provider=aws&kind=bucket", nil)
 	if details.Code != http.StatusOK {
@@ -364,6 +388,11 @@ func TestPlatformGraphChangelogAndDiffDetailsEndpoints(t *testing.T) {
 	filter := detailsBody["filter"].(map[string]any)
 	if filter["provider"] != "aws" || filter["kind"] != string(graph.NodeKindBucket) {
 		t.Fatalf("unexpected detail filter echo: %#v", filter)
+	}
+	select {
+	case event := <-changelogEvents:
+		t.Fatalf("expected changelog reads to avoid webhook emission, got %#v", event)
+	default:
 	}
 }
 

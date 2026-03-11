@@ -104,14 +104,9 @@ func (s *Server) getPlatformGraphDiffDetails(w http.ResponseWriter, r *http.Requ
 		s.error(w, http.StatusBadRequest, "diff id required")
 		return
 	}
-	store := s.platformGraphDiffStore()
-	if store == nil {
-		s.error(w, http.StatusNotFound, "graph snapshot diff store not configured")
-		return
-	}
-	record, err := store.Load(diffID)
+	record, _, status, err := s.platformGraphDiffForRead(diffID)
 	if err != nil {
-		s.error(w, http.StatusNotFound, err.Error())
+		s.error(w, status, err.Error())
 		return
 	}
 	filter := parseGraphDiffFilterQuery(r)
@@ -180,11 +175,6 @@ func (s *Server) listPlatformGraphChangelog(w http.ResponseWriter, r *http.Reque
 		if err != nil {
 			continue
 		}
-		record, err = s.materializePlatformGraphDiff(record, "")
-		if err != nil {
-			s.error(w, http.StatusInternalServerError, err.Error())
-			return
-		}
 		details := graph.BuildGraphSnapshotDiffDetails(record, snapshots[fromRecord.ID], snapshots[toRecord.ID], filter)
 		if details == nil {
 			continue
@@ -196,9 +186,14 @@ func (s *Server) listPlatformGraphChangelog(w http.ResponseWriter, r *http.Reque
 			details.Summary.EdgesRemoved == 0 {
 			continue
 		}
+		diffURL := "/api/v1/platform/graph/snapshots/" + fromRecord.ID + "/diffs/" + toRecord.ID
+		if stored, err := s.loadPlatformGraphDiff(record.ID); err == nil && stored != nil {
+			record = stored
+			diffURL = "/api/v1/platform/graph/diffs/" + record.ID
+		}
 		entries = append(entries, graph.GraphChangelogEntry{
 			DiffID:       record.ID,
-			DiffURL:      "/api/v1/platform/graph/diffs/" + record.ID,
+			DiffURL:      diffURL,
 			GeneratedAt:  record.GeneratedAt,
 			StoredAt:     record.StoredAt,
 			Materialized: record.Materialized,
@@ -236,6 +231,79 @@ func (s *Server) materializePlatformGraphDiff(record *graph.GraphSnapshotDiffRec
 	}
 	s.emitPlatformGraphChangelogComputed(context.Background(), stored)
 	return stored, nil
+}
+
+func (s *Server) loadPlatformGraphDiff(diffID string) (*graph.GraphSnapshotDiffRecord, error) {
+	store := s.platformGraphDiffStore()
+	if store == nil {
+		return nil, fmt.Errorf("graph snapshot diff store not configured")
+	}
+	return store.Load(diffID)
+}
+
+func (s *Server) platformGraphDiffForRead(diffID string) (*graph.GraphSnapshotDiffRecord, map[string]*graph.Snapshot, int, error) {
+	diffID = strings.TrimSpace(diffID)
+	if diffID == "" {
+		return nil, nil, http.StatusBadRequest, fmt.Errorf("diff id required")
+	}
+	if stored, err := s.loadPlatformGraphDiff(diffID); err == nil && stored != nil {
+		snapshots, status, err := s.platformGraphSnapshotsForRecord(stored)
+		if err != nil {
+			return nil, nil, status, err
+		}
+		return stored, snapshots, 0, nil
+	}
+	return s.platformGraphSnapshotDiffByID(diffID)
+}
+
+func (s *Server) platformGraphSnapshotsForRecord(record *graph.GraphSnapshotDiffRecord) (map[string]*graph.Snapshot, int, error) {
+	if record == nil {
+		return nil, http.StatusNotFound, fmt.Errorf("graph snapshot diff not found")
+	}
+	fromSnapshotID := strings.TrimSpace(record.From.ID)
+	toSnapshotID := strings.TrimSpace(record.To.ID)
+	if fromSnapshotID == "" || toSnapshotID == "" {
+		return nil, http.StatusNotFound, fmt.Errorf("graph snapshot diff missing snapshot references")
+	}
+	store := s.platformGraphSnapshotStore()
+	if store == nil {
+		return nil, http.StatusNotFound, fmt.Errorf("graph snapshot store not configured")
+	}
+	snapshots, _, err := store.LoadSnapshotsByRecordIDs(fromSnapshotID, toSnapshotID)
+	if err != nil {
+		return nil, http.StatusNotFound, err
+	}
+	return snapshots, 0, nil
+}
+
+func (s *Server) platformGraphSnapshotDiffByID(diffID string) (*graph.GraphSnapshotDiffRecord, map[string]*graph.Snapshot, int, error) {
+	diffID = strings.TrimSpace(diffID)
+	if diffID == "" {
+		return nil, nil, http.StatusBadRequest, fmt.Errorf("diff id required")
+	}
+	records := make([]graph.GraphSnapshotRecord, 0)
+	for _, record := range s.platformGraphSnapshotRecordMap() {
+		if record == nil || !record.Diffable {
+			continue
+		}
+		records = append(records, *record)
+	}
+	sort.Slice(records, func(i, j int) bool {
+		left := snapshotRecordSortTime(records[i])
+		right := snapshotRecordSortTime(records[j])
+		if !left.Equal(right) {
+			return left.Before(right)
+		}
+		return records[i].ID < records[j].ID
+	})
+	for i := 0; i+1 < len(records); i++ {
+		candidate := graph.BuildGraphSnapshotDiffRecord(records[i], records[i+1], &graph.GraphDiff{}, time.Time{})
+		if candidate == nil || candidate.ID != diffID {
+			continue
+		}
+		return s.platformGraphSnapshotDiffWithSnapshots(records[i].ID, records[i+1].ID)
+	}
+	return nil, nil, http.StatusNotFound, fmt.Errorf("graph snapshot diff not found: %s", diffID)
 }
 
 func (s *Server) platformGraphDiffStore() *graph.GraphSnapshotDiffStore {
