@@ -66,3 +66,21 @@ func TestSuggestEntities_UsesRunePrefixes(t *testing.T) {
 		t.Fatalf("expected unicode suggestion hit, got %#v", suggestions.Suggestions[0])
 	}
 }
+
+func TestSearchEntities_UsesRuneLengthForShortQueries(t *testing.T) {
+	g := New()
+	g.AddNode(&Node{
+		ID:   "document:uber-ops",
+		Kind: NodeKindDocument,
+		Name: "Über Ops",
+	})
+	g.BuildIndex()
+
+	results := SearchEntities(g, EntitySearchOptions{Query: "üb", Limit: 5})
+	if results.Count != 1 {
+		t.Fatalf("expected one unicode search result, got %#v", results)
+	}
+	if results.Results[0].Entity.ID != "document:uber-ops" {
+		t.Fatalf("expected unicode search hit, got %#v", results.Results[0].Entity.ID)
+	}
+}

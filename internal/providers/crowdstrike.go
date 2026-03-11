@@ -1,13 +1,13 @@
 package providers
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -154,7 +154,7 @@ func (c *CrowdStrikeProvider) authenticate(ctx context.Context) (string, error) 
 	data.Set("client_secret", c.clientSecret)
 
 	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/oauth2/token",
-		bytes.NewBufferString(data.Encode()))
+		strings.NewReader(data.Encode()))
 	if err != nil {
 		return "", err
 	}

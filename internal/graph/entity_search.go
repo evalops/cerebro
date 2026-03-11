@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 )
 
 const (
@@ -99,7 +100,7 @@ func SearchEntities(g *Graph, opts EntitySearchOptions) EntitySearchCollection {
 			candidateScores[id] += 3
 		}
 	}
-	if len(normalizedQuery) < 3 {
+	if utf8.RuneCountInString(normalizedQuery) < 3 {
 		for _, candidate := range g.entitySuggestIndex[normalizedQuery] {
 			candidateScores[candidate.EntityID] += 2
 		}
