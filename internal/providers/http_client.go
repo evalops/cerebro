@@ -146,13 +146,18 @@ func (t *providerResilientTransport) RoundTrip(req *http.Request) (*http.Respons
 		attempts = 1
 	}
 
+	halfOpenProbe := false
 	for attempt := 1; attempt <= attempts; attempt++ {
 		currentReq, err := cloneRequestForAttempt(req, attempt)
 		if err != nil {
 			return nil, err
 		}
-		if err := t.circuit.beforeRequest(); err != nil {
-			return nil, err
+		if !halfOpenProbe {
+			probeAcquired, err := t.circuit.beforeRequest()
+			if err != nil {
+				return nil, err
+			}
+			halfOpenProbe = probeAcquired
 		}
 
 		resp, err := t.base.RoundTrip(currentReq)
@@ -160,7 +165,7 @@ func (t *providerResilientTransport) RoundTrip(req *http.Request) (*http.Respons
 		if !decision.Retryable {
 			if err == nil {
 				t.circuit.recordSuccess()
-			} else {
+			} else if halfOpenProbe {
 				t.circuit.releaseHalfOpenProbe()
 			}
 			return resp, err
@@ -168,9 +173,10 @@ func (t *providerResilientTransport) RoundTrip(req *http.Request) (*http.Respons
 
 		if decision.CountsAsFailure {
 			t.circuit.recordFailure()
+			halfOpenProbe = false
 		}
 		if attempt == attempts {
-			if !decision.CountsAsFailure {
+			if halfOpenProbe {
 				t.circuit.releaseHalfOpenProbe()
 			}
 			return resp, err
@@ -185,7 +191,9 @@ func (t *providerResilientTransport) RoundTrip(req *http.Request) (*http.Respons
 			delay = providerRetryDelay(t.options.RetryBackoff, t.options.RetryMaxBackoff, attempt)
 		}
 		if err := t.sleep(req.Context(), delay); err != nil {
-			t.circuit.releaseHalfOpenProbe()
+			if halfOpenProbe {
+				t.circuit.releaseHalfOpenProbe()
+			}
 			return nil, err
 		}
 	}
@@ -216,7 +224,7 @@ func newProviderCircuitBreaker(provider string, threshold int, openTimeout time.
 	return cb
 }
 
-func (c *providerCircuitBreaker) beforeRequest() error {
+func (c *providerCircuitBreaker) beforeRequest() (bool, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -228,7 +236,7 @@ func (c *providerCircuitBreaker) beforeRequest() error {
 			c.halfOpenInFlight = false
 			metrics.SetProviderCircuitState(c.provider, string(c.state))
 		} else {
-			return &ProviderCircuitOpenError{
+			return false, &ProviderCircuitOpenError{
 				Provider: c.provider,
 				RetryAt:  c.openedAt.Add(c.openTimeout),
 			}
@@ -237,15 +245,16 @@ func (c *providerCircuitBreaker) beforeRequest() error {
 
 	if c.state == providerCircuitHalfOpen {
 		if c.halfOpenInFlight {
-			return &ProviderCircuitOpenError{
+			return false, &ProviderCircuitOpenError{
 				Provider: c.provider,
 				RetryAt:  c.openedAt.Add(c.openTimeout),
 			}
 		}
 		c.halfOpenInFlight = true
+		return true, nil
 	}
 
-	return nil
+	return false, nil
 }
 
 func (c *providerCircuitBreaker) recordSuccess() {

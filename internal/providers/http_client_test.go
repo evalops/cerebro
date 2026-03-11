@@ -311,8 +311,55 @@ func TestProviderResilientTransportReleasesHalfOpenProbeOnRateLimitExhaustion(t 
 	if transport.circuit.halfOpenInFlight {
 		t.Fatal("expected half-open probe to be released after terminal 429")
 	}
-	if err := transport.circuit.beforeRequest(); err != nil {
+	if probeAcquired, err := transport.circuit.beforeRequest(); err != nil {
 		t.Fatalf("expected another half-open probe to be allowed, got %v", err)
+	} else if !probeAcquired {
+		t.Fatal("expected another half-open probe to be reacquired")
+	}
+}
+
+func TestProviderResilientTransportDoesNotSelfBlockHalfOpenProbeRetries(t *testing.T) {
+	var attempts atomic.Int32
+	transport := &providerResilientTransport{
+		base: providerRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+			attempts.Add(1)
+			return &http.Response{
+				StatusCode: http.StatusTooManyRequests,
+				Header:     http.Header{"Retry-After": []string{"0"}},
+				Body:       io.NopCloser(strings.NewReader("rate limited")),
+			}, nil
+		}),
+		options: ProviderHTTPClientOptions{
+			Provider:                "okta",
+			RetryAttempts:           2,
+			RetryBackoff:            time.Millisecond,
+			RetryMaxBackoff:         time.Millisecond,
+			CircuitFailureThreshold: 2,
+			CircuitOpenTimeout:      time.Minute,
+		},
+		circuit: newProviderCircuitBreaker("okta", 2, time.Minute),
+		sleep:   func(context.Context, time.Duration) error { return nil },
+	}
+	transport.circuit.state = providerCircuitHalfOpen
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://example.com", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("expected retry loop to return terminal 429 response, got %v", err)
+	}
+	if resp == nil || resp.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("expected terminal 429 response, got %#v", resp)
+	}
+	closeTestResponse(t, resp)
+	if attempts.Load() != 2 {
+		t.Fatalf("expected half-open probe to consume both retry attempts, got %d", attempts.Load())
+	}
+	if transport.circuit.halfOpenInFlight {
+		t.Fatal("expected half-open probe to be released after retry exhaustion")
 	}
 }
 
@@ -352,7 +399,7 @@ func TestProviderResilientTransportDoesNotOpenCircuitOnRateLimitResponses(t *tes
 		}
 		closeTestResponse(t, resp)
 	}
-	if err := transport.circuit.beforeRequest(); err != nil {
+	if _, err := transport.circuit.beforeRequest(); err != nil {
 		t.Fatalf("expected circuit to remain closed after repeated 429s, got %v", err)
 	}
 }
