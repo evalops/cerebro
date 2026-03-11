@@ -252,7 +252,6 @@ func (c *Consumer) run() {
 		case <-runCtx.Done():
 		}
 	}()
-	defer cancel()
 
 	lastLagRefresh := time.Time{}
 	for {
@@ -281,22 +280,32 @@ func (c *Consumer) run() {
 		c.refreshLagMetrics(time.Now().UTC())
 		lastLagRefresh = time.Now().UTC()
 
+		batchInProgress := make([]func() error, len(msgs))
+		for i, msg := range msgs {
+			msg := msg
+			batchInProgress[i] = func() error { return msg.InProgress() }
+		}
+		deactivateBatchHeartbeat, stopBatchHeartbeat := c.startBatchInProgressHeartbeat(runCtx, batchInProgress)
 		for _, msg := range msgs {
 			if meta, err := msg.Metadata(); err == nil && meta != nil && meta.NumDelivered > 1 {
 				metrics.RecordNATSConsumerRedelivery(c.config.Stream, c.config.Durable)
 			}
+		}
+		for i, msg := range msgs {
+			deactivateBatchHeartbeat(i)
 			result := c.handleMessage(
 				runCtx,
 				msg.Subject,
 				msg.Data,
 				func() error { return msg.Ack() },
 				func() error { return msg.Nak() },
-				func() error { return msg.InProgress() },
+				batchInProgress[i],
 			)
 			if result.Processed {
 				c.recordProcessed(result.ProcessedAt, result.EventTime)
 			}
 		}
+		stopBatchHeartbeat()
 	}
 }
 
@@ -444,6 +453,59 @@ func (c *Consumer) startInProgressHeartbeat(ctx context.Context, inProgress func
 	return func() {
 		once.Do(func() { close(stopCh) })
 	}
+}
+
+func (c *Consumer) startBatchInProgressHeartbeat(ctx context.Context, inProgress []func() error) (func(int), func()) {
+	if c == nil || c.config.InProgressInterval <= 0 || len(inProgress) == 0 {
+		return func(int) {}, func() {}
+	}
+	active := make([]bool, len(inProgress))
+	for i := range active {
+		active[i] = inProgress[i] != nil
+	}
+
+	var (
+		activeMu sync.RWMutex
+		once     sync.Once
+		stopCh   = make(chan struct{})
+	)
+
+	go func() {
+		ticker := time.NewTicker(c.config.InProgressInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-stopCh:
+				return
+			case <-ticker.C:
+				activeMu.RLock()
+				for i, heartbeat := range inProgress {
+					if !active[i] || heartbeat == nil {
+						continue
+					}
+					if err := heartbeat(); err != nil && c.logger != nil {
+						c.logger.Debug("tap consumer batch in-progress heartbeat failed", "error", err, "stream", c.config.Stream, "durable", c.config.Durable, "index", i)
+					}
+				}
+				activeMu.RUnlock()
+			}
+		}
+	}()
+
+	deactivate := func(index int) {
+		if index < 0 || index >= len(active) {
+			return
+		}
+		activeMu.Lock()
+		active[index] = false
+		activeMu.Unlock()
+	}
+	stop := func() {
+		once.Do(func() { close(stopCh) })
+	}
+	return deactivate, stop
 }
 
 func (c *Consumer) recordProcessed(processedAt, eventTime time.Time) {

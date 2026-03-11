@@ -241,6 +241,45 @@ func TestJetStreamConsumer_DrainWaitsForHandlerWithoutCancel(t *testing.T) {
 	}
 }
 
+func TestConsumerStartBatchInProgressHeartbeatSkipsDeactivatedEntries(t *testing.T) {
+	consumer := &Consumer{
+		config: ConsumerConfig{
+			InProgressInterval: 10 * time.Millisecond,
+			Stream:             "test",
+			Durable:            "durable",
+		},
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+
+	var firstCount atomic.Int32
+	var secondCount atomic.Int32
+	deactivate, stop := consumer.startBatchInProgressHeartbeat(context.Background(), []func() error{
+		func() error {
+			firstCount.Add(1)
+			return nil
+		},
+		func() error {
+			secondCount.Add(1)
+			return nil
+		},
+	})
+	defer stop()
+
+	time.Sleep(25 * time.Millisecond)
+	deactivate(0)
+
+	firstBefore := firstCount.Load()
+	secondBefore := secondCount.Load()
+	time.Sleep(30 * time.Millisecond)
+
+	if secondCount.Load() <= secondBefore {
+		t.Fatalf("expected active batch heartbeat to keep extending second message, got before=%d after=%d", secondBefore, secondCount.Load())
+	}
+	if firstCount.Load() != firstBefore {
+		t.Fatalf("expected deactivated batch heartbeat to stop extending first message, got before=%d after=%d", firstBefore, firstCount.Load())
+	}
+}
+
 func TestSaturatingUint64ToInt(t *testing.T) {
 	if got := saturatingUint64ToInt(uint64(math.MaxInt) + 1); got != math.MaxInt {
 		t.Fatalf("expected saturation to MaxInt, got %d", got)
