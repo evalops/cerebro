@@ -228,13 +228,6 @@ func (c *Consumer) handleMessage(ctx context.Context, subject string, payload []
 	var evt CloudEvent
 	if err := json.Unmarshal(payload, &evt); err != nil {
 		preview := payloadPreview(payload, c.config.PayloadPreviewBytes)
-		c.logger.Error("tap consumer dead-lettered malformed cloud event",
-			"error", err,
-			"subject", subject,
-			"stream", c.config.Stream,
-			"durable", c.config.Durable,
-			"payload_preview", preview,
-		)
 		if dlqErr := c.dlq.Write(consumerDeadLetterRecord{
 			RecordedAt: time.Now().UTC(),
 			Stream:     c.config.Stream,
@@ -256,6 +249,13 @@ func (c *Consumer) handleMessage(ctx context.Context, subject string, payload []
 			}
 			return
 		}
+		c.logger.Error("tap consumer dead-lettered malformed cloud event",
+			"error", err,
+			"subject", subject,
+			"stream", c.config.Stream,
+			"durable", c.config.Durable,
+			"payload_preview", preview,
+		)
 		c.recordDropped("malformed", time.Now().UTC())
 		if err := ack(); err != nil {
 			c.logger.Warn("tap consumer ack failed after dead-lettering malformed event", "error", err, "subject", subject)
