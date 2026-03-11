@@ -325,6 +325,33 @@ func TestMapperApply_SupportTicketCreatesConditionalBusinessNodes(t *testing.T) 
 	}
 }
 
+func TestMapperConditionMatches_TreatsScalarValuesAsPresent(t *testing.T) {
+	mapper := &Mapper{}
+	context := map[string]any{
+		"data": map[string]any{
+			"customer_zero":  "0",
+			"customer_false": "false",
+			"customer_null":  "null",
+			"customer_empty": "",
+		},
+	}
+
+	for _, tc := range []struct {
+		name string
+		when string
+		want bool
+	}{
+		{name: "zero string", when: "{{data.customer_zero}}", want: true},
+		{name: "false string", when: "{{data.customer_false}}", want: true},
+		{name: "null string", when: "{{data.customer_null}}", want: true},
+		{name: "empty string", when: "{{data.customer_empty}}", want: false},
+	} {
+		if got := mapper.conditionMatches(tc.when, context, events.CloudEvent{}); got != tc.want {
+			t.Fatalf("%s: conditionMatches(%q) = %v, want %v", tc.name, tc.when, got, tc.want)
+		}
+	}
+}
+
 func TestMapperApply_CalendarMeetingUsesMeetingKind(t *testing.T) {
 	config, err := LoadDefaultConfig()
 	if err != nil {

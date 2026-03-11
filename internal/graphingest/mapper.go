@@ -457,7 +457,7 @@ func (m *Mapper) conditionMatches(raw string, context map[string]any, evt events
 	}
 	rendered := strings.TrimSpace(m.renderTemplate(raw, context, evt))
 	switch strings.ToLower(rendered) {
-	case "", "0", "false", "null", "<nil>", "[]", "{}":
+	case "", "<nil>", "[]", "{}":
 		return false
 	default:
 		return true
