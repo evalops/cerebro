@@ -288,7 +288,7 @@ func normalizeBucketEntitySupport(g *Graph, bucket *Node, now time.Time, result 
 		if createdClaim {
 			result.ClaimsCreated++
 		}
-		value := claimBoolObjectValue(g, claimID, meta, false)
+		value := claimBoolObjectValue(g, claimID, meta, bucketVersioningEnabled(bucket.Properties))
 		if _, created, err := ensureNormalizedBucketClaim(g, bucket, meta, "versioning_enabled", value, supportIDs(claimID), "Bucket versioning posture normalized from configuration support"); err == nil && created {
 			result.ClaimsCreated++
 		}
@@ -580,6 +580,14 @@ func ensureBucketVersioningSupport(g *Graph, bucket *Node, meta entityNormalizat
 		Metadata:        map[string]any{"normalized": true, "subresource_kind": string(NodeKindBucketVersioningConfig)},
 	})
 	return claimID, createdSubresource, createdObservation, createdClaim
+}
+
+func bucketVersioningEnabled(properties map[string]any) bool {
+	status := strings.ToLower(strings.TrimSpace(readString(properties, "versioning_status", "versioning")))
+	if status != "" {
+		return status == "enabled" || status == "on"
+	}
+	return readBool(properties, "versioning_enabled")
 }
 
 func ensureConfiguredSubresourceNode(g *Graph, bucket *Node, kind NodeKind, id, name string, fields map[string]any, meta entityNormalizationContext) (string, bool) {

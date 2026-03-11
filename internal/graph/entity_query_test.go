@@ -354,3 +354,72 @@ func TestNormalizeEntityAssetSupportUsesBucketFallbacksForLoggingAndVersioning(t
 		t.Fatalf("expected versioning subresource for explicit mfa_delete state, got %#v", detail.Subresources)
 	}
 }
+
+func TestNormalizeEntityAssetSupportUsesBucketVersioningFallbackAndEnabledStrings(t *testing.T) {
+	g := New()
+	baseAt := time.Date(2026, 3, 10, 13, 0, 0, 0, time.UTC)
+	bucketID := "arn:aws:s3:::versioned-logs"
+	props := map[string]any{
+		"observed_at":       baseAt.UTC().Format(time.RFC3339),
+		"valid_from":        baseAt.UTC().Format(time.RFC3339),
+		"recorded_at":       baseAt.UTC().Format(time.RFC3339),
+		"transaction_from":  baseAt.UTC().Format(time.RFC3339),
+		"versioning_status": "Enabled",
+		"mfa_delete":        "Enabled",
+		"bucket_name":       "versioned-logs",
+	}
+	g.AddNode(&Node{
+		ID:         bucketID,
+		Kind:       NodeKindBucket,
+		Name:       "Versioned Logs",
+		Provider:   "aws",
+		Account:    "123456789012",
+		Region:     "us-east-1",
+		Properties: cloneAnyMap(props),
+	})
+	if _, err := WriteClaim(g, ClaimWriteRequest{
+		ID:              "claim:" + slugifyKnowledgeKey(bucketID) + ":bucket_versioning_config:normalized",
+		SubjectID:       bucketID,
+		Predicate:       "versioning_enabled",
+		ObjectValue:     "false",
+		SourceSystem:    "test",
+		ObservedAt:      baseAt.Add(12 * time.Hour),
+		ValidFrom:       baseAt.Add(12 * time.Hour),
+		RecordedAt:      baseAt.Add(12 * time.Hour),
+		TransactionFrom: baseAt.Add(12 * time.Hour),
+	}); err != nil {
+		t.Fatalf("write future versioning claim: %v", err)
+	}
+
+	NormalizeEntityAssetSupport(g, baseAt.Add(time.Hour))
+
+	versioningClaimID := "claim:" + slugifyKnowledgeKey(bucketID) + ":" + slugifyKnowledgeKey("versioning_enabled") + ":normalized"
+	versioningClaim, ok := GetClaimRecord(g, versioningClaimID, baseAt.Add(2*time.Hour), baseAt.Add(2*time.Hour))
+	if !ok {
+		t.Fatalf("expected normalized versioning claim %q", versioningClaimID)
+	}
+	if versioningClaim.ObjectValue != "true" {
+		t.Fatalf("expected versioning fallback to preserve enabled bucket property, got %#v", versioningClaim.ObjectValue)
+	}
+
+	detail, ok := GetEntityRecord(g, bucketID, baseAt.Add(2*time.Hour), baseAt.Add(2*time.Hour))
+	if !ok {
+		t.Fatal("expected bucket detail")
+	}
+	foundVersioning := false
+	for _, subresource := range detail.Subresources {
+		if subresource.Kind != NodeKindBucketVersioningConfig {
+			continue
+		}
+		foundVersioning = true
+		if status := readString(subresource.Fields, "versioning_status"); status != "enabled" {
+			t.Fatalf("expected enabled versioning status, got %#v", subresource.Fields)
+		}
+		if mfaDelete, ok := subresource.Fields["mfa_delete"].(bool); !ok || !mfaDelete {
+			t.Fatalf("expected AWS Enabled string to normalize to mfa_delete=true, got %#v", subresource.Fields)
+		}
+	}
+	if !foundVersioning {
+		t.Fatalf("expected versioning subresource, got %#v", detail.Subresources)
+	}
+}
