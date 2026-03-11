@@ -425,11 +425,7 @@ func (a *App) initSecurityGraph(ctx context.Context) {
 	a.setSecurityGraph(securityGraph)
 	a.Propagation = graph.NewPropagationEngine(securityGraph)
 
-	graphCtx := ctx
-	if graphCtx == nil {
-		graphCtx = context.Background()
-	}
-	graphCtx, cancel := context.WithCancel(graphCtx)
+	graphCtx, cancel := context.WithCancel(context.Background())
 	a.graphCancel = cancel
 	a.setGraphBuildState(GraphBuildBuilding, time.Time{}, nil)
 
@@ -502,15 +498,19 @@ func (a *App) RebuildSecurityGraph(ctx context.Context) error {
 	}
 
 	start := time.Now()
+	a.setGraphBuildState(GraphBuildBuilding, time.Time{}, nil)
 	if err := a.SecurityGraphBuilder.Build(ctx); err != nil {
+		a.setGraphBuildState(GraphBuildFailed, time.Now().UTC(), err)
 		return err
 	}
 
 	securityGraph := a.CurrentSecurityGraph()
 	if securityGraph == nil {
+		a.setGraphBuildState(GraphBuildFailed, time.Now().UTC(), fmt.Errorf("security graph not initialized"))
 		return fmt.Errorf("security graph not initialized")
 	}
 	meta := securityGraph.Metadata()
+	a.setGraphBuildState(GraphBuildSuccess, meta.BuiltAt, nil)
 	a.Logger.Info("security graph rebuilt",
 		"nodes", meta.NodeCount,
 		"edges", meta.EdgeCount,

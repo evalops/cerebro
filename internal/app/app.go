@@ -226,6 +226,12 @@ func NewWithOptions(ctx context.Context, opts ...Option) (*App, error) {
 	}
 
 	if err := app.initialize(initCtx); err != nil {
+		if app.graphCancel != nil {
+			app.graphCancel()
+		}
+		if app.threatIntelSyncCancel != nil {
+			app.threatIntelSyncCancel()
+		}
 		if errors.Is(err, context.DeadlineExceeded) || initCtx.Err() == context.DeadlineExceeded {
 			logger.Error("application initialization timed out", "timeout", cfg.InitTimeout, "error", err)
 		}

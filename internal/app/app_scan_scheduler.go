@@ -74,16 +74,19 @@ func (a *App) initScheduler(_ context.Context) {
 			return nil
 		}
 
+		a.setGraphBuildState(GraphBuildBuilding, time.Time{}, nil)
 		summary, err := a.SecurityGraphBuilder.ApplyChanges(ctx, time.Time{})
 		if err != nil {
 			a.Logger.Warn("incremental graph apply failed, falling back to full rebuild", "error", err)
 			if err := a.SecurityGraphBuilder.Build(ctx); err != nil {
+				a.setGraphBuildState(GraphBuildFailed, time.Now().UTC(), err)
 				return err
 			}
 			securityGraph := a.SecurityGraphBuilder.Graph()
 			a.configureGraphSchemaValidation(securityGraph)
 			a.setSecurityGraph(securityGraph)
 			meta := securityGraph.Metadata()
+			a.setGraphBuildState(GraphBuildSuccess, meta.BuiltAt, nil)
 			a.Logger.Info("security graph rebuilt",
 				"nodes", meta.NodeCount,
 				"edges", meta.EdgeCount,
@@ -103,6 +106,7 @@ func (a *App) initScheduler(_ context.Context) {
 		a.configureGraphSchemaValidation(securityGraph)
 		a.setSecurityGraph(securityGraph)
 		meta := securityGraph.Metadata()
+		a.setGraphBuildState(GraphBuildSuccess, meta.BuiltAt, nil)
 		a.Logger.Info("security graph incrementally updated",
 			"events", summary.EventsProcessed,
 			"nodes_added", summary.NodesAdded,
