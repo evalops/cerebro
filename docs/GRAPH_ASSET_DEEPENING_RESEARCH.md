@@ -230,7 +230,7 @@ Exit criteria:
 - schema-backed facet definitions for high-value resource kinds
 - typed facet summaries on entity detail
 - compatibility checks for facet evolution
-- current status: implemented in code for ownership/exposure/data sensitivity and bucket support facets; next step is generated docs/checks
+- current status: implemented in code and contract generation for ownership/exposure/data sensitivity and bucket support facets; next step is broader family coverage and stricter generation from the registry
 
 ### Track C: Subresource Deepening
 
@@ -238,6 +238,7 @@ Exit criteria:
 
 - at least one fully modeled asset family with promoted subresources
 - example: `bucket` plus policy statements, logging config, encryption config, and public-access controls
+- current status: implemented for `bucket` with promoted policy/public-access/encryption/logging/versioning support nodes plus normalized support claims
 
 ### Track D: Support And Posture Claims
 
@@ -245,6 +246,7 @@ Exit criteria:
 
 - risky configurations expressed as claims with evidence links
 - entity detail shows which claims are active, supported, disputed, or stale
+- current status: implemented for bucket-family support normalization; next step is family-specific normalization jobs and lifecycle events
 
 ### Track E: Asset Summary Modules
 
@@ -252,22 +254,22 @@ Exit criteria:
 
 - extensible report modules for entity summary pages
 - no new bespoke asset-summary endpoints
-- current status: first report-level `entity-summary` module set implemented; next step is deeper module overlays and subresource-backed sections
+- current status: `entity-summary` now includes subresource-backed sections; next step is timeline/remediation/benchmark overlays bound to facet IDs and claim packs
 
 ## Immediate Conclusion
 
 The right next move for asset deepening is:
 
 1. keep expanding `/api/v1/platform/entities` as the canonical typed read surface
-2. add canonical refs and external refs
-3. add facet fragments for high-value resource kinds
-4. promote subresources where posture/explanation depends on them
-5. express risky configurations as evidence-backed claims
+2. reuse the facet registry and compatibility model across more asset families
+3. promote subresources where posture/explanation depends on them
+4. express risky configurations as evidence-backed claims
+5. make report modules consume those subresources and claims rather than raw provider fields
 
 The next concrete cut after this should be:
 
-1. generate facet contract docs + compatibility checks
-2. fully deepen one family (`bucket`) with promoted subresources
-3. add write-side posture normalization so report views stop depending on read-only derivation where durable claims are the correct substrate
+1. deepen `database` with encryption/logging/backup/public-endpoint support modules
+2. deepen network-boundary families with promoted rule/route/endpoint subresources
+3. add write-side normalization executions/events so support claim production is inspectable and replayable
 
 That keeps the graph honest: assets stay entities, support stays in the knowledge layer, and UI/report richness stays in derived modules rather than becoming another pile of special-case APIs.

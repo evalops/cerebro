@@ -503,13 +503,13 @@ func materializeEntityFacet(g *Graph, node *Node, validAt, recordedAt time.Time,
 	case "data_sensitivity":
 		return materializeDataSensitivityFacet(node, def, claimIndex)
 	case "bucket_public_access":
-		return materializeBucketPublicAccessFacet(node, def, claimIndex)
+		return materializeBucketPublicAccessFacet(g, node, validAt, recordedAt, def, claimIndex)
 	case "bucket_encryption":
-		return materializeBucketEncryptionFacet(node, def, claimIndex)
+		return materializeBucketEncryptionFacet(g, node, validAt, recordedAt, def, claimIndex)
 	case "bucket_logging":
-		return materializeBucketLoggingFacet(node, def, claimIndex)
+		return materializeBucketLoggingFacet(g, node, validAt, recordedAt, def, claimIndex)
 	case "bucket_versioning":
-		return materializeBucketVersioningFacet(node, def, claimIndex)
+		return materializeBucketVersioningFacet(g, node, validAt, recordedAt, def, claimIndex)
 	default:
 		return EntityFacetRecord{}, false
 	}
@@ -586,7 +586,7 @@ func materializeExposureFacet(g *Graph, node *Node, validAt, recordedAt time.Tim
 	internetExposed := false
 	if g != nil {
 		for _, edge := range g.GetInEdgesBitemporal(node.ID, validAt, recordedAt) {
-			if edge != nil && edge.Kind == EdgeKindExposedTo && edge.Source == string(NodeKindInternet) || edge != nil && edge.Kind == EdgeKindExposedTo && edge.Source == "internet" {
+			if edge != nil && edge.Kind == EdgeKindExposedTo && (edge.Source == string(NodeKindInternet) || edge.Source == "internet") {
 				internetExposed = true
 				break
 			}
@@ -682,19 +682,23 @@ func materializeDataSensitivityFacet(node *Node, def EntityFacetDefinition, clai
 	}, true
 }
 
-func materializeBucketPublicAccessFacet(node *Node, def EntityFacetDefinition, claimIndex map[string][]ClaimRecord) (EntityFacetRecord, bool) {
+func materializeBucketPublicAccessFacet(g *Graph, node *Node, validAt, recordedAt time.Time, def EntityFacetDefinition, claimIndex map[string][]ClaimRecord) (EntityFacetRecord, bool) {
+	properties := node.Properties
+	if subresource, ok := relatedBucketSubresourceNode(g, node.ID, NodeKindBucketPublicAccessBlock, validAt, recordedAt); ok && subresource != nil {
+		properties = subresource.Properties
+	}
+	publicAccess, publicAccessKnown := entityPropertyOrClaimBool(&Node{Properties: node.Properties}, claimIndex, []string{"public", "public_access"}, []string{"public_access"})
 	fields := map[string]any{
-		"public_access":                  readBool(node.Properties, "public", "public_access"),
-		"block_public_acls":              readBool(node.Properties, "block_public_acls"),
-		"block_public_policy":            readBool(node.Properties, "block_public_policy"),
-		"restrict_public_buckets":        readBool(node.Properties, "restrict_public_buckets"),
+		"public_access":                  publicAccess,
+		"block_public_acls":              readBool(properties, "block_public_acls"),
+		"block_public_policy":            readBool(properties, "block_public_policy"),
+		"restrict_public_buckets":        readBool(properties, "restrict_public_buckets"),
 		"all_users_access":               readBool(node.Properties, "all_users_access"),
 		"all_authenticated_users_access": readBool(node.Properties, "all_authenticated_users_access"),
 	}
-	if value, ok := claimBoolValue(claimIndex["public_access"]); ok {
-		fields["public_access"] = value
-	}
-	known := fields["public_access"].(bool) || readBool(node.Properties, "block_public_acls", "block_public_policy", "all_users_access", "all_authenticated_users_access")
+	known := publicAccessKnown ||
+		propertyHasAnyKey(properties, "block_public_acls", "ignore_public_acls", "block_public_policy", "restrict_public_buckets", "public_access_prevention") ||
+		propertyHasAnyKey(node.Properties, "public", "public_access", "all_users_access", "all_authenticated_users_access", "anonymous_access")
 	if !known {
 		return EntityFacetRecord{
 			ID:              def.ID,
@@ -708,7 +712,7 @@ func materializeBucketPublicAccessFacet(node *Node, def EntityFacetDefinition, c
 			ClaimPredicates: append([]string(nil), def.ClaimPredicates...),
 		}, true
 	}
-	publicAccess := fields["public_access"].(bool) || fields["all_users_access"].(bool) || fields["all_authenticated_users_access"].(bool)
+	publicAccess = publicAccess || fields["all_users_access"].(bool) || fields["all_authenticated_users_access"].(bool)
 	blocked := fields["block_public_acls"].(bool) && fields["block_public_policy"].(bool)
 	assessment := "pass"
 	summary := "Public-access controls are configured"
@@ -730,13 +734,17 @@ func materializeBucketPublicAccessFacet(node *Node, def EntityFacetDefinition, c
 	}, true
 }
 
-func materializeBucketEncryptionFacet(node *Node, def EntityFacetDefinition, claimIndex map[string][]ClaimRecord) (EntityFacetRecord, bool) {
-	encrypted, known := entityPropertyOrClaimBool(node, claimIndex, []string{"encrypted", "default_encryption", "default_encryption_enabled", "kms_encrypted"}, []string{"encrypted", "default_encryption_enabled"})
+func materializeBucketEncryptionFacet(g *Graph, node *Node, validAt, recordedAt time.Time, def EntityFacetDefinition, claimIndex map[string][]ClaimRecord) (EntityFacetRecord, bool) {
+	properties := node.Properties
+	if subresource, ok := relatedBucketSubresourceNode(g, node.ID, NodeKindBucketEncryptionConfig, validAt, recordedAt); ok && subresource != nil {
+		properties = subresource.Properties
+	}
+	encrypted, known := entityPropertyOrClaimBool(&Node{Properties: properties}, claimIndex, []string{"encrypted", "default_encryption", "default_encryption_enabled", "kms_encrypted"}, []string{"encrypted", "default_encryption_enabled"})
 	fields := map[string]any{
 		"encrypted":            encrypted,
-		"encryption_algorithm": strings.TrimSpace(readString(node.Properties, "encryption_algorithm")),
-		"encryption_key_id":    strings.TrimSpace(readString(node.Properties, "encryption_key_id")),
-		"bucket_key_enabled":   readBool(node.Properties, "bucket_key_enabled"),
+		"encryption_algorithm": strings.TrimSpace(readString(properties, "encryption_algorithm")),
+		"encryption_key_id":    strings.TrimSpace(readString(properties, "encryption_key_id")),
+		"bucket_key_enabled":   readBool(properties, "bucket_key_enabled"),
 	}
 	if !known && fields["encryption_algorithm"] == "" && fields["encryption_key_id"] == "" && !fields["bucket_key_enabled"].(bool) {
 		return EntityFacetRecord{
@@ -771,9 +779,13 @@ func materializeBucketEncryptionFacet(node *Node, def EntityFacetDefinition, cla
 	}, true
 }
 
-func materializeBucketLoggingFacet(node *Node, def EntityFacetDefinition, claimIndex map[string][]ClaimRecord) (EntityFacetRecord, bool) {
-	enabled, known := entityPropertyOrClaimBool(node, claimIndex, []string{"logging_enabled", "access_logging_enabled"}, []string{"access_logging_enabled"})
-	targetBucket := strings.TrimSpace(readString(node.Properties, "logging_target_bucket"))
+func materializeBucketLoggingFacet(g *Graph, node *Node, validAt, recordedAt time.Time, def EntityFacetDefinition, claimIndex map[string][]ClaimRecord) (EntityFacetRecord, bool) {
+	properties := node.Properties
+	if subresource, ok := relatedBucketSubresourceNode(g, node.ID, NodeKindBucketLoggingConfig, validAt, recordedAt); ok && subresource != nil {
+		properties = subresource.Properties
+	}
+	enabled, known := entityPropertyOrClaimBool(&Node{Properties: properties}, claimIndex, []string{"logging_enabled", "access_logging_enabled"}, []string{"access_logging_enabled"})
+	targetBucket := strings.TrimSpace(readString(properties, "logging_target_bucket"))
 	if !known && targetBucket == "" {
 		return EntityFacetRecord{
 			ID:              def.ID,
@@ -810,8 +822,12 @@ func materializeBucketLoggingFacet(node *Node, def EntityFacetDefinition, claimI
 	}, true
 }
 
-func materializeBucketVersioningFacet(node *Node, def EntityFacetDefinition, claimIndex map[string][]ClaimRecord) (EntityFacetRecord, bool) {
-	status := strings.ToLower(strings.TrimSpace(readString(node.Properties, "versioning", "versioning_status")))
+func materializeBucketVersioningFacet(g *Graph, node *Node, validAt, recordedAt time.Time, def EntityFacetDefinition, claimIndex map[string][]ClaimRecord) (EntityFacetRecord, bool) {
+	properties := node.Properties
+	if subresource, ok := relatedBucketSubresourceNode(g, node.ID, NodeKindBucketVersioningConfig, validAt, recordedAt); ok && subresource != nil {
+		properties = subresource.Properties
+	}
+	status := strings.ToLower(strings.TrimSpace(readString(properties, "versioning", "versioning_status")))
 	if status == "" {
 		if value, ok := claimBoolValue(claimIndex["versioning_enabled"]); ok {
 			if value {
@@ -821,7 +837,7 @@ func materializeBucketVersioningFacet(node *Node, def EntityFacetDefinition, cla
 			}
 		}
 	}
-	mfaDelete := readBool(node.Properties, "mfa_delete")
+	mfaDelete := readBool(properties, "mfa_delete")
 	if status == "" && !mfaDelete {
 		return EntityFacetRecord{
 			ID:              def.ID,

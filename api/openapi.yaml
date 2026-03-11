@@ -6849,6 +6849,50 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /api/v1/platform/entities/facets:
+    get:
+      tags:
+        - Platform
+      summary: List platform entity facet contracts
+      description: Return the machine-readable built-in facet catalog used by typed entity detail and entity-summary report modules.
+      responses:
+        '200':
+          description: Entity facet contract catalog
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformEntityFacetContractCatalog'
+  /api/v1/platform/entities/facets/{facet_id}:
+    get:
+      tags:
+        - Platform
+      summary: Get platform entity facet contract
+      description: Return one built-in entity facet definition by stable facet identifier.
+      parameters:
+        - name: facet_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Entity facet definition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformEntityFacetDefinition'
+        '400':
+          description: Invalid facet identifier
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Entity facet not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /api/v1/platform/entities/{entity_id}:
     get:
       tags:
@@ -12065,6 +12109,63 @@ components:
           type: string
         source_system:
           type: string
+    PlatformEntityFacetFieldDefinition:
+      type: object
+      additionalProperties: false
+      properties:
+        key:
+          type: string
+        value_type:
+          type: string
+        description:
+          type: string
+    PlatformEntityFacetDefinition:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        version:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        schema_name:
+          type: string
+        schema_url:
+          type: string
+        applicable_kinds:
+          type: array
+          items:
+            type: string
+        source_keys:
+          type: array
+          items:
+            type: string
+        claim_predicates:
+          type: array
+          items:
+            type: string
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformEntityFacetFieldDefinition'
+    PlatformEntityFacetContractCatalog:
+      type: object
+      additionalProperties: false
+      properties:
+        apiVersion:
+          type: string
+        kind:
+          type: string
+        generated_at:
+          type: string
+          format: date-time
+        facets:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformEntityFacetDefinition'
     PlatformEntityRecord:
       type: object
       additionalProperties: false
@@ -12121,6 +12222,10 @@ components:
             $ref: '#/components/schemas/PlatformEntityFacetRecord'
         posture:
           $ref: '#/components/schemas/PlatformEntityPostureSummary'
+        subresources:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformEntitySubresourceRecord'
         relationships:
           type: array
           items:
@@ -12232,6 +12337,29 @@ components:
         fields:
           type: object
           additionalProperties: true
+    PlatformEntitySubresourceRecord:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+        name:
+          type: string
+        assessment:
+          type: string
+        summary:
+          type: string
+        knowledge:
+          $ref: '#/components/schemas/PlatformEntityKnowledgeSupportSummary'
+        related_entity_ids:
+          type: array
+          items:
+            type: string
+        fields:
+          type: object
+          additionalProperties: true
     PlatformEntityPostureSummary:
       type: object
       additionalProperties: false
@@ -12302,6 +12430,8 @@ components:
           $ref: '#/components/schemas/PlatformEntitySummaryTopologySection'
         facets:
           $ref: '#/components/schemas/PlatformEntitySummaryFacetSection'
+        subresources:
+          $ref: '#/components/schemas/PlatformEntitySummarySubresourceSection'
         posture:
           $ref: '#/components/schemas/PlatformEntitySummaryPostureSection'
         support:
@@ -12377,6 +12507,14 @@ components:
           items:
             $ref: '#/components/schemas/PlatformEntitySummaryMeasureValue'
     PlatformEntitySummaryFacetSection:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformEntitySummaryRankingItem'
+    PlatformEntitySummarySubresourceSection:
       type: object
       additionalProperties: false
       properties:

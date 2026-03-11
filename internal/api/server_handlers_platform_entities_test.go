@@ -167,6 +167,7 @@ func TestPlatformEntitiesListAndDetail(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("write public access claim: %v", err)
 	}
+	graph.NormalizeEntityAssetSupport(g, baseAt.Add(95*time.Minute))
 
 	list := do(t, s, http.MethodGet, "/api/v1/platform/entities?category=resource&provider=aws&tag_key=env&tag_value=prod&limit=2", nil)
 	if list.Code != http.StatusOK {
@@ -221,8 +222,11 @@ func TestPlatformEntitiesListAndDetail(t *testing.T) {
 	if facets, ok := bucketBody["facets"].([]any); !ok || len(facets) < 4 {
 		t.Fatalf("expected bucket facets, got %#v", bucketBody["facets"])
 	}
-	if posture, ok := bucketBody["posture"].(map[string]any); !ok || posture["active_claim_count"].(float64) != 2 {
+	if posture, ok := bucketBody["posture"].(map[string]any); !ok || posture["active_claim_count"].(float64) < 2 {
 		t.Fatalf("expected posture summary, got %#v", bucketBody["posture"])
+	}
+	if subresources, ok := bucketBody["subresources"].([]any); !ok || len(subresources) < 3 {
+		t.Fatalf("expected bucket subresources, got %#v", bucketBody["subresources"])
 	}
 	person := do(t, s, http.MethodGet, "/api/v1/platform/entities/person:alice@example.com", nil)
 	if person.Code != http.StatusOK {
@@ -231,6 +235,14 @@ func TestPlatformEntitiesListAndDetail(t *testing.T) {
 	personBody := decodeJSON(t, person)
 	if aliases, ok := personBody["aliases"].([]any); !ok || len(aliases) != 1 {
 		t.Fatalf("expected person aliases, got %#v", personBody["aliases"])
+	}
+	facets := do(t, s, http.MethodGet, "/api/v1/platform/entities/facets", nil)
+	if facets.Code != http.StatusOK {
+		t.Fatalf("expected 200 for facet catalog, got %d: %s", facets.Code, facets.Body.String())
+	}
+	facetBody := decodeJSON(t, facets)
+	if facetBody["kind"] != "EntityFacetContractCatalog" {
+		t.Fatalf("unexpected facet catalog: %#v", facetBody)
 	}
 }
 
@@ -272,6 +284,7 @@ func TestPlatformEntitySummaryReport(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("write claim: %v", err)
 	}
+	graph.NormalizeEntityAssetSupport(g, baseAt.Add(90*time.Minute))
 
 	w := do(t, s, http.MethodGet, "/api/v1/platform/intelligence/entity-summary?entity_id=arn:aws:s3:::logs&max_posture_claims=1", nil)
 	if w.Code != http.StatusOK {
@@ -286,6 +299,9 @@ func TestPlatformEntitySummaryReport(t *testing.T) {
 	}
 	if posture, ok := body["posture"].(map[string]any); !ok || len(posture["claims"].([]any)) != 1 {
 		t.Fatalf("unexpected posture section: %#v", body["posture"])
+	}
+	if subresources, ok := body["subresources"].(map[string]any); !ok || len(subresources["items"].([]any)) == 0 {
+		t.Fatalf("unexpected subresources section: %#v", body["subresources"])
 	}
 }
 

@@ -2,7 +2,6 @@ package graph
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 )
@@ -58,6 +57,11 @@ type EntitySummaryFacetSection struct {
 	Items []EntitySummaryRankingItem `json:"items,omitempty"`
 }
 
+// EntitySummarySubresourceSection captures promoted subresources and their support state.
+type EntitySummarySubresourceSection struct {
+	Items []EntitySummaryRankingItem `json:"items,omitempty"`
+}
+
 // EntitySummaryPostureSection captures normalized posture claims attached to the entity.
 type EntitySummaryPostureSection struct {
 	Headline   string                      `json:"headline"`
@@ -75,15 +79,16 @@ type EntitySummarySupportSection struct {
 
 // EntitySummaryReport is the report-level asset summary view built from entity and knowledge primitives.
 type EntitySummaryReport struct {
-	GeneratedAt time.Time                    `json:"generated_at"`
-	ValidAt     time.Time                    `json:"valid_at"`
-	RecordedAt  time.Time                    `json:"recorded_at"`
-	Entity      EntityRecord                 `json:"entity"`
-	Overview    EntitySummaryOverviewSection `json:"overview"`
-	Topology    EntitySummaryTopologySection `json:"topology"`
-	Facets      EntitySummaryFacetSection    `json:"facets"`
-	Posture     EntitySummaryPostureSection  `json:"posture"`
-	Support     EntitySummarySupportSection  `json:"support"`
+	GeneratedAt  time.Time                       `json:"generated_at"`
+	ValidAt      time.Time                       `json:"valid_at"`
+	RecordedAt   time.Time                       `json:"recorded_at"`
+	Entity       EntityRecord                    `json:"entity"`
+	Overview     EntitySummaryOverviewSection    `json:"overview"`
+	Topology     EntitySummaryTopologySection    `json:"topology"`
+	Facets       EntitySummaryFacetSection       `json:"facets"`
+	Subresources EntitySummarySubresourceSection `json:"subresources"`
+	Posture      EntitySummaryPostureSection     `json:"posture"`
+	Support      EntitySummarySupportSection     `json:"support"`
 }
 
 // BuildEntitySummaryReport builds a report-level entity summary without inventing a bespoke asset API tree.
@@ -104,15 +109,16 @@ func BuildEntitySummaryReport(g *Graph, opts EntitySummaryReportOptions) (Entity
 		return EntitySummaryReport{}, false
 	}
 	report := EntitySummaryReport{
-		GeneratedAt: temporalNowUTC(),
-		ValidAt:     validAt.UTC(),
-		RecordedAt:  recordedAt.UTC(),
-		Entity:      entity,
-		Overview:    buildEntitySummaryOverviewSection(entity),
-		Topology:    buildEntitySummaryTopologySection(entity),
-		Facets:      buildEntitySummaryFacetSection(entity),
-		Posture:     buildEntitySummaryPostureSection(entity, opts.MaxPostureClaims),
-		Support:     buildEntitySummarySupportSection(entity),
+		GeneratedAt:  temporalNowUTC(),
+		ValidAt:      validAt.UTC(),
+		RecordedAt:   recordedAt.UTC(),
+		Entity:       entity,
+		Overview:     buildEntitySummaryOverviewSection(entity),
+		Topology:     buildEntitySummaryTopologySection(entity),
+		Facets:       buildEntitySummaryFacetSection(entity),
+		Subresources: buildEntitySummarySubresourceSection(entity),
+		Posture:      buildEntitySummaryPostureSection(entity, opts.MaxPostureClaims),
+		Support:      buildEntitySummarySupportSection(entity),
 	}
 	return report, true
 }
@@ -127,6 +133,9 @@ func buildEntitySummaryOverviewSection(entity EntityRecord) EntitySummaryOvervie
 	if len(entity.Facets) > 0 {
 		highlights = append(highlights, fmt.Sprintf("%d facet module(s)", len(entity.Facets)))
 	}
+	if len(entity.Subresources) > 0 {
+		highlights = append(highlights, fmt.Sprintf("%d subresource(s)", len(entity.Subresources)))
+	}
 	if entity.Posture != nil && entity.Posture.ActiveClaimCount > 0 {
 		highlights = append(highlights, fmt.Sprintf("%d posture claim(s)", entity.Posture.ActiveClaimCount))
 	}
@@ -139,6 +148,7 @@ func buildEntitySummaryOverviewSection(entity EntityRecord) EntitySummaryOvervie
 			entitySummaryMeasure("external_refs", "External Refs", "integer", "", len(entity.ExternalRefs), ""),
 			entitySummaryMeasure("aliases", "Aliases", "integer", "", len(entity.Aliases), ""),
 			entitySummaryMeasure("facet_coverage_percent", "Facet Coverage", "number", "percent", entityFacetCoveragePercent(entity), entityFacetCoverageStatus(entity)),
+			entitySummaryMeasure("subresource_count", "Subresources", "integer", "", len(entity.Subresources), ""),
 		},
 	}
 }
@@ -173,6 +183,26 @@ func buildEntitySummaryFacetSection(entity EntityRecord) EntitySummaryFacetSecti
 		})
 	}
 	return EntitySummaryFacetSection{Items: items}
+}
+
+func buildEntitySummarySubresourceSection(entity EntityRecord) EntitySummarySubresourceSection {
+	items := make([]EntitySummaryRankingItem, 0, len(entity.Subresources))
+	for idx, subresource := range entity.Subresources {
+		items = append(items, EntitySummaryRankingItem{
+			ID:      subresource.ID,
+			Title:   firstNonEmpty(subresource.Name, subresource.ID),
+			Rank:    idx + 1,
+			Score:   entityFacetSummaryScore(subresource.Assessment),
+			Summary: subresource.Summary,
+			MeasureValues: []EntitySummaryMeasureValue{
+				entitySummaryMeasure("claims", "Claims", "integer", "", subresource.Knowledge.ClaimCount, ""),
+				entitySummaryMeasure("supported_claims", "Supported Claims", "integer", "", subresource.Knowledge.SupportedClaimCount, ""),
+				entitySummaryMeasure("evidence", "Evidence", "integer", "", subresource.Knowledge.EvidenceCount, ""),
+				entitySummaryMeasure("related_entities", "Related Entities", "integer", "", len(subresource.RelatedEntityIDs), subresource.Assessment),
+			},
+		})
+	}
+	return EntitySummarySubresourceSection{Items: items}
 }
 
 func buildEntitySummaryPostureSection(entity EntityRecord, maxClaims int) EntitySummaryPostureSection {
@@ -329,11 +359,3 @@ func supportConflictStatus(summary EntityKnowledgeSupportSummary) string {
 }
 
 // SortEntitySummaryRankingItems sorts report ranking items deterministically.
-func SortEntitySummaryRankingItems(items []EntitySummaryRankingItem) {
-	sort.Slice(items, func(i, j int) bool {
-		if items[i].Score != items[j].Score {
-			return items[i].Score > items[j].Score
-		}
-		return items[i].ID < items[j].ID
-	})
-}

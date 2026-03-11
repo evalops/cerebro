@@ -164,6 +164,7 @@ func TestQueryEntitiesFiltersAndKnowledgeSupport(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("write public access claim: %v", err)
 	}
+	NormalizeEntityAssetSupport(g, baseAt.Add(95*time.Minute))
 
 	collection := QueryEntities(g, EntityQueryOptions{
 		Categories: []NodeKindCategory{NodeCategoryResource},
@@ -227,8 +228,11 @@ func TestQueryEntitiesFiltersAndKnowledgeSupport(t *testing.T) {
 	if len(bucketDetail.Facets) < 4 {
 		t.Fatalf("expected bucket facets, got %#v", bucketDetail.Facets)
 	}
-	if bucketDetail.Posture == nil || bucketDetail.Posture.ActiveClaimCount != 2 {
+	if bucketDetail.Posture == nil || bucketDetail.Posture.ActiveClaimCount < 2 {
 		t.Fatalf("expected bucket posture claims, got %#v", bucketDetail.Posture)
+	}
+	if len(bucketDetail.Subresources) < 3 {
+		t.Fatalf("expected normalized bucket subresources, got %#v", bucketDetail.Subresources)
 	}
 	personDetail, ok := GetEntityRecord(g, "person:alice@example.com", baseAt.Add(2*time.Hour), baseAt.Add(2*time.Hour))
 	if !ok {
@@ -249,7 +253,7 @@ func TestQueryEntitiesFiltersAndKnowledgeSupport(t *testing.T) {
 	if report.Overview.Headline != "Audit Logs" {
 		t.Fatalf("unexpected report overview: %#v", report.Overview)
 	}
-	if len(report.Facets.Items) == 0 || len(report.Posture.Claims) != 1 {
+	if len(report.Facets.Items) == 0 || len(report.Posture.Claims) != 1 || len(report.Subresources.Items) == 0 {
 		t.Fatalf("expected report facet/posture modules, got %#v", report)
 	}
 }

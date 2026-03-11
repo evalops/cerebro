@@ -5,6 +5,78 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 34 - Asset Subresource Promotion + Facet Contract Governance + Bucket Support Normalization (2026-03-10)
+
+### Review findings
+- [x] Gap: entity facet modules existed, but there was still no discoverable machine-readable facet contract surface for generated tooling, UI composition, or compatibility control.
+- [x] Gap: bucket support remained too flat; posture-critical nested constructs still lived as raw properties instead of durable subresource nodes with their own support context.
+- [x] Gap: entity-summary had facet and posture modules, but it still lacked a first-class subresource section for “what concrete nested control objects explain this posture.”
+- [x] Gap: bucket posture normalization still depended too heavily on read-time derivation instead of durable normalized claims backed by promoted support artifacts.
+- [x] Gap: the backlog for deeper asset support needed to move from generic “deepen assets” phrasing to specific execution tracks by family, subresource type, and claim pack.
+
+### Research synthesis to adopt
+- [x] Backstage rule: stable entity contracts need a discoverable schema/contract catalog, not just handler behavior.
+- [x] DataHub rule: deep asset modules become reusable only when contract IDs, versions, and field definitions are inspectable by downstream tooling.
+- [x] Cartography rule: provider-specific nested objects should be promoted when they drive traversal, explanation, or remediation, especially for storage/network posture.
+- [x] OpenLineage rule: derived artifacts need deterministic identity and typed link surfaces so support chains can be traversed rather than reconstructed heuristically.
+- [x] OpenMetadata rule: family-specific deepening should arrive as strict typed fragments and registries, not expanding opaque per-entity blobs.
+
+### Execution plan
+- [x] Publish entity facet contracts as a first-class registry:
+  - [x] add `graph.BuildEntityFacetContractCatalog(...)`
+  - [x] add compatibility diffing/reporting for facet contract evolution
+  - [x] add generated markdown + machine-readable facet catalogs
+  - [x] add CI compatibility/docs drift checks
+- [x] Promote bucket support subresources into durable graph nodes:
+  - [x] add `bucket_policy_statement`
+  - [x] add `bucket_public_access_block`
+  - [x] add `bucket_encryption_config`
+  - [x] add `bucket_logging_config`
+  - [x] add `bucket_versioning_config`
+  - [x] connect promoted subresources back to buckets via `configures`
+- [x] Normalize bucket support into durable knowledge objects:
+  - [x] emit deterministic observations for promoted support modules
+  - [x] emit deterministic configuration-backed claims on promoted subresources
+  - [x] emit bucket-level normalized posture claims supported by subresource claims
+  - [x] run normalization in the graph build path so fresh builds materialize durable support automatically
+- [x] Extend typed entity/report surfaces:
+  - [x] expose `subresources` on `GET /api/v1/platform/entities/{entity_id}`
+  - [x] expose `GET /api/v1/platform/entities/facets`
+  - [x] expose `GET /api/v1/platform/entities/facets/{facet_id}`
+  - [x] add a `subresources` section and `subresource_count` measure to `entity-summary`
+  - [x] extend explanation-grade proof fragments so support chains include subject/object anchors
+- [ ] Deepen the next asset families with the same pattern:
+  - [ ] database: encryption, logging/audit, backup, public endpoint, table/column support
+  - [ ] network/security boundary: security-group rule, ingress/egress exposure, route target, gateway linkage
+  - [ ] compute/service: runtime endpoint, attached role, image/build provenance, deployment binding
+
+### Detailed follow-on backlog
+- [ ] Track A - Multi-family support packs
+  - Exit criteria:
+  - [ ] add `database_*` facet pack with promoted config subresources and durable posture claims
+  - [ ] add `service_*` facet pack covering exposure, runtime/deployment linkage, and secret/dependency support
+  - [ ] add `instance_*` or compute pack covering public reachability, IMDS posture, attached role/profile, backup, and patch state
+- [ ] Track B - Deeper support graph semantics
+  - Exit criteria:
+  - [ ] add explicit support graph edges for “configured_by”, “enforced_by”, “collects_to”, and “protects” where `configures` is too weak
+  - [ ] expose subresource-to-claim and subresource-to-evidence traversal helpers as typed proof/report fragments
+  - [ ] add family-specific explanation templates that traverse entity -> subresource -> claim -> evidence/source
+- [ ] Track C - Durable normalization lifecycle
+  - Exit criteria:
+  - [ ] split normalization into inspectable executions/jobs instead of only builder-side hooks
+  - [ ] emit lifecycle events for normalized support claim creation, correction, and retraction
+  - [ ] preserve source/raw observation lineage so normalized posture claims remain auditable after re-ingest
+- [ ] Track D - Contract governance and generation
+  - Exit criteria:
+  - [ ] make facet registry the single source for generated OpenAPI/doc fragments where practical
+  - [ ] add example generation per facet and per subresource family
+  - [ ] add compatibility gates for family-specific subresource schemas and claim packs
+- [ ] Track E - Asset reports as extensible modules
+  - Exit criteria:
+  - [ ] add timeline, remediation, benchmark overlay, and docs/link modules to `entity-summary`
+  - [ ] make report modules bind to facet IDs, subresource kinds, and claim predicates instead of provider field names
+  - [ ] ensure future asset-family views stay report-driven instead of growing new `/assets/*` trees
+
 ## Deep Review Cycle 33 - Canonical Entity Identity + Facet Modules + Entity Summary Report (2026-03-10)
 
 ### Review findings
@@ -48,18 +120,18 @@ Status: executed end-to-end via PR workflow
 ### Detailed follow-on backlog
 - [ ] Track A - Facet contract generation + compatibility
   - Exit criteria:
-  - [ ] generate machine-readable facet catalogs from one canonical registry
-  - [ ] add facet compatibility checks in CI similar to CloudEvents and report contracts
-  - [ ] generate facet docs/examples so schema names and field keys stop being hand-maintained
+  - [x] generate machine-readable facet catalogs from one canonical registry
+  - [x] add facet compatibility checks in CI similar to CloudEvents and report contracts
+  - [x] generate facet docs/examples so schema names and field keys stop being hand-maintained
 - [ ] Track B - Bucket subresource deepening
   - Exit criteria:
-  - [ ] add promoted subresource nodes for bucket policy statements / public-access controls when evidence and explanation need durable IDs
-  - [ ] connect bucket subresources to evidence/claims instead of storing all posture only on the bucket node
-  - [ ] expose bucket-family explanation paths that traverse bucket -> subresource -> claim -> evidence
+  - [x] add promoted subresource nodes for bucket policy statements / public-access controls when evidence and explanation need durable IDs
+  - [x] connect bucket subresources to evidence/claims instead of storing all posture only on the bucket node
+  - [x] expose bucket-family explanation paths that traverse bucket -> subresource -> claim -> evidence
 - [ ] Track C - Write-side posture normalization
   - Exit criteria:
-  - [ ] add normalization jobs or ingest hooks that convert raw asset config into durable posture claims automatically
-  - [ ] make entity detail and entity-summary prefer durable claims over read-time derivation when both exist
+  - [x] add normalization jobs or ingest hooks that convert raw asset config into durable posture claims automatically
+  - [x] make entity detail and entity-summary prefer durable claims over read-time derivation when both exist
   - [ ] emit lifecycle events for normalized posture claim creation/update
 - [ ] Track D - Broader facet packs
   - Exit criteria:

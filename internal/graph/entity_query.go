@@ -111,6 +111,7 @@ type EntityRecord struct {
 	Knowledge     EntityKnowledgeSupportSummary `json:"knowledge"`
 	Facets        []EntityFacetRecord           `json:"facets,omitempty"`
 	Posture       *EntityPostureSummary         `json:"posture,omitempty"`
+	Subresources  []EntitySubresourceRecord     `json:"subresources,omitempty"`
 	Relationships []EntityRelationshipSummary   `json:"relationships,omitempty"`
 	Properties    map[string]any                `json:"properties,omitempty"`
 }
@@ -309,6 +310,7 @@ func buildEntityRecord(g *Graph, node *Node, validAt, recordedAt time.Time, incl
 		})
 		record.Facets = buildEntityFacetRecords(g, node, validAt, recordedAt, claims)
 		record.Posture = buildEntityPostureSummary(claims, validAt)
+		record.Subresources = buildEntitySubresourceRecords(g, node.ID, validAt, recordedAt)
 	}
 	return record
 }

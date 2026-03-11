@@ -719,6 +719,12 @@
           "description": "Share of applicable built-in facets materialized on the entity."
         },
         {
+          "id": "subresource_count",
+          "label": "Subresources",
+          "value_type": "integer",
+          "description": "Promoted subresources attached to the entity for explanation and provenance."
+        },
+        {
           "id": "supported_claims",
           "label": "Supported Claims",
           "value_type": "integer",
@@ -760,6 +766,13 @@
           "description": "Typed facet modules derived from properties and claims."
         },
         {
+          "key": "subresources",
+          "title": "Subresources",
+          "kind": "entity_subresources",
+          "envelope_kind": "object",
+          "description": "Promoted subresources linked for durable explanation and provenance."
+        },
+        {
           "key": "posture",
           "title": "Posture",
           "kind": "entity_posture",
@@ -788,6 +801,12 @@
           "description": "Applicable entity facets should materialize from the available source data."
         },
         {
+          "id": "subresource_promotion",
+          "title": "Subresource Promotion",
+          "severity": "medium",
+          "description": "Nested asset constructs that drive explanation or remediation should be promoted into durable subresources."
+        },
+        {
           "id": "posture_support",
           "title": "Posture Support",
           "severity": "high",
@@ -799,6 +818,11 @@
           "key": "facets.overlays",
           "scope": "facets.items[]",
           "description": "Attach tenant-specific facet overlays or remediation links."
+        },
+        {
+          "key": "subresources.overlays",
+          "scope": "subresources.items[]",
+          "description": "Attach subresource-specific remediation actions, docs, or benchmark overlays."
         },
         {
           "key": "posture.annotations",
@@ -1410,6 +1434,12 @@
       "description": "Claims beyond the requested staleness threshold."
     },
     {
+      "id": "subresource_count",
+      "label": "Subresources",
+      "value_type": "integer",
+      "description": "Promoted subresources attached to the entity for explanation and provenance."
+    },
+    {
       "id": "supported_claims",
       "label": "Supported Claims",
       "value_type": "integer",
@@ -1555,6 +1585,12 @@
       "title": "Source Coverage",
       "severity": "high",
       "description": "Leverage weakens quickly when ingest breadth misses core operating systems."
+    },
+    {
+      "id": "subresource_promotion",
+      "title": "Subresource Promotion",
+      "severity": "medium",
+      "description": "Nested asset constructs that drive explanation or remediation should be promoted into durable subresources."
     },
     {
       "id": "supportability",

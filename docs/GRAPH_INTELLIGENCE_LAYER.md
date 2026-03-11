@@ -118,7 +118,8 @@ Claim conflict report characteristics:
 
 Knowledge inspection characteristics:
 - typed entity/resource collection/detail reads under `/api/v1/platform/entities*`
-- entity detail exposes canonical refs, external refs, aliases, relationship context, support context, facet modules, and posture summaries so asset views do not have to reconstruct graph context client-side
+- typed facet contract discovery under `/api/v1/platform/entities/facets*`
+- entity detail exposes canonical refs, external refs, aliases, relationship context, support context, facet modules, promoted subresources, and posture summaries so asset views do not have to reconstruct graph context client-side
 - typed evidence and observation collection/detail reads under `/api/v1/platform/knowledge/evidence*` and `/api/v1/platform/knowledge/observations*`
 - typed adjudication queue reads and append-only adjudication writes under `/api/v1/platform/knowledge/claim-groups*`
 - typed claim reasoning resources under `/api/v1/platform/knowledge/claims/{claim_id}/timeline`, `/api/v1/platform/knowledge/claims/{claim_id}/explanation`, `/api/v1/platform/knowledge/claims/{claim_id}/proofs`, `/api/v1/platform/knowledge/claim-diffs`, and `/api/v1/platform/knowledge/diffs`
@@ -209,6 +210,8 @@ Graph intelligence compounds only when decisions and outcomes write back.
 
 Current endpoints:
 - `GET /api/v1/platform/entities`
+- `GET /api/v1/platform/entities/facets`
+- `GET /api/v1/platform/entities/facets/{facet_id}`
 - `GET /api/v1/platform/entities/{entity_id}`
 - `GET /api/v1/platform/knowledge/evidence`
 - `GET /api/v1/platform/knowledge/evidence/{evidence_id}`
