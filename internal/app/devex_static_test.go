@@ -160,7 +160,7 @@ func TestDockerBuildCommandsPassGoVersionBuildArg(t *testing.T) {
 	if !strings.Contains(makefileText, "docker build --build-arg GO_VERSION=$(GO_VERSION) -f Dockerfile -t $(SECURITY_SCAN_IMAGE) .") {
 		t.Fatalf("expected Makefile security scan image build to pass GO_VERSION build arg")
 	}
-	for _, target := range []string{"gosec:", "govulncheck:", "graph-ontology-guardrails:", "devex-changed:", "devex-pr:"} {
+	for _, target := range []string{"gosec:", "govulncheck:", "graph-ontology-guardrails:", "devex-codegen:", "devex-codegen-check:", "devex-changed:", "devex-pr:"} {
 		if !strings.Contains(makefileText, "\n"+target) {
 			t.Fatalf("expected Makefile to define %s", strings.TrimSuffix(target, ":"))
 		}
@@ -170,6 +170,9 @@ func TestDockerBuildCommandsPassGoVersionBuildArg(t *testing.T) {
 	}
 	if !strings.Contains(makefileText, "python3 ./scripts/devex.py run --mode pr") {
 		t.Fatalf("expected Makefile devex-pr target to invoke scripts/devex.py")
+	}
+	if !strings.Contains(makefileText, "go run ./scripts/generate_devex_codegen_docs/main.go") {
+		t.Fatalf("expected Makefile devex-codegen target to invoke scripts/generate_devex_codegen_docs/main.go")
 	}
 	if !strings.Contains(makefileText, "CEREBRO_CLI_MODE=direct ./bin/cerebro policy validate") {
 		t.Fatalf("expected Makefile policy-validate target to force direct CLI mode")
@@ -235,7 +238,7 @@ func TestDevelopmentGuideDocumentsDevexPreflight(t *testing.T) {
 	}
 	text := string(content)
 
-	for _, needle := range []string{"make devex-changed", "make devex-pr", "python3 scripts/devex.py plan --mode changed"} {
+	for _, needle := range []string{"make devex-changed", "make devex-pr", "make devex-codegen-check", "devex/codegen_catalog.json", "python3 scripts/devex.py plan --mode changed"} {
 		if !strings.Contains(text, needle) {
 			t.Fatalf("expected DEVELOPMENT.md to document %s", needle)
 		}
@@ -244,7 +247,7 @@ func TestDevelopmentGuideDocumentsDevexPreflight(t *testing.T) {
 
 func TestDevexScriptPlansRelevantChecks(t *testing.T) {
 	root := repoRoot(t)
-	cmd := exec.Command("python3", "./scripts/devex.py", "plan", "--mode", "changed", "--json", "--files", "api/openapi.yaml", "internal/graph/entity_facets.go", ".githooks/pre-push")
+	cmd := exec.Command("python3", "./scripts/devex.py", "plan", "--mode", "changed", "--json", "--files", "api/openapi.yaml", "internal/graph/entity_facets.go", "devex/codegen_catalog.json", ".githooks/pre-push")
 	cmd.Dir = root
 	output, err := cmd.Output()
 	if err != nil {
@@ -263,7 +266,7 @@ func TestDevexScriptPlansRelevantChecks(t *testing.T) {
 	for _, step := range plan.Steps {
 		keys[step.Key] = struct{}{}
 	}
-	for _, expected := range []string{"changed-go-tests", "changed-go-lint", "openapi-check", "entity-facet-docs-check", "entity-facet-contract-compat", "devex-static-tests"} {
+	for _, expected := range []string{"changed-go-tests", "changed-go-lint", "openapi-check", "entity-facet-docs-check", "entity-facet-contract-compat", "devex-codegen-check", "devex-static-tests"} {
 		if _, ok := keys[expected]; !ok {
 			t.Fatalf("expected devex plan to include %q, got %#v", expected, keys)
 		}

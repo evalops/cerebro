@@ -5,6 +5,57 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 36 - Codegen Catalog + CI-to-Local Contract Map (2026-03-10)
+
+### Review findings
+- [x] Gap: codegen-heavy families had real generators and compatibility checks, but family definitions still lived as duplicated handwritten logic across `Makefile`, `.github/workflows/ci.yml`, and `scripts/devex.py`.
+- [x] Gap: there was no single machine-readable catalog telling a contributor or editor integration which generated surfaces exist, what files trigger them, what they output, and which CI jobs enforce them.
+- [x] Gap: adding a new generated contract family still required editing planner routing code directly, which is precisely the kind of DevEx drift that codegen governance should eliminate.
+- [x] Gap: PR preflight had converged on “generated-contracts” as a concept, but the actual membership of that set was still hardcoded instead of declared.
+
+### Research synthesis to adopt
+- [x] Buf lesson: generation governance works best when versioned declarative manifests define plugins, inputs, and outputs rather than scattering that logic across wrappers.
+- [x] Smithy lesson: build/projection configuration should be inspectable data so tooling can reason about generation behavior without re-deriving it from script branches.
+- [x] OpenAPI Generator lesson: reproducible batch/config execution matters more than one-off command history because it creates a stable automation boundary for local and CI workflows.
+- [x] Backstage lesson: discoverable catalogs unlock better editor and platform tooling than prose documentation alone because the extension surface becomes queryable.
+
+### Execution plan
+- [x] Add a canonical codegen family catalog:
+  - [x] create `devex/codegen_catalog.json`
+  - [x] define family IDs, trigger globs, outputs, local checks, compatibility commands, and CI job mappings
+  - [x] include OpenAPI and DevEx codegen governance itself, not just docs/contracts families
+- [x] Add typed validation and generated artifacts:
+  - [x] add `internal/devex` loader/validator for the catalog
+  - [x] add `scripts/generate_devex_codegen_docs/main.go`
+  - [x] emit `docs/DEVEX_CODEGEN_AUTOGEN.md`
+  - [x] emit `docs/DEVEX_CODEGEN_CATALOG.json`
+- [x] Refactor the local planner onto the catalog:
+  - [x] make `scripts/devex.py` load codegen families from the catalog
+  - [x] derive changed-file routing for codegen families from catalog triggers
+  - [x] derive PR generated-contract membership from catalog metadata
+- [x] Tighten local entry points and regression coverage:
+  - [x] add `make devex-codegen`
+  - [x] add `make devex-codegen-check`
+  - [x] add tests that validate catalog references against real Make targets and CI jobs
+  - [x] document the codegen catalog workflow in `docs/DEVELOPMENT.md`
+
+### Detailed follow-on backlog
+- [ ] Track A - Generator family autowiring
+  - Exit criteria:
+  - [ ] generate CI job fragments or validation reports from the same catalog instead of only validating references
+  - [ ] let generator families declare dependent validation steps without planner code changes
+  - [ ] support family-level ownership metadata for review routing and code search
+- [ ] Track B - Stronger compatibility governance
+  - Exit criteria:
+  - [ ] add compatibility catalogs for knowledge read contracts and snapshot/diff contracts
+  - [ ] generate changelog artifacts from compatibility diffs rather than only failing on breakage
+  - [ ] expose “breaking/additive/docs-only” classification consistently across all contract families
+- [ ] Track C - Editor and automation consumption
+  - Exit criteria:
+  - [ ] expose the codegen catalog through a lightweight CLI or API read surface for editor integrations
+  - [ ] emit family-specific JSON execution plans keyed by changed files
+  - [ ] attach catalog metadata to DevEx review-loop tooling so pending checks can be explained by family rather than raw job name
+
 ## Deep Review Cycle 35 - DevEx Preflight + Hook Automation + Local PR Parity (2026-03-10)
 
 ### Review findings
