@@ -423,3 +423,46 @@ func TestNormalizeEntityAssetSupportUsesBucketVersioningFallbackAndEnabledString
 		t.Fatalf("expected versioning subresource, got %#v", detail.Subresources)
 	}
 }
+
+func TestNormalizeEntityAssetSupportPromotesMultipleBucketPolicyStatements(t *testing.T) {
+	g := New()
+	baseAt := time.Date(2026, 3, 10, 14, 0, 0, 0, time.UTC)
+	bucketID := "arn:aws:s3:::public-bucket"
+	props := map[string]any{
+		"observed_at":                    baseAt.UTC().Format(time.RFC3339),
+		"valid_from":                     baseAt.UTC().Format(time.RFC3339),
+		"recorded_at":                    baseAt.UTC().Format(time.RFC3339),
+		"transaction_from":               baseAt.UTC().Format(time.RFC3339),
+		"all_users_access":               true,
+		"all_authenticated_users_access": true,
+		"bucket_name":                    "public-bucket",
+	}
+	g.AddNode(&Node{
+		ID:         bucketID,
+		Kind:       NodeKindBucket,
+		Name:       "Public Bucket",
+		Provider:   "aws",
+		Account:    "123456789012",
+		Region:     "us-east-1",
+		Properties: cloneAnyMap(props),
+	})
+
+	result := NormalizeEntityAssetSupport(g, baseAt.Add(time.Hour))
+	if result.SubresourcesCreated < 2 {
+		t.Fatalf("expected multiple policy-statement subresources, got %#v", result)
+	}
+
+	detail, ok := GetEntityRecord(g, bucketID, baseAt.Add(2*time.Hour), baseAt.Add(2*time.Hour))
+	if !ok {
+		t.Fatal("expected bucket detail")
+	}
+	statementCount := 0
+	for _, subresource := range detail.Subresources {
+		if subresource.Kind == NodeKindBucketPolicyStatement {
+			statementCount++
+		}
+	}
+	if statementCount != 2 {
+		t.Fatalf("expected two policy statement subresources, got %#v", detail.Subresources)
+	}
+}

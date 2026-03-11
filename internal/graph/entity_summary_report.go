@@ -308,7 +308,14 @@ func entityFacetCoveragePercent(entity EntityRecord) float64 {
 	if applicable == 0 {
 		return 100
 	}
-	return float64(len(entity.Facets)) * 100 / float64(applicable)
+	materialized := 0
+	for _, facet := range entity.Facets {
+		if strings.EqualFold(strings.TrimSpace(facet.Status), "missing") {
+			continue
+		}
+		materialized++
+	}
+	return float64(materialized) * 100 / float64(applicable)
 }
 
 func entityFacetCoverageStatus(entity EntityRecord) string {

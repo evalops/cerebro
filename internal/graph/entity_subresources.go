@@ -216,20 +216,12 @@ func normalizeBucketEntitySupport(g *Graph, bucket *Node, now time.Time, result 
 	publicSupportClaims := make([]string, 0, 4)
 	publicTrueSignals := 0
 
-	if claimID, createdSubresource, createdObservation, createdClaim, publicRisk := ensureBucketPolicyStatementSupport(g, bucket, meta); claimID != "" {
-		if createdSubresource {
-			result.SubresourcesCreated++
-		}
-		if createdObservation {
-			result.ObservationsCreated++
-		}
-		if createdClaim {
-			result.ClaimsCreated++
-		}
-		publicSupportClaims = append(publicSupportClaims, claimID)
-		if publicRisk {
-			publicTrueSignals++
-		}
+	if claimIDs, createdSubresources, createdObservations, createdClaims := ensureBucketPolicyStatementSupport(g, bucket, meta); len(claimIDs) > 0 {
+		result.SubresourcesCreated += createdSubresources
+		result.ObservationsCreated += createdObservations
+		result.ClaimsCreated += createdClaims
+		publicSupportClaims = append(publicSupportClaims, claimIDs...)
+		publicTrueSignals += len(claimIDs)
 	}
 	if claimID, createdSubresource, createdObservation, createdClaim, blocked, known := ensureBucketPublicAccessBlockSupport(g, bucket, meta); claimID != "" {
 		if createdSubresource {
@@ -397,7 +389,7 @@ func ensureBucketPublicAccessBlockSupport(g *Graph, bucket *Node, meta entityNor
 	return claimID, createdSubresource, createdObservation, createdClaim, blocked, true
 }
 
-func ensureBucketPolicyStatementSupport(g *Graph, bucket *Node, meta entityNormalizationContext) (string, bool, bool, bool, bool) {
+func ensureBucketPolicyStatementSupport(g *Graph, bucket *Node, meta entityNormalizationContext) ([]string, int, int, int) {
 	candidates := []struct {
 		field         string
 		principal     string
@@ -408,6 +400,10 @@ func ensureBucketPolicyStatementSupport(g *Graph, bucket *Node, meta entityNorma
 		{field: "all_users_access", principal: "allUsers", principalType: "all_users", suffix: "all-users"},
 		{field: "all_authenticated_users_access", principal: "allAuthenticatedUsers", principalType: "all_authenticated_users", suffix: "all-authenticated-users"},
 	}
+	claimIDs := make([]string, 0, len(candidates))
+	createdSubresources := 0
+	createdObservations := 0
+	createdClaims := 0
 	for _, candidate := range candidates {
 		if !readBool(bucket.Properties, candidate.field) {
 			continue
@@ -445,9 +441,20 @@ func ensureBucketPolicyStatementSupport(g *Graph, bucket *Node, meta entityNorma
 			Confidence:      0.90,
 			Metadata:        map[string]any{"normalized": true, "subresource_kind": string(NodeKindBucketPolicyStatement)},
 		})
-		return claimID, createdSubresource, createdObservation, createdClaim, true
+		if claimID != "" {
+			claimIDs = append(claimIDs, claimID)
+		}
+		if createdSubresource {
+			createdSubresources++
+		}
+		if createdObservation {
+			createdObservations++
+		}
+		if createdClaim {
+			createdClaims++
+		}
 	}
-	return "", false, false, false, false
+	return claimIDs, createdSubresources, createdObservations, createdClaims
 }
 
 func ensureBucketEncryptionSupport(g *Graph, bucket *Node, meta entityNormalizationContext) (string, bool, bool, bool) {
