@@ -190,6 +190,12 @@ func TestQueryEntitiesFiltersAndKnowledgeSupport(t *testing.T) {
 	if collection.Entities[0].Knowledge.SupportedClaimCount != 1 || collection.Entities[0].Knowledge.ConflictedClaimCount != 2 {
 		t.Fatalf("unexpected claim support counts: %#v", collection.Entities[0].Knowledge)
 	}
+	if collection.Entities[0].CanonicalRef != nil {
+		t.Fatalf("expected list records to omit canonical_ref, got %#v", collection.Entities[0].CanonicalRef)
+	}
+	if len(collection.Entities[0].ExternalRefs) != 0 || len(collection.Entities[0].Aliases) != 0 {
+		t.Fatalf("expected list records to omit detail-only refs and aliases, got %#v", collection.Entities[0])
+	}
 	for _, entity := range collection.Entities {
 		switch entity.Kind {
 		case NodeKindBucketPolicyStatement, NodeKindBucketPublicAccessBlock, NodeKindBucketEncryptionConfig, NodeKindBucketLoggingConfig, NodeKindBucketVersioningConfig:
@@ -225,7 +231,7 @@ func TestQueryEntitiesFiltersAndKnowledgeSupport(t *testing.T) {
 	if !ok {
 		t.Fatal("expected bucket detail")
 	}
-	if bucketDetail.CanonicalRef.Namespace != "aws/123456789012/us-east-1" {
+	if bucketDetail.CanonicalRef == nil || bucketDetail.CanonicalRef.Namespace != "aws/123456789012/us-east-1" {
 		t.Fatalf("unexpected canonical namespace: %#v", bucketDetail.CanonicalRef)
 	}
 	if len(bucketDetail.ExternalRefs) == 0 || bucketDetail.ExternalRefs[0].Type != "arn" {
@@ -266,4 +272,85 @@ func TestQueryEntitiesFiltersAndKnowledgeSupport(t *testing.T) {
 
 func boolPtr(value bool) *bool {
 	return &value
+}
+
+func TestNormalizeEntityAssetSupportUsesBucketFallbacksForLoggingAndVersioning(t *testing.T) {
+	g := New()
+	baseAt := time.Date(2026, 3, 10, 11, 0, 0, 0, time.UTC)
+	bucketID := "arn:aws:s3:::audit-logs"
+	props := map[string]any{
+		"observed_at":      baseAt.UTC().Format(time.RFC3339),
+		"valid_from":       baseAt.UTC().Format(time.RFC3339),
+		"recorded_at":      baseAt.UTC().Format(time.RFC3339),
+		"transaction_from": baseAt.UTC().Format(time.RFC3339),
+		"logging_enabled":  true,
+		"mfa_delete":       "Disabled",
+		"bucket_name":      "audit-logs",
+	}
+	g.AddNode(&Node{
+		ID:         bucketID,
+		Kind:       NodeKindBucket,
+		Name:       "Audit Logs",
+		Provider:   "aws",
+		Account:    "123456789012",
+		Region:     "us-east-1",
+		Properties: cloneAnyMap(props),
+	})
+	g.AddNode(&Node{
+		ID:         "bucket_logging_config:" + slugifyKnowledgeKey(bucketID),
+		Kind:       NodeKindBucketLoggingConfig,
+		Name:       "Bucket Logging Configuration",
+		Provider:   "aws",
+		Account:    "123456789012",
+		Region:     "us-east-1",
+		Properties: cloneAnyMap(props),
+	})
+	if _, err := WriteClaim(g, ClaimWriteRequest{
+		ID:              "claim:" + slugifyKnowledgeKey(bucketID) + ":bucket_logging_config:normalized",
+		SubjectID:       bucketID,
+		Predicate:       "access_logging_enabled",
+		ObjectValue:     "false",
+		SourceSystem:    "test",
+		ObservedAt:      baseAt.Add(12 * time.Hour),
+		ValidFrom:       baseAt.Add(12 * time.Hour),
+		RecordedAt:      baseAt.Add(12 * time.Hour),
+		TransactionFrom: baseAt.Add(12 * time.Hour),
+	}); err != nil {
+		t.Fatalf("write future logging claim: %v", err)
+	}
+
+	result := NormalizeEntityAssetSupport(g, baseAt.Add(time.Hour))
+	if result.SubresourcesCreated == 0 {
+		t.Fatalf("expected normalization to create subresources, got %#v", result)
+	}
+
+	loggingClaimID := "claim:" + slugifyKnowledgeKey(bucketID) + ":" + slugifyKnowledgeKey("access_logging_enabled") + ":normalized"
+	loggingClaim, ok := GetClaimRecord(g, loggingClaimID, baseAt.Add(2*time.Hour), baseAt.Add(2*time.Hour))
+	if !ok {
+		t.Fatalf("expected normalized logging claim %q", loggingClaimID)
+	}
+	if loggingClaim.ObjectValue != "true" {
+		t.Fatalf("expected logging fallback to preserve true bucket property, got %#v", loggingClaim.ObjectValue)
+	}
+
+	detail, ok := GetEntityRecord(g, bucketID, baseAt.Add(2*time.Hour), baseAt.Add(2*time.Hour))
+	if !ok {
+		t.Fatal("expected bucket detail")
+	}
+	foundVersioning := false
+	for _, subresource := range detail.Subresources {
+		if subresource.Kind != NodeKindBucketVersioningConfig {
+			continue
+		}
+		foundVersioning = true
+		if status := readString(subresource.Fields, "versioning_status"); status != "disabled" {
+			t.Fatalf("expected explicit disabled versioning status, got %#v", subresource.Fields)
+		}
+		if _, ok := subresource.Fields["mfa_delete"]; !ok {
+			t.Fatalf("expected mfa_delete field to be preserved, got %#v", subresource.Fields)
+		}
+	}
+	if !foundVersioning {
+		t.Fatalf("expected versioning subresource for explicit mfa_delete state, got %#v", detail.Subresources)
+	}
 }

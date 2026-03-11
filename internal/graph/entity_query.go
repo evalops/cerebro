@@ -101,7 +101,7 @@ type EntityRecord struct {
 	Risk          RiskLevel                     `json:"risk,omitempty"`
 	Categories    []NodeKindCategory            `json:"categories,omitempty"`
 	Capabilities  []NodeKindCapability          `json:"capabilities,omitempty"`
-	CanonicalRef  EntityCanonicalRef            `json:"canonical_ref"`
+	CanonicalRef  *EntityCanonicalRef           `json:"canonical_ref,omitempty"`
 	ExternalRefs  []EntityExternalRef           `json:"external_refs,omitempty"`
 	Aliases       []EntityAliasRecord           `json:"aliases,omitempty"`
 	Tags          map[string]string             `json:"tags,omitempty"`
@@ -239,6 +239,7 @@ func GetEntityRecord(g *Graph, id string, validAt, recordedAt time.Time) (Entity
 		g.mu.RUnlock()
 		return EntityRecord{}, false
 	}
+	node = cloneNode(node)
 	g.mu.RUnlock()
 	return buildEntityRecord(g, node, validAt, recordedAt, true), true
 }
@@ -279,19 +280,16 @@ func normalizeEntityQueryOptions(opts EntityQueryOptions) EntityQueryOptions {
 
 func buildEntityRecord(g *Graph, node *Node, validAt, recordedAt time.Time, includeDetail bool) EntityRecord {
 	record := EntityRecord{
-		ID:           node.ID,
-		Kind:         node.Kind,
-		Name:         strings.TrimSpace(node.Name),
-		Provider:     strings.TrimSpace(node.Provider),
-		Account:      strings.TrimSpace(node.Account),
-		Region:       strings.TrimSpace(node.Region),
-		Risk:         node.Risk,
-		CanonicalRef: buildEntityCanonicalRef(node),
-		ExternalRefs: buildEntityExternalRefs(node),
-		Aliases:      buildEntityAliasRecords(g, node, validAt, recordedAt),
-		Tags:         cloneStringMap(node.Tags),
-		Findings:     append([]string(nil), node.Findings...),
-		Properties:   cloneAnyMap(node.Properties),
+		ID:         node.ID,
+		Kind:       node.Kind,
+		Name:       strings.TrimSpace(node.Name),
+		Provider:   strings.TrimSpace(node.Provider),
+		Account:    strings.TrimSpace(node.Account),
+		Region:     strings.TrimSpace(node.Region),
+		Risk:       node.Risk,
+		Tags:       cloneStringMap(node.Tags),
+		Findings:   append([]string(nil), node.Findings...),
+		Properties: cloneAnyMap(node.Properties),
 	}
 	if def, ok := GlobalSchemaRegistry().NodeKindDefinition(node.Kind); ok {
 		record.Categories = append([]NodeKindCategory(nil), def.Categories...)
@@ -305,6 +303,10 @@ func buildEntityRecord(g *Graph, node *Node, validAt, recordedAt time.Time, incl
 	}
 	record.Knowledge = buildEntityKnowledgeSupportSummary(g, node.ID, validAt, recordedAt)
 	if includeDetail {
+		canonicalRef := buildEntityCanonicalRef(node)
+		record.CanonicalRef = &canonicalRef
+		record.ExternalRefs = buildEntityExternalRefs(node)
+		record.Aliases = buildEntityAliasRecords(g, node, validAt, recordedAt)
 		claims := collectClaimRecords(g, ClaimQueryOptions{
 			SubjectID:  node.ID,
 			ValidAt:    validAt,

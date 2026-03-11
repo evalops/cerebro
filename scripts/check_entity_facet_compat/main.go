@@ -62,8 +62,12 @@ func main() {
 			strings.Join(diff.ChangedPaths, ","),
 		)
 	}
-	if len(report.VersioningViolations) > 0 {
-		fatalf("entity facet compatibility failed: %d versioning violation(s) detected", len(report.VersioningViolations))
+	if !report.Compatible {
+		fatalf(
+			"entity facet compatibility failed: %d breaking change(s), %d versioning violation(s) detected",
+			len(report.BreakingChanges),
+			len(report.VersioningViolations),
+		)
 	}
 	fmt.Println("entity facet compatibility check passed")
 }

@@ -124,8 +124,9 @@ func BuildEntitySummaryReport(g *Graph, opts EntitySummaryReportOptions) (Entity
 }
 
 func buildEntitySummaryOverviewSection(entity EntityRecord) EntitySummaryOverviewSection {
-	highlights := []string{
-		fmt.Sprintf("Canonical ref %s/%s", entity.CanonicalRef.Namespace, entity.CanonicalRef.Name),
+	var highlights []string
+	if entity.CanonicalRef != nil {
+		highlights = append(highlights, fmt.Sprintf("Canonical ref %s/%s", entity.CanonicalRef.Namespace, entity.CanonicalRef.Name))
 	}
 	if len(entity.ExternalRefs) > 0 {
 		highlights = append(highlights, fmt.Sprintf("%d external ref(s)", len(entity.ExternalRefs)))

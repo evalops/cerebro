@@ -136,7 +136,7 @@ func CompareEntityFacetContractCatalogs(baseline, current EntityFacetContractCat
 	}
 	sort.Strings(report.AddedFacets)
 	sort.Strings(report.RemovedFacets)
-	report.Compatible = len(report.VersioningViolations) == 0
+	report.Compatible = len(report.BreakingChanges) == 0 && len(report.VersioningViolations) == 0
 	return report
 }
 

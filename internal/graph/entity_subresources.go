@@ -273,7 +273,7 @@ func normalizeBucketEntitySupport(g *Graph, bucket *Node, now time.Time, result 
 		if createdClaim {
 			result.ClaimsCreated++
 		}
-		value := claimBoolObjectValue(g, claimID, meta, false)
+		value := claimBoolObjectValue(g, claimID, meta, readBool(bucket.Properties, "logging_enabled", "access_logging_enabled"))
 		if _, created, err := ensureNormalizedBucketClaim(g, bucket, meta, "access_logging_enabled", value, supportIDs(claimID), "Bucket access logging posture normalized from configuration support"); err == nil && created {
 			result.ClaimsCreated++
 		}
@@ -544,7 +544,7 @@ func ensureBucketLoggingSupport(g *Graph, bucket *Node, meta entityNormalization
 func ensureBucketVersioningSupport(g *Graph, bucket *Node, meta entityNormalizationContext) (string, bool, bool, bool) {
 	status := strings.ToLower(strings.TrimSpace(readString(bucket.Properties, "versioning_status", "versioning")))
 	mfaDelete := readBool(bucket.Properties, "mfa_delete")
-	known := status != "" || mfaDelete
+	known := propertyHasAnyKey(bucket.Properties, "versioning_status", "versioning", "mfa_delete")
 	if !known {
 		return "", false, false, false
 	}

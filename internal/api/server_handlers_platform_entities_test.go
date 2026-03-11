@@ -190,6 +190,15 @@ func TestPlatformEntitiesListAndDetail(t *testing.T) {
 	if first["id"] != "service:payments" {
 		t.Fatalf("expected high-risk service first, got %#v", first["id"])
 	}
+	if _, ok := first["canonical_ref"]; ok {
+		t.Fatalf("expected list response to omit detail-only canonical_ref, got %#v", first["canonical_ref"])
+	}
+	if _, ok := first["external_refs"]; ok {
+		t.Fatalf("expected list response to omit detail-only external_refs, got %#v", first["external_refs"])
+	}
+	if _, ok := first["aliases"]; ok {
+		t.Fatalf("expected list response to omit detail-only aliases, got %#v", first["aliases"])
+	}
 
 	detail := do(t, s, http.MethodGet, "/api/v1/platform/entities/service:payments", nil)
 	if detail.Code != http.StatusOK {
