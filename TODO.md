@@ -5,6 +5,38 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 44 - Alert Router State Persistence (2026-03-11)
+
+### Review findings
+- [x] Gap: alert-router throttle windows, digest buckets, and pending acknowledgement timers still lived only in process memory, so rolling restarts dropped state and produced duplicate or missing alerts.
+- [x] Gap: router startup had no restore path for in-flight digests or escalation timers, making graceful deploys semantically unsafe even when routing config stayed constant.
+- [x] Gap: operators had no default persistence path configured for the alert router, so durability depended on ad hoc local wiring.
+
+### Execution plan
+- [x] Add a persistent alert-router state seam:
+  - [x] introduce `AlertRouterStateStore`
+  - [x] add a SQLite-backed state store for throttle, digest, and pending-ack snapshots
+  - [x] restore persisted state on router startup and persist snapshots on route/ack/close transitions
+- [x] Wire persistence through app startup:
+  - [x] expose `ALERT_ROUTER_STATE_FILE`
+  - [x] initialize the SQLite state store in alert-router startup with a durable default path
+  - [x] close the state store on router shutdown / failed initialization paths
+- [x] Prove restart semantics:
+  - [x] add restart regressions for throttle-window continuity
+  - [x] add restart regressions for digest delivery continuity
+  - [x] add restart regressions for escalation timer continuity
+
+### Detailed follow-on backlog
+- [ ] Track A - Persistence robustness
+  - Exit criteria:
+  - [ ] decide whether route-time state persistence failures should block alert sends or degrade to best-effort mode with explicit health signaling
+  - [ ] add corruption-recovery handling for unreadable persisted router state
+  - [ ] expose alert-router state health/age in readiness or status surfaces
+- [ ] Track B - Storage/backplane choices
+  - Exit criteria:
+  - [ ] evaluate NATS KV as a multi-replica/shared state backend once alert routing moves beyond single-node durability
+  - [ ] add state schema/versioning to support future route payload evolution without manual DB resets
+
 ## Deep Review Cycle 43 - Findings Semantic Identity + Persistent Dedup (2026-03-11)
 
 ### Review findings
