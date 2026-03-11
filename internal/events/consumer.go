@@ -479,7 +479,7 @@ func (c *Consumer) refreshLagMetrics(now time.Time) {
 	if err != nil || info == nil {
 		return
 	}
-	totalLag := saturatingAddUint64(info.NumPending, uint64(info.NumAckPending))
+	totalLag := saturatingAddUint64(info.NumPending, clampNegativeIntToUint64(info.NumAckPending))
 	lag := saturatingUint64ToInt(totalLag)
 	lagAge := time.Duration(0)
 	c.statusMu.RLock()
@@ -522,6 +522,13 @@ func saturatingUint64ToInt(value uint64) int {
 		return math.MaxInt
 	}
 	return int(value)
+}
+
+func clampNegativeIntToUint64(value int) uint64 {
+	if value <= 0 {
+		return 0
+	}
+	return uint64(value)
 }
 
 func (c *Consumer) pruneDropsLocked(now time.Time) {

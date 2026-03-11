@@ -250,6 +250,18 @@ func TestSaturatingUint64ToInt(t *testing.T) {
 	}
 }
 
+func TestClampNegativeIntToUint64(t *testing.T) {
+	if got := clampNegativeIntToUint64(-1); got != 0 {
+		t.Fatalf("expected negative value to clamp to 0, got %d", got)
+	}
+	if got := clampNegativeIntToUint64(0); got != 0 {
+		t.Fatalf("expected zero value to remain 0, got %d", got)
+	}
+	if got := clampNegativeIntToUint64(42); got != 42 {
+		t.Fatalf("expected positive value to convert exactly, got %d", got)
+	}
+}
+
 func TestRecordProcessedPreservesLastEventTimeWhenMissing(t *testing.T) {
 	consumer := &Consumer{}
 	firstEvent := time.Now().UTC().Add(-time.Minute)
