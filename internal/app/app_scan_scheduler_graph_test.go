@@ -116,6 +116,7 @@ func TestInitScheduler_GraphRebuildSkipsWhenNoChanges(t *testing.T) {
 		SecurityGraphBuilder: builder,
 		SecurityGraph:        builder.Graph(),
 	}
+	app.setGraphBuildState(GraphBuildSuccess, builder.Graph().Metadata().BuiltAt, nil)
 	app.initScheduler(context.Background())
 
 	job, ok := app.Scheduler.GetJob("graph-rebuild")
@@ -126,6 +127,9 @@ func TestInitScheduler_GraphRebuildSkipsWhenNoChanges(t *testing.T) {
 	source.resetCounts()
 	if err := job.Handler(context.Background()); err != nil {
 		t.Fatalf("graph-rebuild handler returned error: %v", err)
+	}
+	if snapshot := app.GraphBuildSnapshot(); snapshot.State != GraphBuildSuccess {
+		t.Fatalf("expected graph build state success after no-op rebuild, got %#v", snapshot)
 	}
 
 	if source.count("has_changes") == 0 {

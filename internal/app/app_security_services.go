@@ -465,8 +465,9 @@ func (a *App) initSecurityGraph(ctx context.Context) {
 			}
 		}
 
-		a.emitGraphRebuiltEvent(ctx, meta, meta.BuildDuration)
-		a.emitGraphMutationEvent(ctx, a.SecurityGraphBuilder.LastMutation(), "startup")
+		emitCtx := context.Background()
+		a.emitGraphRebuiltEvent(emitCtx, meta, meta.BuildDuration)
+		a.emitGraphMutationEvent(emitCtx, a.SecurityGraphBuilder.LastMutation(), "startup")
 	}()
 }
 

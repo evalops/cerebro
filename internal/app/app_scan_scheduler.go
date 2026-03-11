@@ -98,6 +98,10 @@ func (a *App) initScheduler(_ context.Context) {
 		}
 
 		if summary.EventsProcessed == 0 {
+			currentGraph := a.CurrentSecurityGraph()
+			if currentGraph != nil {
+				a.setGraphBuildState(GraphBuildSuccess, currentGraph.Metadata().BuiltAt, nil)
+			}
 			a.Logger.Info("security graph rebuild skipped - no CDC events found")
 			return nil
 		}
