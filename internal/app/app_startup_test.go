@@ -158,6 +158,24 @@ func TestClose_LogsWarningWhenGraphShutdownTimesOut(t *testing.T) {
 	}
 }
 
+func TestNewShutdownPhaseContextHonorsConfiguredTimeout(t *testing.T) {
+	timeout := 75 * time.Millisecond
+	ctx, cancel := newShutdownPhaseContext(timeout)
+	defer cancel()
+
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		t.Fatal("expected shutdown phase context to have a deadline")
+	}
+	remaining := time.Until(deadline)
+	if remaining <= 0 {
+		t.Fatalf("expected future deadline, got %s", remaining)
+	}
+	if remaining > timeout+25*time.Millisecond {
+		t.Fatalf("expected phase deadline near %s, got %s", timeout, remaining)
+	}
+}
+
 func TestInitCache_EntriesDoNotExpireImmediately(t *testing.T) {
 	a := &App{}
 	a.initCache()

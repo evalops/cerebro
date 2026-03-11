@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"math"
 	"os"
 	"strings"
 	"sync"
@@ -237,6 +238,15 @@ func TestJetStreamConsumer_DrainWaitsForHandlerWithoutCancel(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("drain did not complete after handler release")
+	}
+}
+
+func TestSaturatingUint64ToInt(t *testing.T) {
+	if got := saturatingUint64ToInt(uint64(math.MaxInt) + 1); got != math.MaxInt {
+		t.Fatalf("expected saturation to MaxInt, got %d", got)
+	}
+	if got := saturatingUint64ToInt(42); got != 42 {
+		t.Fatalf("expected exact conversion for small values, got %d", got)
 	}
 }
 

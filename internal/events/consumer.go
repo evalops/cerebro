@@ -477,15 +477,8 @@ func (c *Consumer) refreshLagMetrics(now time.Time) {
 	if err != nil || info == nil {
 		return
 	}
-	totalLag := info.NumPending
-	if info.NumAckPending > 0 {
-		if totalLag > math.MaxInt-uint64(info.NumAckPending) {
-			totalLag = math.MaxInt
-		} else {
-			totalLag += uint64(info.NumAckPending)
-		}
-	}
-	lag := int(totalLag)
+	totalLag := saturatingAddUint64(info.NumPending, uint64(info.NumAckPending))
+	lag := saturatingUint64ToInt(totalLag)
 	lagAge := time.Duration(0)
 	c.statusMu.RLock()
 	lastEventTime := c.lastEventTime
@@ -513,6 +506,20 @@ func (c *Consumer) refreshLagMetrics(now time.Time) {
 	metrics.SetNATSConsumerLag(c.config.Stream, c.config.Durable, lag)
 	metrics.SetNATSConsumerLagSeconds(c.config.Stream, c.config.Durable, lagAge)
 	metrics.SetGraphStaleness(graphStaleness)
+}
+
+func saturatingAddUint64(left, right uint64) uint64 {
+	if left > math.MaxUint64-right {
+		return math.MaxUint64
+	}
+	return left + right
+}
+
+func saturatingUint64ToInt(value uint64) int {
+	if value > uint64(math.MaxInt) {
+		return math.MaxInt
+	}
+	return int(value)
 }
 
 func (c *Consumer) pruneDropsLocked(now time.Time) {

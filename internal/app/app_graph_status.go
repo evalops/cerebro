@@ -71,10 +71,6 @@ func (a *App) GraphBuildSnapshot() GraphBuildSnapshot {
 	}
 }
 
-func (a *App) GraphBuildFailed() bool {
-	return a.GraphBuildSnapshot().State == GraphBuildFailed
-}
-
 func (a *App) CurrentRetentionStatus() RetentionStatus {
 	if a == nil || a.Config == nil {
 		return RetentionStatus{}
