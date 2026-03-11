@@ -139,6 +139,26 @@ func TestInitHealthRegistersGraphBuildCheck(t *testing.T) {
 	}
 }
 
+func TestActivateBuiltSecurityGraphDoesNotReplaceLiveGraphWithNil(t *testing.T) {
+	liveGraph := graph.New()
+	liveGraph.AddNode(&graph.Node{ID: "service:payments", Kind: graph.NodeKindService, Name: "payments"})
+
+	application := &App{
+		Config:        &Config{},
+		SecurityGraph: liveGraph,
+	}
+
+	if _, err := application.activateBuiltSecurityGraph(nil); err == nil {
+		t.Fatal("expected nil built graph to return an error")
+	}
+	if got := application.CurrentSecurityGraph(); got != liveGraph {
+		t.Fatal("expected existing live graph to remain in place when built graph is nil")
+	}
+	if snapshot := application.GraphBuildSnapshot(); snapshot.State != GraphBuildFailed {
+		t.Fatalf("expected graph build state failed, got %#v", snapshot)
+	}
+}
+
 func TestBurnRatesFastWindowUsesCurrentSnapshot(t *testing.T) {
 	trend := []graph.GraphOntologySLOPoint{
 		{Date: "2026-03-08", FallbackActivityPercent: 12, SchemaValidWritePercent: 97, Samples: 20},

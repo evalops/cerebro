@@ -246,10 +246,7 @@ func (a *App) Close() error {
 
 	a.stopSecretsReloader()
 
-	if a.threatIntelSyncCancel != nil {
-		a.threatIntelSyncCancel()
-	}
-	a.threatIntelSyncWG.Wait()
+	a.stopThreatIntelSync()
 
 	// Close Snowflake connection
 	if a.Snowflake != nil {
@@ -308,4 +305,14 @@ func (a *App) Close() error {
 		return fmt.Errorf("close errors: %v", errs)
 	}
 	return nil
+}
+
+func (a *App) stopThreatIntelSync() {
+	if a == nil {
+		return
+	}
+	if a.threatIntelSyncCancel != nil {
+		a.threatIntelSyncCancel()
+	}
+	a.threatIntelSyncWG.Wait()
 }

@@ -521,14 +521,10 @@ func (a *App) RebuildSecurityGraph(ctx context.Context) error {
 	}
 
 	securityGraph := a.SecurityGraphBuilder.Graph()
-	a.configureGraphSchemaValidation(securityGraph)
-	a.setSecurityGraph(securityGraph)
-	if securityGraph == nil {
-		a.setGraphBuildState(GraphBuildFailed, time.Now().UTC(), fmt.Errorf("security graph not initialized"))
-		return fmt.Errorf("security graph not initialized")
+	meta, err := a.activateBuiltSecurityGraph(securityGraph)
+	if err != nil {
+		return err
 	}
-	meta := securityGraph.Metadata()
-	a.setGraphBuildState(GraphBuildSuccess, meta.BuiltAt, nil)
 	a.Logger.Info("security graph rebuilt",
 		"nodes", meta.NodeCount,
 		"edges", meta.EdgeCount,
@@ -540,6 +536,19 @@ func (a *App) RebuildSecurityGraph(ctx context.Context) error {
 	a.emitGraphMutationEvent(ctx, a.SecurityGraphBuilder.LastMutation(), "manual_rebuild")
 
 	return nil
+}
+
+func (a *App) activateBuiltSecurityGraph(securityGraph *graph.Graph) (graph.Metadata, error) {
+	if securityGraph == nil {
+		err := fmt.Errorf("security graph not initialized")
+		a.setGraphBuildState(GraphBuildFailed, time.Now().UTC(), err)
+		return graph.Metadata{}, err
+	}
+	a.configureGraphSchemaValidation(securityGraph)
+	a.setSecurityGraph(securityGraph)
+	meta := securityGraph.Metadata()
+	a.setGraphBuildState(GraphBuildSuccess, meta.BuiltAt, nil)
+	return meta, nil
 }
 
 func (a *App) emitGraphRebuiltEvent(ctx context.Context, meta graph.Metadata, duration time.Duration) {
