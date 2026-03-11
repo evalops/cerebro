@@ -38,10 +38,7 @@ func (a *App) initRBAC() {
 
 func (a *App) initThreatIntel(ctx context.Context) {
 	a.ThreatIntel = threatintel.NewThreatIntelService()
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	syncCtx, syncCancel := context.WithCancel(ctx)
+	syncCtx, syncCancel := context.WithCancel(context.Background())
 	a.threatIntelSyncCancel = syncCancel
 	a.threatIntelSyncWG.Add(1)
 
