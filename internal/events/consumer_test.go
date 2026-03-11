@@ -46,11 +46,12 @@ func TestConsumerConfigValidate(t *testing.T) {
 	}
 
 	invalid := ConsumerConfig{
-		URLs:      []string{"nats://127.0.0.1:4222"},
-		Stream:    "ENSEMBLE_TAP",
-		Subject:   "ensemble.tap.>",
-		Durable:   "cerebro_graph_builder",
-		BatchSize: 0,
+		URLs:           []string{"nats://127.0.0.1:4222"},
+		Stream:         "ENSEMBLE_TAP",
+		Subject:        "ensemble.tap.>",
+		Durable:        "cerebro_graph_builder",
+		DeadLetterPath: t.TempDir() + "/consumer.dlq.jsonl",
+		BatchSize:      0,
 	}
 	if err := invalid.validate(); err == nil {
 		t.Fatal("expected validation error for invalid batch size")
