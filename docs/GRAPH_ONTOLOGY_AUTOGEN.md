@@ -157,13 +157,13 @@ Generated from `graph.RegisteredNodeKinds()`, `graph.RegisteredEdgeKinds()`, and
 | `github` | `ensemble.tap.github.check_run.completed`, `ensemble.tap.github.pull_request.merged`, `ensemble.tap.github.pull_request.opened`, `ensemble.tap.github.pull_request.review_submitted` | `check_run`, `ci_workflow`, `pull_request`, `repository`, `service` |
 | `incident` | `ensemble.tap.incident.timeline.*` | `action`, `evidence`, `incident`, `service` |
 | `jira` | `ensemble.tap.jira.issue.transitioned` | `action`, `ticket` |
-| `sales` | `ensemble.tap.sales.call.logged` | `action`, `contact` |
+| `sales` | `ensemble.tap.sales.call.logged` | `action`, `company`, `contact`, `deal`, `lead`, `opportunity` |
 | `slack` | `ensemble.tap.slack.thread.message_posted` | `action`, `communication_thread` |
-| `support` | `ensemble.tap.support.ticket.updated` | `action`, `ticket` |
+| `support` | `ensemble.tap.support.ticket.updated` | `action`, `company`, `customer`, `subscription`, `ticket` |
 
 ## Unmapped Built-in Node Kinds
 
-Total unmapped kinds: **43**
+Total unmapped kinds: **37**
 
 - `activity`
 - `application`
@@ -176,11 +176,8 @@ Total unmapped kinds: **43**
 - `claim`
 - `cluster_role`
 - `cluster_role_binding`
-- `company`
 - `configmap`
-- `customer`
 - `database`
-- `deal`
 - `decision`
 - `department`
 - `deployment`
@@ -190,12 +187,10 @@ Total unmapped kinds: **43**
 - `instance`
 - `internet`
 - `invoice`
-- `lead`
 - `location`
 - `namespace`
 - `network`
 - `observation`
-- `opportunity`
 - `outcome`
 - `permission_boundary`
 - `persistent_volume`
@@ -206,5 +201,4 @@ Total unmapped kinds: **43**
 - `secret`
 - `service_account`
 - `source`
-- `subscription`
 - `user`

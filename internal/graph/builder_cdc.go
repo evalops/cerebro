@@ -185,6 +185,7 @@ func (b *Builder) rebuildEdges(ctx context.Context) error {
 	eg.Go(func() error { b.buildAWSEdges(ectx); return nil })
 	eg.Go(func() error { b.buildGCPEdges(ectx); return nil })
 	eg.Go(func() error { b.buildAzureEdges(ectx); return nil })
+	eg.Go(func() error { b.buildKubernetesEdges(ectx); return nil })
 	eg.Go(func() error { b.buildRelationshipEdges(ectx); return nil })
 	_ = eg.Wait()
 	if err := ctx.Err(); err != nil {
@@ -624,6 +625,16 @@ func cdcEventToNode(table string, event cdcEvent) *Node {
 				"role_type": roleType,
 			},
 		}
+	case "k8s_core_pods",
+		"k8s_core_namespaces",
+		"k8s_core_service_accounts",
+		"k8s_apps_deployments",
+		"k8s_rbac_cluster_roles",
+		"k8s_rbac_roles",
+		"k8s_rbac_cluster_role_bindings",
+		"k8s_core_configmaps",
+		"k8s_core_persistent_volumes":
+		return k8sNodeFromRecord(table, payload, event.ResourceID)
 	}
 
 	return nil
@@ -649,6 +660,16 @@ func cdcNodeID(table string, payload map[string]any, fallback string) string {
 			return ""
 		}
 		return "okta_admin_role:" + strings.ToLower(roleType)
+	case "k8s_core_pods",
+		"k8s_core_namespaces",
+		"k8s_core_service_accounts",
+		"k8s_apps_deployments",
+		"k8s_rbac_cluster_roles",
+		"k8s_rbac_roles",
+		"k8s_rbac_cluster_role_bindings",
+		"k8s_core_configmaps",
+		"k8s_core_persistent_volumes":
+		return k8sNodeID(table, payload, fallback)
 	default:
 		return firstNonEmpty(queryRowString(payload, "arn"), queryRowString(payload, "id"), queryRowString(payload, "unique_id"), queryRowString(payload, "name"))
 	}

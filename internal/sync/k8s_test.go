@@ -30,6 +30,8 @@ func TestK8sTables(t *testing.T) {
 
 	required := map[string]bool{
 		"k8s_cluster_inventory":             false,
+		"k8s_core_configmaps":               false,
+		"k8s_core_persistent_volumes":       false,
 		"k8s_core_service_accounts":         false,
 		"k8s_rbac_service_account_bindings": false,
 		"k8s_rbac_risky_bindings":           false,
