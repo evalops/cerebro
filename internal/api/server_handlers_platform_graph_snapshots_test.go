@@ -329,8 +329,27 @@ func TestPlatformGraphChangelogAndDiffDetailsEndpoints(t *testing.T) {
 			{ID: "service:payments->bucket:logs:targets", Source: "service:payments", Target: "bucket:logs", Kind: graph.EdgeKindTargets},
 		},
 	}
+	latest := &graph.Snapshot{
+		Version:   "1.0",
+		CreatedAt: base.Add(125 * time.Minute),
+		Metadata: graph.Metadata{
+			BuiltAt:   base.Add(2 * time.Hour),
+			NodeCount: 2,
+			EdgeCount: 1,
+			Providers: []string{"aws"},
+			Accounts:  []string{"acct-a"},
+		},
+		Nodes: []*graph.Node{
+			{ID: "service:payments", Kind: graph.NodeKindService, Name: "Payments Core", Provider: "aws", Account: "acct-a"},
+			{ID: "bucket:logs", Kind: graph.NodeKindBucket, Name: "Logs", Provider: "aws", Account: "acct-a", Properties: map[string]any{"source_system": "aws"}},
+		},
+		Edges: []*graph.Edge{
+			{ID: "service:payments->bucket:logs:targets", Source: "service:payments", Target: "bucket:logs", Kind: graph.EdgeKindTargets},
+		},
+	}
 	mustSaveGraphSnapshot(t, dir, older)
 	mustSaveGraphSnapshot(t, dir, newer)
+	mustSaveGraphSnapshot(t, dir, latest)
 
 	s := newTestServer(t)
 	changelogEvents := make(chan webhooks.Event, 2)
@@ -340,7 +359,7 @@ func TestPlatformGraphChangelogAndDiffDetailsEndpoints(t *testing.T) {
 		}
 		return nil
 	})
-	changelog := do(t, s, http.MethodGet, "/api/v1/platform/graph/changelog?last=7d&provider=aws", nil)
+	changelog := do(t, s, http.MethodGet, "/api/v1/platform/graph/changelog?last=7d&provider=aws&limit=1", nil)
 	if changelog.Code != http.StatusOK {
 		t.Fatalf("expected 200 for graph changelog, got %d: %s", changelog.Code, changelog.Body.String())
 	}
@@ -356,6 +375,14 @@ func TestPlatformGraphChangelogAndDiffDetailsEndpoints(t *testing.T) {
 	diffID, _ := entry["diff_id"].(string)
 	if diffID == "" {
 		t.Fatalf("expected diff_id on changelog entry, got %#v", entry)
+	}
+	toSnapshot := entry["to"].(map[string]any)
+	if got := toSnapshot["captured_at"]; got != latest.CreatedAt.Format(time.RFC3339) {
+		t.Fatalf("expected newest changelog entry, got to=%#v", toSnapshot)
+	}
+	summary := entry["summary"].(map[string]any)
+	if summary["nodes_modified"] != float64(1) || summary["nodes_added"] != float64(0) {
+		t.Fatalf("expected newest diff summary with one modified node, got %#v", summary)
 	}
 	attribution := entry["attribution"].(map[string]any)
 	if providers, ok := attribution["providers"].([]any); !ok || len(providers) != 1 || providers[0] != "aws" {
@@ -376,17 +403,17 @@ func TestPlatformGraphChangelogAndDiffDetailsEndpoints(t *testing.T) {
 		t.Fatalf("expected changelog read to avoid diff artifact materialization, got %d: %s", artifact.Code, artifact.Body.String())
 	}
 
-	details := do(t, s, http.MethodGet, "/api/v1/platform/graph/diffs/"+diffID+"/details?provider=aws&kind=bucket", nil)
+	details := do(t, s, http.MethodGet, "/api/v1/platform/graph/diffs/"+diffID+"/details?provider=aws&kind=service", nil)
 	if details.Code != http.StatusOK {
 		t.Fatalf("expected 200 for diff details, got %d: %s", details.Code, details.Body.String())
 	}
 	detailsBody := decodeJSON(t, details)
 	detailSummary := detailsBody["summary"].(map[string]any)
-	if detailSummary["nodes_added"] != float64(1) || detailSummary["edges_added"] != float64(1) {
+	if detailSummary["nodes_modified"] != float64(1) || detailSummary["nodes_added"] != float64(0) {
 		t.Fatalf("unexpected filtered detail summary: %#v", detailSummary)
 	}
 	filter := detailsBody["filter"].(map[string]any)
-	if filter["provider"] != "aws" || filter["kind"] != string(graph.NodeKindBucket) {
+	if filter["provider"] != "aws" || filter["kind"] != string(graph.NodeKindService) {
 		t.Fatalf("unexpected detail filter echo: %#v", filter)
 	}
 	select {

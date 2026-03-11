@@ -161,7 +161,7 @@ func (s *Server) listPlatformGraphChangelog(w http.ResponseWriter, r *http.Reque
 	})
 
 	entries := make([]graph.GraphChangelogEntry, 0, limit)
-	for i := 0; i+1 < len(records); i++ {
+	for i := len(records) - 2; i >= 0; i-- {
 		fromRecord := records[i]
 		toRecord := records[i+1]
 		changeTime := snapshotRecordSortTime(toRecord)
@@ -207,12 +207,6 @@ func (s *Server) listPlatformGraphChangelog(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	sort.Slice(entries, func(i, j int) bool {
-		if !entries[i].GeneratedAt.Equal(entries[j].GeneratedAt) {
-			return entries[i].GeneratedAt.After(entries[j].GeneratedAt)
-		}
-		return entries[i].DiffID < entries[j].DiffID
-	})
 	changelog.Entries = entries
 	changelog.Count = len(entries)
 	s.json(w, http.StatusOK, changelog)

@@ -127,8 +127,27 @@ func TestCerebroGraphChangelogTool(t *testing.T) {
 			{ID: "service:payments->bucket:logs:targets", Source: "service:payments", Target: "bucket:logs", Kind: graph.EdgeKindTargets},
 		},
 	}
+	latest := &graph.Snapshot{
+		Version:   "1.0",
+		CreatedAt: base.Add(125 * time.Minute),
+		Metadata: graph.Metadata{
+			BuiltAt:   base.Add(2 * time.Hour),
+			NodeCount: 2,
+			EdgeCount: 1,
+			Providers: []string{"aws"},
+			Accounts:  []string{"acct-a"},
+		},
+		Nodes: []*graph.Node{
+			{ID: "service:payments", Kind: graph.NodeKindService, Name: "Payments Core", Provider: "aws", Account: "acct-a"},
+			{ID: "bucket:logs", Kind: graph.NodeKindBucket, Name: "Logs", Provider: "aws", Account: "acct-a"},
+		},
+		Edges: []*graph.Edge{
+			{ID: "service:payments->bucket:logs:targets", Source: "service:payments", Target: "bucket:logs", Kind: graph.EdgeKindTargets},
+		},
+	}
 	mustSaveGraphSnapshotForTool(t, dir, older)
 	mustSaveGraphSnapshotForTool(t, dir, newer)
+	mustSaveGraphSnapshotForTool(t, dir, latest)
 
 	application := &App{SecurityGraph: graph.New(), Config: &Config{}}
 	tool := findCerebroTool(application.AgentSDKTools(), "cerebro.graph_changelog")
@@ -136,7 +155,7 @@ func TestCerebroGraphChangelogTool(t *testing.T) {
 		t.Fatal("expected cerebro.graph_changelog tool")
 	}
 
-	result, err := tool.Handler(context.Background(), json.RawMessage(`{"last":"7d","provider":"aws","limit":10}`))
+	result, err := tool.Handler(context.Background(), json.RawMessage(`{"last":"7d","provider":"aws","limit":1}`))
 	if err != nil {
 		t.Fatalf("graph_changelog returned error: %v", err)
 	}
@@ -156,8 +175,12 @@ func TestCerebroGraphChangelogTool(t *testing.T) {
 	if diffID == "" {
 		t.Fatalf("expected diff_id, got %#v", entry)
 	}
+	toSnapshot := entry["to"].(map[string]any)
+	if got := toSnapshot["captured_at"]; got != latest.CreatedAt.Format(time.RFC3339) {
+		t.Fatalf("expected newest changelog entry, got to=%#v", toSnapshot)
+	}
 	summary := entry["summary"].(map[string]any)
-	if summary["nodes_added"] != float64(1) || summary["edges_added"] != float64(1) {
+	if summary["nodes_modified"] != float64(1) || summary["nodes_added"] != float64(0) {
 		t.Fatalf("unexpected changelog summary: %#v", summary)
 	}
 
@@ -173,7 +196,7 @@ func TestCerebroGraphChangelogTool(t *testing.T) {
 		t.Fatalf("decode graph_changelog detail payload: %v", err)
 	}
 	detailSummary := detailPayload["summary"].(map[string]any)
-	if detailSummary["nodes_added"] != float64(1) {
+	if detailSummary["nodes_modified"] != float64(1) {
 		t.Fatalf("expected filtered detail nodes_added=1, got %#v", detailSummary)
 	}
 }
