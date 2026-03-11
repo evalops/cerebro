@@ -1830,8 +1830,11 @@ func marshalToolResponse(value any) (string, error) {
 }
 
 func (a *App) requireSecurityGraph() (*graph.Graph, error) {
+	if a == nil {
+		return nil, fmt.Errorf("security graph not initialized")
+	}
 	securityGraph := a.CurrentSecurityGraph()
-	if a == nil || securityGraph == nil {
+	if securityGraph == nil {
 		return nil, fmt.Errorf("security graph not initialized")
 	}
 	return securityGraph, nil

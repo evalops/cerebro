@@ -263,8 +263,14 @@ func (a *App) graphOntologySLOHealthCheck() health.Checker {
 			Timestamp: start,
 		}
 
+		if a == nil {
+			result.Status = health.StatusUnknown
+			result.Message = "security graph not initialized"
+			result.Latency = time.Since(start)
+			return result
+		}
 		securityGraph := a.CurrentSecurityGraph()
-		if a == nil || securityGraph == nil {
+		if securityGraph == nil {
 			result.Status = health.StatusUnknown
 			result.Message = "security graph not initialized"
 			result.Latency = time.Since(start)
@@ -438,7 +444,9 @@ func (a *App) initSecurityGraph(ctx context.Context) {
 			a.Logger.Error("failed to build security graph", "error", err)
 			return
 		}
-		meta := securityGraph.Metadata()
+		builtGraph := a.SecurityGraphBuilder.Graph()
+		a.setSecurityGraph(builtGraph)
+		meta := builtGraph.Metadata()
 		a.setGraphBuildState(GraphBuildSuccess, meta.BuiltAt, nil)
 		a.Logger.Info("security graph built",
 			"nodes", meta.NodeCount,
@@ -446,7 +454,7 @@ func (a *App) initSecurityGraph(ctx context.Context) {
 			"duration", meta.BuildDuration,
 		)
 		if a.Config != nil && a.Config.GraphMigrateLegacyActivityOnStart {
-			migration := graph.MigrateLegacyActivityNodes(securityGraph, graph.LegacyActivityMigrationOptions{Now: time.Now().UTC()})
+			migration := graph.MigrateLegacyActivityNodes(builtGraph, graph.LegacyActivityMigrationOptions{Now: time.Now().UTC()})
 			if migration.Migrated > 0 || migration.Scanned > 0 {
 				a.Logger.Info("migrated legacy activity nodes",
 					"scanned", migration.Scanned,

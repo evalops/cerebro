@@ -469,7 +469,7 @@ func (a *App) runScheduledScan(ctx context.Context, tables []string) error {
 		}
 	}
 
-	if securityGraph := a.CurrentSecurityGraph(); securityGraph != nil {
+	if a.CurrentSecurityGraph() != nil {
 		graphCtx := ctx
 		cancel := func() {}
 		if tuning.GraphWaitTimeout > 0 {
@@ -478,17 +478,19 @@ func (a *App) runScheduledScan(ctx context.Context, tables []string) error {
 		graphReady := a.WaitForGraph(graphCtx)
 		cancel()
 		if graphReady {
-			graphResult := a.Scanner.AnalyzeGraph(ctx, securityGraph)
-			if graphResult != nil {
-				graphPaths = graphResult.AttackPathStats.TotalPaths
-				for _, f := range graphResult.ToxicCombinations {
-					resourceID := scanner.NormalizeResourceID(f.ResourceID)
-					graphRiskSet := scanner.CanonicalizeRiskCategories(f.RiskCategories)
-					if scanner.ShouldSkipGraphToxicCombination(resourceID, graphRiskSet, sqlToxicRiskSets) {
-						continue
+			if securityGraph := a.CurrentSecurityGraph(); securityGraph != nil {
+				graphResult := a.Scanner.AnalyzeGraph(ctx, securityGraph)
+				if graphResult != nil {
+					graphPaths = graphResult.AttackPathStats.TotalPaths
+					for _, f := range graphResult.ToxicCombinations {
+						resourceID := scanner.NormalizeResourceID(f.ResourceID)
+						graphRiskSet := scanner.CanonicalizeRiskCategories(f.RiskCategories)
+						if scanner.ShouldSkipGraphToxicCombination(resourceID, graphRiskSet, sqlToxicRiskSets) {
+							continue
+						}
+						a.upsertFindingAndRemediate(ctx, f)
+						graphToxicCount++
 					}
-					a.upsertFindingAndRemediate(ctx, f)
-					graphToxicCount++
 				}
 			}
 
