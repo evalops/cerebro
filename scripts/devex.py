@@ -361,7 +361,7 @@ def plan_changed(files: list[str], base_ref: str) -> list[Step]:
             Step(
                 key="devex-static-tests",
                 summary="Run DevEx static workflow tests",
-                command=["go", "test", "./internal/app", "-run", "Test(PreCommitHookRunsFastLintOnStagedGoFiles|PrePushHookRunsChangedDevexPreflight|DockerBuildCommandsPassGoVersionBuildArg|DevelopmentGuideDocumentsDevexPreflight|DevexScriptPlansRelevantChecks)"],
+                command=["go", "test", "./internal/app", "-run", "Test(PreCommitHookRunsFastLintOnStagedGoFiles|PrePushHookRunsChangedDevexPreflight|DockerBuildCommandsPassGoVersionBuildArg|DevelopmentGuideDocumentsDevexPreflight|DevexScriptPlansRelevantChecks|DevexScriptChangedModeIncludesWorkspaceDiffSources)"],
                 reasons=["developer workflow files changed"],
             ),
         )

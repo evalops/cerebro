@@ -285,6 +285,7 @@ func TestDevexScriptChangedModeIncludesWorkspaceDiffSources(t *testing.T) {
 		"run_git([\"diff\", \"--name-only\", \"--diff-filter=ACMRTUXB\"])",
 		"run_git([\"diff\", \"--cached\", \"--name-only\", \"--diff-filter=ACMRTUXB\"])",
 		"run_git([\"ls-files\", \"--others\", \"--exclude-standard\"])",
+		"DevexScriptChangedModeIncludesWorkspaceDiffSources",
 	} {
 		if !strings.Contains(text, needle) {
 			t.Fatalf("expected scripts/devex.py to include %s", needle)
