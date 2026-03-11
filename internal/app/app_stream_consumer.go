@@ -234,10 +234,32 @@ func (a *App) handleTapCloudEvent(ctx context.Context, evt events.CloudEvent) er
 				Risk:     graph.RiskNone,
 			})
 		}
-		securityGraph.AddEdge(e)
+		if !tapBusinessEdgeExists(securityGraph, e.ID, e.Source) {
+			securityGraph.AddEdge(e)
+		}
 	}
 
 	return nil
+}
+
+func tapBusinessEdgeExists(g *graph.Graph, edgeID, source string) bool {
+	if g == nil {
+		return false
+	}
+	edgeID = strings.TrimSpace(edgeID)
+	source = strings.TrimSpace(source)
+	if edgeID == "" || source == "" {
+		return false
+	}
+	for _, edge := range g.GetOutEdges(source) {
+		if edge == nil {
+			continue
+		}
+		if strings.TrimSpace(edge.ID) == edgeID {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *App) tapEventMapper() (*graphingest.Mapper, error) {

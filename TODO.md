@@ -5,6 +5,42 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 45 - JetStream Historical Replay for Graph Ingest (2026-03-11)
+
+### Review findings
+- [x] Gap: the TAP/JetStream consumer could only move forward on its live durable cursor, so operators had no safe way to replay a historical window after mapper bugs or ingest regressions.
+- [x] Gap: dead-letter replay existed, but stream-history replay from sequence/time did not, leaving non-dead-letter business events unrecoverable without republishing or full source rebuilds.
+- [x] Gap: replay safety was still assumed rather than proven for the legacy TAP fallback path; duplicate events could append duplicate business edges.
+- [x] Gap: standalone replay would have remained process-local unless it materialized a durable graph artifact after successful processing.
+
+### Execution plan
+- [x] Add a bounded JetStream replay substrate:
+  - [x] introduce an ephemeral pull-consumer replay helper that accepts `from-sequence` or `from-time`
+  - [x] capture the initial stream upper bound so replay does not chase new live traffic forever
+  - [x] surface replay counters for fetched, parsed, handled, parse-error, and handler-error cases
+- [x] Add CLI recovery flow:
+  - [x] add `cerebro ingest replay`
+  - [x] support checkpoint/resume by last successful stream sequence
+  - [x] support `--dry-run`
+  - [x] materialize a durable graph snapshot on successful non-dry-run replay
+- [x] Prove replay safety:
+  - [x] add JetStream integration tests for replay-from-sequence
+  - [x] add JetStream integration tests for replay-from-time
+  - [x] add JetStream integration tests proving replay stops at the initial upper bound
+  - [x] add TAP handler regression proving duplicate business events no longer append duplicate deterministic edges
+
+### Detailed follow-on backlog
+- [ ] Track A - Recovery ergonomics
+  - Exit criteria:
+  - [ ] add base-snapshot selection so replay can apply on top of a chosen graph snapshot instead of always starting from a fresh graph
+  - [ ] add filtered replay by subject/source/type for targeted business-event recovery
+  - [ ] emit replay-run records/events so operators can inspect historical reprocessing like any other execution resource
+- [ ] Track B - Toward incremental graph updates
+  - Exit criteria:
+  - [ ] connect replay checkpoints and graph snapshots to the planned CDC-driven incremental graph path
+  - [ ] decide how replayed business-event graphs merge with warehouse-built cloud/security graph state
+  - [ ] add diff/explanation tooling for “what changed because of this replay window”
+
 ## Deep Review Cycle 44 - Alert Router State Persistence (2026-03-11)
 
 ### Review findings
