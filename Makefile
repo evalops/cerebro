@@ -1,4 +1,4 @@
-.PHONY: build run test sync clean dev serve policy-list docker-build trivy-db security-scan security-scan-built security-scan-source vendor vendor-check oss-audit openapi-check openapi-sync config-docs config-docs-check ontology-docs ontology-docs-check cloudevents-docs cloudevents-docs-check cloudevents-contract-compat report-contract-docs report-contract-docs-check report-contract-compat entity-facet-docs entity-facet-docs-check entity-facet-contract-compat agent-sdk-docs agent-sdk-docs-check agent-sdk-contract-compat agent-sdk-packages agent-sdk-packages-check graph-ontology-guardrails gosec govulncheck devex-changed devex-pr platform-up platform-down platform-logs platform-smoke hooks
+.PHONY: build run test sync clean dev serve policy-list docker-build trivy-db security-scan security-scan-built security-scan-source vendor vendor-check oss-audit openapi-check openapi-sync config-docs config-docs-check ontology-docs ontology-docs-check cloudevents-docs cloudevents-docs-check cloudevents-contract-compat report-contract-docs report-contract-docs-check report-contract-compat entity-facet-docs entity-facet-docs-check entity-facet-contract-compat agent-sdk-docs agent-sdk-docs-check agent-sdk-contract-compat agent-sdk-packages agent-sdk-packages-check graph-ontology-guardrails gosec govulncheck devex-codegen devex-codegen-check devex-changed devex-pr platform-up platform-down platform-logs platform-smoke hooks
 
 # Version info
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -203,6 +203,12 @@ agent-sdk-packages-check: agent-sdk-packages
 
 graph-ontology-guardrails:
 	go test ./internal/graphingest -run 'TestMapperContractFixtures|TestMapperSourceDomainCoverageGuardrails' -count=1
+
+devex-codegen:
+	go run ./scripts/generate_devex_codegen_docs/main.go
+
+devex-codegen-check: devex-codegen
+	git diff --exit-code -- docs/DEVEX_CODEGEN_AUTOGEN.md docs/DEVEX_CODEGEN_CATALOG.json
 
 devex-changed:
 	python3 ./scripts/devex.py run --mode changed

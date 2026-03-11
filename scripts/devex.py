@@ -15,6 +15,7 @@ from typing import Iterable
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_BASE_REF = "origin/main"
+CODEGEN_CATALOG_PATH = REPO_ROOT / "devex" / "codegen_catalog.json"
 
 
 @dataclass
@@ -35,9 +36,57 @@ class Step:
         }
 
 
+@dataclass
+class CodegenCheck:
+    key: str
+    summary: str
+    command: list[str]
+    make_target: str = ""
+    env: dict[str, str] = field(default_factory=dict)
+    include_in_pr_generated_step: bool = False
+
+
+@dataclass
+class CodegenFamily:
+    id: str
+    title: str
+    summary: str
+    change_reason: str
+    triggers: list[str]
+    checks: list[CodegenCheck]
+
+
 def run_git(args: list[str]) -> str:
     result = subprocess.run(["git", *args], cwd=REPO_ROOT, check=True, capture_output=True, text=True)
     return result.stdout.strip()
+
+
+def load_codegen_families() -> list[CodegenFamily]:
+    payload = json.loads(CODEGEN_CATALOG_PATH.read_text())
+    families: list[CodegenFamily] = []
+    for raw_family in payload.get("families", []):
+        checks = [
+            CodegenCheck(
+                key=raw_check["key"],
+                summary=raw_check["summary"],
+                command=list(raw_check["command"]),
+                make_target=raw_check.get("make_target", ""),
+                env=dict(raw_check.get("env", {})),
+                include_in_pr_generated_step=bool(raw_check.get("include_in_pr_generated_step", False)),
+            )
+            for raw_check in raw_family.get("checks", [])
+        ]
+        families.append(
+            CodegenFamily(
+                id=raw_family["id"],
+                title=raw_family["title"],
+                summary=raw_family["summary"],
+                change_reason=raw_family["change_reason"],
+                triggers=list(raw_family.get("triggers", [])),
+                checks=checks,
+            )
+        )
+    return families
 
 
 def changed_files(base_ref: str, staged: bool) -> list[str]:
@@ -88,15 +137,6 @@ def go_package_dirs(files: Iterable[str]) -> list[str]:
     return sorted(dirs)
 
 
-def compat_env(base_ref: str) -> dict[str, str]:
-    return {
-        "MAPPER_CONTRACT_BASE_REF": base_ref,
-        "REPORT_CONTRACT_BASE_REF": base_ref,
-        "ENTITY_FACET_BASE_REF": base_ref,
-        "AGENT_SDK_CONTRACT_BASE_REF": base_ref,
-    }
-
-
 def resolve_command(command: list[str]) -> list[str]:
     if not command:
         return command
@@ -126,9 +166,70 @@ def add_step(steps: dict[str, Step], step: Step) -> None:
             existing.reasons.append(reason)
 
 
+def render_template(value: str, base_ref: str) -> str:
+    return value.replace("{base_ref}", base_ref)
+
+
+def render_command(command: list[str], base_ref: str) -> list[str]:
+    return [render_template(part, base_ref) for part in command]
+
+
+def render_env(values: dict[str, str], base_ref: str) -> dict[str, str]:
+    return {key: render_template(value, base_ref) for key, value in values.items()}
+
+
+def add_codegen_changed_steps(steps: dict[str, Step], files: list[str], base_ref: str, families: list[CodegenFamily]) -> None:
+    for family in families:
+        if not any_match(files, family.triggers):
+            continue
+        for check in family.checks:
+            add_step(
+                steps,
+                Step(
+                    key=check.key,
+                    summary=check.summary,
+                    command=render_command(check.command, base_ref),
+                    reasons=[family.change_reason],
+                    env=render_env(check.env, base_ref),
+                ),
+            )
+
+
+def pr_generated_targets(families: list[CodegenFamily]) -> list[str]:
+    targets: list[str] = []
+    seen: set[str] = set()
+    for family in families:
+        for check in family.checks:
+            if not check.include_in_pr_generated_step or not check.make_target:
+                continue
+            if check.make_target in seen:
+                continue
+            seen.add(check.make_target)
+            targets.append(check.make_target)
+    return targets
+
+
+def pr_individual_codegen_steps(base_ref: str, families: list[CodegenFamily]) -> list[Step]:
+    steps: list[Step] = []
+    for family in families:
+        for check in family.checks:
+            if check.include_in_pr_generated_step and check.make_target:
+                continue
+            steps.append(
+                Step(
+                    key=check.key,
+                    summary=check.summary,
+                    command=render_command(check.command, base_ref),
+                    reasons=["full PR preflight"],
+                    env=render_env(check.env, base_ref),
+                )
+            )
+    return steps
+
+
 def plan_changed(files: list[str], base_ref: str) -> list[Step]:
     steps: dict[str, Step] = {}
-    compat = compat_env(base_ref)
+    families = load_codegen_families()
     packages = go_package_dirs(files)
     if packages:
         add_step(
@@ -161,188 +262,7 @@ def plan_changed(files: list[str], base_ref: str) -> list[Step]:
             ),
         )
 
-    if any_match(files, ["api/openapi.yaml", "internal/api/**", "scripts/openapi_route_parity.go"]):
-        add_step(
-            steps,
-            Step(
-                key="openapi-check",
-                summary="Verify route parity and OpenAPI linting",
-                command=["make", "openapi-check"],
-                reasons=["API route or OpenAPI surface changed"],
-            ),
-        )
-
-    if any_match(files, ["internal/app/app_config.go", "internal/config/**", "scripts/generate_config_docs/**", "docs/CONFIG_ENV_VARS.md"]):
-        add_step(
-            steps,
-            Step(
-                key="config-docs-check",
-                summary="Verify generated config docs are up to date",
-                command=["make", "config-docs-check"],
-                reasons=["config loading or config docs changed"],
-            ),
-        )
-
-    if any_match(files, [
-        "internal/graph/node.go",
-        "internal/graph/edge.go",
-        "internal/graph/schema_registry.go",
-        "internal/graph/schema_registry_test.go",
-        "internal/graphingest/**",
-        "scripts/generate_graph_ontology_docs/**",
-        "docs/GRAPH_ONTOLOGY_AUTOGEN.md",
-    ]):
-        add_step(
-            steps,
-            Step(
-                key="ontology-docs-check",
-                summary="Verify generated ontology docs are up to date",
-                command=["make", "ontology-docs-check"],
-                reasons=["ontology or ingest mapping inputs changed"],
-            ),
-        )
-        add_step(
-            steps,
-            Step(
-                key="graph-ontology-guardrails",
-                summary="Run graph ingest ontology guardrail tests",
-                command=["make", "graph-ontology-guardrails"],
-                reasons=["ontology or ingest mapping inputs changed"],
-            ),
-        )
-
-    if any_match(files, [
-        "internal/platformevents/**",
-        "internal/webhooks/**",
-        "internal/graphingest/**",
-        "internal/api/server_handlers_graph_writeback.go",
-        "scripts/generate_cloudevents_docs/**",
-        "scripts/check_cloudevents_contract_compat/**",
-        "docs/CLOUDEVENTS_AUTOGEN.md",
-        "docs/CLOUDEVENTS_CONTRACTS.json",
-    ]):
-        add_step(
-            steps,
-            Step(
-                key="cloudevents-docs-check",
-                summary="Verify generated CloudEvents docs are up to date",
-                command=["make", "cloudevents-docs-check"],
-                reasons=["CloudEvents-producing surfaces changed"],
-            ),
-        )
-        add_step(
-            steps,
-            Step(
-                key="cloudevents-contract-compat",
-                summary="Enforce CloudEvents contract compatibility",
-                command=["go", "run", "./scripts/check_cloudevents_contract_compat/main.go", "--require-baseline", f"--base-ref={base_ref}"],
-                reasons=["CloudEvents-producing surfaces changed"],
-                env=compat,
-            ),
-        )
-
-    if any_match(files, [
-        "internal/graph/report*",
-        "internal/api/server_handlers_graph_intelligence.go",
-        "internal/api/server_handlers_platform.go",
-        "scripts/generate_report_contract_docs/**",
-        "scripts/check_report_contract_compat/**",
-        "docs/GRAPH_REPORT_CONTRACTS_AUTOGEN.md",
-        "docs/GRAPH_REPORT_CONTRACTS.json",
-    ]):
-        add_step(
-            steps,
-            Step(
-                key="report-contract-docs-check",
-                summary="Verify generated report contract docs are up to date",
-                command=["make", "report-contract-docs-check"],
-                reasons=["report runtime or report contracts changed"],
-            ),
-        )
-        add_step(
-            steps,
-            Step(
-                key="report-contract-compat",
-                summary="Enforce report contract compatibility",
-                command=["go", "run", "./scripts/check_report_contract_compat/main.go", "--require-baseline", f"--base-ref={base_ref}"],
-                reasons=["report runtime or report contracts changed"],
-                env=compat,
-            ),
-        )
-
-    if any_match(files, [
-        "internal/graph/entity_facet*",
-        "internal/graph/entity_facets.go",
-        "internal/graph/entity_subresources.go",
-        "internal/graph/entity_summary_report.go",
-        "internal/api/server_handlers_platform_entities.go",
-        "scripts/generate_entity_facet_docs/**",
-        "scripts/check_entity_facet_compat/**",
-        "docs/GRAPH_ENTITY_FACETS_AUTOGEN.md",
-        "docs/GRAPH_ENTITY_FACETS.json",
-        "docs/GRAPH_ENTITY_FACET_ARCHITECTURE.md",
-    ]):
-        add_step(
-            steps,
-            Step(
-                key="entity-facet-docs-check",
-                summary="Verify generated entity facet docs are up to date",
-                command=["make", "entity-facet-docs-check"],
-                reasons=["entity facet surfaces changed"],
-            ),
-        )
-        add_step(
-            steps,
-            Step(
-                key="entity-facet-contract-compat",
-                summary="Enforce entity facet contract compatibility",
-                command=["go", "run", "./scripts/check_entity_facet_compat/main.go", "--require-baseline", f"--base-ref={base_ref}"],
-                reasons=["entity facet surfaces changed"],
-                env=compat,
-            ),
-        )
-
-    if any_match(files, [
-        "internal/agentsdk/**",
-        "internal/api/server_handlers_agent_sdk*",
-        "internal/app/app_agent_sdk*",
-        "internal/app/app_cerebro_tools*",
-        "sdk/**",
-        "scripts/generate_agent_sdk_docs/**",
-        "scripts/generate_agent_sdk_packages/**",
-        "scripts/check_agent_sdk_contract_compat/**",
-        "docs/AGENT_SDK_AUTOGEN.md",
-        "docs/AGENT_SDK_CONTRACTS.json",
-        "docs/AGENT_SDK_PACKAGES_AUTOGEN.md",
-    ]):
-        add_step(
-            steps,
-            Step(
-                key="agent-sdk-docs-check",
-                summary="Verify generated Agent SDK docs are up to date",
-                command=["make", "agent-sdk-docs-check"],
-                reasons=["Agent SDK contracts changed"],
-            ),
-        )
-        add_step(
-            steps,
-            Step(
-                key="agent-sdk-contract-compat",
-                summary="Enforce Agent SDK contract compatibility",
-                command=["go", "run", "./scripts/check_agent_sdk_contract_compat/main.go", "--require-baseline", f"--base-ref={base_ref}"],
-                reasons=["Agent SDK contracts changed"],
-                env=compat,
-            ),
-        )
-        add_step(
-            steps,
-            Step(
-                key="agent-sdk-packages-check",
-                summary="Verify generated Agent SDK packages are up to date and valid",
-                command=["make", "agent-sdk-packages-check"],
-                reasons=["Agent SDK packages or contracts changed"],
-            ),
-        )
+    add_codegen_changed_steps(steps, files, base_ref, families)
 
     if any_match(files, ["policies/**", "internal/policy/**"]):
         add_step(
@@ -355,7 +275,18 @@ def plan_changed(files: list[str], base_ref: str) -> list[Step]:
             ),
         )
 
-    if any_match(files, ["Makefile", ".githooks/**", "docs/DEVELOPMENT.md", "scripts/devex.py", "internal/app/devex_static_test.go"]):
+    if any_match(files, [
+        "Makefile",
+        ".githooks/**",
+        "docs/DEVELOPMENT.md",
+        "scripts/devex.py",
+        "devex/**",
+        "internal/devex/**",
+        "scripts/generate_devex_codegen_docs/**",
+        "docs/DEVEX_CODEGEN_AUTOGEN.md",
+        "docs/DEVEX_CODEGEN_CATALOG.json",
+        "internal/app/devex_static_test.go",
+    ]):
         add_step(
             steps,
             Step(
@@ -370,8 +301,8 @@ def plan_changed(files: list[str], base_ref: str) -> list[Step]:
 
 
 def plan_pr(base_ref: str) -> list[Step]:
-    compat = compat_env(base_ref)
-    return [
+    families = load_codegen_families()
+    steps = [
         Step(
             key="go-test-all",
             summary="Run the full Go test suite",
@@ -387,13 +318,7 @@ def plan_pr(base_ref: str) -> list[Step]:
         Step(
             key="generated-contracts",
             summary="Verify generated artifacts and contract docs",
-            command=["make", "vendor-check", "openapi-check", "config-docs-check", "ontology-docs-check", "cloudevents-docs-check", "report-contract-docs-check", "entity-facet-docs-check", "agent-sdk-docs-check", "agent-sdk-packages-check"],
-            reasons=["full PR preflight"],
-        ),
-        Step(
-            key="graph-ontology-guardrails",
-            summary="Run ontology guardrail tests",
-            command=["make", "graph-ontology-guardrails"],
+            command=["make", "vendor-check", *pr_generated_targets(families)],
             reasons=["full PR preflight"],
         ),
         Step(
@@ -401,34 +326,6 @@ def plan_pr(base_ref: str) -> list[Step]:
             summary="Validate policy bundle",
             command=["make", "policy-validate"],
             reasons=["full PR preflight"],
-        ),
-        Step(
-            key="cloudevents-contract-compat",
-            summary="Enforce CloudEvents contract compatibility",
-            command=["go", "run", "./scripts/check_cloudevents_contract_compat/main.go", "--require-baseline", f"--base-ref={base_ref}"],
-            reasons=["full PR preflight"],
-            env=compat,
-        ),
-        Step(
-            key="report-contract-compat",
-            summary="Enforce report contract compatibility",
-            command=["go", "run", "./scripts/check_report_contract_compat/main.go", "--require-baseline", f"--base-ref={base_ref}"],
-            reasons=["full PR preflight"],
-            env=compat,
-        ),
-        Step(
-            key="entity-facet-contract-compat",
-            summary="Enforce entity facet contract compatibility",
-            command=["go", "run", "./scripts/check_entity_facet_compat/main.go", "--require-baseline", f"--base-ref={base_ref}"],
-            reasons=["full PR preflight"],
-            env=compat,
-        ),
-        Step(
-            key="agent-sdk-contract-compat",
-            summary="Enforce Agent SDK contract compatibility",
-            command=["go", "run", "./scripts/check_agent_sdk_contract_compat/main.go", "--require-baseline", f"--base-ref={base_ref}"],
-            reasons=["full PR preflight"],
-            env=compat,
         ),
         Step(
             key="gosec",
@@ -443,6 +340,8 @@ def plan_pr(base_ref: str) -> list[Step]:
             reasons=["full PR preflight"],
         ),
     ]
+    steps[3:3] = pr_individual_codegen_steps(base_ref, families)
+    return steps
 
 
 def build_plan(mode: str, files: list[str], base_ref: str, staged: bool) -> dict[str, object]:

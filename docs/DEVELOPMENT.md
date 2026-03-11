@@ -58,6 +58,12 @@ make openapi-check
 # Auto-add placeholder path/method entries for new routes
 make openapi-sync
 
+# Regenerate the machine-readable codegen family catalog
+make devex-codegen
+
+# Verify the generated DevEx codegen catalog docs are committed
+make devex-codegen-check
+
 # Regenerate env-var docs from LoadConfig()
 make config-docs
 
@@ -86,6 +92,7 @@ go test ./internal/testutil
   - Detects the checks implied by the current diff against `origin/main`
   - Runs targeted `go test` / `golangci-lint` on changed Go package directories
   - Runs only the relevant generated-doc, contract-compat, OpenAPI, policy, or vendor checks
+  - Uses `devex/codegen_catalog.json` as the source of truth for codegen-family routing
 - `make devex-pr`
   - Runs a broader local PR preflight:
   - full `go test ./... -count=1`
@@ -93,6 +100,9 @@ go test ./internal/testutil
   - generated artifact drift checks
   - contract compatibility checks against `origin/main`
   - `gosec` and `govulncheck`
+- `make devex-codegen-check`
+  - Regenerates `docs/DEVEX_CODEGEN_AUTOGEN.md` and `docs/DEVEX_CODEGEN_CATALOG.json`
+  - Validates that the catalog references real `Makefile` targets and CI jobs
 - `python3 scripts/devex.py plan --mode changed --json`
   - Emits a machine-readable execution plan for editor integrations or custom tooling
 - `.githooks/pre-push`
