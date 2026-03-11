@@ -659,7 +659,7 @@
       "tool_name": "cerebro.graph_changelog",
       "sdk_method": "graph_changelog",
       "title": "Graph Changelog",
-      "description": "Inspect recent graph snapshot changes or one materialized diff in detail",
+      "description": "Inspect recent graph snapshot changes or one stored/derived graph diff in detail",
       "category": "query",
       "required_permission": "sdk.context.read",
       "input_schema": {
@@ -669,7 +669,7 @@
             "type": "string"
           },
           "diff_id": {
-            "description": "Optional materialized diff artifact ID. When set, returns detailed filtered diff data.",
+            "description": "Optional graph diff ID from changelog results. When set, returns detailed filtered diff data for either a stored artifact or a derived adjacent snapshot diff.",
             "type": "string"
           },
           "kind": {
