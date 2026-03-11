@@ -90,10 +90,6 @@ func SearchEntities(g *Graph, opts EntitySearchOptions) EntitySearchCollection {
 	queryTrigrams := entitySearchTrigrams(normalizedQuery)
 
 	g.mu.RLock()
-	documents := make(map[string]entitySearchDocument, len(g.entitySearchDocs))
-	for id, doc := range g.entitySearchDocs {
-		documents[id] = doc
-	}
 	candidateScores := make(map[string]float64)
 	for _, token := range queryTokens {
 		for _, id := range g.entitySearchTokenIndex[token] {
@@ -109,6 +105,12 @@ func SearchEntities(g *Graph, opts EntitySearchOptions) EntitySearchCollection {
 			for _, id := range g.entitySearchTrigramIndex[trigram] {
 				candidateScores[id] += 1
 			}
+		}
+	}
+	documents := make(map[string]entitySearchDocument, len(candidateScores))
+	for id := range candidateScores {
+		if doc, ok := g.entitySearchDocs[id]; ok {
+			documents[id] = doc
 		}
 	}
 	g.mu.RUnlock()

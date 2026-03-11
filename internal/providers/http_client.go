@@ -140,6 +140,8 @@ type providerRetryDecision struct {
 	CountsAsFailure bool
 }
 
+var errProviderRetryLoopExhausted = errors.New("provider retry loop exhausted without response")
+
 func (t *providerResilientTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	attempts := t.options.RetryAttempts
 	if attempts <= 0 {
@@ -198,7 +200,7 @@ func (t *providerResilientTransport) RoundTrip(req *http.Request) (*http.Respons
 		}
 	}
 
-	return nil, nil
+	return nil, errProviderRetryLoopExhausted
 }
 
 type providerCircuitBreaker struct {
