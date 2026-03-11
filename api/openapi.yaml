@@ -93,6 +93,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ReadyResponse'
+  /status:
+    get:
+      tags:
+        - Health
+      summary: Service status
+      security: []
+      responses:
+        '200':
+          description: Service status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemStatusResponse'
   /metrics:
     get:
       tags:
@@ -8922,6 +8935,44 @@ components:
           type: object
           additionalProperties:
             type: string
+    SystemStatusResponse:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        graph_build:
+          type: object
+          properties:
+            state:
+              type: string
+            last_build_at:
+              type: string
+              format: date-time
+            last_error:
+              type: string
+            node_count:
+              type: integer
+        retention:
+          type: object
+          properties:
+            audit_days:
+              type: integer
+            session_days:
+              type: integer
+            graph_days:
+              type: integer
+            access_review_days:
+              type: integer
+        health:
+          type: object
+          properties:
+            status:
+              type: string
+            checks:
+              type: object
+              additionalProperties:
+                type: object
     TablesResponse:
       type: object
       properties:

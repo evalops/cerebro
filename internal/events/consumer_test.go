@@ -152,6 +152,93 @@ func TestJetStreamConsumer_CloseCancelsHandlerContext(t *testing.T) {
 	}
 }
 
+func TestJetStreamConsumer_DrainWaitsForHandlerWithoutCancel(t *testing.T) {
+	natsURL := startJetStreamServer(t)
+
+	handlerStarted := make(chan struct{})
+	releaseHandler := make(chan struct{})
+
+	consumer, err := NewJetStreamConsumer(ConsumerConfig{
+		URLs:                []string{natsURL},
+		Stream:              "ENSEMBLE_TAP_DRAIN_TEST",
+		Subject:             "ensemble.tap.drain-test.>",
+		Durable:             "cerebro_drain_test",
+		DeadLetterPath:      t.TempDir() + "/consumer.dlq.jsonl",
+		BatchSize:           1,
+		AckWait:             5 * time.Second,
+		FetchTimeout:        100 * time.Millisecond,
+		InProgressInterval:  10 * time.Millisecond,
+		DropHealthLookback:  time.Minute,
+		DropHealthThreshold: 1,
+	}, nil, func(ctx context.Context, _ CloudEvent) error {
+		close(handlerStarted)
+		select {
+		case <-releaseHandler:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	})
+	if err != nil {
+		t.Fatalf("new consumer: %v", err)
+	}
+	defer func() { _ = consumer.Close() }()
+
+	nc, err := nats.Connect(natsURL)
+	if err != nil {
+		t.Fatalf("connect nats: %v", err)
+	}
+	defer nc.Close()
+	js, err := nc.JetStream()
+	if err != nil {
+		t.Fatalf("jetstream context: %v", err)
+	}
+
+	event := CloudEvent{
+		SpecVersion: cloudEventSpecVersion,
+		ID:          "evt-drain-1",
+		Source:      "cerebro.events.test",
+		Type:        "tap.test",
+		Time:        time.Now().UTC(),
+		DataSchema:  "urn:cerebro:events:test",
+	}
+	data, err := json.Marshal(event)
+	if err != nil {
+		t.Fatalf("marshal cloud event: %v", err)
+	}
+	if _, err := js.Publish("ensemble.tap.drain-test.event", data); err != nil {
+		t.Fatalf("publish cloud event: %v", err)
+	}
+
+	select {
+	case <-handlerStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("handler did not start")
+	}
+
+	drainDone := make(chan error, 1)
+	go func() {
+		drainDone <- consumer.Drain(context.Background())
+	}()
+
+	select {
+	case err := <-drainDone:
+		t.Fatalf("drain returned before handler completed: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(releaseHandler)
+
+	select {
+	case err := <-drainDone:
+		if err != nil {
+			t.Fatalf("drain returned error: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("drain did not complete after handler release")
+	}
+}
+
 func TestConsumerHandleMessageDeadLettersMalformedPayload(t *testing.T) {
 	cfg := (ConsumerConfig{
 		URLs:                []string{"nats://127.0.0.1:4222"},
@@ -188,7 +275,7 @@ func TestConsumerHandleMessageDeadLettersMalformedPayload(t *testing.T) {
 	}, func() error {
 		nacked++
 		return nil
-	})
+	}, nil)
 
 	if acked != 1 {
 		t.Fatalf("expected malformed payload to be acked after dead-letter, got %d", acked)
@@ -255,7 +342,7 @@ func TestConsumerHandleMessageRequeuesMalformedPayloadWhenDeadLetterFails(t *tes
 	}, func() error {
 		nacked++
 		return nil
-	})
+	}, nil)
 
 	if acked != 0 {
 		t.Fatalf("expected malformed payload not to be acked when dead-letter write fails, got %d", acked)
@@ -269,6 +356,71 @@ func TestConsumerHandleMessageRequeuesMalformedPayloadWhenDeadLetterFails(t *tes
 	after := counterValue(t, metrics.NATSConsumerDroppedTotal.WithLabelValues(cfg.Stream, cfg.Durable, "malformed"))
 	if after != before {
 		t.Fatalf("expected dropped metric to remain unchanged, before=%v after=%v", before, after)
+	}
+}
+
+func TestConsumerHandleMessageExtendsAckWaitWhileProcessing(t *testing.T) {
+	cfg := (ConsumerConfig{
+		URLs:                []string{"nats://127.0.0.1:4222"},
+		Stream:              "ENSEMBLE_TAP_TEST",
+		Subject:             "ensemble.tap.test.>",
+		Durable:             "cerebro_graph_builder_test_progress",
+		DeadLetterPath:      t.TempDir() + "/consumer.dlq.jsonl",
+		BatchSize:           1,
+		AckWait:             time.Second,
+		FetchTimeout:        time.Second,
+		InProgressInterval:  10 * time.Millisecond,
+		DropHealthLookback:  time.Minute,
+		DropHealthThreshold: 1,
+	}).withDefaults()
+	dlq, err := newConsumerDeadLetterSink(cfg.DeadLetterPath)
+	if err != nil {
+		t.Fatalf("new consumer dead-letter sink: %v", err)
+	}
+	consumer := &Consumer{
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		config: cfg,
+		handler: func(context.Context, CloudEvent) error {
+			time.Sleep(35 * time.Millisecond)
+			return nil
+		},
+		dlq: dlq,
+	}
+
+	event := CloudEvent{
+		SpecVersion: cloudEventSpecVersion,
+		ID:          "evt-progress-1",
+		Source:      "cerebro.events.test",
+		Type:        "tap.test",
+		Time:        time.Now().UTC(),
+		DataSchema:  "urn:cerebro:events:test",
+	}
+	payload, err := json.Marshal(event)
+	if err != nil {
+		t.Fatalf("marshal cloud event: %v", err)
+	}
+
+	acked := 0
+	inProgressCalls := 0
+	result := consumer.handleMessage(context.Background(), "ensemble.tap.test.event", payload, func() error {
+		acked++
+		return nil
+	}, func() error {
+		t.Fatal("expected message to be acked, not nacked")
+		return nil
+	}, func() error {
+		inProgressCalls++
+		return nil
+	})
+
+	if !result.Processed {
+		t.Fatal("expected message to be processed successfully")
+	}
+	if acked != 1 {
+		t.Fatalf("expected one ack, got %d", acked)
+	}
+	if inProgressCalls == 0 {
+		t.Fatal("expected at least one in-progress heartbeat")
 	}
 }
 

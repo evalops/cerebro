@@ -15,6 +15,7 @@ func (s *Server) setupMiddleware() {
 	s.router.Use(middleware.Logger)
 	s.router.Use(middleware.Recoverer)
 	s.router.Use(SecurityHeaders())
+	s.router.Use(s.graphBuildWarningHeaders)
 	s.router.Use(middleware.Timeout(60 * time.Second))
 	s.router.Use(middleware.Compress(5))
 	s.router.Use(MaxBodySize(DefaultMaxBodySize))
@@ -65,6 +66,7 @@ func (s *Server) setupMiddleware() {
 func (s *Server) setupRoutes() {
 	s.router.Get("/health", s.health)
 	s.router.Get("/ready", s.ready)
+	s.router.Get("/status", s.status)
 	s.router.Get("/metrics", s.metrics)
 	s.router.Get("/openapi.yaml", s.openAPISpec)
 	s.router.Get("/docs", s.swaggerUI)

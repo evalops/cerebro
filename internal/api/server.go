@@ -169,6 +169,40 @@ func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) status(w http.ResponseWriter, r *http.Request) {
+	body := map[string]any{
+		"timestamp": time.Now().UTC(),
+	}
+	if s.app != nil {
+		graphBuild := s.app.GraphBuildSnapshot()
+		body["graph_build"] = graphBuild
+		body["retention"] = s.app.CurrentRetentionStatus()
+	}
+	if s.app != nil && s.app.Health != nil {
+		status, checks := runHealthChecks(r.Context(), s.app.Health)
+		body["health"] = map[string]any{
+			"status": status,
+			"checks": formatHealthChecks(checks),
+		}
+	}
+	s.json(w, http.StatusOK, body)
+}
+
+func (s *Server) graphBuildWarningHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s != nil && s.app != nil {
+			snapshot := s.app.GraphBuildSnapshot()
+			if snapshot.State == app.GraphBuildFailed {
+				w.Header().Set("X-Cerebro-Graph-Build-Status", string(snapshot.State))
+				if snapshot.LastError != "" {
+					w.Header().Set("X-Cerebro-Graph-Build-Error", snapshot.LastError)
+				}
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func runHealthChecks(ctx context.Context, registry *health.Registry) (health.Status, map[string]health.CheckResult) {
 	if registry == nil {
 		return health.StatusUnknown, map[string]health.CheckResult{}

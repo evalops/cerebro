@@ -56,7 +56,7 @@ func (a *App) initPhase1(ctx context.Context) error {
 func (a *App) initPhase2a(ctx context.Context) error {
 	if err := runInitTasksConcurrently(ctx, []concurrentInitTask{
 		{name: "cache", run: func(context.Context) { a.initCache() }},
-		{name: "ticketing", run: func(context.Context) { a.initTicketing() }},
+		{name: "ticketing", run: func(taskCtx context.Context) { a.initTicketing(taskCtx) }},
 		{name: "identity", run: func(context.Context) { a.initIdentity() }},
 		{name: "attackpath", run: func(context.Context) { a.initAttackPath() }},
 		{name: "webhooks", run: func(context.Context) { a.initWebhooks() }},
@@ -83,7 +83,7 @@ func (a *App) initPhase2a(ctx context.Context) error {
 func (a *App) initPhase2b(ctx context.Context) error {
 	if err := runInitTasksConcurrently(ctx, []concurrentInitTask{
 		{name: "remediation", run: func(context.Context) { a.initRemediation() }},
-		{name: "agents", run: func(context.Context) { a.initAgents() }},
+		{name: "agents", run: func(taskCtx context.Context) { a.initAgents(taskCtx) }},
 	}); err != nil {
 		return fmt.Errorf("phase 2b init failed: %w", err)
 	}

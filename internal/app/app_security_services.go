@@ -38,10 +38,16 @@ func (a *App) initRBAC() {
 
 func (a *App) initThreatIntel(ctx context.Context) {
 	a.ThreatIntel = threatintel.NewThreatIntelService()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	syncCtx, syncCancel := context.WithCancel(ctx)
+	a.threatIntelSyncCancel = syncCancel
+	a.threatIntelSyncWG.Add(1)
 
 	// Sync feeds in background
-	// #nosec G118 -- background threat intel sync is intentionally detached from request context
 	go func() {
+		defer a.threatIntelSyncWG.Done()
 		const (
 			syncTimeout  = 2 * time.Minute
 			syncMaxAge   = 12 * time.Hour
@@ -54,16 +60,16 @@ func (a *App) initThreatIntel(ctx context.Context) {
 			return
 		}
 
-		syncCtx, cancel := context.WithTimeout(ctx, syncTimeout)
+		runCtx, cancel := context.WithTimeout(syncCtx, syncTimeout)
 		defer cancel()
 
-		err := a.ThreatIntel.SyncAllWithRetry(syncCtx, threatintel.SyncOptions{
+		err := a.ThreatIntel.SyncAllWithRetry(runCtx, threatintel.SyncOptions{
 			MaxAge:   syncMaxAge,
 			Attempts: syncAttempts,
 			Backoff:  syncBackoff,
 		})
 		if err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || syncCtx.Err() != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || runCtx.Err() != nil {
 				a.Logger.Debug("threat intel sync canceled", "error", err)
 			} else {
 				a.Logger.Warn("failed to sync threat intel feeds", "error", err)
@@ -72,7 +78,7 @@ func (a *App) initThreatIntel(ctx context.Context) {
 		}
 		stats := a.ThreatIntel.Stats()
 		if a.Webhooks != nil {
-			if err := a.Webhooks.EmitWithErrors(syncCtx, webhooks.EventThreatIntelSynced, map[string]interface{}{
+			if err := a.Webhooks.EmitWithErrors(runCtx, webhooks.EventThreatIntelSynced, map[string]interface{}{
 				"feed_count":       stats["feed_count"],
 				"total_indicators": stats["total_indicators"],
 			}); err != nil {
@@ -157,6 +163,36 @@ func (a *App) initHealth() {
 	}))
 
 	a.Health.Register("graph_ontology_slo", a.graphOntologySLOHealthCheck())
+	a.Health.Register("graph_build", func(_ context.Context) health.CheckResult {
+		start := time.Now().UTC()
+		result := health.CheckResult{
+			Name:      "graph_build",
+			Timestamp: start,
+		}
+		if a.Warehouse == nil {
+			result.Status = health.StatusHealthy
+			result.Message = "graph disabled - warehouse not configured"
+			result.Latency = time.Since(start)
+			return result
+		}
+		snapshot := a.GraphBuildSnapshot()
+		switch snapshot.State {
+		case GraphBuildSuccess:
+			result.Status = health.StatusHealthy
+			result.Message = fmt.Sprintf("graph build succeeded at %s with %d nodes", snapshot.LastBuildAt.Format(time.RFC3339), snapshot.NodeCount)
+		case GraphBuildFailed:
+			result.Status = health.StatusUnhealthy
+			result.Message = snapshot.LastError
+		case GraphBuildBuilding:
+			result.Status = health.StatusDegraded
+			result.Message = "graph build in progress"
+		default:
+			result.Status = health.StatusUnknown
+			result.Message = "graph build not started"
+		}
+		result.Latency = time.Since(start)
+		return result
+	})
 
 	a.Logger.Info("health service initialized")
 }
@@ -374,6 +410,7 @@ func (a *App) initRuntime() {
 
 func (a *App) initSecurityGraph(ctx context.Context) {
 	a.graphReady = make(chan struct{})
+	a.setGraphBuildState(GraphBuildNotStarted, time.Time{}, nil)
 
 	if a.Warehouse == nil {
 		a.Logger.Warn("security graph disabled - snowflake not configured")
@@ -395,16 +432,19 @@ func (a *App) initSecurityGraph(ctx context.Context) {
 	}
 	graphCtx, cancel := context.WithCancel(graphCtx)
 	a.graphCancel = cancel
+	a.setGraphBuildState(GraphBuildBuilding, time.Time{}, nil)
 
 	// Build initial graph in background
 	go func() {
 		defer close(a.graphReady)
 
 		if err := a.SecurityGraphBuilder.Build(graphCtx); err != nil {
+			a.setGraphBuildState(GraphBuildFailed, time.Now().UTC(), err)
 			a.Logger.Error("failed to build security graph", "error", err)
 			return
 		}
 		meta := a.SecurityGraph.Metadata()
+		a.setGraphBuildState(GraphBuildSuccess, meta.BuiltAt, nil)
 		a.Logger.Info("security graph built",
 			"nodes", meta.NodeCount,
 			"edges", meta.EdgeCount,

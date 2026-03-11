@@ -276,6 +276,9 @@ type Config struct {
 	// Webhooks
 	WebhookURLs []string
 
+	// Initialization
+	InitTimeout time.Duration
+
 	// NATS JetStream event publishing
 	NATSJetStreamEnabled               bool
 	NATSJetStreamURLs                  []string
@@ -309,16 +312,19 @@ type Config struct {
 	NATSJetStreamTLSInsecure           bool
 
 	// NATS JetStream consumer for ensemble-tap ingestion
-	NATSConsumerEnabled             bool
-	NATSConsumerStream              string
-	NATSConsumerSubjects            []string
-	NATSConsumerDurable             string
-	NATSConsumerBatchSize           int
-	NATSConsumerAckWait             time.Duration
-	NATSConsumerFetchTimeout        time.Duration
-	NATSConsumerDeadLetterPath      string
-	NATSConsumerDropHealthLookback  time.Duration
-	NATSConsumerDropHealthThreshold int
+	NATSConsumerEnabled                 bool
+	NATSConsumerStream                  string
+	NATSConsumerSubjects                []string
+	NATSConsumerDurable                 string
+	NATSConsumerBatchSize               int
+	NATSConsumerAckWait                 time.Duration
+	NATSConsumerFetchTimeout            time.Duration
+	NATSConsumerInProgressInterval      time.Duration
+	NATSConsumerDrainTimeout            time.Duration
+	NATSConsumerDeadLetterPath          string
+	NATSConsumerDropHealthLookback      time.Duration
+	NATSConsumerDropHealthThreshold     int
+	NATSConsumerGraphStalenessThreshold time.Duration
 
 	// Event alert routing to Ensemble channels/DMs
 	AlertRouterEnabled      bool
@@ -594,6 +600,7 @@ func LoadConfig() *Config {
 		CloudTrailTrailARN:                  getEnv("CLOUDTRAIL_TRAIL_ARN", ""),
 		CloudTrailLookbackDays:              getEnvInt("CLOUDTRAIL_LOOKBACK_DAYS", 7),
 		WebhookURLs:                         splitCSV(getEnv("WEBHOOK_URLS", "")),
+		InitTimeout:                         getEnvDuration("CEREBRO_INIT_TIMEOUT", 2*time.Minute),
 		NATSJetStreamEnabled:                getEnvBool("NATS_JETSTREAM_ENABLED", false),
 		NATSJetStreamURLs:                   splitCSV(getEnv("NATS_URLS", "nats://127.0.0.1:4222")),
 		NATSJetStreamStream:                 getEnv("NATS_JETSTREAM_STREAM", "CEREBRO_EVENTS"),
@@ -629,11 +636,14 @@ func LoadConfig() *Config {
 		NATSConsumerSubjects:                splitCSV(getEnv("NATS_CONSUMER_SUBJECTS", "ensemble.tap.>")),
 		NATSConsumerDurable:                 getEnv("NATS_CONSUMER_DURABLE", "cerebro_graph_builder"),
 		NATSConsumerBatchSize:               getEnvInt("NATS_CONSUMER_BATCH_SIZE", 50),
-		NATSConsumerAckWait:                 getEnvDuration("NATS_CONSUMER_ACK_WAIT", 30*time.Second),
+		NATSConsumerAckWait:                 getEnvDuration("NATS_CONSUMER_ACK_WAIT", 120*time.Second),
 		NATSConsumerFetchTimeout:            getEnvDuration("NATS_CONSUMER_FETCH_TIMEOUT", 2*time.Second),
+		NATSConsumerInProgressInterval:      getEnvDuration("NATS_CONSUMER_IN_PROGRESS_INTERVAL", 15*time.Second),
+		NATSConsumerDrainTimeout:            getEnvDuration("NATS_CONSUMER_DRAIN_TIMEOUT", 30*time.Second),
 		NATSConsumerDeadLetterPath:          getEnv("NATS_CONSUMER_DEAD_LETTER_PATH", filepath.Join(findings.DefaultFilePath(), "nats-consumer.dlq.jsonl")),
 		NATSConsumerDropHealthLookback:      getEnvDuration("NATS_CONSUMER_DROP_HEALTH_LOOKBACK", 5*time.Minute),
 		NATSConsumerDropHealthThreshold:     getEnvInt("NATS_CONSUMER_DROP_HEALTH_THRESHOLD", 1),
+		NATSConsumerGraphStalenessThreshold: getEnvDuration("NATS_CONSUMER_GRAPH_STALENESS_THRESHOLD", 15*time.Minute),
 		AlertRouterEnabled:                  getEnvBool("ALERT_ROUTER_ENABLED", true),
 		AlertRouterConfigPath:               getEnv("ALERT_ROUTER_CONFIG_PATH", ""),
 		AlertRouterNotifyPrefix:             getEnv("ALERT_ROUTER_NOTIFY_PREFIX", "ensemble.notify"),
@@ -656,10 +666,10 @@ func LoadConfig() *Config {
 		SecurityDigestInterval:              getEnv("SECURITY_DIGEST_INTERVAL", ""),
 		ScanTables:                          getEnv("SCAN_TABLES", ""),
 		RetentionJobInterval:                getEnvDuration("CEREBRO_RETENTION_JOB_INTERVAL", 24*time.Hour),
-		AuditRetentionDays:                  getEnvInt("CEREBRO_AUDIT_RETENTION_DAYS", 0),
-		SessionRetentionDays:                getEnvInt("CEREBRO_SESSION_RETENTION_DAYS", 0),
-		GraphRetentionDays:                  getEnvInt("CEREBRO_GRAPH_RETENTION_DAYS", 0),
-		AccessReviewRetentionDays:           getEnvInt("CEREBRO_ACCESS_REVIEW_RETENTION_DAYS", 0),
+		AuditRetentionDays:                  getEnvInt("CEREBRO_AUDIT_RETENTION_DAYS", 90),
+		SessionRetentionDays:                getEnvInt("CEREBRO_SESSION_RETENTION_DAYS", 30),
+		GraphRetentionDays:                  getEnvInt("CEREBRO_GRAPH_RETENTION_DAYS", 180),
+		AccessReviewRetentionDays:           getEnvInt("CEREBRO_ACCESS_REVIEW_RETENTION_DAYS", 365),
 		ScanTableTimeout:                    getEnvDuration("SCAN_TABLE_TIMEOUT", 30*time.Minute),
 		ScanMaxConcurrent:                   getEnvInt("SCAN_MAX_CONCURRENCY", 6),
 		ScanMinConcurrent:                   getEnvInt("SCAN_MIN_CONCURRENCY", 2),

@@ -293,6 +293,21 @@ func TestReady_UnhealthyReturns503(t *testing.T) {
 	}
 }
 
+func TestStatus(t *testing.T) {
+	s := newTestServer(t)
+	w := do(t, s, "GET", "/status", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	body := decodeJSON(t, w)
+	if _, ok := body["graph_build"]; !ok {
+		t.Fatalf("expected graph_build in status response, got %v", body)
+	}
+	if _, ok := body["retention"]; !ok {
+		t.Fatalf("expected retention in status response, got %v", body)
+	}
+}
+
 func TestSetupMiddleware_RateLimitBeforeAuth(t *testing.T) {
 	a := newTestApp(t)
 	a.Config.APIAuthEnabled = true

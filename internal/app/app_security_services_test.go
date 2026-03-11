@@ -2,12 +2,15 @@ package app
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/evalops/cerebro/internal/graph"
 	"github.com/evalops/cerebro/internal/health"
+	"github.com/evalops/cerebro/internal/warehouse"
 )
 
 func TestEvaluateGraphOntologySLOStatus(t *testing.T) {
@@ -111,6 +114,28 @@ func TestGraphOntologySLOHealthCheckWithoutGraph(t *testing.T) {
 	result := application.graphOntologySLOHealthCheck()(context.Background())
 	if result.Status != health.StatusUnknown {
 		t.Fatalf("expected unknown when graph is missing, got %s", result.Status)
+	}
+}
+
+func TestInitHealthRegistersGraphBuildCheck(t *testing.T) {
+	application := &App{
+		Config:    &Config{},
+		Logger:    slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Warehouse: &warehouse.MemoryWarehouse{},
+	}
+	application.initHealth()
+	application.setGraphBuildState(GraphBuildFailed, time.Date(2026, 3, 10, 9, 0, 0, 0, time.UTC), context.DeadlineExceeded)
+
+	results := application.Health.RunAll(context.Background())
+	check, ok := results["graph_build"]
+	if !ok {
+		t.Fatal("expected graph_build health check to be registered")
+	}
+	if check.Status != health.StatusUnhealthy {
+		t.Fatalf("expected graph_build health to be unhealthy, got %s", check.Status)
+	}
+	if !strings.Contains(check.Message, context.DeadlineExceeded.Error()) {
+		t.Fatalf("expected graph_build health message to include build error, got %q", check.Message)
 	}
 }
 

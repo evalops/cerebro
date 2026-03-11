@@ -204,6 +204,21 @@ func (a *App) Close() error {
 		}
 	}
 
+	if a.TapConsumer != nil {
+		drainTimeout := appShutdownTimeout
+		if a.Config != nil && a.Config.NATSConsumerDrainTimeout > 0 {
+			drainTimeout = a.Config.NATSConsumerDrainTimeout
+		}
+		drainCtx, drainCancel := context.WithTimeout(shutdownCtx, drainTimeout)
+		if err := a.TapConsumer.Drain(drainCtx); err != nil {
+			errs = append(errs, fmt.Errorf("tap consumer drain: %w", err))
+			if a.Logger != nil {
+				a.Logger.Warn("timed out draining tap consumer before graph shutdown", "timeout", drainTimeout, "error", err)
+			}
+		}
+		drainCancel()
+	}
+
 	if a.graphCancel != nil {
 		a.graphCancel()
 	}
@@ -220,6 +235,11 @@ func (a *App) Close() error {
 	}
 
 	a.stopSecretsReloader()
+
+	if a.threatIntelSyncCancel != nil {
+		a.threatIntelSyncCancel()
+	}
+	a.threatIntelSyncWG.Wait()
 
 	// Close Snowflake connection
 	if a.Snowflake != nil {

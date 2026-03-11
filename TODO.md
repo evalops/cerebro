@@ -5,6 +5,64 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 39 - Operational Hardening: Drain + Freshness + Startup Bounds (2026-03-10)
+
+### Review findings
+- [x] Gap: `App.Close()` canceled the graph build before draining the JetStream pull consumer, so rolling shutdown could abandon in-flight ingest work.
+- [x] Gap: the consumer defaulted to a 30-second `AckWait` with no in-progress extension, inviting redelivery storms during long graph mutations.
+- [x] Gap: readiness had malformed-drop integrity checks but no lag/staleness/freshness signal, so operators still could not answer how stale the graph was.
+- [x] Gap: graph build failure lived only in logs, while `/ready` and normal API responses stayed too polite about a failed or missing graph.
+- [x] Gap: startup still relied on unbounded background contexts in a few init-time network paths, and retention defaults still silently meant unbounded growth.
+
+### Execution plan
+- [x] Harden consumer execution semantics:
+  - [x] add `Drain(ctx)` to the JetStream consumer
+  - [x] stop fetching new batches during drain while letting in-flight handlers finish
+  - [x] add periodic `InProgress()` heartbeats during long-running handler execution
+  - [x] add `cerebro_nats_consumer_redeliveries_total`
+- [x] Add freshness and graph-update observability:
+  - [x] add consumer lag and lag-seconds gauges
+  - [x] add graph last-update and graph staleness gauges
+  - [x] add event end-to-end processing duration histogram
+  - [x] wire freshness threshold into `tap_consumer` readiness
+- [x] Fix shutdown/startup coordination:
+  - [x] drain `TapConsumer` before graph cancellation in `App.Close()`
+  - [x] add `NATS_CONSUMER_DRAIN_TIMEOUT`
+  - [x] coordinate threat-intel background sync with cancel + waitgroup
+  - [x] add `CEREBRO_INIT_TIMEOUT` and apply it to init-phase work
+  - [x] propagate init context through remote tool discovery and ticketing provider validation
+- [x] Surface graph build state:
+  - [x] track explicit graph build states (`not_started`, `building`, `success`, `failed`)
+  - [x] add `cerebro_graph_build_status`
+  - [x] register `graph_build` in readiness
+  - [x] expose root `/status`
+  - [x] attach warning headers when API responses are served while graph build is unhealthy
+- [x] Tighten operational defaults:
+  - [x] raise `NATS_CONSUMER_ACK_WAIT` default to 120s
+  - [x] set bounded retention defaults for audit/session/graph/access-review data
+  - [x] log startup warnings when any retention remains disabled
+- [x] Prove behavior with tests:
+  - [x] drain waits for handler completion without canceling it
+  - [x] in-progress heartbeat fires during long handler execution
+  - [x] config loading covers new timeout/freshness controls and bounded defaults
+
+### Detailed follow-on backlog
+- [ ] Track A - Graph freshness and replay operations
+  - Exit criteria:
+  - [ ] implement `#158` follow-through on graph-dependent API gating for the highest-value graph endpoints, not just headers + readiness
+  - [ ] implement `#167` changelog/diff APIs so freshness and mutation state are directly explorable
+  - [ ] implement `#168` point-in-time reconstruction so stale/failed graph rebuilds have a recovery/debugging story
+- [ ] Track B - Provider and startup resilience
+  - Exit criteria:
+  - [ ] implement `#161` per-provider circuit breaking and partial-sync completion
+  - [ ] sweep remaining init/runtime `context.Background()` network call sites beyond the now-fixed startup hot paths for `#159`
+  - [ ] expose provider degradation state in `/status` and readiness
+- [ ] Track C - Cost and retention governance
+  - Exit criteria:
+  - [ ] implement `#162` table-level retained-row estimation in `/status`
+  - [ ] implement `#157` bounded findings-store defaults and runtime enforcement
+  - [ ] add retention preset profiles plus startup validation for contradictory settings
+
 ## Deep Review Cycle 38 - NATS Consumer Dead-Letter Integrity + Health Signals (2026-03-10)
 
 ### Review findings
