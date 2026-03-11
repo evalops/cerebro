@@ -2,7 +2,7 @@
 
 Generated from `internal/app/app_config.go` (`LoadConfig`) via `go run ./scripts/generate_config_docs/main.go`.
 
-Total variables: **288**
+Total variables: **289**
 
 | Variable | Reader(s) | Default(s) | Config Field(s) | Validation rule(s) |
 |---|---|---|---|---|
@@ -19,6 +19,7 @@ Total variables: **288**
 | `ALERT_ROUTER_CONFIG_PATH` | `getEnv` | `""` | `AlertRouterConfigPath` | `-` |
 | `ALERT_ROUTER_ENABLED` | `getEnvBool` | `true` | `AlertRouterEnabled` | `-` |
 | `ALERT_ROUTER_NOTIFY_PREFIX` | `getEnv` | `"ensemble.notify"` | `AlertRouterNotifyPrefix` | `-` |
+| `ALERT_ROUTER_STATE_FILE` | `getEnv` | `filepath.Join(".cerebro", "alert-router", "state.db")` | `AlertRouterStateFile` | `-` |
 | `ANTHROPIC_API_KEY` | `getEnv` | `""` | `AnthropicAPIKey` | `-` |
 | `API_AUTHORIZATION_SERVERS` | `getEnv` | `""` | `APIAuthorizationServers` | `-` |
 | `API_AUTH_ENABLED` | `getEnvBool` | `len(apiKeys) > 0` | `-` | `-` |

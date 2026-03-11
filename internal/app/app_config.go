@@ -330,6 +330,7 @@ type Config struct {
 	AlertRouterEnabled      bool
 	AlertRouterConfigPath   string
 	AlertRouterNotifyPrefix string
+	AlertRouterStateFile    string
 
 	// Remote tool proxy for AI agents (Ensemble tools via NATS request/reply)
 	AgentRemoteToolsEnabled         bool
@@ -657,6 +658,7 @@ func LoadConfig() *Config {
 			AlertRouterEnabled:                  getEnvBool("ALERT_ROUTER_ENABLED", true),
 			AlertRouterConfigPath:               getEnv("ALERT_ROUTER_CONFIG_PATH", ""),
 			AlertRouterNotifyPrefix:             getEnv("ALERT_ROUTER_NOTIFY_PREFIX", "ensemble.notify"),
+			AlertRouterStateFile:                getEnv("ALERT_ROUTER_STATE_FILE", filepath.Join(".cerebro", "alert-router", "state.db")),
 			AgentRemoteToolsEnabled:             getEnvBool("AGENT_REMOTE_TOOLS_ENABLED", false),
 			AgentRemoteToolsManifestSubject:     getEnv("AGENT_REMOTE_TOOLS_MANIFEST_SUBJECT", "ensemble.tools.manifest"),
 			AgentRemoteToolsRequestPrefix:       getEnv("AGENT_REMOTE_TOOLS_REQUEST_PREFIX", "ensemble.tools.request"),
