@@ -418,10 +418,10 @@ func (s *Store) Update(id string, mutate func(*Finding) error) error {
 		return ErrIssueNotFound
 	}
 	previousStatus := normalizeStatus(f.Status)
+	oldKey := f.SemanticKey
 	if err := mutate(f); err != nil {
 		return err
 	}
-	oldKey := f.SemanticKey
 	f.Status = normalizeStatus(f.Status)
 	refreshFindingSemanticState(f)
 	s.syncSemanticIndexLocked(f, oldKey)

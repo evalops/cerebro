@@ -156,3 +156,73 @@ func TestSnowflakeStoreSemanticDedupUsesCanonicalDirtyID(t *testing.T) {
 		t.Fatalf("observed finding ids = %#v, want 2 entries", merged.ObservedFindingIDs)
 	}
 }
+
+func TestStoreSemanticDedupUpdateRemovesStaleIndexEntry(t *testing.T) {
+	store := NewStore()
+	first, second := semanticDuplicatePolicyFindings()
+
+	canonical := store.Upsert(context.Background(), first)
+	oldKey := canonical.SemanticKey
+	if oldKey == "" {
+		t.Fatal("expected old semantic key")
+	}
+
+	if err := store.Update(canonical.ID, func(f *Finding) error {
+		f.Severity = "critical"
+		return nil
+	}); err != nil {
+		t.Fatalf("update canonical finding: %v", err)
+	}
+	updated, ok := store.Get(canonical.ID)
+	if !ok {
+		t.Fatal("expected canonical finding after update")
+	}
+	if updated.SemanticKey == oldKey {
+		t.Fatal("expected semantic key to change after severity update")
+	}
+
+	duplicate := second
+	duplicate.Severity = "high"
+	other := store.Upsert(context.Background(), duplicate)
+	if other.ID == canonical.ID {
+		t.Fatalf("expected stale index entry to be removed; duplicate incorrectly matched canonical id %q", canonical.ID)
+	}
+	if store.Len() != 2 {
+		t.Fatalf("expected 2 findings after stale-key reinsert, got %d", store.Len())
+	}
+}
+
+func TestSnowflakeStoreSemanticDedupUpdateRemovesStaleIndexEntry(t *testing.T) {
+	store := NewSnowflakeStore(nil, "DB", "SCHEMA")
+	first, second := semanticDuplicatePolicyFindings()
+
+	canonical := store.Upsert(context.Background(), first)
+	oldKey := canonical.SemanticKey
+	if oldKey == "" {
+		t.Fatal("expected old semantic key")
+	}
+
+	if err := store.Update(canonical.ID, func(f *Finding) error {
+		f.Severity = "critical"
+		return nil
+	}); err != nil {
+		t.Fatalf("update canonical finding: %v", err)
+	}
+	updated, ok := store.Get(canonical.ID)
+	if !ok {
+		t.Fatal("expected canonical finding after update")
+	}
+	if updated.SemanticKey == oldKey {
+		t.Fatal("expected semantic key to change after severity update")
+	}
+
+	duplicate := second
+	duplicate.Severity = "high"
+	other := store.Upsert(context.Background(), duplicate)
+	if other.ID == canonical.ID {
+		t.Fatalf("expected stale index entry to be removed; duplicate incorrectly matched canonical id %q", canonical.ID)
+	}
+	if len(store.cache) != 2 {
+		t.Fatalf("expected 2 cached findings after stale-key reinsert, got %d", len(store.cache))
+	}
+}

@@ -195,10 +195,10 @@ func (s *SnowflakeStore) Update(id string, mutate func(*Finding) error) error {
 	if !ok {
 		return ErrIssueNotFound
 	}
+	oldKey := f.SemanticKey
 	if err := mutate(f); err != nil {
 		return err
 	}
-	oldKey := f.SemanticKey
 	invalidateResourceJSONCache(f)
 	f.Status = normalizeStatus(f.Status)
 	refreshFindingSemanticState(f)
