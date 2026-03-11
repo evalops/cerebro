@@ -54,6 +54,9 @@ type EntityFacetCompatibilityReport struct {
 }
 
 func BuildEntityFacetContractCatalog(now time.Time) EntityFacetContractCatalog {
+	// Zero time is preserved intentionally so generated artifacts can omit
+	// generated_at and remain deterministic across runs. API callers that need a
+	// timestamp should pass an explicit time.
 	if !now.IsZero() {
 		now = now.UTC()
 	}

@@ -231,13 +231,16 @@ func GetEntityRecord(g *Graph, id string, validAt, recordedAt time.Time) (Entity
 	if recordedAt.IsZero() {
 		recordedAt = temporalNowUTC()
 	}
-	for _, node := range g.GetAllNodesBitemporal(validAt.UTC(), recordedAt.UTC()) {
-		if node == nil || node.ID != id || !entityQueryAllowedNodeKind(node.Kind) {
-			continue
-		}
-		return buildEntityRecord(g, node, validAt.UTC(), recordedAt.UTC(), true), true
+	validAt = validAt.UTC()
+	recordedAt = recordedAt.UTC()
+	g.mu.RLock()
+	node, ok := g.nodes[id]
+	if !ok || node == nil || node.DeletedAt != nil || !entityQueryAllowedNodeKind(node.Kind) || !g.nodeVisibleAtLocked(node, validAt, recordedAt) {
+		g.mu.RUnlock()
+		return EntityRecord{}, false
 	}
-	return EntityRecord{}, false
+	g.mu.RUnlock()
+	return buildEntityRecord(g, node, validAt, recordedAt, true), true
 }
 
 func normalizeEntityQueryOptions(opts EntityQueryOptions) EntityQueryOptions {
