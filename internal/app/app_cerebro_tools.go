@@ -186,13 +186,13 @@ func (a *App) cerebroTools() []agents.Tool {
 		},
 		{
 			Name:        "cerebro.graph_changelog",
-			Description: "Inspect recent graph snapshot changes or one materialized diff in detail",
+			Description: "Inspect recent graph snapshot changes or one stored/derived graph diff in detail",
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"diff_id": map[string]any{
 						"type":        "string",
-						"description": "Optional materialized diff artifact ID. When set, returns detailed filtered diff data.",
+						"description": "Optional graph diff ID from changelog results. When set, returns detailed filtered diff data for either a stored artifact or a derived adjacent snapshot diff.",
 					},
 					"since": map[string]any{
 						"type":        "string",
