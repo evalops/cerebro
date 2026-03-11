@@ -401,3 +401,15 @@ func TestBuilderApplyChanges_KubernetesEventsMaterializeTypedNodesAndEdges(t *te
 	assertHasEdge(t, builder.Graph(), "prod-cluster/pod/payments/payments-api", "prod-cluster/serviceaccount/payments/payments-sa", EdgeKindCanAssume)
 	assertHasEdge(t, builder.Graph(), "prod-cluster/serviceaccount/payments/payments-sa", "prod-cluster/clusterrole/cluster-admin", EdgeKindCanAssume)
 }
+
+func TestCDCNodeID_KubernetesPrefersTypedIDOverLegacyFallback(t *testing.T) {
+	payload := map[string]any{
+		"name":         "cluster-admin",
+		"cluster_name": "prod-cluster",
+	}
+
+	got := cdcNodeID("k8s_rbac_cluster_roles", payload, "prod-cluster/cluster-admin")
+	if got != "prod-cluster/clusterrole/cluster-admin" {
+		t.Fatalf("expected typed kubernetes id, got %q", got)
+	}
+}

@@ -186,3 +186,10 @@ func containsToxicCombination(combos []*ToxicCombination, id string) bool {
 	}
 	return false
 }
+
+func TestK8sClusterScopedID_NormalizesResourceType(t *testing.T) {
+	got := k8sClusterScopedID("prod-cluster", "ClusterRole", "cluster-admin")
+	if got != "prod-cluster/clusterrole/cluster-admin" {
+		t.Fatalf("expected lowercase typed id, got %q", got)
+	}
+}

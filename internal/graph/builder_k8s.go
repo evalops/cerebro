@@ -687,7 +687,7 @@ func k8sTypedNamespacedID(clusterName, resourceType, namespace, name string) str
 func k8sClusterScopedID(clusterName, resourceType, name string) string {
 	clusterName = k8sNormalizeClusterName(clusterName)
 	parts := []string{clusterName}
-	if resourceType = strings.TrimSpace(resourceType); resourceType != "" {
+	if resourceType = strings.ToLower(strings.TrimSpace(resourceType)); resourceType != "" {
 		parts = append(parts, resourceType)
 	}
 	if name = strings.TrimSpace(name); name != "" {

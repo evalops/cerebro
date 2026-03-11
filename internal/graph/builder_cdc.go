@@ -641,20 +641,31 @@ func cdcEventToNode(table string, event cdcEvent) *Node {
 }
 
 func cdcNodeID(table string, payload map[string]any, fallback string) string {
-	if id := strings.TrimSpace(fallback); id != "" {
-		return id
-	}
-
 	switch strings.ToLower(strings.TrimSpace(table)) {
 	case "aws_iam_users", "aws_iam_roles", "aws_iam_groups", "aws_s3_buckets", "aws_ec2_instances", "aws_rds_instances", "aws_lambda_functions", "aws_secretsmanager_secrets":
+		if id := strings.TrimSpace(fallback); id != "" {
+			return id
+		}
 		return firstNonEmpty(queryRowString(payload, "arn"), queryRowString(payload, "id"), queryRowString(payload, "name"))
 	case "gcp_iam_service_accounts":
+		if id := strings.TrimSpace(fallback); id != "" {
+			return id
+		}
 		return firstNonEmpty(queryRowString(payload, "unique_id"), queryRowString(payload, "email"), queryRowString(payload, "name"), queryRowString(payload, "id"))
 	case "gcp_compute_instances", "gcp_storage_buckets", "gcp_sql_instances", "gcp_cloudfunctions_functions", "gcp_cloudrun_services":
+		if id := strings.TrimSpace(fallback); id != "" {
+			return id
+		}
 		return firstNonEmpty(queryRowString(payload, "id"), queryRowString(payload, "name"))
 	case "azure_ad_service_principals", "azure_ad_users", "azure_compute_virtual_machines", "azure_storage_accounts", "azure_sql_databases", "azure_keyvault_vaults", "azure_functions_apps", "okta_users", "okta_groups", "okta_applications":
+		if id := strings.TrimSpace(fallback); id != "" {
+			return id
+		}
 		return firstNonEmpty(queryRowString(payload, "id"), queryRowString(payload, "name"))
 	case "okta_admin_roles":
+		if id := strings.TrimSpace(fallback); id != "" {
+			return id
+		}
 		roleType := strings.TrimSpace(queryRowString(payload, "role_type"))
 		if roleType == "" {
 			return ""
@@ -671,6 +682,9 @@ func cdcNodeID(table string, payload map[string]any, fallback string) string {
 		"k8s_core_persistent_volumes":
 		return k8sNodeID(table, payload, fallback)
 	default:
+		if id := strings.TrimSpace(fallback); id != "" {
+			return id
+		}
 		return firstNonEmpty(queryRowString(payload, "arn"), queryRowString(payload, "id"), queryRowString(payload, "unique_id"), queryRowString(payload, "name"))
 	}
 }
