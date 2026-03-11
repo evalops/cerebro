@@ -226,10 +226,7 @@ func ListEntityFacetDefinitions() []EntityFacetDefinition {
 		return out[i].ID < out[j].ID
 	})
 	for i := range out {
-		out[i].ApplicableKinds = append([]NodeKind(nil), out[i].ApplicableKinds...)
-		out[i].SourceKeys = append([]string(nil), out[i].SourceKeys...)
-		out[i].ClaimPredicates = append([]string(nil), out[i].ClaimPredicates...)
-		out[i].Fields = append([]EntityFacetFieldDefinition(nil), out[i].Fields...)
+		out[i] = cloneEntityFacetDefinition(out[i])
 	}
 	return out
 }
@@ -239,10 +236,18 @@ func GetEntityFacetDefinition(id string) (EntityFacetDefinition, bool) {
 	id = strings.TrimSpace(id)
 	for _, def := range defaultEntityFacetDefinitions {
 		if def.ID == id {
-			return def, true
+			return cloneEntityFacetDefinition(def), true
 		}
 	}
 	return EntityFacetDefinition{}, false
+}
+
+func cloneEntityFacetDefinition(def EntityFacetDefinition) EntityFacetDefinition {
+	def.ApplicableKinds = append([]NodeKind(nil), def.ApplicableKinds...)
+	def.SourceKeys = append([]string(nil), def.SourceKeys...)
+	def.ClaimPredicates = append([]string(nil), def.ClaimPredicates...)
+	def.Fields = append([]EntityFacetFieldDefinition(nil), def.Fields...)
+	return def
 }
 
 func buildEntityCanonicalRef(node *Node) EntityCanonicalRef {

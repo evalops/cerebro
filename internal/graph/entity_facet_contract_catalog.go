@@ -113,7 +113,6 @@ func CompareEntityFacetContractCatalogs(baseline, current EntityFacetContractCat
 			}
 			report.RemovedFacets = append(report.RemovedFacets, id)
 			report.BreakingChanges = append(report.BreakingChanges, issue)
-			report.VersioningViolations = append(report.VersioningViolations, issue)
 		case !hadBefore && hasAfter:
 			report.AddedFacets = append(report.AddedFacets, id)
 		case hadBefore && hasAfter:
