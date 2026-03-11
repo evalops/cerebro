@@ -121,7 +121,7 @@ func (a *App) SecurityServices() SecurityServices {
 		RemediationExecutor: a.RemediationExecutor,
 		RuntimeDetect:       a.RuntimeDetect,
 		RuntimeRespond:      a.RuntimeRespond,
-		SecurityGraph:       a.SecurityGraph,
+		SecurityGraph:       a.CurrentSecurityGraph(),
 		GraphBuilder:        a.SecurityGraphBuilder,
 		Propagation:         a.Propagation,
 	}

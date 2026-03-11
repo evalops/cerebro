@@ -39,6 +39,7 @@ func (a *App) initTapGraphConsumer(ctx context.Context) {
 		BatchSize:             a.Config.NATSConsumerBatchSize,
 		AckWait:               a.Config.NATSConsumerAckWait,
 		FetchTimeout:          a.Config.NATSConsumerFetchTimeout,
+		InProgressInterval:    a.Config.NATSConsumerInProgressInterval,
 		DeadLetterPath:        a.Config.NATSConsumerDeadLetterPath,
 		DropHealthLookback:    a.Config.NATSConsumerDropHealthLookback,
 		DropHealthThreshold:   a.Config.NATSConsumerDropHealthThreshold,
@@ -66,6 +67,13 @@ func (a *App) initTapGraphConsumer(ctx context.Context) {
 			snapshot := consumer.HealthSnapshot(start)
 			status := health.StatusHealthy
 			message := "consumer healthy"
+			graphStaleness := snapshot.GraphStaleness
+			if graphStaleness == 0 {
+				buildSnapshot := a.GraphBuildSnapshot()
+				if !buildSnapshot.LastBuildAt.IsZero() {
+					graphStaleness = time.Since(buildSnapshot.LastBuildAt.UTC())
+				}
+			}
 			if snapshot.Threshold > 0 && snapshot.RecentDropped >= snapshot.Threshold {
 				status = health.StatusUnhealthy
 				message = fmt.Sprintf("consumer dropped %d malformed events in last %s (threshold %d); last_reason=%s",
@@ -74,6 +82,11 @@ func (a *App) initTapGraphConsumer(ctx context.Context) {
 					snapshot.Threshold,
 					snapshot.LastDropReason,
 				)
+			} else if threshold := a.Config.NATSConsumerGraphStalenessThreshold; threshold > 0 && graphStaleness > threshold {
+				status = health.StatusUnhealthy
+				message = fmt.Sprintf("graph staleness %s exceeds threshold %s", graphStaleness.Round(time.Second), threshold)
+			} else if snapshot.ConsumerLag > 0 {
+				message = fmt.Sprintf("consumer healthy; lag=%d lag_seconds=%s", snapshot.ConsumerLag, snapshot.ConsumerLagAge.Round(time.Second))
 			}
 			return health.CheckResult{
 				Name:      "tap_consumer",
@@ -109,13 +122,28 @@ func (a *App) ensureSecurityGraph() *graph.Graph {
 	return a.SecurityGraph
 }
 
-func (a *App) handleTapCloudEvent(_ context.Context, evt events.CloudEvent) error {
+func (a *App) waitForSecurityGraphReady(ctx context.Context) error {
+	if a == nil || a.graphReady == nil {
+		return nil
+	}
+	select {
+	case <-a.graphReady:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (a *App) handleTapCloudEvent(ctx context.Context, evt events.CloudEvent) error {
 	eventType := strings.TrimSpace(evt.Type)
 	if eventType == "" {
 		eventType = strings.TrimSpace(evt.Subject)
 	}
 	if !strings.HasPrefix(strings.ToLower(eventType), "ensemble.tap.") {
 		return nil
+	}
+	if err := a.waitForSecurityGraphReady(ctx); err != nil {
+		return err
 	}
 	if isTapSchemaEventType(eventType) {
 		return a.handleTapSchemaEvent(eventType, evt)

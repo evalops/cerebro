@@ -116,6 +116,7 @@ func TestInitScheduler_GraphRebuildSkipsWhenNoChanges(t *testing.T) {
 		SecurityGraphBuilder: builder,
 		SecurityGraph:        builder.Graph(),
 	}
+	app.setGraphBuildState(GraphBuildSuccess, builder.Graph().Metadata().BuiltAt, nil)
 	app.initScheduler(context.Background())
 
 	job, ok := app.Scheduler.GetJob("graph-rebuild")
@@ -126,6 +127,9 @@ func TestInitScheduler_GraphRebuildSkipsWhenNoChanges(t *testing.T) {
 	source.resetCounts()
 	if err := job.Handler(context.Background()); err != nil {
 		t.Fatalf("graph-rebuild handler returned error: %v", err)
+	}
+	if snapshot := app.GraphBuildSnapshot(); snapshot.State != GraphBuildSuccess {
+		t.Fatalf("expected graph build state success after no-op rebuild, got %#v", snapshot)
 	}
 
 	if source.count("has_changes") == 0 {
@@ -199,6 +203,9 @@ func TestInitScheduler_GraphRebuildAppliesIncrementalChangesAndEmitsMutation(t *
 	if _, ok := app.SecurityGraph.GetNode("arn:aws:s3:::cdc-bucket"); !ok {
 		t.Fatal("expected incrementally added node in security graph")
 	}
+	if snapshot := app.GraphBuildSnapshot(); snapshot.State != GraphBuildSuccess {
+		t.Fatalf("expected graph build state success after incremental update, got %#v", snapshot)
+	}
 
 	events := publisher.all()
 	if len(events) != 1 {
@@ -215,5 +222,29 @@ func TestInitScheduler_GraphRebuildAppliesIncrementalChangesAndEmitsMutation(t *
 	}
 	if got, _ := events[0].Data["events_processed"].(int); got != 1 {
 		t.Fatalf("expected events_processed=1, got %v", events[0].Data["events_processed"])
+	}
+}
+
+func TestRebuildSecurityGraphUpdatesGraphBuildState(t *testing.T) {
+	source := newSchedulerGraphSource()
+	builder := graph.NewBuilder(source, schedulerDigestTestLogger())
+	if err := builder.Build(context.Background()); err != nil {
+		t.Fatalf("initial build failed: %v", err)
+	}
+
+	app := &App{
+		Config:               &Config{},
+		Logger:               schedulerDigestTestLogger(),
+		SecurityGraphBuilder: builder,
+		SecurityGraph:        builder.Graph(),
+	}
+	app.setGraphBuildState(GraphBuildFailed, time.Now().UTC(), context.DeadlineExceeded)
+
+	if err := app.RebuildSecurityGraph(context.Background()); err != nil {
+		t.Fatalf("RebuildSecurityGraph returned error: %v", err)
+	}
+
+	if snapshot := app.GraphBuildSnapshot(); snapshot.State != GraphBuildSuccess {
+		t.Fatalf("expected graph build state success after rebuild, got %#v", snapshot)
 	}
 }

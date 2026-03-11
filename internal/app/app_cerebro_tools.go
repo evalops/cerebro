@@ -1830,10 +1830,14 @@ func marshalToolResponse(value any) (string, error) {
 }
 
 func (a *App) requireSecurityGraph() (*graph.Graph, error) {
-	if a == nil || a.SecurityGraph == nil {
+	if a == nil {
 		return nil, fmt.Errorf("security graph not initialized")
 	}
-	return a.SecurityGraph, nil
+	securityGraph := a.CurrentSecurityGraph()
+	if securityGraph == nil {
+		return nil, fmt.Errorf("security graph not initialized")
+	}
+	return securityGraph, nil
 }
 
 func clampInt(value, defaultValue, minValue, maxValue int) int {

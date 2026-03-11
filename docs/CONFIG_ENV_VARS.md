@@ -2,7 +2,7 @@
 
 Generated from `internal/app/app_config.go` (`LoadConfig`) via `go run ./scripts/generate_config_docs/main.go`.
 
-Total variables: **279**
+Total variables: **283**
 
 | Variable | Reader(s) | Default(s) | Config Field(s) |
 |---|---|---|---|
@@ -37,9 +37,10 @@ Total variables: **279**
 | `AZURE_TENANT_ID` | `getEnv` | `""` | `AzureTenantID` |
 | `BAMBOOHR_API_TOKEN` | `getEnv` | `""` | `BambooHRAPIToken` |
 | `BAMBOOHR_URL` | `getEnv` | `""` | `BambooHRURL` |
-| `CEREBRO_ACCESS_REVIEW_RETENTION_DAYS` | `getEnvInt` | `0` | `AccessReviewRetentionDays` |
-| `CEREBRO_AUDIT_RETENTION_DAYS` | `getEnvInt` | `0` | `AuditRetentionDays` |
-| `CEREBRO_GRAPH_RETENTION_DAYS` | `getEnvInt` | `0` | `GraphRetentionDays` |
+| `CEREBRO_ACCESS_REVIEW_RETENTION_DAYS` | `getEnvInt` | `365` | `AccessReviewRetentionDays` |
+| `CEREBRO_AUDIT_RETENTION_DAYS` | `getEnvInt` | `90` | `AuditRetentionDays` |
+| `CEREBRO_GRAPH_RETENTION_DAYS` | `getEnvInt` | `180` | `GraphRetentionDays` |
+| `CEREBRO_INIT_TIMEOUT` | `getEnvDuration` | `2 * time.Minute` | `InitTimeout` |
 | `CEREBRO_OTEL_ENABLED` | `getEnvBool` | `false` | `TracingEnabled` |
 | `CEREBRO_OTEL_EXPORTER_OTLP_ENDPOINT` | `getEnv` | `getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "")` | `TracingOTLPEndpoint` |
 | `CEREBRO_OTEL_EXPORTER_OTLP_HEADERS` | `getEnv` | `getEnv("OTEL_EXPORTER_OTLP_HEADERS", "")` | `TracingOTLPHeaders` |
@@ -48,7 +49,7 @@ Total variables: **279**
 | `CEREBRO_OTEL_SERVICE_NAME` | `getEnv` | `"cerebro"` | `TracingServiceName` |
 | `CEREBRO_RETENTION_JOB_INTERVAL` | `getEnvDuration` | `24 * time.Hour` | `RetentionJobInterval` |
 | `CEREBRO_SECRETS_RELOAD_INTERVAL` | `getEnvDuration` | `0` | `SecretsReloadInterval` |
-| `CEREBRO_SESSION_RETENTION_DAYS` | `getEnvInt` | `0` | `SessionRetentionDays` |
+| `CEREBRO_SESSION_RETENTION_DAYS` | `getEnvInt` | `30` | `SessionRetentionDays` |
 | `CEREBRO_TOOL_ACCESS_REVIEW_REQUIRES_APPROVAL` | `getEnvBool` | `true` | `CerebroAccessReviewNeedsApproval` |
 | `CEREBRO_TOOL_SIMULATE_REQUIRES_APPROVAL` | `getEnvBool` | `true` | `CerebroSimulateNeedsApproval` |
 | `CLOUDFLARE_API_TOKEN` | `getEnv` | `""` | `CloudflareAPIToken` |
@@ -133,14 +134,17 @@ Total variables: **279**
 | `LINEAR_API_KEY` | `getEnv` | `""` | `LinearAPIKey` |
 | `LINEAR_TEAM_ID` | `getEnv` | `""` | `LinearTeamID` |
 | `LOG_LEVEL` | `getEnv` | `"info"` | `LogLevel` |
-| `NATS_CONSUMER_ACK_WAIT` | `getEnvDuration` | `30 * time.Second` | `NATSConsumerAckWait` |
+| `NATS_CONSUMER_ACK_WAIT` | `getEnvDuration` | `120 * time.Second` | `NATSConsumerAckWait` |
 | `NATS_CONSUMER_BATCH_SIZE` | `getEnvInt` | `50` | `NATSConsumerBatchSize` |
 | `NATS_CONSUMER_DEAD_LETTER_PATH` | `getEnv` | `filepath.Join(findings.DefaultFilePath(), "nats-consumer.dlq.jsonl")` | `NATSConsumerDeadLetterPath` |
+| `NATS_CONSUMER_DRAIN_TIMEOUT` | `getEnvDuration` | `30 * time.Second` | `NATSConsumerDrainTimeout` |
 | `NATS_CONSUMER_DROP_HEALTH_LOOKBACK` | `getEnvDuration` | `5 * time.Minute` | `NATSConsumerDropHealthLookback` |
 | `NATS_CONSUMER_DROP_HEALTH_THRESHOLD` | `getEnvInt` | `1` | `NATSConsumerDropHealthThreshold` |
 | `NATS_CONSUMER_DURABLE` | `getEnv` | `"cerebro_graph_builder"` | `NATSConsumerDurable` |
 | `NATS_CONSUMER_ENABLED` | `getEnvBool` | `false` | `NATSConsumerEnabled` |
 | `NATS_CONSUMER_FETCH_TIMEOUT` | `getEnvDuration` | `2 * time.Second` | `NATSConsumerFetchTimeout` |
+| `NATS_CONSUMER_GRAPH_STALENESS_THRESHOLD` | `getEnvDuration` | `15 * time.Minute` | `NATSConsumerGraphStalenessThreshold` |
+| `NATS_CONSUMER_IN_PROGRESS_INTERVAL` | `getEnvDuration` | `15 * time.Second` | `NATSConsumerInProgressInterval` |
 | `NATS_CONSUMER_STREAM` | `getEnv` | `"ENSEMBLE_TAP"` | `NATSConsumerStream` |
 | `NATS_CONSUMER_SUBJECTS` | `getEnv` | `"ensemble.tap.>"` | `NATSConsumerSubjects` |
 | `NATS_JETSTREAM_AUTH_MODE` | `getEnv` | `"none"` | `NATSJetStreamAuthMode` |

@@ -49,7 +49,7 @@ func (a *App) startEventAlertRouting(_ context.Context) {
 	subjectPrefix := strings.TrimSpace(a.Config.AlertRouterNotifyPrefix)
 	router, err := events.NewAlertRouter(events.AlertRouterOptions{
 		Config:        routingConfig,
-		Resolver:      events.NewGraphAlertResolver(func() *graph.Graph { return a.SecurityGraph }),
+		Resolver:      events.NewGraphAlertResolver(func() *graph.Graph { return a.CurrentSecurityGraph() }),
 		Sender:        notifier,
 		SubjectPrefix: subjectPrefix,
 		Logger:        a.Logger,

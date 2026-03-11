@@ -158,6 +158,21 @@ func TestClose_LogsWarningWhenGraphShutdownTimesOut(t *testing.T) {
 	}
 }
 
+func TestStopThreatIntelSyncWaitsForBackgroundWorker(t *testing.T) {
+	stopped := make(chan struct{})
+	application := &App{}
+	application.threatIntelSyncCancel = func() {
+		close(stopped)
+	}
+	application.threatIntelSyncWG.Add(1)
+	go func() {
+		defer application.threatIntelSyncWG.Done()
+		<-stopped
+	}()
+
+	application.stopThreatIntelSync()
+}
+
 func TestInitCache_EntriesDoNotExpireImmediately(t *testing.T) {
 	a := &App{}
 	a.initCache()

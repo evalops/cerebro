@@ -36,6 +36,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -137,22 +138,28 @@ type App struct {
 	RuntimeRespond      *runtime.ResponseEngine
 
 	// Security Graph
-	SecurityGraph        *graph.Graph
-	SecurityGraphBuilder *graph.Builder
-	Propagation          *graph.PropagationEngine
-	graphReady           chan struct{} // closed when initial graph build completes
-	graphCancel          context.CancelFunc
-	traceShutdown        func(context.Context) error
-	secretsReloadCancel  context.CancelFunc
-	secretsReloadWG      sync.WaitGroup
-	tapMapperOnce        sync.Once
-	tapMapperErr         error
-	securityGraphInitMu  sync.Mutex
-	reloadMu             sync.Mutex
-	apiKeys              atomic.Value // map[string]string
-	apiCredentials       atomic.Value // map[string]apiauth.Credential
-	apiCredentialStore   *apiauth.ManagedCredentialStore
-	secretsLoader        secretsLoader
+	SecurityGraph         *graph.Graph
+	SecurityGraphBuilder  *graph.Builder
+	Propagation           *graph.PropagationEngine
+	graphReady            chan struct{} // closed when initial graph build completes
+	graphCancel           context.CancelFunc
+	graphBuildMu          sync.RWMutex
+	graphBuildState       GraphBuildState
+	graphBuildLastAt      time.Time
+	graphBuildErr         string
+	threatIntelSyncCancel context.CancelFunc
+	threatIntelSyncWG     sync.WaitGroup
+	traceShutdown         func(context.Context) error
+	secretsReloadCancel   context.CancelFunc
+	secretsReloadWG       sync.WaitGroup
+	tapMapperOnce         sync.Once
+	tapMapperErr          error
+	securityGraphInitMu   sync.RWMutex
+	reloadMu              sync.Mutex
+	apiKeys               atomic.Value // map[string]string
+	apiCredentials        atomic.Value // map[string]apiauth.Credential
+	apiCredentialStore    *apiauth.ManagedCredentialStore
+	secretsLoader         secretsLoader
 
 	// Cached table list from Snowflake (shared by graph builder + policy coverage)
 	AvailableTables []string
@@ -194,6 +201,7 @@ func NewWithOptions(ctx context.Context, opts ...Option) (*App, error) {
 	if logger == nil {
 		logger = newDefaultAppLogger(cfg.LogLevel)
 	}
+	logUnboundedRetentionWarnings(logger, cfg)
 
 	app := &App{
 		Config: cfg,
@@ -207,7 +215,24 @@ func NewWithOptions(ctx context.Context, opts ...Option) (*App, error) {
 		app.setAPIKeys(cfg.APIKeys)
 	}
 
-	if err := app.initialize(ctx); err != nil {
+	initCtx := ctx
+	if initCtx == nil {
+		initCtx = context.Background()
+	}
+	if cfg.InitTimeout > 0 {
+		var cancel context.CancelFunc
+		initCtx, cancel = context.WithTimeout(initCtx, cfg.InitTimeout)
+		defer cancel()
+	}
+
+	if err := app.initialize(initCtx); err != nil {
+		if app.graphCancel != nil {
+			app.graphCancel()
+		}
+		app.stopThreatIntelSync()
+		if errors.Is(err, context.DeadlineExceeded) || initCtx.Err() == context.DeadlineExceeded {
+			logger.Error("application initialization timed out", "timeout", cfg.InitTimeout, "error", err)
+		}
 		return nil, err
 	}
 

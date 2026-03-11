@@ -183,7 +183,10 @@ func (a *App) initCache() {
 	a.Cache = cache.NewPolicyCache(10000, 15*time.Minute)
 }
 
-func (a *App) initTicketing() {
+func (a *App) initTicketing(ctx context.Context) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	a.Ticketing = ticketing.NewService()
 
 	// Register Jira if configured
@@ -195,7 +198,7 @@ func (a *App) initTicketing() {
 			Project:          a.Config.JiraProject,
 			CloseTransitions: a.Config.JiraCloseTransitions,
 		})
-		if err := validateTicketingProvider(jira); err != nil {
+		if err := validateTicketingProvider(ctx, jira); err != nil {
 			a.Logger.Error("ticketing provider validation failed", "provider", jira.Name(), "error", err)
 		} else {
 			a.Ticketing.RegisterProvider(jira)
@@ -208,7 +211,7 @@ func (a *App) initTicketing() {
 			APIKey: a.Config.LinearAPIKey,
 			TeamID: a.Config.LinearTeamID,
 		})
-		if err := validateTicketingProvider(linear); err != nil {
+		if err := validateTicketingProvider(ctx, linear); err != nil {
 			a.Logger.Error("ticketing provider validation failed", "provider", linear.Name(), "error", err)
 		} else {
 			a.Ticketing.RegisterProvider(linear)
@@ -216,8 +219,11 @@ func (a *App) initTicketing() {
 	}
 }
 
-func validateTicketingProvider(provider ticketing.Provider) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+func validateTicketingProvider(parent context.Context, provider ticketing.Provider) error {
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
 	defer cancel()
 	return provider.Validate(ctx)
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -20,12 +21,14 @@ const (
 	defaultConsumerDurable             = "cerebro_graph_builder"
 	defaultConsumerSubject             = "ensemble.tap.>"
 	defaultConsumerBatchSize           = 50
-	defaultConsumerAckWait             = 30 * time.Second
+	defaultConsumerAckWait             = 120 * time.Second
 	defaultConsumerFetchTimeout        = 2 * time.Second
 	defaultConsumerConnectWait         = 5 * time.Second
 	defaultConsumerDropLookback        = 5 * time.Minute
 	defaultConsumerDropThreshold       = 1
 	defaultConsumerPayloadPreviewBytes = 512
+	defaultConsumerInProgressInterval  = 15 * time.Second
+	defaultConsumerLagRefreshInterval  = 15 * time.Second
 )
 
 type ConsumerConfig struct {
@@ -36,6 +39,7 @@ type ConsumerConfig struct {
 	BatchSize           int
 	AckWait             time.Duration
 	FetchTimeout        time.Duration
+	InProgressInterval  time.Duration
 	ConnectTimeout      time.Duration
 	MaxAckPending       int
 	DeadLetterPath      string
@@ -68,21 +72,35 @@ type Consumer struct {
 	js      nats.JetStreamContext
 	sub     *nats.Subscription
 
-	stopCh         chan struct{}
-	stopOnce       sync.Once
-	wg             sync.WaitGroup
-	dropMu         sync.Mutex
-	drops          []time.Time
-	lastDropReason string
-	lastDropAt     time.Time
+	stopCh          chan struct{}
+	drainCh         chan struct{}
+	stopOnce        sync.Once
+	drainOnce       sync.Once
+	closeMu         sync.Mutex
+	closed          bool
+	wg              sync.WaitGroup
+	dropMu          sync.Mutex
+	drops           []time.Time
+	lastDropReason  string
+	lastDropAt      time.Time
+	statusMu        sync.RWMutex
+	lastProcessedAt time.Time
+	lastEventTime   time.Time
+	consumerLag     int
+	consumerLagAge  time.Duration
 }
 
 type ConsumerHealthSnapshot struct {
-	RecentDropped  int           `json:"recent_dropped"`
-	Threshold      int           `json:"threshold"`
-	Lookback       time.Duration `json:"lookback"`
-	LastDropAt     time.Time     `json:"last_drop_at,omitempty"`
-	LastDropReason string        `json:"last_drop_reason,omitempty"`
+	RecentDropped   int           `json:"recent_dropped"`
+	Threshold       int           `json:"threshold"`
+	Lookback        time.Duration `json:"lookback"`
+	LastDropAt      time.Time     `json:"last_drop_at,omitempty"`
+	LastDropReason  string        `json:"last_drop_reason,omitempty"`
+	LastProcessedAt time.Time     `json:"last_processed_at,omitempty"`
+	LastEventTime   time.Time     `json:"last_event_time,omitempty"`
+	ConsumerLag     int           `json:"consumer_lag"`
+	ConsumerLagAge  time.Duration `json:"consumer_lag_seconds"`
+	GraphStaleness  time.Duration `json:"graph_staleness"`
 }
 
 func NewJetStreamConsumer(cfg ConsumerConfig, logger *slog.Logger, handler EventHandler) (*Consumer, error) {
@@ -140,6 +158,7 @@ func NewJetStreamConsumer(cfg ConsumerConfig, logger *slog.Logger, handler Event
 		nc:      nc,
 		js:      js,
 		stopCh:  make(chan struct{}),
+		drainCh: make(chan struct{}),
 	}
 
 	if err := c.ensureStream(); err != nil {
@@ -165,22 +184,59 @@ func NewJetStreamConsumer(cfg ConsumerConfig, logger *slog.Logger, handler Event
 }
 
 func (c *Consumer) Close() error {
-	var closeErr error
 	c.stopOnce.Do(func() {
 		close(c.stopCh)
-		c.wg.Wait()
-		if c.sub != nil {
-			if err := c.sub.Unsubscribe(); err != nil {
-				closeErr = errors.Join(closeErr, fmt.Errorf("unsubscribe consumer: %w", err))
-			}
-		}
-		if c.nc != nil {
-			if err := c.nc.Drain(); err != nil {
-				closeErr = errors.Join(closeErr, fmt.Errorf("drain consumer nats connection: %w", err))
-			}
-			c.nc.Close()
-		}
 	})
+	c.drainOnce.Do(func() {
+		close(c.drainCh)
+	})
+	c.wg.Wait()
+	return c.cleanup()
+}
+
+func (c *Consumer) Drain(ctx context.Context) error {
+	if c == nil {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	c.drainOnce.Do(func() {
+		close(c.drainCh)
+	})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		c.wg.Wait()
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (c *Consumer) cleanup() error {
+	c.closeMu.Lock()
+	defer c.closeMu.Unlock()
+	if c.closed {
+		return nil
+	}
+	c.closed = true
+
+	var closeErr error
+	if c.sub != nil {
+		if err := c.sub.Unsubscribe(); err != nil && !errors.Is(err, nats.ErrBadSubscription) {
+			closeErr = errors.Join(closeErr, fmt.Errorf("unsubscribe consumer: %w", err))
+		}
+	}
+	if c.nc != nil {
+		if err := c.nc.Drain(); err != nil && !errors.Is(err, nats.ErrConnectionClosed) {
+			closeErr = errors.Join(closeErr, fmt.Errorf("drain consumer nats connection: %w", err))
+		}
+		c.nc.Close()
+	}
 	return closeErr
 }
 
@@ -189,20 +245,21 @@ func (c *Consumer) run() {
 	runCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	cancelBridgeDone := make(chan struct{})
 	go func() {
-		defer close(cancelBridgeDone)
-		<-c.stopCh
-		cancel()
-	}()
-	defer func() {
-		cancel()
-		<-cancelBridgeDone
+		select {
+		case <-c.stopCh:
+			cancel()
+		case <-runCtx.Done():
+		}
 	}()
 
+	lastLagRefresh := time.Time{}
 	for {
 		select {
 		case <-c.stopCh:
+			return
+		case <-c.drainCh:
+			c.refreshLagMetrics(time.Now().UTC())
 			return
 		default:
 		}
@@ -210,20 +267,55 @@ func (c *Consumer) run() {
 		msgs, err := c.sub.Fetch(c.config.BatchSize, nats.MaxWait(c.config.FetchTimeout))
 		if err != nil {
 			if errors.Is(err, nats.ErrTimeout) {
+				if time.Since(lastLagRefresh) >= defaultConsumerLagRefreshInterval {
+					c.refreshLagMetrics(time.Now().UTC())
+					lastLagRefresh = time.Now().UTC()
+				}
 				continue
 			}
 			c.logger.Warn("tap consumer fetch failed", "error", err)
 			time.Sleep(500 * time.Millisecond)
 			continue
 		}
+		c.refreshLagMetrics(time.Now().UTC())
+		lastLagRefresh = time.Now().UTC()
 
-		for _, msg := range msgs {
-			c.handleMessage(runCtx, msg.Subject, msg.Data, func() error { return msg.Ack() }, func() error { return msg.Nak() })
+		batchInProgress := make([]func() error, len(msgs))
+		for i, msg := range msgs {
+			msg := msg
+			batchInProgress[i] = func() error { return msg.InProgress() }
 		}
+		deactivateBatchHeartbeat, stopBatchHeartbeat := c.startBatchInProgressHeartbeat(runCtx, batchInProgress)
+		for _, msg := range msgs {
+			if meta, err := msg.Metadata(); err == nil && meta != nil && meta.NumDelivered > 1 {
+				metrics.RecordNATSConsumerRedelivery(c.config.Stream, c.config.Durable)
+			}
+		}
+		for i, msg := range msgs {
+			deactivateBatchHeartbeat(i)
+			result := c.handleMessage(
+				runCtx,
+				msg.Subject,
+				msg.Data,
+				func() error { return msg.Ack() },
+				func() error { return msg.Nak() },
+				batchInProgress[i],
+			)
+			if result.Processed {
+				c.recordProcessed(result.ProcessedAt, result.EventTime)
+			}
+		}
+		stopBatchHeartbeat()
 	}
 }
 
-func (c *Consumer) handleMessage(ctx context.Context, subject string, payload []byte, ack func() error, nak func() error) {
+type consumerMessageResult struct {
+	Processed   bool
+	EventTime   time.Time
+	ProcessedAt time.Time
+}
+
+func (c *Consumer) handleMessage(ctx context.Context, subject string, payload []byte, ack func() error, nak func() error, inProgress func() error) consumerMessageResult {
 	var evt CloudEvent
 	if err := json.Unmarshal(payload, &evt); err != nil {
 		preview := payloadPreview(payload, c.config.PayloadPreviewBytes)
@@ -246,7 +338,7 @@ func (c *Consumer) handleMessage(ctx context.Context, subject string, payload []
 			if nakErr := nak(); nakErr != nil {
 				c.logger.Warn("tap consumer nak failed after dead-letter error", "error", nakErr, "subject", subject)
 			}
-			return
+			return consumerMessageResult{}
 		}
 		c.logger.Error("tap consumer dead-lettered malformed cloud event",
 			"error", err,
@@ -259,17 +351,25 @@ func (c *Consumer) handleMessage(ctx context.Context, subject string, payload []
 		if err := ack(); err != nil {
 			c.logger.Warn("tap consumer ack failed after dead-lettering malformed event", "error", err, "subject", subject)
 		}
-		return
+		return consumerMessageResult{}
 	}
+	stopHeartbeat := c.startInProgressHeartbeat(ctx, inProgress)
+	defer stopHeartbeat()
 	if err := c.handler(ctx, evt); err != nil {
 		c.logger.Warn("tap consumer handler failed; message requeued", "error", err, "event_type", evt.Type)
 		if nakErr := nak(); nakErr != nil {
 			c.logger.Warn("tap consumer nak failed", "error", nakErr, "event_type", evt.Type)
 		}
-		return
+		return consumerMessageResult{}
 	}
+	processedAt := time.Now().UTC()
 	if err := ack(); err != nil {
 		c.logger.Warn("tap consumer ack failed", "error", err, "event_type", evt.Type)
+	}
+	return consumerMessageResult{
+		Processed:   true,
+		EventTime:   evt.Time.UTC(),
+		ProcessedAt: processedAt,
 	}
 }
 
@@ -293,15 +393,211 @@ func (c *Consumer) HealthSnapshot(now time.Time) ConsumerHealthSnapshot {
 	}
 	now = now.UTC()
 	c.dropMu.Lock()
-	defer c.dropMu.Unlock()
 	c.pruneDropsLocked(now)
-	return ConsumerHealthSnapshot{
-		RecentDropped:  len(c.drops),
-		Threshold:      c.config.DropHealthThreshold,
-		Lookback:       c.config.DropHealthLookback,
-		LastDropAt:     c.lastDropAt,
-		LastDropReason: c.lastDropReason,
+	dropped := len(c.drops)
+	lastDropAt := c.lastDropAt
+	lastDropReason := c.lastDropReason
+	c.dropMu.Unlock()
+
+	c.statusMu.RLock()
+	lastProcessedAt := c.lastProcessedAt
+	lastEventTime := c.lastEventTime
+	consumerLag := c.consumerLag
+	consumerLagAge := c.consumerLagAge
+	c.statusMu.RUnlock()
+
+	graphStaleness := time.Duration(0)
+	if !lastProcessedAt.IsZero() {
+		graphStaleness = now.Sub(lastProcessedAt)
+		if graphStaleness < 0 {
+			graphStaleness = 0
+		}
 	}
+
+	return ConsumerHealthSnapshot{
+		RecentDropped:   dropped,
+		Threshold:       c.config.DropHealthThreshold,
+		Lookback:        c.config.DropHealthLookback,
+		LastDropAt:      lastDropAt,
+		LastDropReason:  lastDropReason,
+		LastProcessedAt: lastProcessedAt,
+		LastEventTime:   lastEventTime,
+		ConsumerLag:     consumerLag,
+		ConsumerLagAge:  consumerLagAge,
+		GraphStaleness:  graphStaleness,
+	}
+}
+
+func (c *Consumer) startInProgressHeartbeat(ctx context.Context, inProgress func() error) func() {
+	if c == nil || inProgress == nil || c.config.InProgressInterval <= 0 {
+		return func() {}
+	}
+	stopCh := make(chan struct{})
+	var once sync.Once
+	go func() {
+		ticker := time.NewTicker(c.config.InProgressInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-stopCh:
+				return
+			case <-ticker.C:
+				if err := inProgress(); err != nil && c.logger != nil {
+					c.logger.Debug("tap consumer in-progress heartbeat failed", "error", err, "stream", c.config.Stream, "durable", c.config.Durable)
+				}
+			}
+		}
+	}()
+	return func() {
+		once.Do(func() { close(stopCh) })
+	}
+}
+
+func (c *Consumer) startBatchInProgressHeartbeat(ctx context.Context, inProgress []func() error) (func(int), func()) {
+	if c == nil || c.config.InProgressInterval <= 0 || len(inProgress) == 0 {
+		return func(int) {}, func() {}
+	}
+	active := make([]bool, len(inProgress))
+	for i := range active {
+		active[i] = inProgress[i] != nil
+	}
+
+	var (
+		activeMu sync.RWMutex
+		once     sync.Once
+		stopCh   = make(chan struct{})
+	)
+
+	go func() {
+		ticker := time.NewTicker(c.config.InProgressInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-stopCh:
+				return
+			case <-ticker.C:
+				activeMu.RLock()
+				for i, heartbeat := range inProgress {
+					if !active[i] || heartbeat == nil {
+						continue
+					}
+					if err := heartbeat(); err != nil && c.logger != nil {
+						c.logger.Debug("tap consumer batch in-progress heartbeat failed", "error", err, "stream", c.config.Stream, "durable", c.config.Durable, "index", i)
+					}
+				}
+				activeMu.RUnlock()
+			}
+		}
+	}()
+
+	deactivate := func(index int) {
+		if index < 0 || index >= len(active) {
+			return
+		}
+		activeMu.Lock()
+		active[index] = false
+		activeMu.Unlock()
+	}
+	stop := func() {
+		once.Do(func() { close(stopCh) })
+	}
+	return deactivate, stop
+}
+
+func (c *Consumer) recordProcessed(processedAt, eventTime time.Time) {
+	if c == nil {
+		return
+	}
+	processedAt = processedAt.UTC()
+	if processedAt.IsZero() {
+		processedAt = time.Now().UTC()
+	}
+	if !eventTime.IsZero() {
+		eventTime = eventTime.UTC()
+	}
+
+	c.statusMu.Lock()
+	c.lastProcessedAt = processedAt
+	if !eventTime.IsZero() {
+		c.lastEventTime = eventTime
+	}
+	c.statusMu.Unlock()
+
+	metrics.SetGraphLastUpdate(processedAt)
+	if !eventTime.IsZero() && !processedAt.Before(eventTime) {
+		metrics.ObserveEventProcessingDuration(processedAt.Sub(eventTime))
+	}
+}
+
+func (c *Consumer) refreshLagMetrics(now time.Time) {
+	if c == nil || c.sub == nil {
+		return
+	}
+	info, err := c.sub.ConsumerInfo()
+	if err != nil || info == nil {
+		return
+	}
+	totalLag := saturatingAddUint64(info.NumPending, clampNegativeIntToUint64(info.NumAckPending))
+	lag := saturatingUint64ToInt(totalLag)
+	lagAge := time.Duration(0)
+	c.statusMu.RLock()
+	lastEventTime := c.lastEventTime
+	lastProcessedAt := c.lastProcessedAt
+	c.statusMu.RUnlock()
+	if lag > 0 && !lastEventTime.IsZero() {
+		lagAge = now.UTC().Sub(lastEventTime.UTC())
+		if lagAge < 0 {
+			lagAge = 0
+		}
+	}
+	graphStaleness, hasGraphStaleness := graphStalenessAt(now, lastProcessedAt)
+
+	c.statusMu.Lock()
+	c.consumerLag = lag
+	c.consumerLagAge = lagAge
+	c.statusMu.Unlock()
+
+	metrics.SetNATSConsumerLag(c.config.Stream, c.config.Durable, lag)
+	metrics.SetNATSConsumerLagSeconds(c.config.Stream, c.config.Durable, lagAge)
+	if hasGraphStaleness {
+		metrics.SetGraphStaleness(graphStaleness)
+	}
+}
+
+func saturatingAddUint64(left, right uint64) uint64 {
+	if left > math.MaxUint64-right {
+		return math.MaxUint64
+	}
+	return left + right
+}
+
+func saturatingUint64ToInt(value uint64) int {
+	if value > uint64(math.MaxInt) {
+		return math.MaxInt
+	}
+	return int(value)
+}
+
+func clampNegativeIntToUint64(value int) uint64 {
+	if value <= 0 {
+		return 0
+	}
+	return uint64(value)
+}
+
+func graphStalenessAt(now, lastProcessedAt time.Time) (time.Duration, bool) {
+	if lastProcessedAt.IsZero() {
+		return 0, false
+	}
+	graphStaleness := now.UTC().Sub(lastProcessedAt.UTC())
+	if graphStaleness < 0 {
+		graphStaleness = 0
+	}
+	return graphStaleness, true
 }
 
 func (c *Consumer) pruneDropsLocked(now time.Time) {
@@ -380,6 +676,9 @@ func (c ConsumerConfig) withDefaults() ConsumerConfig {
 	}
 	if cfg.FetchTimeout <= 0 {
 		cfg.FetchTimeout = defaultConsumerFetchTimeout
+	}
+	if cfg.InProgressInterval <= 0 {
+		cfg.InProgressInterval = defaultConsumerInProgressInterval
 	}
 	if cfg.ConnectTimeout <= 0 {
 		cfg.ConnectTimeout = defaultConsumerConnectWait

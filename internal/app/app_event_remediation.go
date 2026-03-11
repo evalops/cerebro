@@ -117,10 +117,11 @@ func (a *App) propagationEngine() *graph.PropagationEngine {
 	if a.Propagation != nil {
 		return a.Propagation
 	}
-	if a.SecurityGraph == nil {
+	securityGraph := a.CurrentSecurityGraph()
+	if securityGraph == nil {
 		return nil
 	}
-	a.Propagation = graph.NewPropagationEngine(a.SecurityGraph)
+	a.Propagation = graph.NewPropagationEngine(securityGraph)
 	return a.Propagation
 }
 

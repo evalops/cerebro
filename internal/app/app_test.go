@@ -113,6 +113,10 @@ func TestLoadConfigNATSConsumerControls(t *testing.T) {
 	t.Setenv("NATS_CONSUMER_DEAD_LETTER_PATH", "/tmp/test-nats-consumer.dlq.jsonl")
 	t.Setenv("NATS_CONSUMER_DROP_HEALTH_LOOKBACK", "7m")
 	t.Setenv("NATS_CONSUMER_DROP_HEALTH_THRESHOLD", "3")
+	t.Setenv("NATS_CONSUMER_IN_PROGRESS_INTERVAL", "11s")
+	t.Setenv("NATS_CONSUMER_DRAIN_TIMEOUT", "41s")
+	t.Setenv("NATS_CONSUMER_GRAPH_STALENESS_THRESHOLD", "19m")
+	t.Setenv("CEREBRO_INIT_TIMEOUT", "95s")
 
 	cfg := LoadConfig()
 	if cfg.NATSConsumerDeadLetterPath != "/tmp/test-nats-consumer.dlq.jsonl" {
@@ -123,6 +127,18 @@ func TestLoadConfigNATSConsumerControls(t *testing.T) {
 	}
 	if cfg.NATSConsumerDropHealthThreshold != 3 {
 		t.Fatalf("expected nats consumer drop health threshold 3, got %d", cfg.NATSConsumerDropHealthThreshold)
+	}
+	if cfg.NATSConsumerInProgressInterval != 11*time.Second {
+		t.Fatalf("expected nats consumer in-progress interval 11s, got %s", cfg.NATSConsumerInProgressInterval)
+	}
+	if cfg.NATSConsumerDrainTimeout != 41*time.Second {
+		t.Fatalf("expected nats consumer drain timeout 41s, got %s", cfg.NATSConsumerDrainTimeout)
+	}
+	if cfg.NATSConsumerGraphStalenessThreshold != 19*time.Minute {
+		t.Fatalf("expected nats consumer graph staleness threshold 19m, got %s", cfg.NATSConsumerGraphStalenessThreshold)
+	}
+	if cfg.InitTimeout != 95*time.Second {
+		t.Fatalf("expected init timeout 95s, got %s", cfg.InitTimeout)
 	}
 }
 
@@ -178,6 +194,25 @@ func TestLoadConfigRetention(t *testing.T) {
 	}
 	if cfg.RetentionJobInterval != 2*time.Hour {
 		t.Fatalf("expected retention job interval 2h, got %v", cfg.RetentionJobInterval)
+	}
+}
+
+func TestLoadConfigRetentionDefaults(t *testing.T) {
+	cfg := LoadConfig()
+	if cfg.AuditRetentionDays != 90 {
+		t.Fatalf("expected audit retention default 90, got %d", cfg.AuditRetentionDays)
+	}
+	if cfg.SessionRetentionDays != 30 {
+		t.Fatalf("expected session retention default 30, got %d", cfg.SessionRetentionDays)
+	}
+	if cfg.GraphRetentionDays != 180 {
+		t.Fatalf("expected graph retention default 180, got %d", cfg.GraphRetentionDays)
+	}
+	if cfg.AccessReviewRetentionDays != 365 {
+		t.Fatalf("expected access review retention default 365, got %d", cfg.AccessReviewRetentionDays)
+	}
+	if cfg.NATSConsumerAckWait != 120*time.Second {
+		t.Fatalf("expected nats consumer ack wait default 120s, got %s", cfg.NATSConsumerAckWait)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -11,6 +12,9 @@ import (
 )
 
 var (
+	graphLastUpdateMu       sync.Mutex
+	graphLastUpdateUnixNano atomic.Int64
+
 	// Findings metrics
 	FindingsTotal = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -265,6 +269,59 @@ var (
 		[]string{"stream", "durable", "reason"},
 	)
 
+	NATSConsumerRedeliveriesTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "cerebro_nats_consumer_redeliveries_total",
+			Help: "Total number of NATS consumer redeliveries observed",
+		},
+		[]string{"stream", "durable"},
+	)
+
+	NATSConsumerLag = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "cerebro_nats_consumer_lag",
+			Help: "Current NATS consumer lag measured as pending plus ack-pending messages",
+		},
+		[]string{"stream", "durable"},
+	)
+
+	NATSConsumerLagSeconds = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "cerebro_nats_consumer_lag_seconds",
+			Help: "Estimated NATS consumer lag in seconds between the stream head and the last processed event time",
+		},
+		[]string{"stream", "durable"},
+	)
+
+	GraphBuildStatus = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "cerebro_graph_build_status",
+			Help: "Graph build status (0 not_started, 1 building, 2 success, 3 failed)",
+		},
+	)
+
+	GraphLastUpdateTimestamp = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "cerebro_graph_last_update_timestamp",
+			Help: "Unix timestamp of the most recent successful graph update",
+		},
+	)
+
+	GraphStalenessSeconds = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "cerebro_graph_staleness_seconds",
+			Help: "Age in seconds of the most recent successful graph update",
+		},
+	)
+
+	EventProcessingDuration = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "cerebro_event_processing_duration_seconds",
+			Help:    "End-to-end duration from event timestamp to successful graph processing",
+			Buckets: prometheus.ExponentialBuckets(0.1, 2, 12),
+		},
+	)
+
 	// Notification metrics
 	NotificationsSent = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -444,6 +501,13 @@ func Register() {
 			JetStreamOutboxBackpressureLevel,
 			JetStreamBackpressureAlertsTotal,
 			NATSConsumerDroppedTotal,
+			NATSConsumerRedeliveriesTotal,
+			NATSConsumerLag,
+			NATSConsumerLagSeconds,
+			GraphBuildStatus,
+			GraphLastUpdateTimestamp,
+			GraphStalenessSeconds,
+			EventProcessingDuration,
 			// Notifications
 			NotificationsSent,
 			// Scheduler
@@ -688,6 +752,98 @@ func SetJetStreamPublisherReady(stream string, ready bool) {
 		return
 	}
 	JetStreamPublisherReady.WithLabelValues(stream).Set(0)
+}
+
+func RecordNATSConsumerRedelivery(stream, durable string) {
+	if strings.TrimSpace(stream) == "" {
+		stream = "unknown"
+	}
+	if strings.TrimSpace(durable) == "" {
+		durable = "unknown"
+	}
+	NATSConsumerRedeliveriesTotal.WithLabelValues(stream, durable).Inc()
+}
+
+func SetNATSConsumerLag(stream, durable string, lag int) {
+	if strings.TrimSpace(stream) == "" {
+		stream = "unknown"
+	}
+	if strings.TrimSpace(durable) == "" {
+		durable = "unknown"
+	}
+	if lag < 0 {
+		lag = 0
+	}
+	NATSConsumerLag.WithLabelValues(stream, durable).Set(float64(lag))
+}
+
+func SetNATSConsumerLagSeconds(stream, durable string, lag time.Duration) {
+	if strings.TrimSpace(stream) == "" {
+		stream = "unknown"
+	}
+	if strings.TrimSpace(durable) == "" {
+		durable = "unknown"
+	}
+	if lag < 0 {
+		lag = 0
+	}
+	NATSConsumerLagSeconds.WithLabelValues(stream, durable).Set(lag.Seconds())
+}
+
+func SetGraphBuildStatus(status string) {
+	value := 0.0
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "building":
+		value = 1
+	case "success", "succeeded", "healthy":
+		value = 2
+	case "failed", "error":
+		value = 3
+	default:
+		value = 0
+	}
+	GraphBuildStatus.Set(value)
+}
+
+func SetGraphLastUpdate(at time.Time) {
+	graphLastUpdateMu.Lock()
+	defer graphLastUpdateMu.Unlock()
+
+	if at.IsZero() {
+		graphLastUpdateUnixNano.Store(0)
+		GraphLastUpdateTimestamp.Set(0)
+		GraphStalenessSeconds.Set(0)
+		return
+	}
+	at = at.UTC()
+	targetUnixNano := at.UnixNano()
+	for {
+		current := graphLastUpdateUnixNano.Load()
+		if current >= targetUnixNano {
+			targetUnixNano = current
+			break
+		}
+		if graphLastUpdateUnixNano.CompareAndSwap(current, targetUnixNano) {
+			break
+		}
+	}
+	effectiveAt := time.Unix(0, targetUnixNano).UTC()
+	GraphLastUpdateTimestamp.Set(float64(effectiveAt.Unix()))
+	SetGraphStaleness(time.Since(effectiveAt))
+}
+
+func SetGraphStaleness(age time.Duration) {
+	if age < 0 {
+		age = 0
+	}
+	GraphStalenessSeconds.Set(age.Seconds())
+}
+
+func ObserveEventProcessingDuration(duration time.Duration) {
+	if duration < 0 {
+		return
+	}
+	EventProcessingDuration.Observe(duration.Seconds())
 }
 
 func SetJetStreamOutboxBackpressureLevel(stream, level string) {

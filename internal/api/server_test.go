@@ -293,6 +293,37 @@ func TestReady_UnhealthyReturns503(t *testing.T) {
 	}
 }
 
+func TestStatus(t *testing.T) {
+	s := newTestServer(t)
+	w := do(t, s, "GET", "/status", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	body := decodeJSON(t, w)
+	if _, ok := body["graph_build"]; !ok {
+		t.Fatalf("expected graph_build in status response, got %v", body)
+	}
+	if _, ok := body["retention"]; !ok {
+		t.Fatalf("expected retention in status response, got %v", body)
+	}
+}
+
+func TestGraphBuildWarningHeadersSkipHealthAndStatus(t *testing.T) {
+	for _, path := range []string{"/health", "/ready", "/status", "/metrics"} {
+		if !skipGraphBuildWarningHeaders(path) {
+			t.Fatalf("expected graph build warning headers to be skipped for %s", path)
+		}
+	}
+}
+
+func TestGraphBuildWarningHeadersApplyToNonHealthRoutes(t *testing.T) {
+	for _, path := range []string{"/api/v1/policies/", "/api/v1/admin/providers", "/docs"} {
+		if skipGraphBuildWarningHeaders(path) {
+			t.Fatalf("expected graph build warning headers to apply to %s", path)
+		}
+	}
+}
+
 func TestSetupMiddleware_RateLimitBeforeAuth(t *testing.T) {
 	a := newTestApp(t)
 	a.Config.APIAuthEnabled = true

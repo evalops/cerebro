@@ -2,12 +2,15 @@ package app
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/evalops/cerebro/internal/graph"
 	"github.com/evalops/cerebro/internal/health"
+	"github.com/evalops/cerebro/internal/warehouse"
 )
 
 func TestEvaluateGraphOntologySLOStatus(t *testing.T) {
@@ -111,6 +114,68 @@ func TestGraphOntologySLOHealthCheckWithoutGraph(t *testing.T) {
 	result := application.graphOntologySLOHealthCheck()(context.Background())
 	if result.Status != health.StatusUnknown {
 		t.Fatalf("expected unknown when graph is missing, got %s", result.Status)
+	}
+}
+
+func TestInitHealthRegistersGraphBuildCheck(t *testing.T) {
+	application := &App{
+		Config:    &Config{},
+		Logger:    slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Warehouse: &warehouse.MemoryWarehouse{},
+	}
+	application.initHealth()
+	application.setGraphBuildState(GraphBuildFailed, time.Date(2026, 3, 10, 9, 0, 0, 0, time.UTC), context.DeadlineExceeded)
+
+	results := application.Health.RunAll(context.Background())
+	check, ok := results["graph_build"]
+	if !ok {
+		t.Fatal("expected graph_build health check to be registered")
+	}
+	if check.Status != health.StatusUnhealthy {
+		t.Fatalf("expected graph_build health to be unhealthy, got %s", check.Status)
+	}
+	if !strings.Contains(check.Message, context.DeadlineExceeded.Error()) {
+		t.Fatalf("expected graph_build health message to include build error, got %q", check.Message)
+	}
+}
+
+func TestActivateBuiltSecurityGraphDoesNotReplaceLiveGraphWithNil(t *testing.T) {
+	liveGraph := graph.New()
+	liveGraph.AddNode(&graph.Node{ID: "service:payments", Kind: graph.NodeKindService, Name: "payments"})
+
+	application := &App{
+		Config:        &Config{},
+		SecurityGraph: liveGraph,
+	}
+
+	if _, err := application.activateBuiltSecurityGraph(nil); err == nil {
+		t.Fatal("expected nil built graph to return an error")
+	}
+	if got := application.CurrentSecurityGraph(); got != liveGraph {
+		t.Fatal("expected existing live graph to remain in place when built graph is nil")
+	}
+	if snapshot := application.GraphBuildSnapshot(); snapshot.State != GraphBuildFailed {
+		t.Fatalf("expected graph build state failed, got %#v", snapshot)
+	}
+}
+
+func TestGraphBuildSnapshotIncludesNodeCountWithoutHoldingBuildLock(t *testing.T) {
+	liveGraph := graph.New()
+	liveGraph.AddNode(&graph.Node{ID: "service:payments", Kind: graph.NodeKindService, Name: "payments"})
+	liveGraph.AddNode(&graph.Node{ID: "service:billing", Kind: graph.NodeKindService, Name: "billing"})
+
+	application := &App{
+		Config:        &Config{},
+		SecurityGraph: liveGraph,
+	}
+	application.setGraphBuildState(GraphBuildSuccess, time.Now().UTC(), nil)
+
+	snapshot := application.GraphBuildSnapshot()
+	if snapshot.State != GraphBuildSuccess {
+		t.Fatalf("expected graph build state success, got %#v", snapshot)
+	}
+	if snapshot.NodeCount != 2 {
+		t.Fatalf("expected graph node count 2, got %d", snapshot.NodeCount)
 	}
 }
 

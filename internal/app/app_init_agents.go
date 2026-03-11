@@ -8,7 +8,10 @@ import (
 	"github.com/evalops/cerebro/internal/scm"
 )
 
-func (a *App) initAgents() {
+func (a *App) initAgents(ctx context.Context) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	a.Agents = agents.NewAgentRegistry()
 	if a.Snowflake != nil {
 		store, err := agents.NewSnowflakeSessionStore(a.Snowflake)
@@ -27,7 +30,7 @@ func (a *App) initAgents() {
 	if err != nil {
 		a.Logger.Warn("failed to initialize remote tool provider", "error", err)
 	} else if remoteProvider != nil {
-		remoteTools, err := remoteProvider.DiscoverTools(context.Background())
+		remoteTools, err := remoteProvider.DiscoverTools(ctx)
 		if err != nil {
 			a.Logger.Warn("failed to discover remote tools", "error", err)
 			_ = remoteProvider.Close()
