@@ -43,6 +43,49 @@ func TestEnsureSecurityGraph_ConcurrentInitSingleInstance(t *testing.T) {
 	}
 }
 
+func TestHandleTapCloudEventWaitsForGraphReady(t *testing.T) {
+	a := &App{graphReady: make(chan struct{})}
+	evt := events.CloudEvent{
+		Type: "ensemble.tap.salesforce.opportunity.updated",
+		Time: time.Now().UTC(),
+		Data: map[string]any{
+			"id": "opp-blocked",
+			"snapshot": map[string]any{
+				"name": "Blocked Opportunity",
+			},
+		},
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- a.handleTapCloudEvent(context.Background(), evt)
+	}()
+
+	select {
+	case err := <-done:
+		t.Fatalf("expected tap event to wait for graph readiness, got early result: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(a.graphReady)
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("handleTapCloudEvent returned error after graph became ready: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("handleTapCloudEvent did not resume after graph became ready")
+	}
+
+	if a.SecurityGraph == nil {
+		t.Fatal("expected security graph to be created after readiness gate opened")
+	}
+	if _, ok := a.SecurityGraph.GetNode("salesforce:opportunity:opp-blocked"); !ok {
+		t.Fatal("expected tap event node to be applied after graph readiness")
+	}
+}
+
 func TestParseTapType(t *testing.T) {
 	system, entity, action := parseTapType("ensemble.tap.stripe.customer.created")
 	if system != "stripe" || entity != "customer" || action != "created" {

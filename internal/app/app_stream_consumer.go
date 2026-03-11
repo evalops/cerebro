@@ -122,13 +122,28 @@ func (a *App) ensureSecurityGraph() *graph.Graph {
 	return a.SecurityGraph
 }
 
-func (a *App) handleTapCloudEvent(_ context.Context, evt events.CloudEvent) error {
+func (a *App) waitForSecurityGraphReady(ctx context.Context) error {
+	if a == nil || a.graphReady == nil {
+		return nil
+	}
+	select {
+	case <-a.graphReady:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (a *App) handleTapCloudEvent(ctx context.Context, evt events.CloudEvent) error {
 	eventType := strings.TrimSpace(evt.Type)
 	if eventType == "" {
 		eventType = strings.TrimSpace(evt.Subject)
 	}
 	if !strings.HasPrefix(strings.ToLower(eventType), "ensemble.tap.") {
 		return nil
+	}
+	if err := a.waitForSecurityGraphReady(ctx); err != nil {
+		return err
 	}
 	if isTapSchemaEventType(eventType) {
 		return a.handleTapSchemaEvent(eventType, evt)
