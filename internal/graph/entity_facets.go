@@ -731,7 +731,7 @@ func materializeBucketEncryptionFacet(g *Graph, node *Node, validAt, recordedAt 
 	if subresource, ok := relatedBucketSubresourceNode(g, node.ID, NodeKindBucketEncryptionConfig, validAt, recordedAt); ok && subresource != nil {
 		properties = subresource.Properties
 	}
-	encrypted, known := entityPropertyOrClaimBool(&Node{Properties: properties}, claimIndex, []string{"encrypted", "default_encryption", "default_encryption_enabled", "kms_encrypted"}, []string{"encrypted", "default_encryption_enabled"})
+	encrypted, known := entityPropertyOrClaimBool(node, claimIndex, []string{"encrypted", "default_encryption", "default_encryption_enabled", "kms_encrypted"}, []string{"encrypted", "default_encryption_enabled"})
 	fields := map[string]any{
 		"encrypted":            encrypted,
 		"encryption_algorithm": strings.TrimSpace(readString(properties, "encryption_algorithm")),

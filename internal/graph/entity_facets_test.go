@@ -79,3 +79,59 @@ func TestMaterializeOwnershipFacetUsesManagedByOutgoingEdgesForManagers(t *testi
 		t.Fatalf("expected manager list to include only %q, got %#v", manager.ID, managers)
 	}
 }
+
+func TestMaterializeBucketEncryptionFacetUsesBucketPostureAndSubresourceDetails(t *testing.T) {
+	now := time.Now().UTC()
+	g := New()
+	bucket := &Node{
+		ID:         "arn:aws:s3:::logs",
+		Kind:       NodeKindBucket,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+		Properties: map[string]any{"encrypted": true},
+	}
+	config := &Node{
+		ID:        "bucket_encryption_config:logs",
+		Kind:      NodeKindBucketEncryptionConfig,
+		CreatedAt: now,
+		UpdatedAt: now,
+		Properties: map[string]any{
+			"encrypted":            false,
+			"encryption_algorithm": "aws:kms",
+			"encryption_key_id":    "kms:key:logs",
+			"bucket_key_enabled":   true,
+		},
+	}
+	g.AddNode(bucket)
+	g.AddNode(config)
+	g.AddEdge(&Edge{
+		ID:        "bucket-encryption-config",
+		Source:    config.ID,
+		Target:    bucket.ID,
+		Kind:      EdgeKindConfigures,
+		Effect:    EdgeEffectAllow,
+		CreatedAt: now,
+	})
+
+	def, ok := GetEntityFacetDefinition("bucket_encryption")
+	if !ok {
+		t.Fatal("expected bucket_encryption facet definition")
+	}
+
+	record, materialized := materializeBucketEncryptionFacet(g, bucket, now, now, def, nil)
+	if !materialized {
+		t.Fatal("expected bucket encryption facet to materialize")
+	}
+	if record.Assessment != "pass" {
+		t.Fatalf("expected bucket posture to drive pass assessment, got %#v", record)
+	}
+	if encrypted, _ := record.Fields["encrypted"].(bool); !encrypted {
+		t.Fatalf("expected encrypted field to come from bucket posture, got %#v", record.Fields)
+	}
+	if algorithm, _ := record.Fields["encryption_algorithm"].(string); algorithm != "aws:kms" {
+		t.Fatalf("expected encryption algorithm from subresource details, got %#v", record.Fields)
+	}
+	if keyID, _ := record.Fields["encryption_key_id"].(string); keyID != "kms:key:logs" {
+		t.Fatalf("expected encryption key id from subresource details, got %#v", record.Fields)
+	}
+}
