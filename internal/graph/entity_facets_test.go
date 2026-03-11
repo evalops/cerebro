@@ -135,3 +135,105 @@ func TestMaterializeBucketEncryptionFacetUsesBucketPostureAndSubresourceDetails(
 		t.Fatalf("expected encryption key id from subresource details, got %#v", record.Fields)
 	}
 }
+
+func TestMaterializeBucketLoggingFacetUsesBucketPostureAndSubresourceDetails(t *testing.T) {
+	now := time.Now().UTC()
+	g := New()
+	bucket := &Node{
+		ID:         "arn:aws:s3:::logs",
+		Kind:       NodeKindBucket,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+		Properties: map[string]any{"logging_enabled": true},
+	}
+	config := &Node{
+		ID:        "bucket_logging_config:logs",
+		Kind:      NodeKindBucketLoggingConfig,
+		CreatedAt: now,
+		UpdatedAt: now,
+		Properties: map[string]any{
+			"logging_enabled":       false,
+			"logging_target_bucket": "central-audit",
+		},
+	}
+	g.AddNode(bucket)
+	g.AddNode(config)
+	g.AddEdge(&Edge{
+		ID:        "bucket-logging-config",
+		Source:    config.ID,
+		Target:    bucket.ID,
+		Kind:      EdgeKindConfigures,
+		Effect:    EdgeEffectAllow,
+		CreatedAt: now,
+	})
+
+	def, ok := GetEntityFacetDefinition("bucket_logging")
+	if !ok {
+		t.Fatal("expected bucket_logging facet definition")
+	}
+
+	record, materialized := materializeBucketLoggingFacet(g, bucket, now, now, def, nil)
+	if !materialized {
+		t.Fatal("expected bucket logging facet to materialize")
+	}
+	if record.Assessment != "pass" {
+		t.Fatalf("expected bucket posture to drive pass assessment, got %#v", record)
+	}
+	if enabled, _ := record.Fields["logging_enabled"].(bool); !enabled {
+		t.Fatalf("expected logging_enabled to come from bucket posture, got %#v", record.Fields)
+	}
+	if targetBucket, _ := record.Fields["logging_target_bucket"].(string); targetBucket != "central-audit" {
+		t.Fatalf("expected logging target bucket from subresource details, got %#v", record.Fields)
+	}
+}
+
+func TestMaterializeBucketVersioningFacetUsesBucketPostureAndSubresourceDetails(t *testing.T) {
+	now := time.Now().UTC()
+	g := New()
+	bucket := &Node{
+		ID:         "arn:aws:s3:::logs",
+		Kind:       NodeKindBucket,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+		Properties: map[string]any{"versioning_status": "Enabled"},
+	}
+	config := &Node{
+		ID:        "bucket_versioning_config:logs",
+		Kind:      NodeKindBucketVersioningConfig,
+		CreatedAt: now,
+		UpdatedAt: now,
+		Properties: map[string]any{
+			"versioning_status": "Disabled",
+			"mfa_delete":        true,
+		},
+	}
+	g.AddNode(bucket)
+	g.AddNode(config)
+	g.AddEdge(&Edge{
+		ID:        "bucket-versioning-config",
+		Source:    config.ID,
+		Target:    bucket.ID,
+		Kind:      EdgeKindConfigures,
+		Effect:    EdgeEffectAllow,
+		CreatedAt: now,
+	})
+
+	def, ok := GetEntityFacetDefinition("bucket_versioning")
+	if !ok {
+		t.Fatal("expected bucket_versioning facet definition")
+	}
+
+	record, materialized := materializeBucketVersioningFacet(g, bucket, now, now, def, nil)
+	if !materialized {
+		t.Fatal("expected bucket versioning facet to materialize")
+	}
+	if record.Assessment != "pass" {
+		t.Fatalf("expected bucket posture to drive pass assessment, got %#v", record)
+	}
+	if status, _ := record.Fields["versioning_status"].(string); status != "enabled" {
+		t.Fatalf("expected versioning status to come from bucket posture, got %#v", record.Fields)
+	}
+	if mfaDelete, _ := record.Fields["mfa_delete"].(bool); !mfaDelete {
+		t.Fatalf("expected mfa_delete detail to come from subresource properties, got %#v", record.Fields)
+	}
+}

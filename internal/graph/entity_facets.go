@@ -732,6 +732,9 @@ func materializeBucketEncryptionFacet(g *Graph, node *Node, validAt, recordedAt 
 		properties = subresource.Properties
 	}
 	encrypted, known := entityPropertyOrClaimBool(node, claimIndex, []string{"encrypted", "default_encryption", "default_encryption_enabled", "kms_encrypted"}, []string{"encrypted", "default_encryption_enabled"})
+	if !known {
+		encrypted, known = entityPropertyOrClaimBool(&Node{Properties: properties}, nil, []string{"encrypted", "default_encryption", "default_encryption_enabled", "kms_encrypted"}, nil)
+	}
 	fields := map[string]any{
 		"encrypted":            encrypted,
 		"encryption_algorithm": strings.TrimSpace(readString(properties, "encryption_algorithm")),
@@ -776,7 +779,10 @@ func materializeBucketLoggingFacet(g *Graph, node *Node, validAt, recordedAt tim
 	if subresource, ok := relatedBucketSubresourceNode(g, node.ID, NodeKindBucketLoggingConfig, validAt, recordedAt); ok && subresource != nil {
 		properties = subresource.Properties
 	}
-	enabled, known := entityPropertyOrClaimBool(&Node{Properties: properties}, claimIndex, []string{"logging_enabled", "access_logging_enabled"}, []string{"access_logging_enabled"})
+	enabled, known := entityPropertyOrClaimBool(node, claimIndex, []string{"logging_enabled", "access_logging_enabled"}, []string{"access_logging_enabled"})
+	if !known {
+		enabled, known = entityPropertyOrClaimBool(&Node{Properties: properties}, nil, []string{"logging_enabled", "access_logging_enabled"}, nil)
+	}
 	targetBucket := strings.TrimSpace(readString(properties, "logging_target_bucket"))
 	if !known && targetBucket == "" {
 		return EntityFacetRecord{
@@ -819,8 +825,8 @@ func materializeBucketVersioningFacet(g *Graph, node *Node, validAt, recordedAt 
 	if subresource, ok := relatedBucketSubresourceNode(g, node.ID, NodeKindBucketVersioningConfig, validAt, recordedAt); ok && subresource != nil {
 		properties = subresource.Properties
 	}
-	status := strings.ToLower(strings.TrimSpace(readString(properties, "versioning", "versioning_status")))
-	known := propertyHasAnyKey(properties, "versioning_status", "versioning", "mfa_delete")
+	status := strings.ToLower(strings.TrimSpace(readString(node.Properties, "versioning", "versioning_status")))
+	known := propertyHasAnyKey(node.Properties, "versioning_status", "versioning", "mfa_delete")
 	if status == "" {
 		if value, ok := claimBoolValue(claimIndex["versioning_enabled"]); ok {
 			known = true
@@ -830,6 +836,10 @@ func materializeBucketVersioningFacet(g *Graph, node *Node, validAt, recordedAt 
 				status = "disabled"
 			}
 		}
+	}
+	if !known {
+		status = strings.ToLower(strings.TrimSpace(readString(properties, "versioning", "versioning_status")))
+		known = propertyHasAnyKey(properties, "versioning_status", "versioning", "mfa_delete")
 	}
 	mfaDelete := readBool(properties, "mfa_delete")
 	if !known {
