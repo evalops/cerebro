@@ -13,7 +13,7 @@ import (
 )
 
 func (s *Server) listPlatformEntities(w http.ResponseWriter, r *http.Request) {
-	g := s.app.SecurityGraph
+	g := s.app.CurrentSecurityGraph()
 	if g == nil {
 		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
@@ -47,7 +47,7 @@ func (s *Server) getPlatformEntityFacet(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) getPlatformEntity(w http.ResponseWriter, r *http.Request) {
-	g := s.app.SecurityGraph
+	g := s.app.CurrentSecurityGraph()
 	if g == nil {
 		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
@@ -79,7 +79,7 @@ func (s *Server) getPlatformEntity(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getPlatformEntityAtTime(w http.ResponseWriter, r *http.Request) {
-	g := s.app.SecurityGraph
+	g := s.app.CurrentSecurityGraph()
 	if g == nil {
 		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
@@ -110,7 +110,7 @@ func (s *Server) getPlatformEntityAtTime(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) getPlatformEntityTimeDiff(w http.ResponseWriter, r *http.Request) {
-	g := s.app.SecurityGraph
+	g := s.app.CurrentSecurityGraph()
 	if g == nil {
 		s.error(w, http.StatusServiceUnavailable, "graph platform not initialized")
 		return
@@ -244,6 +244,9 @@ func splitCSV(raw string) []string {
 }
 
 func parseRequiredRFC3339Query(r *http.Request, key string) (time.Time, error) {
+	if strings.TrimSpace(r.URL.Query().Get(key)) == "" {
+		return time.Time{}, errBadRequest(key + " is required")
+	}
 	parsed, err := parseOptionalRFC3339Query(r, key)
 	if err != nil {
 		return time.Time{}, err

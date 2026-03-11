@@ -58,33 +58,31 @@ func GetEntityRecordAtTime(g *Graph, id string, asOf, recordedAt time.Time) (Ent
 
 // GetEntityTimeDiff compares one entity across two valid-time points.
 func GetEntityTimeDiff(g *Graph, id string, from, to, recordedAt time.Time) (EntityTimeDiffRecord, bool) {
-	before, ok := GetEntityRecordAtTime(g, id, from, recordedAt)
-	if !ok {
+	before, beforeOK := GetEntityRecordAtTime(g, id, from, recordedAt)
+	after, afterOK := GetEntityRecordAtTime(g, id, to, recordedAt)
+	if !beforeOK && !afterOK {
 		return EntityTimeDiffRecord{}, false
 	}
-	after, ok := GetEntityRecordAtTime(g, id, to, recordedAt)
-	if !ok {
-		return EntityTimeDiffRecord{}, false
+	switch {
+	case beforeOK:
+		recordedAt = before.Reconstruction.RecordedAt
+	case afterOK:
+		recordedAt = after.Reconstruction.RecordedAt
+	case recordedAt.IsZero():
+		recordedAt = temporalNowUTC()
+	default:
+		recordedAt = recordedAt.UTC()
+	}
+	if !beforeOK {
+		before = missingEntityTimeRecord(id, from, recordedAt)
+	}
+	if !afterOK {
+		after = missingEntityTimeRecord(id, to, recordedAt)
 	}
 	changes := diffEntityProperties(before.Entity.Properties, after.Entity.Properties)
-	changedKeys := make([]string, 0, len(changes))
+	changedKeys := entityCoreDiffKeys(before.Entity, after.Entity)
 	for _, change := range changes {
 		changedKeys = append(changedKeys, change.Key)
-	}
-	if before.Entity.Kind != after.Entity.Kind {
-		changedKeys = append(changedKeys, "kind")
-	}
-	if before.Entity.Name != after.Entity.Name {
-		changedKeys = append(changedKeys, "name")
-	}
-	if before.Entity.Provider != after.Entity.Provider {
-		changedKeys = append(changedKeys, "provider")
-	}
-	if before.Entity.Account != after.Entity.Account {
-		changedKeys = append(changedKeys, "account")
-	}
-	if before.Entity.Region != after.Entity.Region {
-		changedKeys = append(changedKeys, "region")
 	}
 	sort.Strings(changedKeys)
 	return EntityTimeDiffRecord{
@@ -97,6 +95,51 @@ func GetEntityTimeDiff(g *Graph, id string, from, to, recordedAt time.Time) (Ent
 		ChangedKeys:     changedKeys,
 		PropertyChanges: changes,
 	}, true
+}
+
+func missingEntityTimeRecord(id string, asOf, recordedAt time.Time) EntityTimeRecord {
+	if asOf.IsZero() {
+		asOf = temporalNowUTC()
+	}
+	if recordedAt.IsZero() {
+		recordedAt = temporalNowUTC()
+	}
+	return EntityTimeRecord{
+		Entity: EntityRecord{
+			ID: id,
+		},
+		Reconstruction: EntityTimeReconstruction{
+			AsOf:       asOf.UTC(),
+			RecordedAt: recordedAt.UTC(),
+		},
+	}
+}
+
+func entityCoreDiffKeys(before, after EntityRecord) []string {
+	keys := make(map[string]struct{}, 5)
+	if before.Kind != after.Kind {
+		keys["kind"] = struct{}{}
+	}
+	if before.Name != after.Name {
+		keys["name"] = struct{}{}
+	}
+	if before.Provider != after.Provider {
+		keys["provider"] = struct{}{}
+	}
+	if before.Account != after.Account {
+		keys["account"] = struct{}{}
+	}
+	if before.Region != after.Region {
+		keys["region"] = struct{}{}
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(keys))
+	for key := range keys {
+		out = append(out, key)
+	}
+	return out
 }
 
 // EntityAtTime reconstructs one node's property state at one valid-time slice.
@@ -117,7 +160,7 @@ func (g *Graph) EntityAtTime(id string, asOf, recordedAt time.Time) (*Node, Enti
 	defer g.mu.RUnlock()
 
 	node, ok := g.nodes[id]
-	if !ok || node == nil || !entityQueryAllowedNodeKind(node.Kind) || !g.nodeVisibleAtLocked(node, asOf, recordedAt) {
+	if !ok || node == nil || !entityQueryAllowedNodeKind(node.Kind) || !entityHistoricalVisibleAtLocked(node, asOf, recordedAt) {
 		return nil, EntityTimeReconstruction{}, false
 	}
 
@@ -133,6 +176,24 @@ func (g *Graph) EntityAtTime(id string, asOf, recordedAt time.Time) (*Node, Enti
 		HistoricalCoreFields:    false,
 		ReconstructedProperties: len(reconstructed.Properties),
 	}, true
+}
+
+func entityHistoricalVisibleAtLocked(node *Node, validAt, recordedAt time.Time) bool {
+	if node == nil {
+		return false
+	}
+	if validAt.IsZero() {
+		validAt = temporalNowUTC()
+	}
+	if recordedAt.IsZero() {
+		recordedAt = temporalNowUTC()
+	}
+	validAt = validAt.UTC()
+	recordedAt = recordedAt.UTC()
+
+	validStart, validEnd := temporalBounds(node.Properties, node.CreatedAt, node.DeletedAt)
+	recordedStart, _ := recordedBounds(node.Properties, node.CreatedAt, node.DeletedAt)
+	return temporalContains(validStart, validEnd, validAt) && !recordedAt.Before(recordedStart.UTC())
 }
 
 func reconstructNodePropertiesAt(node *Node, asOf time.Time) map[string]any {

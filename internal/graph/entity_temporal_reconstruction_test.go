@@ -80,3 +80,67 @@ func TestGetEntityRecordAtTimeAndDiff(t *testing.T) {
 		t.Fatalf("expected status and owner diffs, got %+v", diff.PropertyChanges)
 	}
 }
+
+func TestGetEntityTimeDiffAcrossDeletion(t *testing.T) {
+	base := time.Date(2026, 3, 10, 9, 0, 0, 0, time.UTC)
+	deletedAt := base.Add(2 * time.Hour)
+	g := New()
+	g.AddNode(&Node{
+		ID:       "service:legacy",
+		Kind:     NodeKindService,
+		Name:     "Legacy",
+		Provider: "aws",
+		Properties: map[string]any{
+			"status":           "retiring",
+			"observed_at":      base.Format(time.RFC3339),
+			"valid_from":       base.Format(time.RFC3339),
+			"valid_to":         deletedAt.Format(time.RFC3339),
+			"recorded_at":      base.Format(time.RFC3339),
+			"transaction_from": base.Format(time.RFC3339),
+			"transaction_to":   deletedAt.Format(time.RFC3339),
+		},
+	})
+	node, ok := g.GetNode("service:legacy")
+	if !ok || node == nil {
+		t.Fatal("expected seeded deleted node")
+	}
+	node.CreatedAt = base
+	node.UpdatedAt = base
+	node.DeletedAt = &deletedAt
+	node.PropertyHistory = nil
+
+	record, ok := GetEntityRecordAtTime(g, "service:legacy", base.Add(time.Hour), base.Add(3*time.Hour))
+	if !ok {
+		t.Fatal("expected entity record before deletion")
+	}
+	if got := record.Entity.Name; got != "Legacy" {
+		t.Fatalf("expected historical entity before deletion, got %#v", record.Entity)
+	}
+	if _, ok := GetEntityRecordAtTime(g, "service:legacy", base.Add(3*time.Hour), base.Add(3*time.Hour)); ok {
+		t.Fatal("did not expect entity record after deletion")
+	}
+
+	diff, ok := GetEntityTimeDiff(g, "service:legacy", base.Add(time.Hour), base.Add(3*time.Hour), base.Add(3*time.Hour))
+	if !ok {
+		t.Fatal("expected entity diff across deletion")
+	}
+	if diff.After.Entity.ID != "service:legacy" {
+		t.Fatalf("expected tombstone after record to keep entity id, got %#v", diff.After.Entity)
+	}
+	foundStatus := false
+	for _, change := range diff.PropertyChanges {
+		if change.Key != "status" {
+			continue
+		}
+		foundStatus = true
+		if change.Before != "retiring" || change.After != nil {
+			t.Fatalf("unexpected deleted status diff: %+v", change)
+		}
+	}
+	if !foundStatus {
+		t.Fatalf("expected property removal in deletion diff, got %+v", diff.PropertyChanges)
+	}
+	if len(diff.ChangedKeys) == 0 {
+		t.Fatalf("expected changed keys across deletion, got %+v", diff)
+	}
+}

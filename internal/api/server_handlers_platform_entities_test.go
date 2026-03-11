@@ -376,6 +376,78 @@ func TestPlatformEntityPointInTimeAndDiff(t *testing.T) {
 	if !ok || len(changedKeys) < 2 {
 		t.Fatalf("expected changed_keys, got %#v", diffBody["changed_keys"])
 	}
+
+	missingTimestamp := do(t, s, http.MethodGet, "/api/v1/platform/entities/service:payments/at", nil)
+	if missingTimestamp.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for missing timestamp, got %d: %s", missingTimestamp.Code, missingTimestamp.Body.String())
+	}
+	if body := decodeJSON(t, missingTimestamp); body["error"] != "timestamp is required" {
+		t.Fatalf("expected missing timestamp error, got %#v", body)
+	}
+}
+
+func TestPlatformEntityTimeDiffAcrossDeletion(t *testing.T) {
+	s := newTestServer(t)
+	g := s.app.SecurityGraph
+	base := time.Date(2026, 3, 10, 9, 0, 0, 0, time.UTC)
+	deletedAt := base.Add(2 * time.Hour)
+	g.AddNode(&graph.Node{
+		ID:       "service:legacy",
+		Kind:     graph.NodeKindService,
+		Name:     "Legacy",
+		Provider: "aws",
+		Properties: map[string]any{
+			"status":           "retiring",
+			"observed_at":      base.UTC().Format(time.RFC3339),
+			"valid_from":       base.UTC().Format(time.RFC3339),
+			"valid_to":         deletedAt.UTC().Format(time.RFC3339),
+			"recorded_at":      base.UTC().Format(time.RFC3339),
+			"transaction_from": base.UTC().Format(time.RFC3339),
+			"transaction_to":   deletedAt.UTC().Format(time.RFC3339),
+		},
+	})
+	node, ok := g.GetNode("service:legacy")
+	if !ok || node == nil {
+		t.Fatal("expected seeded deleted node")
+	}
+	node.CreatedAt = base
+	node.UpdatedAt = base
+	node.DeletedAt = &deletedAt
+	node.PropertyHistory = nil
+
+	diff := do(t, s, http.MethodGet, "/api/v1/platform/entities/service:legacy/diff?from=2026-03-10T10:00:00Z&to=2026-03-10T12:00:00Z&recorded_at=2026-03-10T12:00:00Z", nil)
+	if diff.Code != http.StatusOK {
+		t.Fatalf("expected 200 for deleted-entity diff, got %d: %s", diff.Code, diff.Body.String())
+	}
+	body := decodeJSON(t, diff)
+	if body["entity_id"] != "service:legacy" {
+		t.Fatalf("expected deleted entity id, got %#v", body["entity_id"])
+	}
+	after := body["after"].(map[string]any)["entity"].(map[string]any)
+	if after["id"] != "service:legacy" {
+		t.Fatalf("expected tombstone after entity id, got %#v", after)
+	}
+	changes, ok := body["property_changes"].([]any)
+	if !ok || len(changes) == 0 {
+		t.Fatalf("expected deletion diff property changes, got %#v", body)
+	}
+	foundStatus := false
+	for _, raw := range changes {
+		change := raw.(map[string]any)
+		if change["key"] != "status" {
+			continue
+		}
+		foundStatus = true
+		if change["before"] != "retiring" {
+			t.Fatalf("expected status removal before=retiring, got %#v", change)
+		}
+		if _, ok := change["after"]; ok {
+			t.Fatalf("expected removed property to omit after value, got %#v", change)
+		}
+	}
+	if !foundStatus {
+		t.Fatalf("expected deletion diff to include status removal, got %#v", body["property_changes"])
+	}
 }
 
 func TestPlatformEntitiesRejectInvalidParams(t *testing.T) {
