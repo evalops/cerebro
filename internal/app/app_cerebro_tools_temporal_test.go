@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -175,6 +177,18 @@ func TestCerebroGraphChangelogTool(t *testing.T) {
 	if diffID == "" {
 		t.Fatalf("expected diff_id, got %#v", entry)
 	}
+	if got := entry["materialized"]; got != nil && got != false {
+		t.Fatalf("expected read-only changelog entry, got materialized=%#v", got)
+	}
+	if got := entry["stored_at"]; got != nil {
+		t.Fatalf("expected no stored_at for unmaterialized diff, got %#v", got)
+	}
+	diffURL, _ := entry["diff_url"].(string)
+	if diffURL == "" ||
+		!strings.HasPrefix(diffURL, "/api/v1/platform/graph/snapshots/") ||
+		!strings.Contains(diffURL, "/diffs/") {
+		t.Fatalf("expected snapshot diff URL for unmaterialized changelog, got %#v", diffURL)
+	}
 	toSnapshot := entry["to"].(map[string]any)
 	if got := toSnapshot["captured_at"]; got != latest.CreatedAt.Format(time.RFC3339) {
 		t.Fatalf("expected newest changelog entry, got to=%#v", toSnapshot)
@@ -198,6 +212,15 @@ func TestCerebroGraphChangelogTool(t *testing.T) {
 	detailSummary := detailPayload["summary"].(map[string]any)
 	if detailSummary["nodes_modified"] != float64(1) {
 		t.Fatalf("expected filtered detail nodes_added=1, got %#v", detailSummary)
+	}
+
+	diffDir := filepath.Join(dir, "diffs")
+	entriesOnDisk, err := os.ReadDir(diffDir)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatalf("read diff dir: %v", err)
+	}
+	if len(entriesOnDisk) != 0 {
+		t.Fatalf("expected tool reads to avoid diff materialization, got %d artifacts", len(entriesOnDisk))
 	}
 }
 

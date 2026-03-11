@@ -173,9 +173,11 @@ func (a *App) platformGraphChangelogForTool(now, since, until time.Time, limit i
 		if record == nil {
 			continue
 		}
+		diffURL := "/api/v1/platform/graph/snapshots/" + fromRecord.ID + "/diffs/" + toRecord.ID
 		if diffStore != nil {
-			if stored, err := diffStore.Save(record); err == nil {
+			if stored, err := diffStore.Load(record.ID); err == nil && stored != nil {
 				record = stored
+				diffURL = "/api/v1/platform/graph/diffs/" + record.ID
 			}
 		}
 		details := graph.BuildGraphSnapshotDiffDetails(record, snapshots[fromRecord.ID], snapshots[toRecord.ID], filter)
@@ -191,7 +193,7 @@ func (a *App) platformGraphChangelogForTool(now, since, until time.Time, limit i
 		}
 		entries = append(entries, graph.GraphChangelogEntry{
 			DiffID:       record.ID,
-			DiffURL:      "/api/v1/platform/graph/diffs/" + record.ID,
+			DiffURL:      diffURL,
 			GeneratedAt:  record.GeneratedAt,
 			StoredAt:     record.StoredAt,
 			Materialized: record.Materialized,
@@ -215,19 +217,7 @@ func (a *App) platformGraphDiffDetailsForTool(diffID string, filter graph.GraphD
 	if diffID == "" {
 		return nil, fmt.Errorf("diff_id is required")
 	}
-	diffStore := a.platformGraphDiffStoreForTool()
-	if diffStore == nil {
-		return nil, fmt.Errorf("graph snapshot diff store not configured")
-	}
-	record, err := diffStore.Load(diffID)
-	if err != nil {
-		return nil, err
-	}
-	snapshotStore := a.platformGraphSnapshotStoreForTool()
-	if snapshotStore == nil {
-		return nil, fmt.Errorf("graph snapshot store not configured")
-	}
-	snapshots, _, err := snapshotStore.LoadSnapshotsByRecordIDs(record.From.ID, record.To.ID)
+	record, snapshots, err := a.platformGraphDiffForReadForTool(diffID)
 	if err != nil {
 		return nil, err
 	}
@@ -236,6 +226,78 @@ func (a *App) platformGraphDiffDetailsForTool(diffID string, filter graph.GraphD
 		return nil, fmt.Errorf("failed to build graph snapshot diff details")
 	}
 	return details, nil
+}
+
+func (a *App) platformGraphDiffForReadForTool(diffID string) (*graph.GraphSnapshotDiffRecord, map[string]*graph.Snapshot, error) {
+	diffStore := a.platformGraphDiffStoreForTool()
+	if diffStore == nil {
+		return nil, nil, fmt.Errorf("graph snapshot diff store not configured")
+	}
+	if record, err := diffStore.Load(diffID); err == nil && record != nil {
+		snapshots, err := a.platformGraphSnapshotsForDiffRecordForTool(record)
+		if err != nil {
+			return nil, nil, err
+		}
+		return record, snapshots, nil
+	}
+	return a.platformGraphSnapshotDiffByIDForTool(diffID)
+}
+
+func (a *App) platformGraphSnapshotsForDiffRecordForTool(record *graph.GraphSnapshotDiffRecord) (map[string]*graph.Snapshot, error) {
+	snapshotStore := a.platformGraphSnapshotStoreForTool()
+	if snapshotStore == nil {
+		return nil, fmt.Errorf("graph snapshot store not configured")
+	}
+	if record == nil {
+		return nil, fmt.Errorf("graph snapshot diff not found")
+	}
+	if strings.TrimSpace(record.From.ID) == "" || strings.TrimSpace(record.To.ID) == "" {
+		return nil, fmt.Errorf("graph snapshot diff missing snapshot references")
+	}
+	snapshots, _, err := snapshotStore.LoadSnapshotsByRecordIDs(record.From.ID, record.To.ID)
+	if err != nil {
+		return nil, err
+	}
+	return snapshots, nil
+}
+
+func (a *App) platformGraphSnapshotDiffByIDForTool(diffID string) (*graph.GraphSnapshotDiffRecord, map[string]*graph.Snapshot, error) {
+	records := a.platformGraphSnapshotRecordsForTool(time.Now().UTC())
+	if len(records) < 2 {
+		return nil, nil, fmt.Errorf("graph snapshot diff not found: %s", diffID)
+	}
+	sort.Slice(records, func(i, j int) bool {
+		left := toolGraphSnapshotSortTime(records[i])
+		right := toolGraphSnapshotSortTime(records[j])
+		if !left.Equal(right) {
+			return left.Before(right)
+		}
+		return records[i].ID < records[j].ID
+	})
+	snapshotStore := a.platformGraphSnapshotStoreForTool()
+	if snapshotStore == nil {
+		return nil, nil, fmt.Errorf("graph snapshot store not configured")
+	}
+	for i := 0; i+1 < len(records); i++ {
+		if !records[i].Diffable || !records[i+1].Diffable {
+			continue
+		}
+		candidate := graph.BuildGraphSnapshotDiffRecord(records[i], records[i+1], &graph.GraphDiff{}, time.Time{})
+		if candidate == nil || candidate.ID != diffID {
+			continue
+		}
+		snapshots, _, err := snapshotStore.LoadSnapshotsByRecordIDs(records[i].ID, records[i+1].ID)
+		if err != nil {
+			return nil, nil, err
+		}
+		changeTime := toolGraphSnapshotSortTime(records[i+1])
+		record := graph.BuildGraphSnapshotDiffRecord(records[i], records[i+1], graph.DiffSnapshots(snapshots[records[i].ID], snapshots[records[i+1].ID]), changeTime)
+		if record == nil {
+			return nil, nil, fmt.Errorf("graph snapshot diff not found: %s", diffID)
+		}
+		return record, snapshots, nil
+	}
+	return nil, nil, fmt.Errorf("graph snapshot diff not found: %s", diffID)
 }
 
 func (a *App) platformGraphSnapshotRecordsForTool(now time.Time) []graph.GraphSnapshotRecord {
