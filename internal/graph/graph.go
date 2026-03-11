@@ -500,8 +500,9 @@ func (g *Graph) BuildIndex() {
 				if normalized == "" {
 					continue
 				}
-				for length := 1; length <= len(normalized) && length <= 24; length++ {
-					prefix := normalized[:length]
+				runes := []rune(normalized)
+				for length := 1; length <= len(runes) && length <= 24; length++ {
+					prefix := string(runes[:length])
 					if entitySuggestSets[prefix] == nil {
 						entitySuggestSets[prefix] = make(map[string]EntitySuggestion)
 					}

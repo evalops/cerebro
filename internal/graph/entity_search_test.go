@@ -48,3 +48,21 @@ func TestEntitySearchTrigrams_UsesRunes(t *testing.T) {
 		}
 	}
 }
+
+func TestSuggestEntities_UsesRunePrefixes(t *testing.T) {
+	g := New()
+	g.AddNode(&Node{
+		ID:   "document:uber-ops",
+		Kind: NodeKindDocument,
+		Name: "Über Ops",
+	})
+	g.BuildIndex()
+
+	suggestions := SuggestEntities(g, EntitySuggestOptions{Prefix: "üb", Limit: 5})
+	if suggestions.Count != 1 {
+		t.Fatalf("expected one unicode suggestion, got %#v", suggestions)
+	}
+	if suggestions.Suggestions[0].EntityID != "document:uber-ops" {
+		t.Fatalf("expected unicode suggestion hit, got %#v", suggestions.Suggestions[0])
+	}
+}
