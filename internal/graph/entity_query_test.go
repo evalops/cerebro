@@ -457,12 +457,25 @@ func TestNormalizeEntityAssetSupportPromotesMultipleBucketPolicyStatements(t *te
 		t.Fatal("expected bucket detail")
 	}
 	statementCount := 0
+	publicAccessFacetMatched := false
 	for _, subresource := range detail.Subresources {
 		if subresource.Kind == NodeKindBucketPolicyStatement {
 			statementCount++
 		}
 	}
+	for _, facet := range detail.Facets {
+		if facet.ID != "bucket_public_access" {
+			continue
+		}
+		publicAccessFacetMatched = true
+		if publicAccess, ok := facet.Fields["public_access"].(bool); !ok || !publicAccess {
+			t.Fatalf("expected public_access facet field to reflect promoted public signals, got %#v", facet)
+		}
+	}
 	if statementCount != 2 {
 		t.Fatalf("expected two policy statement subresources, got %#v", detail.Subresources)
+	}
+	if !publicAccessFacetMatched {
+		t.Fatalf("expected bucket_public_access facet, got %#v", detail.Facets)
 	}
 }

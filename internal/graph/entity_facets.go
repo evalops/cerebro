@@ -693,6 +693,7 @@ func materializeBucketPublicAccessFacet(g *Graph, node *Node, validAt, recordedA
 		}, true
 	}
 	publicAccess = publicAccess || fields["all_users_access"].(bool) || fields["all_authenticated_users_access"].(bool)
+	fields["public_access"] = publicAccess
 	blocked := fields["block_public_acls"].(bool) && fields["block_public_policy"].(bool)
 	assessment := "pass"
 	summary := "Public-access controls are configured"
