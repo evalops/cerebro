@@ -126,6 +126,14 @@ func TestLoadConfigNATSConsumerControls(t *testing.T) {
 	}
 }
 
+func TestLoadConfigNATSConsumerZeroDropHealthThreshold(t *testing.T) {
+	t.Setenv("NATS_CONSUMER_DROP_HEALTH_THRESHOLD", "0")
+	cfg := LoadConfig()
+	if cfg.NATSConsumerDropHealthThreshold != 0 {
+		t.Fatalf("expected nats consumer drop health threshold 0, got %d", cfg.NATSConsumerDropHealthThreshold)
+	}
+}
+
 func TestLoadConfigGraphOntologySLOThresholds(t *testing.T) {
 	t.Setenv("GRAPH_ONTOLOGY_FALLBACK_WARN_PERCENT", "14.5")
 	t.Setenv("GRAPH_ONTOLOGY_FALLBACK_CRITICAL_PERCENT", "31")

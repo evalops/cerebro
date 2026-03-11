@@ -6,12 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/evalops/cerebro/internal/jsonl"
 	"github.com/evalops/cerebro/internal/metrics"
 	"github.com/nats-io/nats.go"
 )
@@ -388,7 +387,7 @@ func (c ConsumerConfig) withDefaults() ConsumerConfig {
 	if cfg.DropHealthLookback <= 0 {
 		cfg.DropHealthLookback = defaultConsumerDropLookback
 	}
-	if cfg.DropHealthThreshold <= 0 {
+	if cfg.DropHealthThreshold < 0 {
 		cfg.DropHealthThreshold = defaultConsumerDropThreshold
 	}
 	if cfg.PayloadPreviewBytes <= 0 {
@@ -442,16 +441,15 @@ type consumerDeadLetterRecord struct {
 }
 
 type consumerDeadLetterSink struct {
-	path string
-	mu   sync.Mutex
+	sink *jsonl.FileSink
 }
 
 func newConsumerDeadLetterSink(path string) (*consumerDeadLetterSink, error) {
-	path = strings.TrimSpace(path)
-	if path == "" {
-		return nil, fmt.Errorf("consumer dead-letter path is required")
+	sink, err := jsonl.NewFileSink(path)
+	if err != nil {
+		return nil, fmt.Errorf("consumer dead-letter path is required: %w", err)
 	}
-	return &consumerDeadLetterSink{path: path}, nil
+	return &consumerDeadLetterSink{sink: sink}, nil
 }
 
 func (s *consumerDeadLetterSink) Write(record consumerDeadLetterRecord) error {
@@ -462,24 +460,5 @@ func (s *consumerDeadLetterSink) Write(record consumerDeadLetterRecord) error {
 	if record.RecordedAt.IsZero() {
 		record.RecordedAt = time.Now().UTC()
 	}
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o750); err != nil {
-		return fmt.Errorf("create consumer dead-letter directory: %w", err)
-	}
-	payload, err := json.Marshal(record)
-	if err != nil {
-		return fmt.Errorf("marshal consumer dead-letter record: %w", err)
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	file, err := os.OpenFile(s.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		return fmt.Errorf("open consumer dead-letter file: %w", err)
-	}
-	defer func() {
-		_ = file.Close()
-	}()
-	if _, err := file.Write(append(payload, '\n')); err != nil {
-		return fmt.Errorf("append consumer dead-letter record: %w", err)
-	}
-	return nil
+	return s.sink.Write(record)
 }

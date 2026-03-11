@@ -30,6 +30,15 @@ func TestConsumerConfigWithDefaults(t *testing.T) {
 	}
 }
 
+func TestConsumerConfigWithDefaultsPreservesZeroDropHealthThreshold(t *testing.T) {
+	cfg := (ConsumerConfig{
+		DropHealthThreshold: 0,
+	}).withDefaults()
+	if cfg.DropHealthThreshold != 0 {
+		t.Fatalf("expected zero drop health threshold to remain zero, got %d", cfg.DropHealthThreshold)
+	}
+}
+
 func TestConsumerConfigValidate(t *testing.T) {
 	valid := (ConsumerConfig{
 		URLs:           []string{"nats://127.0.0.1:4222"},
