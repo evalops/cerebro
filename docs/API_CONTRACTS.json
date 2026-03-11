@@ -3143,6 +3143,22 @@
               "type": "string"
             },
             {
+              "path": "findings[].observed_finding_ids",
+              "type": "array"
+            },
+            {
+              "path": "findings[].observed_finding_ids[]",
+              "type": "string"
+            },
+            {
+              "path": "findings[].observed_policy_ids",
+              "type": "array"
+            },
+            {
+              "path": "findings[].observed_policy_ids[]",
+              "type": "string"
+            },
+            {
               "path": "findings[].policy_id",
               "type": "string"
             },
@@ -3157,6 +3173,10 @@
             {
               "path": "findings[].resource",
               "type": "object"
+            },
+            {
+              "path": "findings[].semantic_key",
+              "type": "string"
             },
             {
               "path": "findings[].severity",
@@ -3286,6 +3306,22 @@
               "type": "string"
             },
             {
+              "path": "observed_finding_ids",
+              "type": "array"
+            },
+            {
+              "path": "observed_finding_ids[]",
+              "type": "string"
+            },
+            {
+              "path": "observed_policy_ids",
+              "type": "array"
+            },
+            {
+              "path": "observed_policy_ids[]",
+              "type": "string"
+            },
+            {
               "path": "policy_id",
               "type": "string"
             },
@@ -3300,6 +3336,10 @@
             {
               "path": "resource",
               "type": "object"
+            },
+            {
+              "path": "semantic_key",
+              "type": "string"
             },
             {
               "path": "severity",
@@ -25351,6 +25391,22 @@
               "type": "string"
             },
             {
+              "path": "recent_signals[].observed_finding_ids",
+              "type": "array"
+            },
+            {
+              "path": "recent_signals[].observed_finding_ids[]",
+              "type": "string"
+            },
+            {
+              "path": "recent_signals[].observed_policy_ids",
+              "type": "array"
+            },
+            {
+              "path": "recent_signals[].observed_policy_ids[]",
+              "type": "string"
+            },
+            {
               "path": "recent_signals[].policy_id",
               "type": "string"
             },
@@ -25365,6 +25421,10 @@
             {
               "path": "recent_signals[].resource",
               "type": "object"
+            },
+            {
+              "path": "recent_signals[].semantic_key",
+              "type": "string"
             },
             {
               "path": "recent_signals[].severity",
@@ -28423,6 +28483,22 @@
               "type": "string"
             },
             {
+              "path": "findings[].observed_finding_ids",
+              "type": "array"
+            },
+            {
+              "path": "findings[].observed_finding_ids[]",
+              "type": "string"
+            },
+            {
+              "path": "findings[].observed_policy_ids",
+              "type": "array"
+            },
+            {
+              "path": "findings[].observed_policy_ids[]",
+              "type": "string"
+            },
+            {
               "path": "findings[].policy_id",
               "type": "string"
             },
@@ -28437,6 +28513,10 @@
             {
               "path": "findings[].resource",
               "type": "object"
+            },
+            {
+              "path": "findings[].semantic_key",
+              "type": "string"
             },
             {
               "path": "findings[].severity",
