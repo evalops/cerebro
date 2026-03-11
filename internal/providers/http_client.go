@@ -295,7 +295,6 @@ func (c *providerCircuitBreaker) recordFailure() {
 		metrics.SetProviderCircuitState(c.provider, string(c.state))
 		return
 	case providerCircuitOpen:
-		c.openedAt = now
 		return
 	}
 

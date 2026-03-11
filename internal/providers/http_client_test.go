@@ -404,6 +404,23 @@ func TestProviderResilientTransportDoesNotOpenCircuitOnRateLimitResponses(t *tes
 	}
 }
 
+func TestProviderCircuitBreakerOpenFailureDoesNotExtendOpenWindow(t *testing.T) {
+	circuit := newProviderCircuitBreaker("okta", 1, time.Minute)
+
+	circuit.recordFailure()
+	initialOpenedAt := circuit.openedAt
+	if circuit.state != providerCircuitOpen {
+		t.Fatalf("expected circuit to open, got %s", circuit.state)
+	}
+
+	time.Sleep(10 * time.Millisecond)
+	circuit.recordFailure()
+
+	if !circuit.openedAt.Equal(initialOpenedAt) {
+		t.Fatalf("expected open-state failures to preserve openedAt, got %s want %s", circuit.openedAt, initialOpenedAt)
+	}
+}
+
 func TestProviderConstructorsAvoidInlineHTTPClientTimeoutAllocations(t *testing.T) {
 	providersDir := providersDirectory(t)
 	entries, err := os.ReadDir(providersDir)
