@@ -1082,8 +1082,8 @@ func (o *OktaProvider) waitForRateLimit(ctx context.Context, headers http.Header
 	if err != nil || remaining > 1 {
 		return
 	}
-	wait := rateLimitResetDelay(headers)
-	if wait <= 0 {
+	wait, ok := rateLimitResetDelay(headers)
+	if !ok || wait <= 0 {
 		return
 	}
 	_ = o.sleepWithContext(ctx, wait)

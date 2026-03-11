@@ -135,9 +135,10 @@ type providerResilientTransport struct {
 }
 
 type providerRetryDecision struct {
-	Retryable       bool
-	Delay           time.Duration
-	CountsAsFailure bool
+	Retryable        bool
+	Delay            time.Duration
+	HasExplicitDelay bool
+	CountsAsFailure  bool
 }
 
 var errProviderRetryLoopExhausted = errors.New("provider retry loop exhausted without response")
@@ -189,7 +190,7 @@ func (t *providerResilientTransport) RoundTrip(req *http.Request) (*http.Respons
 		}
 
 		delay := decision.Delay
-		if delay <= 0 {
+		if !decision.HasExplicitDelay {
 			delay = providerRetryDelay(t.options.RetryBackoff, t.options.RetryMaxBackoff, attempt)
 		}
 		if err := t.sleep(req.Context(), delay); err != nil {
@@ -331,12 +332,15 @@ func classifyProviderHTTPRetry(resp *http.Response, err error) providerRetryDeci
 	}
 	switch resp.StatusCode {
 	case http.StatusTooManyRequests:
-		return providerRetryDecision{Retryable: true, Delay: retryAfterDelay(resp.Header)}
+		delay, ok := retryAfterDelay(resp.Header)
+		return providerRetryDecision{Retryable: true, Delay: delay, HasExplicitDelay: ok}
 	case http.StatusRequestTimeout, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
-		return providerRetryDecision{Retryable: true, Delay: retryAfterDelay(resp.Header), CountsAsFailure: true}
+		delay, ok := retryAfterDelay(resp.Header)
+		return providerRetryDecision{Retryable: true, Delay: delay, HasExplicitDelay: ok, CountsAsFailure: true}
 	}
 	if resp.StatusCode >= 500 {
-		return providerRetryDecision{Retryable: true, Delay: retryAfterDelay(resp.Header), CountsAsFailure: true}
+		delay, ok := retryAfterDelay(resp.Header)
+		return providerRetryDecision{Retryable: true, Delay: delay, HasExplicitDelay: ok, CountsAsFailure: true}
 	}
 	return providerRetryDecision{}
 }

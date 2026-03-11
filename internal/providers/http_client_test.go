@@ -125,6 +125,7 @@ func TestProviderResilientTransportOpensCircuitAfterFailures(t *testing.T) {
 
 func TestProviderResilientTransportRetriesTransientResponse(t *testing.T) {
 	var attempts atomic.Int32
+	var slept time.Duration
 	transport := &providerResilientTransport{
 		base: providerRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 			current := attempts.Add(1)
@@ -149,7 +150,8 @@ func TestProviderResilientTransportRetriesTransientResponse(t *testing.T) {
 			CircuitOpenTimeout:      time.Minute,
 		},
 		circuit: newProviderCircuitBreaker("okta", 5, time.Minute),
-		sleep: func(context.Context, time.Duration) error {
+		sleep: func(_ context.Context, delay time.Duration) error {
+			slept = delay
 			return nil
 		},
 	}
@@ -169,6 +171,9 @@ func TestProviderResilientTransportRetriesTransientResponse(t *testing.T) {
 	}
 	if attempts.Load() != 2 {
 		t.Fatalf("expected two attempts, got %d", attempts.Load())
+	}
+	if slept != 0 {
+		t.Fatalf("expected immediate retry for Retry-After=0, got sleep %s", slept)
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 
@@ -13,6 +14,10 @@ import (
 )
 
 const maxPlatformEntityQueryLength = 512
+
+func platformEntityQueryLengthExceeds(value string) bool {
+	return utf8.RuneCountInString(value) > maxPlatformEntityQueryLength
+}
 
 func (s *Server) listPlatformEntities(w http.ResponseWriter, r *http.Request) {
 	g := s.app.CurrentSecurityGraph()
@@ -191,7 +196,7 @@ func parsePlatformEntityQueryOptions(r *http.Request) (graph.EntityQueryOptions,
 		TagKey:       strings.TrimSpace(query.Get("tag_key")),
 		TagValue:     strings.TrimSpace(query.Get("tag_value")),
 	}
-	if len(opts.Search) > maxPlatformEntityQueryLength {
+	if platformEntityQueryLengthExceeds(opts.Search) {
 		return graph.EntityQueryOptions{}, fmt.Errorf("q exceeds max length %d", maxPlatformEntityQueryLength)
 	}
 	if risk := strings.ToLower(strings.TrimSpace(query.Get("risk"))); risk != "" {
@@ -243,7 +248,7 @@ func parsePlatformEntitySearchOptions(r *http.Request) (graph.EntitySearchOption
 	if opts.Query == "" {
 		return graph.EntitySearchOptions{}, fmt.Errorf("q is required")
 	}
-	if len(opts.Query) > maxPlatformEntityQueryLength {
+	if platformEntityQueryLengthExceeds(opts.Query) {
 		return graph.EntitySearchOptions{}, fmt.Errorf("q exceeds max length %d", maxPlatformEntityQueryLength)
 	}
 	if fuzzy, ok, err := parseOptionalBoolQuery(r, "fuzzy"); err != nil {
@@ -270,7 +275,7 @@ func parsePlatformEntitySuggestOptions(r *http.Request) (graph.EntitySuggestOpti
 	if opts.Prefix == "" {
 		return graph.EntitySuggestOptions{}, fmt.Errorf("prefix is required")
 	}
-	if len(opts.Prefix) > maxPlatformEntityQueryLength {
+	if platformEntityQueryLengthExceeds(opts.Prefix) {
 		return graph.EntitySuggestOptions{}, fmt.Errorf("prefix exceeds max length %d", maxPlatformEntityQueryLength)
 	}
 	if raw := strings.TrimSpace(query.Get("limit")); raw != "" {

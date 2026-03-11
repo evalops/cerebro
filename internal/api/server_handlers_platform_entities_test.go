@@ -541,4 +541,21 @@ func TestPlatformEntitiesRejectInvalidParams(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for oversized suggest prefix, got %d: %s", w.Code, w.Body.String())
 	}
+
+	runeValue := strings.Repeat("世", 300)
+
+	w = do(t, s, http.MethodGet, "/api/v1/platform/entities?q="+runeValue, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for rune-bounded entity list q, got %d: %s", w.Code, w.Body.String())
+	}
+
+	w = do(t, s, http.MethodGet, "/api/v1/platform/entities/search?q="+runeValue, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for rune-bounded entity search q, got %d: %s", w.Code, w.Body.String())
+	}
+
+	w = do(t, s, http.MethodGet, "/api/v1/platform/entities/suggest?prefix="+runeValue, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for rune-bounded suggest prefix, got %d: %s", w.Code, w.Body.String())
+	}
 }
