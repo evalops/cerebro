@@ -190,6 +190,12 @@ func TestQueryEntitiesFiltersAndKnowledgeSupport(t *testing.T) {
 	if collection.Entities[0].Knowledge.SupportedClaimCount != 1 || collection.Entities[0].Knowledge.ConflictedClaimCount != 2 {
 		t.Fatalf("unexpected claim support counts: %#v", collection.Entities[0].Knowledge)
 	}
+	for _, entity := range collection.Entities {
+		switch entity.Kind {
+		case NodeKindBucketPolicyStatement, NodeKindBucketPublicAccessBlock, NodeKindBucketEncryptionConfig, NodeKindBucketLoggingConfig, NodeKindBucketVersioningConfig:
+			t.Fatalf("unexpected promoted subresource returned as top-level entity: %#v", entity)
+		}
+	}
 	if len(collection.Entities[0].Relationships) == 0 || collection.Entities[0].Relationships[0].EdgeKind != EdgeKindDependsOn {
 		t.Fatalf("expected dependency relationship summary, got %#v", collection.Entities[0].Relationships)
 	}

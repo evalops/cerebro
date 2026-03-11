@@ -29,7 +29,7 @@ func (s *Server) listPlatformEntities(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listPlatformEntityFacets(w http.ResponseWriter, r *http.Request) {
-	s.json(w, http.StatusOK, graph.BuildEntityFacetContractCatalog(time.Time{}))
+	s.json(w, http.StatusOK, graph.BuildEntityFacetContractCatalog(time.Now().UTC()))
 }
 
 func (s *Server) getPlatformEntityFacet(w http.ResponseWriter, r *http.Request) {

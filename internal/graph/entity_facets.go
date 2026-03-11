@@ -219,26 +219,6 @@ var defaultEntityFacetDefinitions = []EntityFacetDefinition{
 	},
 }
 
-// EntityFacetCatalog is the discoverable registry payload for built-in entity facets.
-type EntityFacetCatalog struct {
-	GeneratedAt time.Time               `json:"generated_at"`
-	Count       int                     `json:"count"`
-	Facets      []EntityFacetDefinition `json:"facets"`
-}
-
-// EntityFacetCatalogSnapshot returns a timestamped snapshot of built-in entity facets.
-func EntityFacetCatalogSnapshot(now time.Time) EntityFacetCatalog {
-	if now.IsZero() {
-		now = temporalNowUTC()
-	}
-	facets := ListEntityFacetDefinitions()
-	return EntityFacetCatalog{
-		GeneratedAt: now.UTC(),
-		Count:       len(facets),
-		Facets:      facets,
-	}
-}
-
 // ListEntityFacetDefinitions returns the built-in entity facet definitions.
 func ListEntityFacetDefinitions() []EntityFacetDefinition {
 	out := append([]EntityFacetDefinition(nil), defaultEntityFacetDefinitions...)

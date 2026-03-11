@@ -607,7 +607,8 @@ func entityRiskOrder(level RiskLevel) int {
 
 func entityQueryAllowedNodeKind(kind NodeKind) bool {
 	switch kind {
-	case NodeKindClaim, NodeKindEvidence, NodeKindObservation, NodeKindSource, NodeKindDecision, NodeKindAction, NodeKindOutcome:
+	case NodeKindClaim, NodeKindEvidence, NodeKindObservation, NodeKindSource, NodeKindDecision, NodeKindAction, NodeKindOutcome,
+		NodeKindBucketPolicyStatement, NodeKindBucketPublicAccessBlock, NodeKindBucketEncryptionConfig, NodeKindBucketLoggingConfig, NodeKindBucketVersioningConfig:
 		return false
 	default:
 		return true
