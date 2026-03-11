@@ -116,6 +116,7 @@ type AlertRouter struct {
 	now           func() time.Time
 
 	mu             sync.Mutex
+	stateRevision  uint64
 	throttleUntil  map[string]time.Time
 	digestBuckets  map[string]*digestBucket
 	pendingAcks    map[string]pendingAck
@@ -328,12 +329,15 @@ func (r *AlertRouter) Route(ctx context.Context, event webhooks.Event) error {
 	outbound := r.planDueDigestMessagesLocked(now)
 	outbound = append(outbound, r.planEscalationMessagesLocked(ctx, now)...)
 	outbound = append(outbound, r.planRouteMessagesLocked(ctx, event, now)...)
+	r.stateRevision++
 	nextSnapshot := r.snapshotStateLocked(now)
 	r.mu.Unlock()
 
 	if err := r.persistSnapshot(ctx, nextSnapshot); err != nil {
 		r.mu.Lock()
-		r.restoreStateLocked(previousSnapshot, now)
+		if r.stateRevision == nextSnapshot.Revision {
+			r.restoreStateLocked(previousSnapshot, now)
+		}
 		r.mu.Unlock()
 		return err
 	}
@@ -377,6 +381,7 @@ func (r *AlertRouter) Acknowledge(alertID string, recipientID string) bool {
 	}
 	nextSnapshot := alertRouterStateSnapshot{}
 	if acknowledged {
+		r.stateRevision++
 		nextSnapshot = r.snapshotStateLocked(now)
 	}
 	r.mu.Unlock()
@@ -384,7 +389,9 @@ func (r *AlertRouter) Acknowledge(alertID string, recipientID string) bool {
 	if acknowledged {
 		if err := r.persistSnapshot(context.Background(), nextSnapshot); err != nil {
 			r.mu.Lock()
-			r.restoreStateLocked(previousSnapshot, now)
+			if r.stateRevision == nextSnapshot.Revision {
+				r.restoreStateLocked(previousSnapshot, now)
+			}
 			r.mu.Unlock()
 			r.logger.Warn("failed to persist alert router state after acknowledgement", "error", err)
 			return false
@@ -762,6 +769,7 @@ func (r *AlertRouter) persistSnapshot(ctx context.Context, snapshot alertRouterS
 func (r *AlertRouter) snapshotStateLocked(now time.Time) alertRouterStateSnapshot {
 	r.pruneStateLocked(now)
 	snapshot := alertRouterStateSnapshot{
+		Revision:      r.stateRevision,
 		ThrottleUntil: make(map[string]time.Time, len(r.throttleUntil)),
 		DigestBuckets: make(map[string]digestBucketState, len(r.digestBuckets)),
 		PendingAcks:   make(map[string]pendingAckState, len(r.pendingAcks)),
@@ -805,6 +813,7 @@ func (r *AlertRouter) restoreState(snapshot alertRouterStateSnapshot, now time.T
 }
 
 func (r *AlertRouter) restoreStateLocked(snapshot alertRouterStateSnapshot, now time.Time) {
+	r.stateRevision = snapshot.Revision
 	r.throttleUntil = make(map[string]time.Time, len(snapshot.ThrottleUntil))
 	for key, until := range snapshot.ThrottleUntil {
 		r.throttleUntil[key] = until
