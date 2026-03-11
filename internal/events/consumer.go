@@ -245,16 +245,14 @@ func (c *Consumer) run() {
 	runCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	cancelBridgeDone := make(chan struct{})
 	go func() {
-		defer close(cancelBridgeDone)
-		<-c.stopCh
-		cancel()
+		select {
+		case <-c.stopCh:
+			cancel()
+		case <-runCtx.Done():
+		}
 	}()
-	defer func() {
-		cancel()
-		<-cancelBridgeDone
-	}()
+	defer cancel()
 
 	lastLagRefresh := time.Time{}
 	for {
@@ -406,7 +404,6 @@ func (c *Consumer) HealthSnapshot(now time.Time) ConsumerHealthSnapshot {
 			graphStaleness = 0
 		}
 	}
-	metrics.SetGraphStaleness(graphStaleness)
 
 	return ConsumerHealthSnapshot{
 		RecentDropped:   dropped,
@@ -492,11 +489,19 @@ func (c *Consumer) refreshLagMetrics(now time.Time) {
 	lagAge := time.Duration(0)
 	c.statusMu.RLock()
 	lastEventTime := c.lastEventTime
+	lastProcessedAt := c.lastProcessedAt
 	c.statusMu.RUnlock()
 	if lag > 0 && !lastEventTime.IsZero() {
 		lagAge = now.UTC().Sub(lastEventTime.UTC())
 		if lagAge < 0 {
 			lagAge = 0
+		}
+	}
+	graphStaleness := time.Duration(0)
+	if !lastProcessedAt.IsZero() {
+		graphStaleness = now.UTC().Sub(lastProcessedAt.UTC())
+		if graphStaleness < 0 {
+			graphStaleness = 0
 		}
 	}
 
@@ -507,6 +512,7 @@ func (c *Consumer) refreshLagMetrics(now time.Time) {
 
 	metrics.SetNATSConsumerLag(c.config.Stream, c.config.Durable, lag)
 	metrics.SetNATSConsumerLagSeconds(c.config.Stream, c.config.Durable, lagAge)
+	metrics.SetGraphStaleness(graphStaleness)
 }
 
 func (c *Consumer) pruneDropsLocked(now time.Time) {
