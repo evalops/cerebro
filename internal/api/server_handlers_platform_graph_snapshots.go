@@ -217,6 +217,12 @@ func (s *Server) materializePlatformGraphDiff(record *graph.GraphSnapshotDiffRec
 	if store == nil {
 		return nil, fmt.Errorf("graph snapshot diff store not configured")
 	}
+	if record == nil || strings.TrimSpace(record.ID) == "" {
+		return nil, fmt.Errorf("graph snapshot diff record is required")
+	}
+	if existing, err := store.Load(strings.TrimSpace(record.ID)); err == nil && existing != nil {
+		return existing, nil
+	}
 	cloned := *record
 	cloned.JobID = strings.TrimSpace(jobID)
 	stored, err := store.Save(&cloned)

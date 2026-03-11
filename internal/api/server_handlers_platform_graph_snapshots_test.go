@@ -292,6 +292,103 @@ func TestPlatformGraphDiffRequiresMaterializedSnapshots(t *testing.T) {
 	}
 }
 
+func TestPlatformGraphDiffMaterializationIsIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("GRAPH_SNAPSHOT_PATH", dir)
+
+	base := time.Date(2026, 3, 7, 3, 0, 0, 0, time.UTC)
+	older := &graph.Snapshot{
+		Version:   "1.0",
+		CreatedAt: base.Add(5 * time.Minute),
+		Metadata: graph.Metadata{
+			BuiltAt:   base,
+			NodeCount: 1,
+			EdgeCount: 0,
+			Providers: []string{"aws"},
+			Accounts:  []string{"acct-a"},
+		},
+		Nodes: []*graph.Node{
+			{ID: "node-a", Kind: graph.NodeKindUser, Name: "a"},
+		},
+	}
+	newer := &graph.Snapshot{
+		Version:   "1.0",
+		CreatedAt: base.Add(65 * time.Minute),
+		Metadata: graph.Metadata{
+			BuiltAt:   base.Add(1 * time.Hour),
+			NodeCount: 2,
+			EdgeCount: 1,
+			Providers: []string{"aws"},
+			Accounts:  []string{"acct-a"},
+		},
+		Nodes: []*graph.Node{
+			{ID: "node-a", Kind: graph.NodeKindUser, Name: "a"},
+			{ID: "node-b", Kind: graph.NodeKindBucket, Name: "b"},
+		},
+		Edges: []*graph.Edge{
+			{ID: "edge-1", Source: "node-a", Target: "node-b", Kind: graph.EdgeKindCanRead},
+		},
+	}
+	mustSaveGraphSnapshot(t, dir, older)
+	mustSaveGraphSnapshot(t, dir, newer)
+
+	s := newTestServer(t)
+	body := decodeJSON(t, do(t, s, http.MethodGet, "/api/v1/platform/graph/snapshots", nil))
+	snapshots := body["snapshots"].([]any)
+	newerID, _ := snapshots[0].(map[string]any)["id"].(string)
+	olderID, _ := snapshots[1].(map[string]any)["id"].(string)
+
+	changelogEvents := make(chan webhooks.Event, 2)
+	s.app.Webhooks.Subscribe(func(_ context.Context, event webhooks.Event) error {
+		if event.Type == webhooks.EventPlatformGraphChangelogComputed {
+			changelogEvents <- event
+		}
+		return nil
+	})
+
+	first := do(t, s, http.MethodPost, "/api/v1/platform/graph/diffs", map[string]any{
+		"from_snapshot_id":   olderID,
+		"to_snapshot_id":     newerID,
+		"materialize_result": true,
+	})
+	if first.Code != http.StatusOK {
+		t.Fatalf("expected 200 for first diff materialization, got %d: %s", first.Code, first.Body.String())
+	}
+	firstBody := decodeJSON(t, first)
+	firstStoredAt, _ := firstBody["stored_at"].(string)
+	if firstStoredAt == "" {
+		t.Fatalf("expected stored_at on materialized diff, got %#v", firstBody)
+	}
+
+	select {
+	case <-changelogEvents:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected webhook emission for first materialization")
+	}
+
+	second := do(t, s, http.MethodPost, "/api/v1/platform/graph/diffs", map[string]any{
+		"from_snapshot_id":   olderID,
+		"to_snapshot_id":     newerID,
+		"materialize_result": true,
+	})
+	if second.Code != http.StatusOK {
+		t.Fatalf("expected 200 for repeated diff materialization, got %d: %s", second.Code, second.Body.String())
+	}
+	secondBody := decodeJSON(t, second)
+	if got := secondBody["id"]; got != firstBody["id"] {
+		t.Fatalf("expected repeated materialization to reuse diff id %#v, got %#v", firstBody["id"], got)
+	}
+	if got := secondBody["stored_at"]; got != firstStoredAt {
+		t.Fatalf("expected repeated materialization to reuse stored_at %q, got %#v", firstStoredAt, got)
+	}
+
+	select {
+	case event := <-changelogEvents:
+		t.Fatalf("expected repeated materialization to avoid duplicate webhook emission, got %#v", event)
+	default:
+	}
+}
+
 func TestPlatformGraphChangelogAndDiffDetailsEndpoints(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("GRAPH_SNAPSHOT_PATH", dir)

@@ -380,6 +380,8 @@ func routePermission(method, path string) string {
 		return "sdk.worldmodel.write"
 	case strings.HasPrefix(path, "/api/v1/mcp"):
 		return "sdk.invoke"
+	case isWrite && path == "/api/v1/platform/graph/diffs":
+		return "platform.graph.write"
 	case strings.HasPrefix(path, "/api/v1/platform/graph"):
 		return "platform.graph.read"
 	case strings.HasPrefix(path, "/api/v1/status"):
