@@ -262,6 +262,52 @@ func TestClampNegativeIntToUint64(t *testing.T) {
 	}
 }
 
+func TestGraphStalenessAt(t *testing.T) {
+	now := time.Now().UTC()
+	if got, ok := graphStalenessAt(now, time.Time{}); ok || got != 0 {
+		t.Fatalf("expected zero/false for missing last processed time, got %s %t", got, ok)
+	}
+
+	lastProcessedAt := now.Add(-2 * time.Minute)
+	got, ok := graphStalenessAt(now, lastProcessedAt)
+	if !ok {
+		t.Fatal("expected graph staleness to be available")
+	}
+	if got != 2*time.Minute {
+		t.Fatalf("expected 2m graph staleness, got %s", got)
+	}
+}
+
+func TestRefreshLagMetricsDoesNotResetGraphStalenessWithoutProcessedEvents(t *testing.T) {
+	natsURL := startJetStreamServer(t)
+
+	consumer, err := NewJetStreamConsumer(ConsumerConfig{
+		URLs:           []string{natsURL},
+		Stream:         "ENSEMBLE_TAP_STALENESS_TEST",
+		Subject:        "ensemble.tap.staleness-test.>",
+		Durable:        "cerebro_staleness_test",
+		DeadLetterPath: t.TempDir() + "/consumer.dlq.jsonl",
+		BatchSize:      1,
+		AckWait:        5 * time.Second,
+		FetchTimeout:   100 * time.Millisecond,
+	}, nil, func(context.Context, CloudEvent) error { return nil })
+	if err != nil {
+		t.Fatalf("new consumer: %v", err)
+	}
+	defer func() { _ = consumer.Close() }()
+
+	lastUpdate := time.Now().UTC().Add(-2 * time.Minute)
+	metrics.SetGraphLastUpdate(lastUpdate)
+	before := gaugeValue(t, metrics.GraphStalenessSeconds)
+
+	consumer.refreshLagMetrics(time.Now().UTC())
+	after := gaugeValue(t, metrics.GraphStalenessSeconds)
+
+	if after != before {
+		t.Fatalf("expected lag refresh without processed events to preserve graph staleness, before=%v after=%v", before, after)
+	}
+}
+
 func TestRecordProcessedPreservesLastEventTimeWhenMissing(t *testing.T) {
 	consumer := &Consumer{}
 	firstEvent := time.Now().UTC().Add(-time.Minute)
@@ -470,6 +516,18 @@ func counterValue(t *testing.T, metric interface{ Write(*dto.Metric) error }) fl
 		t.Fatal("expected counter metric")
 	}
 	return snapshot.Counter.GetValue()
+}
+
+func gaugeValue(t *testing.T, metric interface{ Write(*dto.Metric) error }) float64 {
+	t.Helper()
+	snapshot := &dto.Metric{}
+	if err := metric.Write(snapshot); err != nil {
+		t.Fatalf("write gauge snapshot: %v", err)
+	}
+	if snapshot.Gauge == nil {
+		t.Fatal("expected gauge metric")
+	}
+	return snapshot.Gauge.GetValue()
 }
 
 func containsAll(s string, parts ...string) bool {

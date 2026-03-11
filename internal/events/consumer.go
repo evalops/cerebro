@@ -492,13 +492,7 @@ func (c *Consumer) refreshLagMetrics(now time.Time) {
 			lagAge = 0
 		}
 	}
-	graphStaleness := time.Duration(0)
-	if !lastProcessedAt.IsZero() {
-		graphStaleness = now.UTC().Sub(lastProcessedAt.UTC())
-		if graphStaleness < 0 {
-			graphStaleness = 0
-		}
-	}
+	graphStaleness, hasGraphStaleness := graphStalenessAt(now, lastProcessedAt)
 
 	c.statusMu.Lock()
 	c.consumerLag = lag
@@ -507,7 +501,9 @@ func (c *Consumer) refreshLagMetrics(now time.Time) {
 
 	metrics.SetNATSConsumerLag(c.config.Stream, c.config.Durable, lag)
 	metrics.SetNATSConsumerLagSeconds(c.config.Stream, c.config.Durable, lagAge)
-	metrics.SetGraphStaleness(graphStaleness)
+	if hasGraphStaleness {
+		metrics.SetGraphStaleness(graphStaleness)
+	}
 }
 
 func saturatingAddUint64(left, right uint64) uint64 {
@@ -529,6 +525,17 @@ func clampNegativeIntToUint64(value int) uint64 {
 		return 0
 	}
 	return uint64(value)
+}
+
+func graphStalenessAt(now, lastProcessedAt time.Time) (time.Duration, bool) {
+	if lastProcessedAt.IsZero() {
+		return 0, false
+	}
+	graphStaleness := now.UTC().Sub(lastProcessedAt.UTC())
+	if graphStaleness < 0 {
+		graphStaleness = 0
+	}
+	return graphStaleness, true
 }
 
 func (c *Consumer) pruneDropsLocked(now time.Time) {
