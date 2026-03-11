@@ -43,6 +43,7 @@ func (o *OktaProvider) Configure(ctx context.Context, config map[string]interfac
 
 	o.domain = o.GetConfigString("domain")
 	o.apiToken = o.GetConfigString("api_token")
+	o.client = o.NewHTTPClient(30 * time.Second)
 
 	return nil
 }
@@ -1048,58 +1049,32 @@ func (o *OktaProvider) requestAll(ctx context.Context, path string) ([]map[strin
 }
 
 func (o *OktaProvider) requestWithResponse(ctx context.Context, url string) ([]byte, http.Header, error) {
-	const maxAttempts = 3
-	for attempt := 0; attempt < maxAttempts; attempt++ {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		req.Header.Set("Authorization", "SSWS "+o.apiToken)
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Accept", "application/json")
-
-		resp, err := o.client.Do(req)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		body, err := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-		if err != nil {
-			return nil, nil, err
-		}
-
-		if resp.StatusCode == http.StatusTooManyRequests {
-			if attempt == maxAttempts-1 {
-				return nil, nil, fmt.Errorf("okta API error %d: %s", resp.StatusCode, string(body))
-			}
-			if !o.waitForRetry(ctx, resp.Header) {
-				if ctx.Err() != nil {
-					return nil, nil, ctx.Err()
-				}
-				return nil, nil, fmt.Errorf("okta API error %d: %s", resp.StatusCode, string(body))
-			}
-			continue
-		}
-
-		if resp.StatusCode >= 400 {
-			return nil, nil, fmt.Errorf("okta API error %d: %s", resp.StatusCode, string(body))
-		}
-
-		o.waitForRateLimit(ctx, resp.Header)
-		return body, resp.Header, nil
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	return nil, nil, fmt.Errorf("okta API error %d: rate limited", http.StatusTooManyRequests)
-}
+	req.Header.Set("Authorization", "SSWS "+o.apiToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
 
-func (o *OktaProvider) waitForRetry(ctx context.Context, headers http.Header) bool {
-	wait := retryAfterDelay(headers)
-	if wait < time.Second {
-		wait = time.Second
+	resp, err := o.client.Do(req)
+	if err != nil {
+		return nil, nil, err
 	}
-	return o.sleepWithContext(ctx, wait)
+
+	body, err := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if resp.StatusCode >= 400 {
+		return nil, nil, fmt.Errorf("okta API error %d: %s", resp.StatusCode, string(body))
+	}
+
+	o.waitForRateLimit(ctx, resp.Header)
+	return body, resp.Header, nil
 }
 
 func (o *OktaProvider) waitForRateLimit(ctx context.Context, headers http.Header) {

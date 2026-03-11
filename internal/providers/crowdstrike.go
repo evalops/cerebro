@@ -47,6 +47,7 @@ func (c *CrowdStrikeProvider) Configure(ctx context.Context, config map[string]i
 	if baseURL := c.GetConfigString("base_url"); baseURL != "" {
 		c.baseURL = baseURL
 	}
+	c.client = c.NewHTTPClient(30 * time.Second)
 
 	return nil
 }

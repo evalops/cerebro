@@ -32,6 +32,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/evalops/cerebro/internal/metrics"
 	"github.com/evalops/cerebro/internal/policy"
 )
 
@@ -160,8 +161,20 @@ type Evidence struct {
 
 // StoreConfig configures capacity limits for the in-memory Store.
 type StoreConfig struct {
-	MaxFindings       int           // 0 means unlimited (default for backward compat)
+	MaxFindings       int           // 0 means unlimited when explicitly configured.
 	ResolvedRetention time.Duration // How long to keep resolved findings; 0 means forever
+}
+
+const (
+	DefaultMaxFindings       = 50000
+	DefaultResolvedRetention = 30 * 24 * time.Hour
+)
+
+func DefaultStoreConfig() StoreConfig {
+	return StoreConfig{
+		MaxFindings:       DefaultMaxFindings,
+		ResolvedRetention: DefaultResolvedRetention,
+	}
 }
 
 type Store struct {
@@ -173,20 +186,20 @@ type Store struct {
 	mu                sync.RWMutex
 }
 
-// NewStore creates an unlimited in-memory store (backward compatible).
+// NewStore creates a bounded in-memory store with sane defaults.
 func NewStore() *Store {
-	return &Store{
-		findings: make(map[string]*Finding),
-	}
+	return NewStoreWithConfig(DefaultStoreConfig())
 }
 
 // NewStoreWithConfig creates an in-memory store with capacity limits.
 func NewStoreWithConfig(cfg StoreConfig) *Store {
-	return &Store{
+	store := &Store{
 		findings:          make(map[string]*Finding),
 		maxFindings:       cfg.MaxFindings,
 		resolvedRetention: cfg.ResolvedRetention,
 	}
+	store.updateMetricsLocked()
+	return store
 }
 
 func (s *Store) SetAttestor(attestor FindingAttestor, attestReobserved bool) {
@@ -283,6 +296,7 @@ func (s *Store) Upsert(ctx context.Context, pf policy.Finding) *Finding {
 		if eventType != "" {
 			_ = attestFindingEvent(ctx, s.attestor, existing, eventType, now)
 		}
+		s.updateMetricsLocked()
 		return existing
 	}
 
@@ -348,6 +362,7 @@ func (s *Store) Upsert(ctx context.Context, pf policy.Finding) *Finding {
 	if s.maxFindings > 0 && len(s.findings) > s.maxFindings {
 		s.evictToCapacity()
 	}
+	s.updateMetricsLocked()
 
 	return f
 }
@@ -500,6 +515,7 @@ func (s *Store) Update(id string, mutate func(*Finding) error) error {
 	}
 	f.Status = normalizeStatus(f.Status)
 	EnrichFinding(f)
+	s.updateMetricsLocked()
 	return nil
 }
 
@@ -592,6 +608,7 @@ func (s *Store) Resolve(id string) bool {
 	f.SnoozedUntil = nil
 	f.StatusChangedAt = &now
 	f.UpdatedAt = now
+	s.updateMetricsLocked()
 	return true
 }
 
@@ -608,6 +625,7 @@ func (s *Store) Suppress(id string) bool {
 	f.SnoozedUntil = nil
 	f.StatusChangedAt = &now
 	f.UpdatedAt = now
+	s.updateMetricsLocked()
 	return true
 }
 
@@ -725,7 +743,9 @@ func (s *Store) Cleanup(maxAge time.Duration) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	return s.cleanupResolvedBeforeLocked(time.Now().Add(-maxAge))
+	removed := s.cleanupResolvedBeforeLocked(time.Now().Add(-maxAge))
+	s.updateMetricsLocked()
+	return removed
 }
 
 // Len returns the number of findings in the store.
@@ -738,6 +758,19 @@ func (s *Store) Len() int {
 // Sync is a no-op for in-memory store
 func (s *Store) Sync(ctx context.Context) error {
 	return nil
+}
+
+func (s *Store) Config() StoreConfig {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return StoreConfig{
+		MaxFindings:       s.maxFindings,
+		ResolvedRetention: s.resolvedRetention,
+	}
+}
+
+func (s *Store) updateMetricsLocked() {
+	metrics.SetFindingsStoreSize(len(s.findings))
 }
 
 // Ensure Store implements FindingStore

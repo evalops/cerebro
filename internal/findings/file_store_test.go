@@ -121,6 +121,7 @@ func TestFileStoreCleanup(t *testing.T) {
 	defer func() {
 		_ = store.Close()
 	}()
+	store.store.resolvedRetention = 0
 
 	// Add old resolved finding directly
 	store.store.mu.Lock()

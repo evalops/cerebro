@@ -419,13 +419,26 @@ func TestStats_Fields(t *testing.T) {
 	}
 }
 
-func TestNewStore_BackwardCompatible(t *testing.T) {
+func TestNewStore_UsesBoundedDefaults(t *testing.T) {
 	store := NewStore()
 	if store.Len() != 0 {
 		t.Errorf("expected empty store, got %d", store.Len())
 	}
 
-	// Should accept unlimited findings without eviction
+	for i := 0; i < DefaultMaxFindings+10; i++ {
+		store.Upsert(context.Background(), policy.Finding{
+			ID:       fmt.Sprintf("f-%d", i),
+			PolicyID: "p1",
+			Severity: "high",
+		})
+	}
+	if store.Len() != DefaultMaxFindings {
+		t.Errorf("expected default cap of %d findings, got %d", DefaultMaxFindings, store.Len())
+	}
+}
+
+func TestNewStoreWithConfig_AllowsExplicitUnlimitedStore(t *testing.T) {
+	store := NewStoreWithConfig(StoreConfig{})
 	for i := 0; i < 100; i++ {
 		store.Upsert(context.Background(), policy.Finding{
 			ID:       fmt.Sprintf("f-%d", i),
@@ -434,7 +447,7 @@ func TestNewStore_BackwardCompatible(t *testing.T) {
 		})
 	}
 	if store.Len() != 100 {
-		t.Errorf("expected 100 findings, got %d", store.Len())
+		t.Errorf("expected explicit unlimited store to keep 100 findings, got %d", store.Len())
 	}
 }
 

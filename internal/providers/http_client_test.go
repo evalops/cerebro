@@ -1,10 +1,15 @@
 package providers
 
 import (
+	"context"
+	"errors"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -31,6 +36,139 @@ func TestNewProviderHTTPClientDefaultsTimeout(t *testing.T) {
 	client := newProviderHTTPClient(0)
 	if client.Timeout != 30*time.Second {
 		t.Fatalf("default timeout = %s, want 30s", client.Timeout)
+	}
+}
+
+func TestBaseProviderNewHTTPClientUsesConfiguredResilience(t *testing.T) {
+	bp := NewBaseProvider("okta", ProviderTypeIdentity)
+	if err := bp.Configure(context.Background(), map[string]interface{}{
+		"http_timeout":                   "45s",
+		"http_retry_attempts":            4,
+		"http_retry_backoff":             "250ms",
+		"http_retry_max_backoff":         "2s",
+		"http_circuit_failure_threshold": 3,
+		"http_circuit_open_timeout":      "90s",
+	}); err != nil {
+		t.Fatalf("configure base provider: %v", err)
+	}
+
+	client := bp.NewHTTPClient(30 * time.Second)
+	if client.Timeout != 45*time.Second {
+		t.Fatalf("client timeout = %s, want 45s", client.Timeout)
+	}
+	transport, ok := client.Transport.(*providerResilientTransport)
+	if !ok {
+		t.Fatalf("expected resilient transport, got %T", client.Transport)
+	}
+	if transport.options.RetryAttempts != 4 {
+		t.Fatalf("retry attempts = %d, want 4", transport.options.RetryAttempts)
+	}
+	if transport.options.CircuitFailureThreshold != 3 {
+		t.Fatalf("failure threshold = %d, want 3", transport.options.CircuitFailureThreshold)
+	}
+	if transport.options.CircuitOpenTimeout != 90*time.Second {
+		t.Fatalf("open timeout = %s, want 90s", transport.options.CircuitOpenTimeout)
+	}
+}
+
+func TestProviderResilientTransportOpensCircuitAfterFailures(t *testing.T) {
+	var attempts atomic.Int32
+	transport := &providerResilientTransport{
+		base: providerRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+			attempts.Add(1)
+			return nil, errors.New("connection reset by peer")
+		}),
+		options: ProviderHTTPClientOptions{
+			Provider:                "okta",
+			RetryAttempts:           1,
+			RetryBackoff:            time.Millisecond,
+			RetryMaxBackoff:         time.Millisecond,
+			CircuitFailureThreshold: 2,
+			CircuitOpenTimeout:      time.Minute,
+		},
+		circuit: newProviderCircuitBreaker("okta", 2, time.Minute),
+		sleep: func(context.Context, time.Duration) error {
+			return nil
+		},
+	}
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://example.com", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+
+	resp, err := transport.RoundTrip(req)
+	if resp != nil {
+		closeTestResponse(t, resp)
+	}
+	if err == nil {
+		t.Fatal("expected first request error")
+	}
+	resp, err = transport.RoundTrip(req)
+	if resp != nil {
+		closeTestResponse(t, resp)
+	}
+	if err == nil {
+		t.Fatal("expected second request error")
+	}
+	resp, err = transport.RoundTrip(req)
+	if resp != nil {
+		closeTestResponse(t, resp)
+	}
+	if !errors.Is(err, ErrProviderCircuitOpen) {
+		t.Fatalf("expected circuit-open error, got %v", err)
+	}
+	if attempts.Load() != 2 {
+		t.Fatalf("expected underlying transport to run twice before opening circuit, got %d", attempts.Load())
+	}
+}
+
+func TestProviderResilientTransportRetriesTransientResponse(t *testing.T) {
+	var attempts atomic.Int32
+	transport := &providerResilientTransport{
+		base: providerRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+			current := attempts.Add(1)
+			if current == 1 {
+				return &http.Response{
+					StatusCode: http.StatusTooManyRequests,
+					Header:     http.Header{"Retry-After": []string{"0"}},
+					Body:       io.NopCloser(strings.NewReader("rate limited")),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader("ok")),
+			}, nil
+		}),
+		options: ProviderHTTPClientOptions{
+			Provider:                "okta",
+			RetryAttempts:           2,
+			RetryBackoff:            time.Millisecond,
+			RetryMaxBackoff:         time.Millisecond,
+			CircuitFailureThreshold: 5,
+			CircuitOpenTimeout:      time.Minute,
+		},
+		circuit: newProviderCircuitBreaker("okta", 5, time.Minute),
+		sleep: func(context.Context, time.Duration) error {
+			return nil
+		},
+	}
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://example.com", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("expected retry to recover, got %v", err)
+	}
+	defer closeTestResponse(t, resp)
+	if resp == nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected OK response, got %#v", resp)
+	}
+	if attempts.Load() != 2 {
+		t.Fatalf("expected two attempts, got %d", attempts.Load())
 	}
 }
 
@@ -83,4 +221,20 @@ func providersDirectory(t *testing.T) string {
 		t.Fatal("runtime.Caller failed")
 	}
 	return filepath.Dir(thisFile)
+}
+
+type providerRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn providerRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
+
+func closeTestResponse(t *testing.T, resp *http.Response) {
+	t.Helper()
+	if resp == nil || resp.Body == nil {
+		return
+	}
+	if err := resp.Body.Close(); err != nil {
+		t.Fatalf("close response body: %v", err)
+	}
 }
