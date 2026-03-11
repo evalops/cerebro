@@ -92,10 +92,20 @@ func (a *App) initFindings() {
 	}
 	// When Snowflake is available, create SnowflakeStore as primary
 	// This will be loaded from Snowflake in initSnowflakeFindings
+	databaseName := strings.TrimSpace(a.Config.SnowflakeDatabase)
+	schemaName := strings.TrimSpace(a.Config.SnowflakeSchema)
+	if a.Warehouse != nil {
+		if candidate := strings.TrimSpace(a.Warehouse.Database()); candidate != "" {
+			databaseName = candidate
+		}
+		if candidate := strings.TrimSpace(a.Warehouse.Schema()); candidate != "" {
+			schemaName = candidate
+		}
+	}
 	snowflakeStore := findings.NewSnowflakeStore(
 		a.Warehouse.DB(),
-		a.Warehouse.Database(),
-		a.Warehouse.Schema(),
+		databaseName,
+		schemaName,
 	)
 	a.Findings = snowflakeStore
 	a.SnowflakeFindings = snowflakeStore
