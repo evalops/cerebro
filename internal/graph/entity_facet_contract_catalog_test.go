@@ -99,6 +99,9 @@ func TestCompareEntityFacetContractCatalogsTreatsAdditiveVersionBumpedChangesAsC
 	if len(report.DiffSummaries) != 1 || len(report.DiffSummaries[0].AddedPaths) == 0 {
 		t.Fatalf("expected additive diff summary, got %#v", report.DiffSummaries)
 	}
+	if report.DiffSummaries[0].FacetID != "ownership" {
+		t.Fatalf("expected diff summary facet id to be populated, got %#v", report.DiffSummaries[0])
+	}
 }
 
 func TestCompareEntityFacetContractCatalogsTreatsRemovalAsBreakingNotVersioning(t *testing.T) {

@@ -119,7 +119,7 @@ func CompareEntityFacetContractCatalogs(baseline, current EntityFacetContractCat
 			if entityFacetFingerprint(before) == entityFacetFingerprint(after) {
 				continue
 			}
-			diffSummary := buildEntityFacetDiffSummary(before, after)
+			diffSummary := buildEntityFacetDiffSummary(id, before, after)
 			issue := EntityFacetCompatibilityIssue{
 				FacetID:         id,
 				ChangeType:      "changed",
@@ -182,8 +182,8 @@ func buildEntityFacetContractSurface(value EntityFacetDefinition) entityFacetCon
 	}
 }
 
-func buildEntityFacetDiffSummary(before, after EntityFacetDefinition) EntityFacetDiffSummary {
-	summary := EntityFacetDiffSummary{}
+func buildEntityFacetDiffSummary(facetID string, before, after EntityFacetDefinition) EntityFacetDiffSummary {
+	summary := EntityFacetDiffSummary{FacetID: facetID}
 	if before.SchemaName != after.SchemaName {
 		summary.ChangedPaths = append(summary.ChangedPaths, "$.schema_name")
 	}
