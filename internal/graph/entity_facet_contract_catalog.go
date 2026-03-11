@@ -119,6 +119,7 @@ func CompareEntityFacetContractCatalogs(baseline, current EntityFacetContractCat
 			if entityFacetFingerprint(before) == entityFacetFingerprint(after) {
 				continue
 			}
+			diffSummary := buildEntityFacetDiffSummary(before, after)
 			issue := EntityFacetCompatibilityIssue{
 				FacetID:         id,
 				ChangeType:      "changed",
@@ -126,11 +127,13 @@ func CompareEntityFacetContractCatalogs(baseline, current EntityFacetContractCat
 				PreviousVersion: strings.TrimSpace(before.Version),
 				CurrentVersion:  strings.TrimSpace(after.Version),
 			}
-			report.BreakingChanges = append(report.BreakingChanges, issue)
+			if entityFacetDiffIsBreaking(diffSummary) {
+				report.BreakingChanges = append(report.BreakingChanges, issue)
+			}
 			if issue.PreviousVersion == issue.CurrentVersion {
 				report.VersioningViolations = append(report.VersioningViolations, issue)
 			}
-			report.DiffSummaries = append(report.DiffSummaries, buildEntityFacetDiffSummary(issue, before, after))
+			report.DiffSummaries = append(report.DiffSummaries, diffSummary.withVersions(issue.PreviousVersion, issue.CurrentVersion))
 		}
 	}
 	sort.Strings(report.AddedFacets)
@@ -140,20 +143,150 @@ func CompareEntityFacetContractCatalogs(baseline, current EntityFacetContractCat
 }
 
 func entityFacetFingerprint(value EntityFacetDefinition) string {
-	normalized := value
-	normalized.Version = ""
+	normalized := buildEntityFacetContractSurface(value)
 	payload, _ := json.Marshal(normalized)
 	return string(payload)
 }
 
-func buildEntityFacetDiffSummary(issue EntityFacetCompatibilityIssue, before, after EntityFacetDefinition) EntityFacetDiffSummary {
-	added, removed, changed := reportContractDiffPaths(before, after)
-	return EntityFacetDiffSummary{
-		FacetID:         issue.FacetID,
-		PreviousVersion: issue.PreviousVersion,
-		CurrentVersion:  issue.CurrentVersion,
-		AddedPaths:      added,
-		RemovedPaths:    removed,
-		ChangedPaths:    changed,
+type entityFacetFieldContractSurface struct {
+	Key       string `json:"key"`
+	ValueType string `json:"value_type"`
+}
+
+type entityFacetContractSurface struct {
+	ID              string                            `json:"id"`
+	SchemaName      string                            `json:"schema_name"`
+	SchemaURL       string                            `json:"schema_url"`
+	ApplicableKinds []NodeKind                        `json:"applicable_kinds,omitempty"`
+	SourceKeys      []string                          `json:"source_keys,omitempty"`
+	ClaimPredicates []string                          `json:"claim_predicates,omitempty"`
+	Fields          []entityFacetFieldContractSurface `json:"fields,omitempty"`
+}
+
+func buildEntityFacetContractSurface(value EntityFacetDefinition) entityFacetContractSurface {
+	fields := make([]entityFacetFieldContractSurface, 0, len(value.Fields))
+	for _, field := range value.Fields {
+		fields = append(fields, entityFacetFieldContractSurface{
+			Key:       field.Key,
+			ValueType: field.ValueType,
+		})
 	}
+	return entityFacetContractSurface{
+		ID:              value.ID,
+		SchemaName:      value.SchemaName,
+		SchemaURL:       value.SchemaURL,
+		ApplicableKinds: append([]NodeKind(nil), value.ApplicableKinds...),
+		SourceKeys:      append([]string(nil), value.SourceKeys...),
+		ClaimPredicates: append([]string(nil), value.ClaimPredicates...),
+		Fields:          fields,
+	}
+}
+
+func buildEntityFacetDiffSummary(before, after EntityFacetDefinition) EntityFacetDiffSummary {
+	summary := EntityFacetDiffSummary{}
+	if before.SchemaName != after.SchemaName {
+		summary.ChangedPaths = append(summary.ChangedPaths, "$.schema_name")
+	}
+	if before.SchemaURL != after.SchemaURL {
+		summary.ChangedPaths = append(summary.ChangedPaths, "$.schema_url")
+	}
+	summary.AddedPaths = append(summary.AddedPaths, diffAddedStrings("$.applicable_kinds", nodeKindsToStrings(before.ApplicableKinds), nodeKindsToStrings(after.ApplicableKinds))...)
+	summary.RemovedPaths = append(summary.RemovedPaths, diffRemovedStrings("$.applicable_kinds", nodeKindsToStrings(before.ApplicableKinds), nodeKindsToStrings(after.ApplicableKinds))...)
+	summary.AddedPaths = append(summary.AddedPaths, diffAddedStrings("$.source_keys", before.SourceKeys, after.SourceKeys)...)
+	summary.RemovedPaths = append(summary.RemovedPaths, diffRemovedStrings("$.source_keys", before.SourceKeys, after.SourceKeys)...)
+	summary.AddedPaths = append(summary.AddedPaths, diffAddedStrings("$.claim_predicates", before.ClaimPredicates, after.ClaimPredicates)...)
+	summary.RemovedPaths = append(summary.RemovedPaths, diffRemovedStrings("$.claim_predicates", before.ClaimPredicates, after.ClaimPredicates)...)
+	addedFields, removedFields, changedFields := diffFacetFields(before.Fields, after.Fields)
+	summary.AddedPaths = append(summary.AddedPaths, addedFields...)
+	summary.RemovedPaths = append(summary.RemovedPaths, removedFields...)
+	summary.ChangedPaths = append(summary.ChangedPaths, changedFields...)
+	sort.Strings(summary.AddedPaths)
+	sort.Strings(summary.RemovedPaths)
+	sort.Strings(summary.ChangedPaths)
+	return summary
+}
+
+func entityFacetDiffIsBreaking(summary EntityFacetDiffSummary) bool {
+	return len(summary.RemovedPaths) > 0 || len(summary.ChangedPaths) > 0
+}
+
+func (s EntityFacetDiffSummary) withVersions(previousVersion, currentVersion string) EntityFacetDiffSummary {
+	s.PreviousVersion = previousVersion
+	s.CurrentVersion = currentVersion
+	return s
+}
+
+func nodeKindsToStrings(values []NodeKind) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		out = append(out, string(value))
+	}
+	return out
+}
+
+func diffAddedStrings(basePath string, before, after []string) []string {
+	beforeSet := make(map[string]struct{}, len(before))
+	for _, value := range before {
+		beforeSet[value] = struct{}{}
+	}
+	added := make([]string, 0)
+	seen := make(map[string]struct{})
+	for _, value := range after {
+		if _, ok := beforeSet[value]; ok {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		added = append(added, fmt.Sprintf("%s[%q]", basePath, value))
+	}
+	return added
+}
+
+func diffRemovedStrings(basePath string, before, after []string) []string {
+	afterSet := make(map[string]struct{}, len(after))
+	for _, value := range after {
+		afterSet[value] = struct{}{}
+	}
+	removed := make([]string, 0)
+	seen := make(map[string]struct{})
+	for _, value := range before {
+		if _, ok := afterSet[value]; ok {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		removed = append(removed, fmt.Sprintf("%s[%q]", basePath, value))
+	}
+	return removed
+}
+
+func diffFacetFields(before, after []EntityFacetFieldDefinition) (added, removed, changed []string) {
+	beforeByKey := make(map[string]EntityFacetFieldDefinition, len(before))
+	for _, field := range before {
+		beforeByKey[field.Key] = field
+	}
+	afterByKey := make(map[string]EntityFacetFieldDefinition, len(after))
+	for _, field := range after {
+		afterByKey[field.Key] = field
+	}
+	for key := range beforeByKey {
+		if _, ok := afterByKey[key]; !ok {
+			removed = append(removed, fmt.Sprintf("$.fields[%q]", key))
+		}
+	}
+	for key, afterField := range afterByKey {
+		beforeField, ok := beforeByKey[key]
+		if !ok {
+			added = append(added, fmt.Sprintf("$.fields[%q]", key))
+			continue
+		}
+		if beforeField.ValueType != afterField.ValueType {
+			changed = append(changed, fmt.Sprintf("$.fields[%q].value_type", key))
+		}
+	}
+	return added, removed, changed
 }
