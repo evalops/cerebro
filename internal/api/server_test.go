@@ -308,6 +308,22 @@ func TestStatus(t *testing.T) {
 	}
 }
 
+func TestGraphBuildWarningHeadersSkipHealthAndStatus(t *testing.T) {
+	for _, path := range []string{"/health", "/ready", "/status", "/metrics"} {
+		if !skipGraphBuildWarningHeaders(path) {
+			t.Fatalf("expected graph build warning headers to be skipped for %s", path)
+		}
+	}
+}
+
+func TestGraphBuildWarningHeadersApplyToNonHealthRoutes(t *testing.T) {
+	for _, path := range []string{"/api/v1/policies/", "/api/v1/admin/providers", "/docs"} {
+		if skipGraphBuildWarningHeaders(path) {
+			t.Fatalf("expected graph build warning headers to apply to %s", path)
+		}
+	}
+}
+
 func TestSetupMiddleware_RateLimitBeforeAuth(t *testing.T) {
 	a := newTestApp(t)
 	a.Config.APIAuthEnabled = true

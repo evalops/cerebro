@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -190,6 +191,10 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) graphBuildWarningHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if skipGraphBuildWarningHeaders(r.URL.Path) {
+			next.ServeHTTP(w, r)
+			return
+		}
 		if s != nil && s.app != nil {
 			snapshot := s.app.GraphBuildSnapshot()
 			if snapshot.State == app.GraphBuildFailed {
@@ -201,6 +206,18 @@ func (s *Server) graphBuildWarningHeaders(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func skipGraphBuildWarningHeaders(path string) bool {
+	switch strings.TrimSpace(path) {
+	case "/health", "/ready", "/status", "/metrics",
+		"/api/v1/admin/health", "/api/v1/admin/sync/status",
+		"/api/v1/scheduler/status", "/api/v1/graph/ingest/health",
+		"/api/v1/graph/schema/health":
+		return true
+	default:
+		return false
+	}
 }
 
 func runHealthChecks(ctx context.Context, registry *health.Registry) (health.Status, map[string]health.CheckResult) {
