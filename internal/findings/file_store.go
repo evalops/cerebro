@@ -73,8 +73,15 @@ func (fs *FileStore) load() error {
 		EnrichFinding(f)
 		fs.store.findings[f.ID] = f
 	}
+	fs.store.resolvedCount = 0
+	for _, f := range fs.store.findings {
+		if normalizeStatus(f.Status) == "RESOLVED" {
+			fs.store.resolvedCount++
+		}
+	}
 	if fs.store.resolvedRetention > 0 {
 		_ = fs.store.cleanupResolvedBeforeLocked(now.Add(-fs.store.resolvedRetention))
+		fs.store.lastResolvedSweep = now
 	}
 	if fs.store.maxFindings > 0 && len(fs.store.findings) > fs.store.maxFindings {
 		fs.store.evictToCapacity()

@@ -538,6 +538,36 @@ func TestStoreWithResolvedRetention(t *testing.T) {
 	}
 }
 
+func TestStoreResolvedRetentionCleanupIsAmortized(t *testing.T) {
+	store := NewStoreWithConfig(StoreConfig{ResolvedRetention: time.Hour})
+
+	store.Upsert(context.Background(), policy.Finding{ID: "f-old", PolicyID: "p1", Severity: "high"})
+	store.Resolve("f-old")
+
+	func() {
+		store.mu.Lock()
+		defer store.mu.Unlock()
+		store.findings["f-old"].LastSeen = time.Now().Add(-2 * time.Hour)
+		store.lastResolvedSweep = time.Now()
+	}()
+
+	store.Upsert(context.Background(), policy.Finding{ID: "f-new", PolicyID: "p1", Severity: "high"})
+	if _, ok := store.Get("f-old"); !ok {
+		t.Fatal("expected cleanup to skip resolved scan before the amortized interval")
+	}
+
+	func() {
+		store.mu.Lock()
+		defer store.mu.Unlock()
+		store.lastResolvedSweep = time.Now().Add(-store.resolvedCleanupInterval())
+	}()
+
+	store.Upsert(context.Background(), policy.Finding{ID: "f-newer", PolicyID: "p1", Severity: "high"})
+	if _, ok := store.Get("f-old"); ok {
+		t.Fatal("expected expired resolved finding to be removed once cleanup interval elapses")
+	}
+}
+
 func TestStoreCleanup(t *testing.T) {
 	store := NewStore()
 

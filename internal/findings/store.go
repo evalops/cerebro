@@ -166,8 +166,9 @@ type StoreConfig struct {
 }
 
 const (
-	DefaultMaxFindings       = 50000
-	DefaultResolvedRetention = 30 * 24 * time.Hour
+	DefaultMaxFindings             = 50000
+	DefaultResolvedRetention       = 30 * 24 * time.Hour
+	defaultResolvedCleanupInterval = 5 * time.Minute
 )
 
 func DefaultStoreConfig() StoreConfig {
@@ -183,6 +184,8 @@ type Store struct {
 	attestReobserved  bool
 	maxFindings       int
 	resolvedRetention time.Duration
+	resolvedCount     int
+	lastResolvedSweep time.Time
 	mu                sync.RWMutex
 }
 
@@ -214,9 +217,7 @@ func (s *Store) Upsert(ctx context.Context, pf policy.Finding) *Finding {
 	defer s.mu.Unlock()
 
 	now := time.Now()
-	if s.resolvedRetention > 0 {
-		_ = s.cleanupResolvedBeforeLocked(now.Add(-s.resolvedRetention))
-	}
+	s.maybeCleanupResolvedLocked(now)
 
 	if existing, ok := s.findings[pf.ID]; ok {
 		previousStatus := normalizeStatus(existing.Status)
@@ -291,6 +292,7 @@ func (s *Store) Upsert(ctx context.Context, pf policy.Finding) *Finding {
 			existing.SnoozedUntil = nil
 			existing.StatusChangedAt = &now
 		}
+		s.adjustResolvedCountLocked(previousStatus, existing.Status)
 		EnrichFinding(existing)
 		eventType := upsertAttestationEvent(true, previousStatus, s.attestReobserved)
 		if eventType != "" {
@@ -510,10 +512,12 @@ func (s *Store) Update(id string, mutate func(*Finding) error) error {
 	if !ok {
 		return ErrIssueNotFound
 	}
+	previousStatus := normalizeStatus(f.Status)
 	if err := mutate(f); err != nil {
 		return err
 	}
 	f.Status = normalizeStatus(f.Status)
+	s.adjustResolvedCountLocked(previousStatus, f.Status)
 	EnrichFinding(f)
 	s.updateMetricsLocked()
 	return nil
@@ -603,11 +607,13 @@ func (s *Store) Resolve(id string) bool {
 		return false
 	}
 	now := time.Now()
+	previousStatus := normalizeStatus(f.Status)
 	f.Status = "RESOLVED"
 	f.ResolvedAt = &now
 	f.SnoozedUntil = nil
 	f.StatusChangedAt = &now
 	f.UpdatedAt = now
+	s.adjustResolvedCountLocked(previousStatus, f.Status)
 	s.updateMetricsLocked()
 	return true
 }
@@ -621,10 +627,12 @@ func (s *Store) Suppress(id string) bool {
 		return false
 	}
 	now := time.Now()
+	previousStatus := normalizeStatus(f.Status)
 	f.Status = "SUPPRESSED"
 	f.SnoozedUntil = nil
 	f.StatusChangedAt = &now
 	f.UpdatedAt = now
+	s.adjustResolvedCountLocked(previousStatus, f.Status)
 	s.updateMetricsLocked()
 	return true
 }
@@ -719,6 +727,9 @@ func (s *Store) evictToCapacity() {
 	})
 
 	for i := 0; i < len(candidates) && excess > 0; i++ {
+		if f, ok := s.findings[candidates[i].id]; ok && normalizeStatus(f.Status) == "RESOLVED" && s.resolvedCount > 0 {
+			s.resolvedCount--
+		}
 		delete(s.findings, candidates[i].id)
 		excess--
 	}
@@ -731,10 +742,47 @@ func (s *Store) cleanupResolvedBeforeLocked(cutoff time.Time) int {
 	for id, f := range s.findings {
 		if normalizeStatus(f.Status) == "RESOLVED" && f.LastSeen.Before(cutoff) {
 			delete(s.findings, id)
+			if s.resolvedCount > 0 {
+				s.resolvedCount--
+			}
 			removed++
 		}
 	}
 	return removed
+}
+
+func (s *Store) maybeCleanupResolvedLocked(now time.Time) {
+	if !s.shouldCleanupResolvedLocked(now) {
+		return
+	}
+	_ = s.cleanupResolvedBeforeLocked(now.Add(-s.resolvedRetention))
+	s.lastResolvedSweep = now
+}
+
+func (s *Store) shouldCleanupResolvedLocked(now time.Time) bool {
+	if s.resolvedRetention <= 0 || s.resolvedCount == 0 {
+		return false
+	}
+	if s.lastResolvedSweep.IsZero() {
+		return true
+	}
+	return now.Sub(s.lastResolvedSweep) >= s.resolvedCleanupInterval()
+}
+
+func (s *Store) resolvedCleanupInterval() time.Duration {
+	if s.resolvedRetention > 0 && s.resolvedRetention < defaultResolvedCleanupInterval {
+		return s.resolvedRetention
+	}
+	return defaultResolvedCleanupInterval
+}
+
+func (s *Store) adjustResolvedCountLocked(previousStatus, currentStatus string) {
+	switch {
+	case previousStatus != "RESOLVED" && currentStatus == "RESOLVED":
+		s.resolvedCount++
+	case previousStatus == "RESOLVED" && currentStatus != "RESOLVED" && s.resolvedCount > 0:
+		s.resolvedCount--
+	}
 }
 
 // Cleanup removes resolved findings older than maxAge. Returns the number of
