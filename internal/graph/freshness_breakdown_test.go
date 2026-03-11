@@ -72,3 +72,22 @@ func TestFreshnessBreakdownGroupsByProviderAndKind(t *testing.T) {
 		t.Fatalf("expected service and bucket kind scopes, got %+v", breakdown.Kinds)
 	}
 }
+
+func TestFreshnessBreakdownNilGraph(t *testing.T) {
+	var g *Graph
+	now := time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC)
+
+	breakdown := g.FreshnessBreakdown(now, 6*time.Hour, nil)
+	if !breakdown.GeneratedAt.Equal(now) {
+		t.Fatalf("expected generated_at=%s, got %+v", now, breakdown)
+	}
+	if breakdown.DefaultStaleAfterSeconds != (6 * time.Hour).Seconds() {
+		t.Fatalf("expected stale_after_seconds=%f, got %+v", (6 * time.Hour).Seconds(), breakdown)
+	}
+	if breakdown.Overall.TotalNodes != 0 {
+		t.Fatalf("expected zero-value overall metrics for nil graph, got %+v", breakdown.Overall)
+	}
+	if len(breakdown.Providers) != 0 || len(breakdown.Kinds) != 0 {
+		t.Fatalf("expected no provider/kind scopes for nil graph, got %+v", breakdown)
+	}
+}

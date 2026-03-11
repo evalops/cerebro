@@ -33,6 +33,19 @@ type FreshnessBreakdown struct {
 
 // FreshnessBreakdown computes aggregate plus provider/kind recency metrics for active nodes.
 func (g *Graph) FreshnessBreakdown(now time.Time, defaultStaleAfter time.Duration, providerSLAs map[string]time.Duration) FreshnessBreakdown {
+	if g == nil {
+		if now.IsZero() {
+			now = temporalNowUTC()
+		}
+		if defaultStaleAfter <= 0 {
+			defaultStaleAfter = defaultFreshnessStaleAfter
+		}
+		now = now.UTC()
+		return FreshnessBreakdown{
+			GeneratedAt:              now,
+			DefaultStaleAfterSeconds: defaultStaleAfter.Seconds(),
+		}
+	}
 	if now.IsZero() {
 		now = temporalNowUTC()
 	}
@@ -45,9 +58,6 @@ func (g *Graph) FreshnessBreakdown(now time.Time, defaultStaleAfter time.Duratio
 		GeneratedAt:              now,
 		DefaultStaleAfterSeconds: defaultStaleAfter.Seconds(),
 		Overall:                  g.Freshness(now, defaultStaleAfter),
-	}
-	if g == nil {
-		return out
 	}
 
 	g.mu.RLock()
