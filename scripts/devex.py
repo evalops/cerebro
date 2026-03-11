@@ -213,7 +213,7 @@ def pr_individual_codegen_steps(base_ref: str, families: list[CodegenFamily]) ->
     steps: list[Step] = []
     for family in families:
         for check in family.checks:
-            if check.include_in_pr_generated_step:
+            if check.include_in_pr_generated_step and check.make_target:
                 continue
             steps.append(
                 Step(

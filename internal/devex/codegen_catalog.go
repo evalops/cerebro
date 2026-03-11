@@ -171,6 +171,9 @@ func validateStep(step CodegenStep, prefix string) []string {
 	if strings.TrimSpace(step.Summary) == "" {
 		problems = append(problems, prefix+": summary is required")
 	}
+	if step.IncludeInPRGeneratedStep && strings.TrimSpace(step.MakeTarget) == "" {
+		problems = append(problems, prefix+": include_in_pr_generated_step requires make_target")
+	}
 	if len(step.Command) == 0 {
 		problems = append(problems, prefix+": command must not be empty")
 	}

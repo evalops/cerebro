@@ -3,6 +3,7 @@ package devex
 import (
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -23,4 +24,36 @@ func repoRoot(t *testing.T) string {
 		t.Fatal("resolve caller path")
 	}
 	return filepath.Join(filepath.Dir(filename), "..", "..")
+}
+
+func TestValidateCodegenCatalogRejectsGeneratedPRCheckWithoutMakeTarget(t *testing.T) {
+	catalog := CodegenCatalog{
+		APIVersion: "devex.cerebro/v1alpha1",
+		Kind:       "CodegenCatalog",
+		Families: []CodegenFamily{
+			{
+				ID:           "broken-family",
+				Title:        "Broken Family",
+				Summary:      "Broken summary",
+				ChangeReason: "broken",
+				Triggers:     []string{"broken/**"},
+				Checks: []CodegenStep{
+					{
+						Key:                      "broken-check",
+						Summary:                  "Broken check",
+						Command:                  []string{"make", "broken-check"},
+						IncludeInPRGeneratedStep: true,
+					},
+				},
+			},
+		},
+	}
+
+	err := ValidateCodegenCatalog(catalog)
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "include_in_pr_generated_step requires make_target") {
+		t.Fatalf("expected make_target validation error, got %v", err)
+	}
 }
