@@ -529,8 +529,14 @@ func materializeOwnershipFacet(g *Graph, node *Node, validAt, recordedAt time.Ti
 			switch edge.Kind {
 			case EdgeKindOwns:
 				appendUnique(&owners, edge.Source)
-			case EdgeKindManagedBy:
-				appendUnique(&managers, edge.Source)
+			}
+		}
+		for _, edge := range g.GetOutEdgesBitemporal(node.ID, validAt, recordedAt) {
+			if edge == nil {
+				continue
+			}
+			if edge.Kind == EdgeKindManagedBy {
+				appendUnique(&managers, edge.Target)
 			}
 		}
 	}
