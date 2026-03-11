@@ -2,7 +2,7 @@
 
 Generated from `graph.RegisteredNodeKinds()`, `graph.RegisteredEdgeKinds()`, and `internal/graphingest/mappings.yaml` via `go run ./scripts/generate_graph_ontology_docs/main.go`.
 
-- Node kinds: **60**
+- Node kinds: **61**
 - Edge kinds: **37**
 - Mapping rules: **13**
 - Source domains: **9**
@@ -62,6 +62,7 @@ Generated from `graph.RegisteredNodeKinds()`, `graph.RegisteredEdgeKinds()`, and
 | `pull_request` | business | `number`, `observed_at`, `repository`, `state`, `valid_from` | `based_on`, `targets` |
 | `repository` | - | - | - |
 | `role` | identity | - | - |
+| `role_binding` | kubernetes | - | - |
 | `scp` | - | - | - |
 | `secret` | resource | - | - |
 | `service` | business, resource | `observed_at`, `service_id`, `valid_from` | `depends_on`, `owns`, `runs`, `targets` |
@@ -163,7 +164,7 @@ Generated from `graph.RegisteredNodeKinds()`, `graph.RegisteredEdgeKinds()`, and
 
 ## Unmapped Built-in Node Kinds
 
-Total unmapped kinds: **37**
+Total unmapped kinds: **38**
 
 - `activity`
 - `application`
@@ -197,6 +198,7 @@ Total unmapped kinds: **37**
 - `person`
 - `pod`
 - `role`
+- `role_binding`
 - `scp`
 - `secret`
 - `service_account`
