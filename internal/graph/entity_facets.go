@@ -814,8 +814,10 @@ func materializeBucketVersioningFacet(g *Graph, node *Node, validAt, recordedAt 
 		properties = subresource.Properties
 	}
 	status := strings.ToLower(strings.TrimSpace(readString(properties, "versioning", "versioning_status")))
+	known := propertyHasAnyKey(properties, "versioning_status", "versioning", "mfa_delete")
 	if status == "" {
 		if value, ok := claimBoolValue(claimIndex["versioning_enabled"]); ok {
+			known = true
 			if value {
 				status = "enabled"
 			} else {
@@ -824,7 +826,7 @@ func materializeBucketVersioningFacet(g *Graph, node *Node, validAt, recordedAt 
 		}
 	}
 	mfaDelete := readBool(properties, "mfa_delete")
-	if status == "" && !mfaDelete {
+	if !known {
 		return EntityFacetRecord{
 			ID:              def.ID,
 			Title:           def.Title,
@@ -837,6 +839,7 @@ func materializeBucketVersioningFacet(g *Graph, node *Node, validAt, recordedAt 
 			ClaimPredicates: append([]string(nil), def.ClaimPredicates...),
 		}, true
 	}
+	status = firstNonEmpty(status, "disabled")
 	assessment := "warn"
 	summary := "Bucket versioning is not enabled"
 	if status == "enabled" || status == "on" {

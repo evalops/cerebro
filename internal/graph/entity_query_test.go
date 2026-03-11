@@ -353,6 +353,25 @@ func TestNormalizeEntityAssetSupportUsesBucketFallbacksForLoggingAndVersioning(t
 	if !foundVersioning {
 		t.Fatalf("expected versioning subresource for explicit mfa_delete state, got %#v", detail.Subresources)
 	}
+	foundVersioningFacet := false
+	for _, facet := range detail.Facets {
+		if facet.ID != "bucket_versioning" {
+			continue
+		}
+		foundVersioningFacet = true
+		if facet.Status != "present" {
+			t.Fatalf("expected explicit disabled mfa_delete state to yield a present versioning facet, got %#v", facet)
+		}
+		if status := readString(facet.Fields, "versioning_status"); status != "disabled" {
+			t.Fatalf("expected disabled versioning status in facet fields, got %#v", facet.Fields)
+		}
+		if mfaDelete, ok := facet.Fields["mfa_delete"].(bool); !ok || mfaDelete {
+			t.Fatalf("expected explicit Disabled mfa_delete to normalize to false in facet fields, got %#v", facet.Fields)
+		}
+	}
+	if !foundVersioningFacet {
+		t.Fatalf("expected bucket_versioning facet, got %#v", detail.Facets)
+	}
 }
 
 func TestNormalizeEntityAssetSupportUsesBucketVersioningFallbackAndEnabledStrings(t *testing.T) {
