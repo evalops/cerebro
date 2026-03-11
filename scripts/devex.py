@@ -178,8 +178,8 @@ def render_env(values: dict[str, str], base_ref: str) -> dict[str, str]:
     return {key: render_template(value, base_ref) for key, value in values.items()}
 
 
-def add_codegen_changed_steps(steps: dict[str, Step], files: list[str], base_ref: str) -> None:
-    for family in load_codegen_families():
+def add_codegen_changed_steps(steps: dict[str, Step], files: list[str], base_ref: str, families: list[CodegenFamily]) -> None:
+    for family in families:
         if not any_match(files, family.triggers):
             continue
         for check in family.checks:
@@ -195,10 +195,10 @@ def add_codegen_changed_steps(steps: dict[str, Step], files: list[str], base_ref
             )
 
 
-def pr_generated_targets() -> list[str]:
+def pr_generated_targets(families: list[CodegenFamily]) -> list[str]:
     targets: list[str] = []
     seen: set[str] = set()
-    for family in load_codegen_families():
+    for family in families:
         for check in family.checks:
             if not check.include_in_pr_generated_step or not check.make_target:
                 continue
@@ -209,9 +209,9 @@ def pr_generated_targets() -> list[str]:
     return targets
 
 
-def pr_individual_codegen_steps(base_ref: str) -> list[Step]:
+def pr_individual_codegen_steps(base_ref: str, families: list[CodegenFamily]) -> list[Step]:
     steps: list[Step] = []
-    for family in load_codegen_families():
+    for family in families:
         for check in family.checks:
             if check.include_in_pr_generated_step:
                 continue
@@ -229,6 +229,7 @@ def pr_individual_codegen_steps(base_ref: str) -> list[Step]:
 
 def plan_changed(files: list[str], base_ref: str) -> list[Step]:
     steps: dict[str, Step] = {}
+    families = load_codegen_families()
     packages = go_package_dirs(files)
     if packages:
         add_step(
@@ -261,7 +262,7 @@ def plan_changed(files: list[str], base_ref: str) -> list[Step]:
             ),
         )
 
-    add_codegen_changed_steps(steps, files, base_ref)
+    add_codegen_changed_steps(steps, files, base_ref, families)
 
     if any_match(files, ["policies/**", "internal/policy/**"]):
         add_step(
@@ -300,6 +301,7 @@ def plan_changed(files: list[str], base_ref: str) -> list[Step]:
 
 
 def plan_pr(base_ref: str) -> list[Step]:
+    families = load_codegen_families()
     steps = [
         Step(
             key="go-test-all",
@@ -316,7 +318,7 @@ def plan_pr(base_ref: str) -> list[Step]:
         Step(
             key="generated-contracts",
             summary="Verify generated artifacts and contract docs",
-            command=["make", "vendor-check", *pr_generated_targets()],
+            command=["make", "vendor-check", *pr_generated_targets(families)],
             reasons=["full PR preflight"],
         ),
         Step(
@@ -338,7 +340,7 @@ def plan_pr(base_ref: str) -> list[Step]:
             reasons=["full PR preflight"],
         ),
     ]
-    steps[3:3] = pr_individual_codegen_steps(base_ref)
+    steps[3:3] = pr_individual_codegen_steps(base_ref, families)
     return steps
 
 

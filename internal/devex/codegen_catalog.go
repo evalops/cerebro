@@ -201,10 +201,6 @@ func parseWorkflowJobs(content string) map[string]struct{} {
 	return jobs
 }
 
-func RepositoryRelative(path string) string {
-	return filepath.ToSlash(filepath.Clean(path))
-}
-
 func builtInCodegenCatalogPath() string {
 	return filepath.Join(repositoryRootPath(), DefaultCodegenCatalogPath)
 }
