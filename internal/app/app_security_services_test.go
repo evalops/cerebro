@@ -159,6 +159,26 @@ func TestActivateBuiltSecurityGraphDoesNotReplaceLiveGraphWithNil(t *testing.T) 
 	}
 }
 
+func TestGraphBuildSnapshotIncludesNodeCountWithoutHoldingBuildLock(t *testing.T) {
+	liveGraph := graph.New()
+	liveGraph.AddNode(&graph.Node{ID: "service:payments", Kind: graph.NodeKindService, Name: "payments"})
+	liveGraph.AddNode(&graph.Node{ID: "service:billing", Kind: graph.NodeKindService, Name: "billing"})
+
+	application := &App{
+		Config:        &Config{},
+		SecurityGraph: liveGraph,
+	}
+	application.setGraphBuildState(GraphBuildSuccess, time.Now().UTC(), nil)
+
+	snapshot := application.GraphBuildSnapshot()
+	if snapshot.State != GraphBuildSuccess {
+		t.Fatalf("expected graph build state success, got %#v", snapshot)
+	}
+	if snapshot.NodeCount != 2 {
+		t.Fatalf("expected graph node count 2, got %d", snapshot.NodeCount)
+	}
+}
+
 func TestBurnRatesFastWindowUsesCurrentSnapshot(t *testing.T) {
 	trend := []graph.GraphOntologySLOPoint{
 		{Date: "2026-03-08", FallbackActivityPercent: 12, SchemaValidWritePercent: 97, Samples: 20},

@@ -298,6 +298,24 @@ func TestSetGraphLastUpdateDoesNotRegress(t *testing.T) {
 	}
 }
 
+func TestSetGraphLastUpdatePublishesStoredTimestamp(t *testing.T) {
+	Register()
+	graphLastUpdateUnixNano.Store(0)
+	t.Cleanup(func() {
+		graphLastUpdateUnixNano.Store(0)
+	})
+
+	newer := time.Now().UTC()
+	older := newer.Add(-time.Minute)
+	graphLastUpdateUnixNano.Store(newer.UnixNano())
+
+	SetGraphLastUpdate(older)
+
+	if got := gaugeValue(t, GraphLastUpdateTimestamp); got != float64(newer.Unix()) {
+		t.Fatalf("expected graph last update timestamp to publish stored timestamp %d, got %v", newer.Unix(), got)
+	}
+}
+
 func counterValue(t *testing.T, vec *prometheus.CounterVec, labels ...string) float64 {
 	t.Helper()
 	counter, err := vec.GetMetricWithLabelValues(labels...)

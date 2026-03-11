@@ -76,18 +76,17 @@ func (a *App) GraphBuildSnapshot() GraphBuildSnapshot {
 		return GraphBuildSnapshot{}
 	}
 	a.graphBuildMu.RLock()
-	defer a.graphBuildMu.RUnlock()
-
-	nodeCount := 0
-	if securityGraph := a.CurrentSecurityGraph(); securityGraph != nil {
-		nodeCount = securityGraph.NodeCount()
-	}
-	return GraphBuildSnapshot{
+	snapshot := GraphBuildSnapshot{
 		State:       a.graphBuildState,
 		LastBuildAt: a.graphBuildLastAt,
 		LastError:   a.graphBuildErr,
-		NodeCount:   nodeCount,
 	}
+	a.graphBuildMu.RUnlock()
+
+	if securityGraph := a.CurrentSecurityGraph(); securityGraph != nil {
+		snapshot.NodeCount = securityGraph.NodeCount()
+	}
+	return snapshot
 }
 
 func (a *App) CurrentRetentionStatus() RetentionStatus {

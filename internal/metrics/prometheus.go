@@ -12,6 +12,7 @@ import (
 )
 
 var (
+	graphLastUpdateMu       sync.Mutex
 	graphLastUpdateUnixNano atomic.Int64
 
 	// Findings metrics
@@ -805,6 +806,9 @@ func SetGraphBuildStatus(status string) {
 }
 
 func SetGraphLastUpdate(at time.Time) {
+	graphLastUpdateMu.Lock()
+	defer graphLastUpdateMu.Unlock()
+
 	if at.IsZero() {
 		graphLastUpdateUnixNano.Store(0)
 		GraphLastUpdateTimestamp.Set(0)
@@ -816,15 +820,16 @@ func SetGraphLastUpdate(at time.Time) {
 	for {
 		current := graphLastUpdateUnixNano.Load()
 		if current >= targetUnixNano {
-			at = time.Unix(0, current).UTC()
+			targetUnixNano = current
 			break
 		}
 		if graphLastUpdateUnixNano.CompareAndSwap(current, targetUnixNano) {
 			break
 		}
 	}
-	GraphLastUpdateTimestamp.Set(float64(at.Unix()))
-	SetGraphStaleness(time.Since(at))
+	effectiveAt := time.Unix(0, targetUnixNano).UTC()
+	GraphLastUpdateTimestamp.Set(float64(effectiveAt.Unix()))
+	SetGraphStaleness(time.Since(effectiveAt))
 }
 
 func SetGraphStaleness(age time.Duration) {
