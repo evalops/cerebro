@@ -62,6 +62,7 @@ func ConfigValidationRules() []ConfigValidationRule {
 		{EnvVars: []string{"CEREBRO_INIT_TIMEOUT"}, Summary: "must be greater than or equal to 0", Category: "range"},
 		{EnvVars: []string{"FINDINGS_MAX_IN_MEMORY"}, Summary: "must be greater than or equal to 0", Category: "range"},
 		{EnvVars: []string{"FINDINGS_RESOLVED_RETENTION"}, Summary: "must be greater than or equal to 0", Category: "range"},
+		{EnvVars: []string{"FINDINGS_SEMANTIC_DEDUP_ENABLED"}, Summary: "enables semantic finding identity across policy/version drift", Category: "behavior"},
 		{
 			EnvVars:  []string{"SNOWFLAKE_ACCOUNT", "SNOWFLAKE_USER", "SNOWFLAKE_PRIVATE_KEY"},
 			Summary:  "when any Snowflake auth field is set, all three are required",

@@ -2,7 +2,7 @@
 
 Generated from `internal/app/app_config.go` (`LoadConfig`) via `go run ./scripts/generate_config_docs/main.go`.
 
-Total variables: **287**
+Total variables: **288**
 
 | Variable | Reader(s) | Default(s) | Config Field(s) | Validation rule(s) |
 |---|---|---|---|---|
@@ -79,6 +79,7 @@ Total variables: **287**
 | `FIGMA_TEAM_ID` | `getEnv` | `""` | `FigmaTeamID` | `-` |
 | `FINDINGS_MAX_IN_MEMORY` | `getEnvInt` | `findings.DefaultMaxFindings` | `FindingsMaxInMemory` | `must be greater than or equal to 0` |
 | `FINDINGS_RESOLVED_RETENTION` | `getEnvDuration` | `findings.DefaultResolvedRetention` | `FindingsResolvedRetention` | `must be greater than or equal to 0` |
+| `FINDINGS_SEMANTIC_DEDUP_ENABLED` | `getEnvBool` | `findings.DefaultSemanticDedupEnabled` | `FindingsSemanticDedupEnabled` | `enables semantic finding identity across policy/version drift` |
 | `FINDING_ATTESTATION_ATTEST_REOBSERVED` | `getEnvBool` | `false` | `FindingAttestationAttestReobserved` | `-` |
 | `FINDING_ATTESTATION_ENABLED` | `getEnvBool` | `false` | `FindingAttestationEnabled` | `when FINDING_ATTESTATION_ENABLED=true, the signing key is required and timeout must be positive` |
 | `FINDING_ATTESTATION_KEY_ID` | `getEnv` | `""` | `FindingAttestationKeyID` | `-` |

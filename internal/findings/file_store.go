@@ -70,9 +70,11 @@ func (fs *FileStore) load() error {
 	now := time.Now()
 	for _, f := range findings {
 		f.Status = normalizeStatus(f.Status)
+		ensureFindingSemanticState(f)
 		EnrichFinding(f)
 		fs.store.findings[f.ID] = f
 	}
+	fs.store.rebuildIndexesLocked()
 	fs.store.resolvedCount = 0
 	for _, f := range fs.store.findings {
 		if normalizeStatus(f.Status) == "RESOLVED" {
@@ -147,6 +149,10 @@ func (fs *FileStore) SetAttestor(attestor FindingAttestor, attestReobserved bool
 	fs.store.SetAttestor(attestor, attestReobserved)
 }
 
+func (fs *FileStore) SetSemanticDedup(enabled bool) {
+	fs.store.SetSemanticDedup(enabled)
+}
+
 // Get retrieves a finding by ID
 func (fs *FileStore) Get(id string) (*Finding, bool) {
 	return fs.store.Get(id)
@@ -215,6 +221,7 @@ func (fs *FileStore) Close() error {
 func (fs *FileStore) Clear() error {
 	fs.store.mu.Lock()
 	fs.store.findings = make(map[string]*Finding)
+	fs.store.semanticIndex = make(map[string]string)
 	fs.store.resolvedCount = 0
 	fs.store.lastResolvedSweep = time.Time{}
 	fs.store.updateMetricsLocked()

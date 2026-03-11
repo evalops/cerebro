@@ -91,6 +91,7 @@ func (a *App) initFindings() {
 			a.configureFindingAttestation()
 			return
 		}
+		store.SetSemanticDedup(a.Config.FindingsSemanticDedupEnabled)
 		a.Findings = store
 		a.configureFindingAttestation()
 		a.Logger.Info("using sqlite findings store", "path", dbPath)
@@ -111,6 +112,7 @@ func (a *App) initFindings() {
 		databaseName,
 		schemaName,
 	)
+	snowflakeStore.SetSemanticDedup(a.Config.FindingsSemanticDedupEnabled)
 	a.Findings = snowflakeStore
 	a.SnowflakeFindings = snowflakeStore
 	a.configureFindingAttestation()
@@ -122,6 +124,7 @@ func (a *App) newInMemoryFindingsStore() *findings.Store {
 	if a != nil && a.Config != nil {
 		cfg.MaxFindings = a.Config.FindingsMaxInMemory
 		cfg.ResolvedRetention = a.Config.FindingsResolvedRetention
+		cfg.SemanticDedup = a.Config.FindingsSemanticDedupEnabled
 	}
 
 	if cfg.MaxFindings == 0 && cfg.ResolvedRetention == 0 && a != nil && a.Logger != nil {

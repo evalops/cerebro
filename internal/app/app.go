@@ -7,7 +7,7 @@
 // Core Services:
 //   - Snowflake: Data warehouse client for asset and findings storage
 //   - Policy: Security policy engine for evaluating cloud resources
-//   - Findings: In-memory findings store with deduplication
+//   - Findings: Durable findings store with semantic and exact-ID deduplication
 //   - Scanner: Asset scanner that applies policies to cloud resources
 //   - Cache: Policy evaluation cache for performance
 //

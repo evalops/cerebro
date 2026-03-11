@@ -374,6 +374,7 @@ type Config struct {
 	// Finding attestation chain
 	FindingsMaxInMemory                int
 	FindingsResolvedRetention          time.Duration
+	FindingsSemanticDedupEnabled       bool
 	FindingAttestationEnabled          bool
 	FindingAttestationSigningKey       string
 	FindingAttestationKeyID            string
@@ -688,6 +689,7 @@ func LoadConfig() *Config {
 			ScanRetryMaxBackoff:                 getEnvDuration("SCAN_RETRY_MAX_BACKOFF", 30*time.Second),
 			FindingsMaxInMemory:                 getEnvInt("FINDINGS_MAX_IN_MEMORY", findings.DefaultMaxFindings),
 			FindingsResolvedRetention:           getEnvDuration("FINDINGS_RESOLVED_RETENTION", findings.DefaultResolvedRetention),
+			FindingsSemanticDedupEnabled:        getEnvBool("FINDINGS_SEMANTIC_DEDUP_ENABLED", findings.DefaultSemanticDedupEnabled),
 			FindingAttestationEnabled:           getEnvBool("FINDING_ATTESTATION_ENABLED", false),
 			FindingAttestationSigningKey:        normalizePrivateKey(getEnv("FINDING_ATTESTATION_SIGNING_KEY", "")),
 			FindingAttestationKeyID:             getEnv("FINDING_ATTESTATION_KEY_ID", ""),

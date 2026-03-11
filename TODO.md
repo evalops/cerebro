@@ -1,9 +1,47 @@
 # Cerebro Intelligence Layer Execution TODO
 
-Last updated: 2026-03-10 (America/Los_Angeles)
+Last updated: 2026-03-11 (America/Los_Angeles)
 Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
+
+## Deep Review Cycle 43 - Findings Semantic Identity + Persistent Dedup (2026-03-11)
+
+### Review findings
+- [x] Gap: findings were still deduplicated only by exact `id`, so policy version bumps or renamed controls split one logical issue into multiple finding histories.
+- [x] Gap: the first pass at semantic dedup lived only in store-local indexes and had not been carried through SQLite/Snowflake persistence semantics.
+- [x] Gap: operators had no explicit config surface to disable semantic dedup when strict finding IDs were preferred.
+- [x] Gap: semantic identity metadata (`semantic_key`, observed finding/policy lineage) was not yet documented on the API contract.
+
+### Execution plan
+- [x] Add first-class semantic finding identity:
+  - [x] define stable semantic-key derivation from tenant/resource/issue/severity
+  - [x] track observed finding IDs and observed policy IDs on canonical findings
+  - [x] preserve semantic metadata through metadata serialization/deserialization
+- [x] Carry semantic dedup through persistent stores:
+  - [x] teach the in-memory store to maintain a semantic index alongside exact-ID lookup
+  - [x] teach SQLite upsert to reconcile semantic duplicates before insert and persist lineage across reopen
+  - [x] teach the Snowflake-backed cache to reuse canonical findings and keep dirty/sync state keyed by canonical IDs
+  - [x] keep update paths refreshing semantic identity so indexes do not drift after mutation
+- [x] Add operator controls and contract docs:
+  - [x] expose `FINDINGS_SEMANTIC_DEDUP_ENABLED`
+  - [x] wire the toggle through in-memory, SQLite, and Snowflake findings initialization
+  - [x] document semantic finding fields in OpenAPI and config docs
+- [x] Prove the behavior:
+  - [x] add regressions for policy-version dedup, strict-ID mode, SQLite reopen persistence, resource-type fallback matching, and canonical dirty tracking
+  - [x] run focused findings/app tests plus full-repo tests
+
+### Detailed follow-on backlog
+- [ ] Track A - Semantic identity hardening
+  - Exit criteria:
+  - [ ] decide whether semantic identity should fold severity into the canonical key or treat severity changes as state transitions on the same finding
+  - [ ] add richer resource-identity normalization for cases where provider IDs drift but stable external IDs remain available
+  - [ ] expose semantic-match explanations so operators can tell why two findings were merged
+- [ ] Track B - Findings storage scalability
+  - Exit criteria:
+  - [ ] eliminate last-resort in-memory fallback for findings initialization or make it explicit as a dev-only mode
+  - [ ] add indexed lookup support in persistent stores for semantic key queries once findings volume grows beyond small local datasets
+  - [ ] add background maintenance/compaction hooks for long-lived SQLite deployments
 
 ## Deep Review Cycle 42 - Hardening Batch: Findings Bounds + Provider Circuit Breaking + Indexed Entity Search (2026-03-10)
 
