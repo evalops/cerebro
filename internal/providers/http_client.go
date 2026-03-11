@@ -152,7 +152,9 @@ func (t *providerResilientTransport) RoundTrip(req *http.Request) (*http.Respons
 		resp, err := t.base.RoundTrip(currentReq)
 		retryable, retryDelay := classifyProviderHTTPRetry(resp, err)
 		if !retryable {
-			t.circuit.recordSuccess()
+			if err == nil {
+				t.circuit.recordSuccess()
+			}
 			return resp, err
 		}
 
@@ -170,9 +172,6 @@ func (t *providerResilientTransport) RoundTrip(req *http.Request) (*http.Respons
 			delay = providerRetryDelay(t.options.RetryBackoff, t.options.RetryMaxBackoff, attempt)
 		}
 		if err := t.sleep(req.Context(), delay); err != nil {
-			if resp != nil {
-				return resp, err
-			}
 			return nil, err
 		}
 	}

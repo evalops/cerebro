@@ -366,13 +366,14 @@ func entitySearchTrigrams(raw string) []string {
 	if normalized == "" {
 		return nil
 	}
-	if len(normalized) <= 3 {
-		return []string{normalized}
+	runes := []rune(normalized)
+	if len(runes) <= 3 {
+		return []string{string(runes)}
 	}
 	seen := make(map[string]struct{})
-	out := make([]string, 0, len(normalized)-2)
-	for i := 0; i <= len(normalized)-3; i++ {
-		trigram := normalized[i : i+3]
+	out := make([]string, 0, len(runes)-2)
+	for i := 0; i <= len(runes)-3; i++ {
+		trigram := string(runes[i : i+3])
 		if _, ok := seen[trigram]; ok {
 			continue
 		}
