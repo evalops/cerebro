@@ -460,7 +460,9 @@ func (c *Consumer) recordProcessed(processedAt, eventTime time.Time) {
 
 	c.statusMu.Lock()
 	c.lastProcessedAt = processedAt
-	c.lastEventTime = eventTime
+	if !eventTime.IsZero() {
+		c.lastEventTime = eventTime
+	}
 	c.statusMu.Unlock()
 
 	metrics.SetGraphLastUpdate(processedAt)

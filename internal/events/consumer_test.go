@@ -250,6 +250,19 @@ func TestSaturatingUint64ToInt(t *testing.T) {
 	}
 }
 
+func TestRecordProcessedPreservesLastEventTimeWhenMissing(t *testing.T) {
+	consumer := &Consumer{}
+	firstEvent := time.Now().UTC().Add(-time.Minute)
+	consumer.recordProcessed(time.Now().UTC().Add(-30*time.Second), firstEvent)
+	consumer.recordProcessed(time.Now().UTC(), time.Time{})
+
+	consumer.statusMu.RLock()
+	defer consumer.statusMu.RUnlock()
+	if !consumer.lastEventTime.Equal(firstEvent) {
+		t.Fatalf("expected last event time %s to be preserved, got %s", firstEvent, consumer.lastEventTime)
+	}
+}
+
 func TestConsumerHandleMessageDeadLettersMalformedPayload(t *testing.T) {
 	cfg := (ConsumerConfig{
 		URLs:                []string{"nats://127.0.0.1:4222"},

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -11,6 +12,8 @@ import (
 )
 
 var (
+	graphLastUpdateUnixNano atomic.Int64
+
 	// Findings metrics
 	FindingsTotal = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -803,11 +806,23 @@ func SetGraphBuildStatus(status string) {
 
 func SetGraphLastUpdate(at time.Time) {
 	if at.IsZero() {
+		graphLastUpdateUnixNano.Store(0)
 		GraphLastUpdateTimestamp.Set(0)
 		GraphStalenessSeconds.Set(0)
 		return
 	}
 	at = at.UTC()
+	targetUnixNano := at.UnixNano()
+	for {
+		current := graphLastUpdateUnixNano.Load()
+		if current >= targetUnixNano {
+			at = time.Unix(0, current).UTC()
+			break
+		}
+		if graphLastUpdateUnixNano.CompareAndSwap(current, targetUnixNano) {
+			break
+		}
+	}
 	GraphLastUpdateTimestamp.Set(float64(at.Unix()))
 	SetGraphStaleness(time.Since(at))
 }
