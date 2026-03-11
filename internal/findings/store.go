@@ -727,11 +727,14 @@ func (s *Store) evictToCapacity() {
 	})
 
 	for i := 0; i < len(candidates) && excess > 0; i++ {
-		if f, ok := s.findings[candidates[i].id]; ok && normalizeStatus(f.Status) == "RESOLVED" && s.resolvedCount > 0 {
+		if f, ok := s.findings[candidates[i].id]; ok && normalizeStatus(f.Status) == "RESOLVED" {
 			s.resolvedCount--
 		}
 		delete(s.findings, candidates[i].id)
 		excess--
+	}
+	if s.resolvedCount < 0 {
+		s.resolvedCount = s.countResolvedFindingsLocked()
 	}
 }
 
@@ -742,13 +745,24 @@ func (s *Store) cleanupResolvedBeforeLocked(cutoff time.Time) int {
 	for id, f := range s.findings {
 		if normalizeStatus(f.Status) == "RESOLVED" && f.LastSeen.Before(cutoff) {
 			delete(s.findings, id)
-			if s.resolvedCount > 0 {
-				s.resolvedCount--
-			}
+			s.resolvedCount--
 			removed++
 		}
 	}
+	if s.resolvedCount < 0 {
+		s.resolvedCount = s.countResolvedFindingsLocked()
+	}
 	return removed
+}
+
+func (s *Store) countResolvedFindingsLocked() int {
+	count := 0
+	for _, f := range s.findings {
+		if normalizeStatus(f.Status) == "RESOLVED" {
+			count++
+		}
+	}
+	return count
 }
 
 func (s *Store) maybeCleanupResolvedLocked(now time.Time) {

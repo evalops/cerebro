@@ -603,6 +603,42 @@ func TestStoreCleanup(t *testing.T) {
 	}
 }
 
+func TestStoreEvictToCapacityRecountsResolvedCountOnUndercount(t *testing.T) {
+	store := NewStoreWithConfig(StoreConfig{MaxFindings: 1})
+
+	store.mu.Lock()
+	store.findings["resolved-1"] = &Finding{ID: "resolved-1", PolicyID: "p1", Status: "RESOLVED", LastSeen: time.Now().Add(-2 * time.Hour)}
+	store.findings["resolved-2"] = &Finding{ID: "resolved-2", PolicyID: "p1", Status: "RESOLVED", LastSeen: time.Now().Add(-time.Hour)}
+	store.resolvedCount = 0
+	store.evictToCapacity()
+	store.mu.Unlock()
+
+	if got := store.Len(); got != 1 {
+		t.Fatalf("expected one finding after eviction, got %d", got)
+	}
+	if got := store.resolvedCount; got != 1 {
+		t.Fatalf("expected resolvedCount to be recomputed to 1, got %d", got)
+	}
+}
+
+func TestStoreCleanupRecountsResolvedCountOnUndercount(t *testing.T) {
+	store := NewStoreWithConfig(StoreConfig{ResolvedRetention: time.Hour})
+
+	store.mu.Lock()
+	store.findings["resolved-old"] = &Finding{ID: "resolved-old", PolicyID: "p1", Status: "RESOLVED", LastSeen: time.Now().Add(-3 * time.Hour)}
+	store.findings["resolved-current"] = &Finding{ID: "resolved-current", PolicyID: "p1", Status: "RESOLVED", LastSeen: time.Now().Add(-10 * time.Minute)}
+	store.resolvedCount = 0
+	removed := store.cleanupResolvedBeforeLocked(time.Now().Add(-time.Hour))
+	store.mu.Unlock()
+
+	if removed != 1 {
+		t.Fatalf("expected one resolved finding removed, got %d", removed)
+	}
+	if got := store.resolvedCount; got != 1 {
+		t.Fatalf("expected resolvedCount to be recomputed to 1, got %d", got)
+	}
+}
+
 func TestStoreLen(t *testing.T) {
 	store := NewStore()
 	if store.Len() != 0 {
