@@ -62,10 +62,18 @@ func (b *Builder) buildK8sNodes(ctx context.Context) {
 		{
 			table: "k8s_rbac_cluster_role_bindings",
 			query: `
-		SELECT _cq_id, uid, name, cluster_name, role_ref, subjects, labels, annotations
-		FROM k8s_rbac_cluster_role_bindings
-	`,
+			SELECT _cq_id, uid, name, cluster_name, role_ref, subjects, labels, annotations
+			FROM k8s_rbac_cluster_role_bindings
+		`,
 			parse: func(rows []map[string]any) []*Node { return k8sNodesFromRows("k8s_rbac_cluster_role_bindings", rows) },
+		},
+		{
+			table: "k8s_rbac_role_bindings",
+			query: `
+			SELECT _cq_id, uid, name, namespace, cluster_name, role_ref, subjects, labels, annotations
+			FROM k8s_rbac_role_bindings
+		`,
+			parse: func(rows []map[string]any) []*Node { return k8sNodesFromRows("k8s_rbac_role_bindings", rows) },
 		},
 		{
 			table: "k8s_core_configmaps",
@@ -315,6 +323,23 @@ func k8sNodeFromRecord(table string, record map[string]any, fallbackID string) *
 				"annotations":  normalizeStructuredValue(record["annotations"]),
 			},
 		}
+	case "k8s_rbac_role_bindings":
+		return &Node{
+			ID:       id,
+			Kind:     NodeKindRoleBinding,
+			Name:     firstNonEmpty(queryRowString(record, "name"), id),
+			Provider: "k8s",
+			Account:  account,
+			Properties: map[string]any{
+				"uid":          queryRow(record, "uid"),
+				"namespace":    queryRow(record, "namespace"),
+				"cluster_name": clusterName,
+				"role_ref":     normalizeStructuredValue(record["role_ref"]),
+				"subjects":     normalizeStructuredValue(record["subjects"]),
+				"labels":       normalizeStructuredValue(record["labels"]),
+				"annotations":  normalizeStructuredValue(record["annotations"]),
+			},
+		}
 	case "k8s_core_configmaps":
 		return &Node{
 			ID:       id,
@@ -382,6 +407,8 @@ func k8sNodeID(table string, record map[string]any, fallbackID string) string {
 		return k8sTypedNamespacedID(clusterName, "deployment", namespace, name)
 	case "k8s_rbac_roles":
 		return k8sTypedNamespacedID(clusterName, "role", namespace, name)
+	case "k8s_rbac_role_bindings":
+		return k8sTypedNamespacedID(clusterName, "rolebinding", namespace, name)
 	case "k8s_core_configmaps":
 		return k8sTypedNamespacedID(clusterName, "configmap", namespace, name)
 	case "k8s_rbac_cluster_roles":
@@ -633,7 +660,10 @@ func k8sIDMatchesTable(table, id string) bool {
 		return true
 	}
 	parts := strings.Split(strings.TrimSpace(id), "/")
-	return len(parts) >= 2 && parts[1] == expected
+	if k8sTableUsesNamespacedID(table) {
+		return len(parts) >= 4 && parts[len(parts)-3] == expected
+	}
+	return len(parts) >= 3 && parts[len(parts)-2] == expected
 }
 
 func k8sExpectedResourceType(table string) string {
@@ -652,6 +682,8 @@ func k8sExpectedResourceType(table string) string {
 		return "role"
 	case "k8s_rbac_cluster_role_bindings":
 		return "clusterrolebinding"
+	case "k8s_rbac_role_bindings":
+		return "rolebinding"
 	case "k8s_core_configmaps":
 		return "configmap"
 	case "k8s_core_persistent_volumes":
@@ -669,15 +701,19 @@ func k8sNormalizeClusterName(name string) string {
 	return name
 }
 
+const k8sMissingNamespaceSegment = "_missing_namespace"
+
 func k8sTypedNamespacedID(clusterName, resourceType, namespace, name string) string {
 	clusterName = k8sNormalizeClusterName(clusterName)
 	parts := []string{clusterName}
 	if resourceType = strings.ToLower(strings.TrimSpace(resourceType)); resourceType != "" {
 		parts = append(parts, resourceType)
 	}
-	if namespace = strings.TrimSpace(namespace); namespace != "" {
-		parts = append(parts, namespace)
+	namespace = strings.TrimSpace(namespace)
+	if namespace == "" {
+		namespace = k8sMissingNamespaceSegment
 	}
+	parts = append(parts, namespace)
 	if name = strings.TrimSpace(name); name != "" {
 		parts = append(parts, name)
 	}
@@ -694,4 +730,18 @@ func k8sClusterScopedID(clusterName, resourceType, name string) string {
 		parts = append(parts, name)
 	}
 	return strings.Join(parts, "/")
+}
+
+func k8sTableUsesNamespacedID(table string) bool {
+	switch strings.ToLower(strings.TrimSpace(table)) {
+	case "k8s_core_pods",
+		"k8s_core_service_accounts",
+		"k8s_apps_deployments",
+		"k8s_rbac_roles",
+		"k8s_rbac_role_bindings",
+		"k8s_core_configmaps":
+		return true
+	default:
+		return false
+	}
 }

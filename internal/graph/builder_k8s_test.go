@@ -71,12 +71,36 @@ func TestBuilderBuild_KubernetesOntologyAndEdges(t *testing.T) {
 			},
 		},
 	}}}
+	source.routes["from k8s_rbac_roles"] = &QueryResult{Rows: []map[string]any{{
+		"_cq_id":       "prod-cluster/role/payments/payments-reader",
+		"uid":          "role-uid-1",
+		"name":         "payments-reader",
+		"namespace":    "payments",
+		"cluster_name": "prod-cluster",
+		"rules": []any{
+			map[string]any{
+				"resources": []any{"configmaps"},
+				"verbs":     []any{"get", "list"},
+			},
+		},
+	}}}
 	source.routes["from k8s_rbac_cluster_role_bindings"] = &QueryResult{Rows: []map[string]any{{
 		"_cq_id":       "prod-cluster/clusterrolebinding/payments-admins",
 		"uid":          "crb-uid-1",
 		"name":         "payments-admins",
 		"cluster_name": "prod-cluster",
 		"role_ref":     map[string]any{"kind": "ClusterRole", "name": "cluster-admin"},
+		"subjects": []any{
+			map[string]any{"kind": "ServiceAccount", "namespace": "payments", "name": "payments-sa"},
+		},
+	}}}
+	source.routes["from k8s_rbac_role_bindings"] = &QueryResult{Rows: []map[string]any{{
+		"_cq_id":       "prod-cluster/rolebinding/payments/payments-readers",
+		"uid":          "rb-uid-1",
+		"name":         "payments-readers",
+		"namespace":    "payments",
+		"cluster_name": "prod-cluster",
+		"role_ref":     map[string]any{"kind": "Role", "name": "payments-reader"},
 		"subjects": []any{
 			map[string]any{"kind": "ServiceAccount", "namespace": "payments", "name": "payments-sa"},
 		},
@@ -114,6 +138,16 @@ func TestBuilderBuild_KubernetesOntologyAndEdges(t *testing.T) {
 		"role_ref_kind":             "ClusterRole",
 		"role_ref_name":             "cluster-admin",
 		"role_ref_api_group":        "rbac.authorization.k8s.io",
+	}, {
+		"cluster_name":              "prod-cluster",
+		"binding_kind":              "RoleBinding",
+		"binding_name":              "payments-readers",
+		"binding_namespace":         "payments",
+		"service_account_name":      "payments-sa",
+		"service_account_namespace": "payments",
+		"role_ref_kind":             "Role",
+		"role_ref_name":             "payments-reader",
+		"role_ref_api_group":        "rbac.authorization.k8s.io",
 	}}}
 
 	builder := NewBuilder(source, nil)
@@ -123,14 +157,16 @@ func TestBuilderBuild_KubernetesOntologyAndEdges(t *testing.T) {
 
 	g := builder.Graph()
 	requiredNodes := map[string]NodeKind{
-		"prod-cluster/pod/payments/payments-api":           NodeKindPod,
-		"prod-cluster/deployment/payments/payments-api":    NodeKindDeployment,
-		"prod-cluster/namespace/payments":                  NodeKindNamespace,
-		"prod-cluster/serviceaccount/payments/payments-sa": NodeKindServiceAccount,
-		"prod-cluster/clusterrole/cluster-admin":           NodeKindClusterRole,
-		"prod-cluster/clusterrolebinding/payments-admins":  NodeKindClusterRoleBinding,
-		"prod-cluster/configmap/payments/payments-config":  NodeKindConfigMap,
-		"prod-cluster/persistentvolume/payments-pv":        NodeKindPersistentVolume,
+		"prod-cluster/pod/payments/payments-api":             NodeKindPod,
+		"prod-cluster/deployment/payments/payments-api":      NodeKindDeployment,
+		"prod-cluster/namespace/payments":                    NodeKindNamespace,
+		"prod-cluster/serviceaccount/payments/payments-sa":   NodeKindServiceAccount,
+		"prod-cluster/clusterrole/cluster-admin":             NodeKindClusterRole,
+		"prod-cluster/role/payments/payments-reader":         NodeKindRole,
+		"prod-cluster/clusterrolebinding/payments-admins":    NodeKindClusterRoleBinding,
+		"prod-cluster/rolebinding/payments/payments-readers": NodeKindRoleBinding,
+		"prod-cluster/configmap/payments/payments-config":    NodeKindConfigMap,
+		"prod-cluster/persistentvolume/payments-pv":          NodeKindPersistentVolume,
 	}
 	for id, kind := range requiredNodes {
 		node, ok := g.GetNode(id)
@@ -158,6 +194,7 @@ func TestBuilderBuild_KubernetesOntologyAndEdges(t *testing.T) {
 
 	assertHasEdge(t, g, "prod-cluster/pod/payments/payments-api", "prod-cluster/serviceaccount/payments/payments-sa", EdgeKindCanAssume)
 	assertHasEdge(t, g, "prod-cluster/serviceaccount/payments/payments-sa", "prod-cluster/clusterrole/cluster-admin", EdgeKindCanAssume)
+	assertHasEdge(t, g, "prod-cluster/serviceaccount/payments/payments-sa", "prod-cluster/role/payments/payments-reader", EdgeKindCanAssume)
 
 	combos := NewToxicCombinationEngine().Analyze(g)
 	if !containsToxicCombination(combos, "TC-K8S-003-prod-cluster/serviceaccount/payments/payments-sa") {
@@ -191,5 +228,21 @@ func TestK8sClusterScopedID_NormalizesResourceType(t *testing.T) {
 	got := k8sClusterScopedID("prod-cluster", "ClusterRole", "cluster-admin")
 	if got != "prod-cluster/clusterrole/cluster-admin" {
 		t.Fatalf("expected lowercase typed id, got %q", got)
+	}
+}
+
+func TestK8sTypedNamespacedID_UsesNamespacePlaceholderWhenMissing(t *testing.T) {
+	got := k8sTypedNamespacedID("prod-cluster", "Pod", "", "payments-api")
+	if got != "prod-cluster/pod/_missing_namespace/payments-api" {
+		t.Fatalf("expected placeholder namespace segment, got %q", got)
+	}
+}
+
+func TestK8sIDMatchesTable_UsesResourceTypeSuffixPosition(t *testing.T) {
+	if !k8sIDMatchesTable("k8s_core_pods", "prod/cluster/pod/payments/payments-api") {
+		t.Fatal("expected suffix-based typed id match for namespaced resource")
+	}
+	if !k8sIDMatchesTable("k8s_core_namespaces", "prod/cluster/namespace/payments") {
+		t.Fatal("expected suffix-based typed id match for cluster-scoped resource")
 	}
 }

@@ -632,6 +632,7 @@ func cdcEventToNode(table string, event cdcEvent) *Node {
 		"k8s_rbac_cluster_roles",
 		"k8s_rbac_roles",
 		"k8s_rbac_cluster_role_bindings",
+		"k8s_rbac_role_bindings",
 		"k8s_core_configmaps",
 		"k8s_core_persistent_volumes":
 		return k8sNodeFromRecord(table, payload, event.ResourceID)
@@ -678,6 +679,7 @@ func cdcNodeID(table string, payload map[string]any, fallback string) string {
 		"k8s_rbac_cluster_roles",
 		"k8s_rbac_roles",
 		"k8s_rbac_cluster_role_bindings",
+		"k8s_rbac_role_bindings",
 		"k8s_core_configmaps",
 		"k8s_core_persistent_volumes":
 		return k8sNodeID(table, payload, fallback)
