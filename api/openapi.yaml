@@ -6985,6 +6985,7 @@ paths:
           required: true
           schema:
             type: string
+            maxLength: 512
         - name: kind
           in: query
           description: Comma-separated node kinds to include.
@@ -7031,6 +7032,7 @@ paths:
           required: true
           schema:
             type: string
+            maxLength: 512
         - name: kind
           in: query
           description: Comma-separated node kinds to include.

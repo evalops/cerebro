@@ -12,6 +12,8 @@ import (
 	"github.com/evalops/cerebro/internal/graph"
 )
 
+const maxPlatformEntityQueryLength = 512
+
 func (s *Server) listPlatformEntities(w http.ResponseWriter, r *http.Request) {
 	g := s.app.CurrentSecurityGraph()
 	if g == nil {
@@ -189,6 +191,9 @@ func parsePlatformEntityQueryOptions(r *http.Request) (graph.EntityQueryOptions,
 		TagKey:       strings.TrimSpace(query.Get("tag_key")),
 		TagValue:     strings.TrimSpace(query.Get("tag_value")),
 	}
+	if len(opts.Search) > maxPlatformEntityQueryLength {
+		return graph.EntityQueryOptions{}, fmt.Errorf("q exceeds max length %d", maxPlatformEntityQueryLength)
+	}
 	if risk := strings.ToLower(strings.TrimSpace(query.Get("risk"))); risk != "" {
 		switch graph.RiskLevel(risk) {
 		case graph.RiskCritical, graph.RiskHigh, graph.RiskMedium, graph.RiskLow, graph.RiskNone:
@@ -238,6 +243,9 @@ func parsePlatformEntitySearchOptions(r *http.Request) (graph.EntitySearchOption
 	if opts.Query == "" {
 		return graph.EntitySearchOptions{}, fmt.Errorf("q is required")
 	}
+	if len(opts.Query) > maxPlatformEntityQueryLength {
+		return graph.EntitySearchOptions{}, fmt.Errorf("q exceeds max length %d", maxPlatformEntityQueryLength)
+	}
 	if fuzzy, ok, err := parseOptionalBoolQuery(r, "fuzzy"); err != nil {
 		return graph.EntitySearchOptions{}, err
 	} else if ok {
@@ -261,6 +269,9 @@ func parsePlatformEntitySuggestOptions(r *http.Request) (graph.EntitySuggestOpti
 	}
 	if opts.Prefix == "" {
 		return graph.EntitySuggestOptions{}, fmt.Errorf("prefix is required")
+	}
+	if len(opts.Prefix) > maxPlatformEntityQueryLength {
+		return graph.EntitySuggestOptions{}, fmt.Errorf("prefix exceeds max length %d", maxPlatformEntityQueryLength)
 	}
 	if raw := strings.TrimSpace(query.Get("limit")); raw != "" {
 		limit, err := strconv.Atoi(raw)

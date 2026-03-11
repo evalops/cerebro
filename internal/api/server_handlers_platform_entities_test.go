@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -522,5 +523,22 @@ func TestPlatformEntitiesRejectInvalidParams(t *testing.T) {
 	w = do(t, s, http.MethodGet, "/api/v1/platform/entities/suggest", nil)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for missing suggest prefix, got %d: %s", w.Code, w.Body.String())
+	}
+
+	longValue := strings.Repeat("a", maxPlatformEntityQueryLength+1)
+
+	w = do(t, s, http.MethodGet, "/api/v1/platform/entities?q="+longValue, nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for oversized entity list q, got %d: %s", w.Code, w.Body.String())
+	}
+
+	w = do(t, s, http.MethodGet, "/api/v1/platform/entities/search?q="+longValue, nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for oversized entity search q, got %d: %s", w.Code, w.Body.String())
+	}
+
+	w = do(t, s, http.MethodGet, "/api/v1/platform/entities/suggest?prefix="+longValue, nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for oversized suggest prefix, got %d: %s", w.Code, w.Body.String())
 	}
 }
