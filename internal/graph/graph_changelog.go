@@ -4,6 +4,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/evalops/cerebro/internal/setutil"
 )
 
 // GraphDiffFilter narrows diff/changelog results to matching entities.
@@ -172,10 +174,10 @@ func SummarizeGraphDiffAttribution(diff GraphDiff) GraphDiffAttribution {
 	}
 
 	return GraphDiffAttribution{
-		Providers:     sortedStringSet(providers),
-		Accounts:      sortedStringSet(accounts),
+		Providers:     setutil.SortedStrings(providers),
+		Accounts:      setutil.SortedStrings(accounts),
 		Kinds:         sortedNodeKindSet(kinds),
-		SourceSystems: sortedStringSet(sourceSystems),
+		SourceSystems: setutil.SortedStrings(sourceSystems),
 	}
 }
 
@@ -246,18 +248,6 @@ func nodeFromChange(which string, change NodeChange) *Node {
 		node.Properties = cloneAnyMap(properties)
 	}
 	return node
-}
-
-func sortedStringSet(values map[string]struct{}) []string {
-	if len(values) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(values))
-	for value := range values {
-		out = append(out, value)
-	}
-	sort.Strings(out)
-	return out
 }
 
 func sortedNodeKindSet(values map[NodeKind]struct{}) []NodeKind {

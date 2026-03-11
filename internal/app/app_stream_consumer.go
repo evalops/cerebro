@@ -14,6 +14,7 @@ import (
 	"github.com/evalops/cerebro/internal/graph"
 	"github.com/evalops/cerebro/internal/graphingest"
 	"github.com/evalops/cerebro/internal/health"
+	"github.com/evalops/cerebro/internal/setutil"
 )
 
 func (a *App) initTapGraphConsumer(ctx context.Context) {
@@ -694,7 +695,7 @@ func parseTapSchemaRequiredProperties(raw any, schemaRaw any) []string {
 		}
 	}
 
-	return sortedStringSet(required)
+	return setutil.SortedStrings(required)
 }
 
 func parseTapSchemaCapabilities(raw any) []graph.NodeKindCapability {
@@ -1054,7 +1055,7 @@ func (a *App) upsertTapInteractionPersonNode(securityGraph *graph.Graph, partici
 		properties["source_system"] = provider
 	}
 	if len(sources) > 0 {
-		properties["source_systems"] = sortedStringSet(sources)
+		properties["source_systems"] = setutil.SortedStrings(sources)
 	}
 	if !occurredAt.IsZero() {
 		properties["last_seen"] = occurredAt.UTC().Format(time.RFC3339)
@@ -1093,19 +1094,6 @@ func stringSliceFromAny(value any) []string {
 	default:
 		return nil
 	}
-}
-
-func sortedStringSet(values map[string]struct{}) []string {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		key = strings.TrimSpace(key)
-		if key == "" {
-			continue
-		}
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 func (a *App) handleTapActivityEvent(source, activityType string, evt events.CloudEvent) error {

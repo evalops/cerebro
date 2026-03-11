@@ -181,7 +181,6 @@ func ReplayJetStreamHistory(ctx context.Context, cfg ReplayConfig, handler Repla
 			seq := meta.Sequence.Stream
 			if seq > report.UpperBoundSequence {
 				report.StoppedByUpperBound = true
-				report.LastStreamSequence = seq
 				_ = msg.Ack()
 				stop = true
 				break

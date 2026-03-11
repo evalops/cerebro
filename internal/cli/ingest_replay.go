@@ -15,6 +15,7 @@ import (
 	"github.com/evalops/cerebro/internal/app"
 	"github.com/evalops/cerebro/internal/events"
 	"github.com/evalops/cerebro/internal/graph"
+	"github.com/evalops/cerebro/internal/setutil"
 )
 
 var ingestReplayCmd = &cobra.Command{
@@ -462,22 +463,10 @@ func applyReplayGraphMetadata(g *graph.Graph, builtAt time.Time) {
 		BuiltAt:   builtAt.UTC(),
 		NodeCount: g.NodeCount(),
 		EdgeCount: g.EdgeCount(),
-		Providers: sortedReplayStringSet(providers),
-		Accounts:  sortedReplayStringSet(accounts),
+		Providers: setutil.SortedStrings(providers),
+		Accounts:  setutil.SortedStrings(accounts),
 	}
 	g.SetMetadata(meta)
-}
-
-func sortedReplayStringSet(values map[string]struct{}) []string {
-	if len(values) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(values))
-	for value := range values {
-		out = append(out, value)
-	}
-	sort.Strings(out)
-	return out
 }
 
 func latestReplaySnapshotRecord(store *graph.SnapshotStore) (graph.GraphSnapshotRecord, bool) {
