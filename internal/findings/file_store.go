@@ -215,6 +215,8 @@ func (fs *FileStore) Close() error {
 func (fs *FileStore) Clear() error {
 	fs.store.mu.Lock()
 	fs.store.findings = make(map[string]*Finding)
+	fs.store.resolvedCount = 0
+	fs.store.lastResolvedSweep = time.Time{}
 	fs.store.updateMetricsLocked()
 	fs.store.mu.Unlock()
 
@@ -239,15 +241,9 @@ func (fs *FileStore) Cleanup(maxAge time.Duration) int {
 	fs.store.mu.Lock()
 	defer fs.store.mu.Unlock()
 
-	cutoff := time.Now().Add(-maxAge)
-	removed := 0
-
-	for id, f := range fs.store.findings {
-		if f.LastSeen.Before(cutoff) && normalizeStatus(f.Status) == "RESOLVED" {
-			delete(fs.store.findings, id)
-			removed++
-		}
-	}
+	now := time.Now()
+	removed := fs.store.cleanupResolvedBeforeLocked(now.Add(-maxAge))
+	fs.store.lastResolvedSweep = now
 
 	fs.store.updateMetricsLocked()
 	if removed > 0 {

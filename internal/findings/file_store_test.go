@@ -134,6 +134,7 @@ func TestFileStoreCleanup(t *testing.T) {
 		Status:   "RESOLVED",
 		LastSeen: time.Now().Add(-30 * 24 * time.Hour), // 30 days old
 	}
+	store.store.resolvedCount = 1
 	store.store.mu.Unlock()
 
 	// Add new finding
@@ -158,6 +159,43 @@ func TestFileStoreCleanup(t *testing.T) {
 	_, ok = store.Get("new-finding")
 	if !ok {
 		t.Error("new finding should remain")
+	}
+	if store.store.resolvedCount != 0 {
+		t.Fatalf("expected resolvedCount to be decremented, got %d", store.store.resolvedCount)
+	}
+}
+
+func TestFileStoreClearResetsResolvedTracking(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "findings.json")
+
+	store, err := NewFileStore(filePath)
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+	defer func() {
+		_ = store.Close()
+	}()
+
+	store.store.mu.Lock()
+	store.store.findings["resolved"] = &Finding{
+		ID:       "resolved",
+		PolicyID: "test",
+		Status:   "RESOLVED",
+		LastSeen: time.Now().Add(-24 * time.Hour),
+	}
+	store.store.resolvedCount = 1
+	store.store.lastResolvedSweep = time.Now()
+	store.store.mu.Unlock()
+
+	if err := store.Clear(); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	if got := store.store.resolvedCount; got != 0 {
+		t.Fatalf("resolvedCount = %d, want 0", got)
+	}
+	if !store.store.lastResolvedSweep.IsZero() {
+		t.Fatalf("expected lastResolvedSweep to reset, got %s", store.store.lastResolvedSweep)
 	}
 }
 
