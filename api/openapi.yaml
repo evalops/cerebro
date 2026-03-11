@@ -9503,6 +9503,16 @@ components:
       properties:
         id:
           type: string
+        semantic_key:
+          type: string
+        observed_finding_ids:
+          type: array
+          items:
+            type: string
+        observed_policy_ids:
+          type: array
+          items:
+            type: string
         policy_id:
           type: string
         policy_name:

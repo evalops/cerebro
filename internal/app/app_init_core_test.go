@@ -59,8 +59,9 @@ func TestNewInMemoryFindingsStore_UsesConfiguredBounds(t *testing.T) {
 	var logs bytes.Buffer
 	a := &App{
 		Config: &Config{
-			FindingsMaxInMemory:       42,
-			FindingsResolvedRetention: 12 * time.Hour,
+			FindingsMaxInMemory:          42,
+			FindingsResolvedRetention:    12 * time.Hour,
+			FindingsSemanticDedupEnabled: false,
 		},
 		Logger: slog.New(slog.NewTextHandler(&logs, nil)),
 	}
@@ -72,6 +73,9 @@ func TestNewInMemoryFindingsStore_UsesConfiguredBounds(t *testing.T) {
 	}
 	if cfg.ResolvedRetention != 12*time.Hour {
 		t.Fatalf("expected resolved retention 12h, got %s", cfg.ResolvedRetention)
+	}
+	if cfg.SemanticDedup {
+		t.Fatal("expected semantic dedup to follow config and be disabled")
 	}
 	if !strings.Contains(logs.String(), "using in-memory findings store") {
 		t.Fatalf("expected in-memory store log, got %q", logs.String())
