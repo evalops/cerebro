@@ -137,6 +137,27 @@ func TestLoadConfigImageScanPathsAndControls(t *testing.T) {
 	}
 }
 
+func TestLoadConfigFunctionScanPathsAndControls(t *testing.T) {
+	t.Setenv("EXECUTION_STORE_FILE", "/tmp/cerebro-executions.db")
+	t.Setenv("FUNCTION_SCAN_ROOTFS_BASE_PATH", "/tmp/cerebro-function-rootfs")
+	t.Setenv("FUNCTION_SCAN_CLEANUP_TIMEOUT", "6m")
+	t.Setenv("FUNCTION_SCAN_TRIVY_BINARY", "/usr/local/bin/trivy-function")
+
+	cfg := LoadConfig()
+	if cfg.FunctionScanStateFile != "/tmp/cerebro-executions.db" {
+		t.Fatalf("expected function scan state file to default to shared execution store, got %q", cfg.FunctionScanStateFile)
+	}
+	if cfg.FunctionScanRootFSBasePath != "/tmp/cerebro-function-rootfs" {
+		t.Fatalf("expected function scan rootfs base path to be set, got %q", cfg.FunctionScanRootFSBasePath)
+	}
+	if cfg.FunctionScanCleanupTimeout != 6*time.Minute {
+		t.Fatalf("expected function scan cleanup timeout 6m, got %s", cfg.FunctionScanCleanupTimeout)
+	}
+	if cfg.FunctionScanTrivyBinary != "/usr/local/bin/trivy-function" {
+		t.Fatalf("expected function scan trivy binary override, got %q", cfg.FunctionScanTrivyBinary)
+	}
+}
+
 func TestLoadConfigGraphSchemaValidationMode(t *testing.T) {
 	t.Setenv("GRAPH_SCHEMA_VALIDATION_MODE", "enforce")
 	cfg := LoadConfig()

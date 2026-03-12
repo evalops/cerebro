@@ -16,6 +16,7 @@ Graph-specific architecture references:
 - [Connector Provisioning Architecture](./CONNECTOR_PROVISIONING_ARCHITECTURE.md)
 - [Workload Scan Architecture](./WORKLOAD_SCAN_ARCHITECTURE.md)
 - [Image Scan Architecture](./IMAGE_SCAN_ARCHITECTURE.md)
+- [Function Scan Architecture](./FUNCTION_SCAN_ARCHITECTURE.md)
 - [Connector Provisioning Auto-Generated Catalog](./CONNECTOR_PROVISIONING_AUTOGEN.md)
 - [Connector Provisioning Machine-Readable Catalog](./CONNECTOR_PROVISIONING_CATALOG.json)
 - [Graph Entity Facet Architecture](./GRAPH_ENTITY_FACET_ARCHITECTURE.md)

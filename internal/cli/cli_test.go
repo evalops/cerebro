@@ -265,6 +265,50 @@ func TestImageScanRegistryRequiredFlags(t *testing.T) {
 	}
 }
 
+func TestFunctionScanCommands(t *testing.T) {
+	if functionScanCmd == nil {
+		t.Fatal("functionScanCmd should not be nil")
+	}
+	if functionScanCmd.Name() != "function-scan" {
+		t.Fatalf("expected function-scan command, got %s", functionScanCmd.Name())
+	}
+	subcommands := functionScanCmd.Commands()
+	foundList := false
+	foundRun := false
+	for _, cmd := range subcommands {
+		switch cmd.Name() {
+		case "list":
+			foundList = true
+		case "run":
+			foundRun = true
+		}
+	}
+	if !foundList || !foundRun {
+		t.Fatalf("expected function-scan list/run subcommands, got list=%t run=%t", foundList, foundRun)
+	}
+}
+
+func TestFunctionScanRequiredFlags(t *testing.T) {
+	for _, tc := range []struct {
+		cmd   *cobra.Command
+		flags []string
+	}{
+		{cmd: functionScanRunAWSCmd, flags: []string{"region"}},
+		{cmd: functionScanRunGCPCmd, flags: []string{"project-id", "location", "function-name"}},
+		{cmd: functionScanRunAzureCmd, flags: []string{"subscription-id", "resource-group", "app-name"}},
+	} {
+		for _, name := range tc.flags {
+			flag := tc.cmd.Flags().Lookup(name)
+			if flag == nil {
+				t.Fatalf("expected %s flag to exist on %s", name, tc.cmd.Name())
+			}
+			if values, ok := flag.Annotations[cobra.BashCompOneRequiredFlag]; !ok || len(values) == 0 {
+				t.Fatalf("expected %s flag on %s to be marked required", name, tc.cmd.Name())
+			}
+		}
+	}
+}
+
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
 

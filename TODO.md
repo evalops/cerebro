@@ -5,6 +5,55 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 51 - Durable Serverless Function Scan Runtime (2026-03-11)
+
+### Review findings
+- [x] Gap: issue `#179` still existed only as a problem statement; there was no durable serverless function package scan runtime or operator surface.
+- [x] Gap: AWS Lambda layers, GCP source archives, and Azure run-from-package downloads all needed API-driven acquisition behind one shared contract instead of cloud-specific ad hoc flows.
+- [x] Gap: the repo was at risk of creating a third execution-state silo unless function scans defaulted to the same `EXECUTION_STORE_FILE` durability boundary as workload and image scans.
+- [x] Gap: source/package scanning needed to reuse the same filesystem analyzer seam rather than inventing a separate “serverless-only” scanner path.
+- [x] Gap: issue `#179` needed an explicit architecture note capturing the external patterns worth reusing from Trivy, Syft, Semgrep, and OSV Scanner.
+
+### Execution plan
+- [x] Add a durable function scan runtime under `internal/functionscan`:
+  - [x] add typed run, event, descriptor, artifact, filesystem, and analysis contracts
+  - [x] persist runs/events in SQLite
+  - [x] add a local ZIP materializer with symlink/traversal protection and ordered layer/package application
+- [x] Add provider-specific acquisition seams:
+  - [x] add AWS Lambda provider with function ZIP + layer download support
+  - [x] add GCP Cloud Functions provider with Cloud Storage source archive support
+  - [x] add Azure Functions provider with `WEBSITE_RUN_FROM_PACKAGE` / `SCM_RUN_FROM_PACKAGE` download support
+- [x] Reuse the shared analyzer seam:
+  - [x] add `FilesystemAnalyzer` backed by `scanner.TrivyFilesystemScanner`
+  - [x] detect environment secrets, code secrets, and curated runtime deprecation
+  - [x] redact presigned/package URLs in operator-visible errors
+- [x] Add operator/config surface:
+  - [x] add `cerebro function-scan list`
+  - [x] add `cerebro function-scan run aws|gcp|azure`
+  - [x] add function-scan env/config controls with `EXECUTION_STORE_FILE` fallback
+  - [x] add lifecycle webhook event types for function scans
+- [x] Add architecture/test coverage:
+  - [x] add function scan architecture doc with OSS implementation references
+  - [x] add store round-trip regressions
+  - [x] add materializer ordering/safety regressions
+  - [x] add persisted runner lifecycle and URL-redaction regressions
+
+### Detailed follow-on backlog
+- [ ] Track A - Analyzer depth
+  - Exit criteria:
+  - [ ] replace the thin Trivy-plus-heuristics analyzer path with the richer shared filesystem analyzer from issue `#180`
+  - [ ] normalize package/SBOM output so serverless, image, and VM scans emit the same package/vulnerability contracts
+- [ ] Track B - Vulnerability knowledge + graph integration
+  - Exit criteria:
+  - [ ] feed function package/vulnerability outputs into the vulnerability knowledge pipeline from issue `#181`
+  - [ ] attach function scans, packages, and vulnerabilities to the temporal graph from issue `#182`
+  - [ ] cross-reference function roles, event sources, and network exposure during prioritization
+- [ ] Track C - Shared execution store extraction
+  - Exit criteria:
+  - [ ] move workload/image/function scan run storage off per-runtime helpers and onto a shared execution-store package
+  - [ ] expose execution resources over platform APIs instead of CLI-only surfaces
+  - [ ] decide whether the long-term backend remains SQLite with leadering or moves to a multi-worker store
+
 ## Deep Review Cycle 50 - Durable Container Image Scan Runtime (2026-03-11)
 
 ### Review findings
