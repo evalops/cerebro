@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -111,6 +112,7 @@ type DefaultActionHandler struct {
 	remoteCaller   RemoteActionCaller
 	workloadScaler WorkloadScaler
 	remoteTimeout  time.Duration
+	mu             sync.RWMutex
 }
 
 func NewDefaultActionHandler(opts DefaultActionHandlerOptions) *DefaultActionHandler {
@@ -128,6 +130,15 @@ func NewDefaultActionHandler(opts DefaultActionHandlerOptions) *DefaultActionHan
 		workloadScaler: scaler,
 		remoteTimeout:  timeout,
 	}
+}
+
+func (h *DefaultActionHandler) SetRemoteCaller(caller RemoteActionCaller) {
+	if h == nil {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.remoteCaller = caller
 }
 
 func (h *DefaultActionHandler) KillProcess(ctx context.Context, resourceID string, pid int) error {
@@ -235,7 +246,8 @@ func (h *DefaultActionHandler) ScaleDown(ctx context.Context, resourceID string,
 }
 
 func (h *DefaultActionHandler) callRemoteRequired(ctx context.Context, action ResponseActionType, tool string, payload map[string]any) error {
-	if h == nil || h.remoteCaller == nil {
+	caller := h.currentRemoteCaller()
+	if caller == nil {
 		return &ActionCapabilityError{
 			Action:  action,
 			Code:    "requires_ensemble",
@@ -249,12 +261,13 @@ func (h *DefaultActionHandler) callRemoteRequired(ctx context.Context, action Re
 	if err != nil {
 		return fmt.Errorf("marshal runtime remote payload: %w", err)
 	}
-	_, err = h.remoteCaller.CallTool(ctx, tool, args, remainingRuntimeTimeout(ctx, h.remoteTimeout))
+	_, err = caller.CallTool(ctx, tool, args, remainingRuntimeTimeout(ctx, h.remoteTimeout))
 	return err
 }
 
 func (h *DefaultActionHandler) callRemoteBestEffort(ctx context.Context, action ResponseActionType, tool string, payload map[string]any) error {
-	if h == nil || h.remoteCaller == nil {
+	caller := h.currentRemoteCaller()
+	if caller == nil {
 		return fmt.Errorf("remote tool caller not configured")
 	}
 	if err := authorizeActuation(ctx, action, payload); err != nil {
@@ -264,8 +277,17 @@ func (h *DefaultActionHandler) callRemoteBestEffort(ctx context.Context, action 
 	if err != nil {
 		return err
 	}
-	_, err = h.remoteCaller.CallTool(ctx, tool, args, remainingRuntimeTimeout(ctx, h.remoteTimeout))
+	_, err = caller.CallTool(ctx, tool, args, remainingRuntimeTimeout(ctx, h.remoteTimeout))
 	return err
+}
+
+func (h *DefaultActionHandler) currentRemoteCaller() RemoteActionCaller {
+	if h == nil {
+		return nil
+	}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.remoteCaller
 }
 
 func authorizeActuation(ctx context.Context, action ResponseActionType, payload map[string]any) error {

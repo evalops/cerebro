@@ -159,6 +159,10 @@ type ActionHandler interface {
 	ScaleDown(ctx context.Context, resourceID string, replicas int) error
 }
 
+type actionRemoteCallerSetter interface {
+	SetRemoteCaller(RemoteActionCaller)
+}
+
 func NewResponseEngine() *ResponseEngine {
 	engine := &ResponseEngine{
 		policies:   make(map[string]*ResponsePolicy),
@@ -181,6 +185,17 @@ func NewBlocklist() *Blocklist {
 
 func (e *ResponseEngine) SetActionHandler(handler ActionHandler) {
 	e.actionHandler = handler
+}
+
+func (e *ResponseEngine) SetRemoteCaller(caller RemoteActionCaller) {
+	if e == nil || e.actionHandler == nil {
+		return
+	}
+	setter, ok := e.actionHandler.(actionRemoteCallerSetter)
+	if !ok {
+		return
+	}
+	setter.SetRemoteCaller(caller)
 }
 
 func (e *ResponseEngine) SetSharedExecutor(shared *actionengine.Executor) {

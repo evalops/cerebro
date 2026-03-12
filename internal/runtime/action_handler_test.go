@@ -159,6 +159,22 @@ func TestDefaultActionHandlerKillProcessRequiresTrustedScope(t *testing.T) {
 	}
 }
 
+func TestDefaultActionHandlerRemoteCallerCanBeBoundLater(t *testing.T) {
+	caller := &recordingRemoteCaller{}
+	handler := NewDefaultActionHandler(DefaultActionHandlerOptions{})
+	handler.SetRemoteCaller(caller)
+	ctx := WithTrustedActuationScope(context.Background(), TrustedActuationScope{
+		AllowedResourceIDs: []string{"pod-1"},
+	})
+
+	if err := handler.KillProcess(ctx, "pod-1", 4242); err != nil {
+		t.Fatalf("KillProcess: %v", err)
+	}
+	if caller.tool != runtimeToolKillProcess {
+		t.Fatalf("tool = %q, want %q", caller.tool, runtimeToolKillProcess)
+	}
+}
+
 func TestDefaultActionHandlerScaleDownUsesScaler(t *testing.T) {
 	scaler := &recordingScaler{}
 	handler := NewDefaultActionHandler(DefaultActionHandlerOptions{
