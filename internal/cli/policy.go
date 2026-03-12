@@ -609,7 +609,7 @@ func runPolicyConvert(cmd *cobra.Command, args []string) error {
 	output = append(output, '\n')
 
 	if policyConvertWrite {
-		if err := os.WriteFile(path, output, 0644); err != nil {
+		if err := os.WriteFile(path, output, 0o600); err != nil {
 			return fmt.Errorf("write converted policy: %w", err)
 		}
 	}
