@@ -3,9 +3,12 @@ package connectors
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"text/template"
+
+	"github.com/evalops/cerebro/internal/textutil"
 )
 
 type GeneratedFile struct {
@@ -49,11 +52,11 @@ type AzureRenderOptions struct {
 
 func RenderAWSBundle(opts AWSRenderOptions) (Bundle, error) {
 	data := map[string]string{
-		"RoleName":      firstNonEmpty(strings.TrimSpace(opts.RoleName), "CerebroScanRole"),
-		"PrincipalARN":  firstNonEmpty(strings.TrimSpace(opts.PrincipalARN), "arn:aws:iam::111122223333:role/CerebroControlPlane"),
-		"ExternalID":    firstNonEmpty(strings.TrimSpace(opts.ExternalID), "replace-with-customer-specific-external-id"),
-		"ManagedTagKey": firstNonEmpty(strings.TrimSpace(opts.ManagedTagKey), "CerebroManagedBy"),
-		"ManagedTagVal": firstNonEmpty(strings.TrimSpace(opts.ManagedTagVal), "cerebro"),
+		"RoleName":      textutil.FirstNonEmptyTrimmed(strings.TrimSpace(opts.RoleName), "CerebroScanRole"),
+		"PrincipalARN":  textutil.FirstNonEmptyTrimmed(strings.TrimSpace(opts.PrincipalARN), "arn:aws:iam::111122223333:role/CerebroControlPlane"),
+		"ExternalID":    textutil.FirstNonEmptyTrimmed(strings.TrimSpace(opts.ExternalID), "replace-with-customer-specific-external-id"),
+		"ManagedTagKey": textutil.FirstNonEmptyTrimmed(strings.TrimSpace(opts.ManagedTagKey), "CerebroManagedBy"),
+		"ManagedTagVal": textutil.FirstNonEmptyTrimmed(strings.TrimSpace(opts.ManagedTagVal), "cerebro"),
 	}
 	files := []GeneratedFile{
 		{Path: filepath.ToSlash("aws/stackset.yaml"), Content: renderTemplate(awsStackSetTemplate, data)},
@@ -65,15 +68,15 @@ func RenderAWSBundle(opts AWSRenderOptions) (Bundle, error) {
 
 func RenderGCPBundle(opts GCPRenderOptions) (Bundle, error) {
 	data := map[string]any{
-		"ProjectID":                  firstNonEmpty(strings.TrimSpace(opts.ProjectID), "replace-with-project-id"),
-		"ServiceAccountID":           firstNonEmpty(strings.TrimSpace(opts.ServiceAccountID), "cerebro-workload-scan"),
-		"CustomRoleID":               firstNonEmpty(strings.TrimSpace(opts.CustomRoleID), "cerebroWorkloadSnapshot"),
+		"ProjectID":                  textutil.FirstNonEmptyTrimmed(strings.TrimSpace(opts.ProjectID), "replace-with-project-id"),
+		"ServiceAccountID":           textutil.FirstNonEmptyTrimmed(strings.TrimSpace(opts.ServiceAccountID), "cerebro-workload-scan"),
+		"CustomRoleID":               textutil.FirstNonEmptyTrimmed(strings.TrimSpace(opts.CustomRoleID), "cerebroWorkloadSnapshot"),
 		"EnableWIF":                  opts.EnableWIF || strings.TrimSpace(opts.WorkloadIdentityIssuerURI) != "",
-		"WorkloadIdentityPoolID":     firstNonEmpty(strings.TrimSpace(opts.WorkloadIdentityPoolID), "cerebro-workload-pool"),
-		"WorkloadIdentityProviderID": firstNonEmpty(strings.TrimSpace(opts.WorkloadIdentityProviderID), "cerebro-oidc"),
-		"WorkloadIdentityIssuerURI":  firstNonEmpty(strings.TrimSpace(opts.WorkloadIdentityIssuerURI), "https://token.actions.githubusercontent.com"),
-		"WorkloadIdentityAudience":   firstNonEmpty(strings.TrimSpace(opts.WorkloadIdentityAudience), "//iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/cerebro-workload-pool/providers/cerebro-oidc"),
-		"PrincipalSubject":           firstNonEmpty(strings.TrimSpace(opts.PrincipalSubject), "repo:evalops/cerebro:ref:refs/heads/main"),
+		"WorkloadIdentityPoolID":     textutil.FirstNonEmptyTrimmed(strings.TrimSpace(opts.WorkloadIdentityPoolID), "cerebro-workload-pool"),
+		"WorkloadIdentityProviderID": textutil.FirstNonEmptyTrimmed(strings.TrimSpace(opts.WorkloadIdentityProviderID), "cerebro-oidc"),
+		"WorkloadIdentityIssuerURI":  textutil.FirstNonEmptyTrimmed(strings.TrimSpace(opts.WorkloadIdentityIssuerURI), "https://token.actions.githubusercontent.com"),
+		"WorkloadIdentityAudience":   textutil.FirstNonEmptyTrimmed(strings.TrimSpace(opts.WorkloadIdentityAudience), "//iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/cerebro-workload-pool/providers/cerebro-oidc"),
+		"PrincipalSubject":           textutil.FirstNonEmptyTrimmed(strings.TrimSpace(opts.PrincipalSubject), "repo:evalops/cerebro:ref:refs/heads/main"),
 	}
 	files := []GeneratedFile{
 		{Path: filepath.ToSlash("gcp/main.tf"), Content: renderTemplate(gcpMainTemplate, data)},
@@ -86,11 +89,11 @@ func RenderGCPBundle(opts GCPRenderOptions) (Bundle, error) {
 
 func RenderAzureBundle(opts AzureRenderOptions) (Bundle, error) {
 	data := map[string]string{
-		"SubscriptionID":       firstNonEmpty(strings.TrimSpace(opts.SubscriptionID), "00000000-0000-0000-0000-000000000000"),
-		"TenantID":             firstNonEmpty(strings.TrimSpace(opts.TenantID), "00000000-0000-0000-0000-000000000000"),
-		"Location":             firstNonEmpty(strings.TrimSpace(opts.Location), "eastus"),
-		"PrincipalDisplayName": firstNonEmpty(strings.TrimSpace(opts.PrincipalDisplayName), "cerebro-workload-scan"),
-		"CustomRoleName":       firstNonEmpty(strings.TrimSpace(opts.CustomRoleName), "Cerebro Snapshot Operator"),
+		"SubscriptionID":       textutil.FirstNonEmptyTrimmed(strings.TrimSpace(opts.SubscriptionID), "00000000-0000-0000-0000-000000000000"),
+		"TenantID":             textutil.FirstNonEmptyTrimmed(strings.TrimSpace(opts.TenantID), "00000000-0000-0000-0000-000000000000"),
+		"Location":             textutil.FirstNonEmptyTrimmed(strings.TrimSpace(opts.Location), "eastus"),
+		"PrincipalDisplayName": textutil.FirstNonEmptyTrimmed(strings.TrimSpace(opts.PrincipalDisplayName), "cerebro-workload-scan"),
+		"CustomRoleName":       textutil.FirstNonEmptyTrimmed(strings.TrimSpace(opts.CustomRoleName), "Cerebro Snapshot Operator"),
 	}
 	files := []GeneratedFile{
 		{Path: filepath.ToSlash("azure/arm-template.json"), Content: renderJSONTemplate(azureARMTemplate, data)},
@@ -104,21 +107,41 @@ func RenderAzureBundle(opts AzureRenderOptions) (Bundle, error) {
 }
 
 func renderTemplate(src string, data any) string {
-	tmpl := template.Must(template.New("bundle").Parse(src))
+	tmpl := template.Must(template.New("bundle").Funcs(renderTemplateFuncs()).Parse(src))
 	return executeTemplate(tmpl, data)
 }
 
 func renderJSONTemplate(src string, data any) string {
-	tmpl := template.Must(template.New("bundle").Funcs(template.FuncMap{
-		"jsonString": func(value any) string {
-			encoded, err := json.Marshal(value)
-			if err != nil {
-				panic(err)
-			}
-			return string(encoded)
-		},
-	}).Parse(src))
+	tmpl := template.Must(template.New("bundle").Funcs(renderTemplateFuncs()).Parse(src))
 	return executeTemplate(tmpl, data)
+}
+
+func renderTemplateFuncs() template.FuncMap {
+	return template.FuncMap{
+		"jsonString": mustJSONString,
+		"yamlString": mustJSONString,
+		"hclString": func(value any) string {
+			text := asString(value)
+			text = strings.ReplaceAll(text, "${", "$${")
+			text = strings.ReplaceAll(text, "%{", "%%{")
+			return mustJSONString(text)
+		},
+	}
+}
+
+func mustJSONString(value any) string {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		panic(err)
+	}
+	return string(encoded)
+}
+
+func asString(value any) string {
+	if text, ok := value.(string); ok {
+		return text
+	}
+	return strings.TrimSpace(fmt.Sprint(value))
 }
 
 func executeTemplate(tmpl *template.Template, data any) string {
@@ -129,36 +152,27 @@ func executeTemplate(tmpl *template.Template, data any) string {
 	return strings.TrimLeft(buf.String(), "\n")
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
-}
-
 const awsStackSetTemplate = `AWSTemplateFormatVersion: '2010-09-09'
 Description: Cerebro cross-account snapshot connector role (StackSet-safe)
 
 Parameters:
   CerebroPrincipalArn:
     Type: String
-    Default: {{.PrincipalARN}}
+    Default: {{yamlString .PrincipalARN}}
     Description: Control-plane principal allowed to assume the scan role.
   ExternalId:
     Type: String
-    Default: {{.ExternalID}}
+    Default: {{yamlString .ExternalID}}
     NoEcho: true
   RoleName:
     Type: String
-    Default: {{.RoleName}}
+    Default: {{yamlString .RoleName}}
   ManagedTagKey:
     Type: String
-    Default: {{.ManagedTagKey}}
+    Default: {{yamlString .ManagedTagKey}}
   ManagedTagValue:
     Type: String
-    Default: {{.ManagedTagVal}}
+    Default: {{yamlString .ManagedTagVal}}
 
 Resources:
   CerebroScanRole:
@@ -197,10 +211,10 @@ Resources:
                 Resource: '*'
                 Condition:
                   StringEquals:
-                    aws:RequestTag/{{.ManagedTagKey}}: {{.ManagedTagVal}}
+                    {{yamlString (print "aws:RequestTag/" .ManagedTagKey)}}: {{yamlString .ManagedTagVal}}
                   ForAllValues:StringEquals:
                     aws:TagKeys:
-                      - {{.ManagedTagKey}}
+                      - {{yamlString .ManagedTagKey}}
               - Sid: MutateTaggedArtifacts
                 Effect: Allow
                 Action:
@@ -212,7 +226,7 @@ Resources:
                 Resource: '*'
                 Condition:
                   StringEquals:
-                    aws:ResourceTag/{{.ManagedTagKey}}: {{.ManagedTagVal}}
+                    {{yamlString (print "aws:ResourceTag/" .ManagedTagKey)}}: {{yamlString .ManagedTagVal}}
               - Sid: AllowKMSForEC2SnapshotFlows
                 Effect: Allow
                 Action:
@@ -341,17 +355,17 @@ resource "google_service_account_iam_member" "wif_user" {
 
 const gcpVariablesTemplate = `variable "project_id" {
   type    = string
-  default = "{{.ProjectID}}"
+  default = {{hclString .ProjectID}}
 }
 
 variable "service_account_id" {
   type    = string
-  default = "{{.ServiceAccountID}}"
+  default = {{hclString .ServiceAccountID}}
 }
 
 variable "custom_role_id" {
   type    = string
-  default = "{{.CustomRoleID}}"
+  default = {{hclString .CustomRoleID}}
 }
 
 variable "enable_wif" {
@@ -361,27 +375,27 @@ variable "enable_wif" {
 
 variable "workload_identity_pool_id" {
   type    = string
-  default = "{{.WorkloadIdentityPoolID}}"
+  default = {{hclString .WorkloadIdentityPoolID}}
 }
 
 variable "workload_identity_provider_id" {
   type    = string
-  default = "{{.WorkloadIdentityProviderID}}"
+  default = {{hclString .WorkloadIdentityProviderID}}
 }
 
 variable "workload_identity_issuer_uri" {
   type    = string
-  default = "{{.WorkloadIdentityIssuerURI}}"
+  default = {{hclString .WorkloadIdentityIssuerURI}}
 }
 
 variable "workload_identity_audience" {
   type    = string
-  default = "{{.WorkloadIdentityAudience}}"
+  default = {{hclString .WorkloadIdentityAudience}}
 }
 
 variable "principal_subject" {
   type    = string
-  default = "{{.PrincipalSubject}}"
+  default = {{hclString .PrincipalSubject}}
 }
 `
 
@@ -570,27 +584,27 @@ resource "azurerm_role_assignment" "snapshot_operator" {
 
 const azureVariablesTemplate = `variable "subscription_id" {
   type    = string
-  default = "{{.SubscriptionID}}"
+  default = {{hclString .SubscriptionID}}
 }
 
 variable "tenant_id" {
   type    = string
-  default = "{{.TenantID}}"
+  default = {{hclString .TenantID}}
 }
 
 variable "location" {
   type    = string
-  default = "{{.Location}}"
+  default = {{hclString .Location}}
 }
 
 variable "principal_display_name" {
   type    = string
-  default = "{{.PrincipalDisplayName}}"
+  default = {{hclString .PrincipalDisplayName}}
 }
 
 variable "custom_role_name" {
   type    = string
-  default = "{{.CustomRoleName}}"
+  default = {{hclString .CustomRoleName}}
 }
 `
 

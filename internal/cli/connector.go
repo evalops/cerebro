@@ -25,6 +25,7 @@ import (
 	"golang.org/x/oauth2/google"
 
 	"github.com/evalops/cerebro/internal/connectors"
+	"github.com/evalops/cerebro/internal/textutil"
 )
 
 var connectorCmd = &cobra.Command{
@@ -238,7 +239,7 @@ func runConnectorScaffold(cmd *cobra.Command, args []string) error {
 	case string(connectors.ProviderGCP):
 		bundle, err = connectors.RenderGCPBundle(connectors.GCPRenderOptions{ProjectID: connectorGCPProjectID, ServiceAccountID: connectorGCPServiceAccountID, CustomRoleID: connectorGCPCustomRoleID, EnableWIF: connectorGCPEnableWIF, WorkloadIdentityPoolID: connectorGCPWIFPoolID, WorkloadIdentityProviderID: connectorGCPWIFProviderID, WorkloadIdentityIssuerURI: connectorGCPWIFIssuerURI, WorkloadIdentityAudience: connectorGCPWIFAudience, PrincipalSubject: connectorGCPPrincipalSubject})
 	case string(connectors.ProviderAzure):
-		bundle, err = connectors.RenderAzureBundle(connectors.AzureRenderOptions{SubscriptionID: firstNonEmptyString(strings.TrimSpace(connectorAzureSubscriptionID), strings.TrimSpace(syncAzureSubscription)), TenantID: connectorAzureTenantID, Location: connectorAzureLocation, PrincipalDisplayName: connectorAzureDisplayName, CustomRoleName: connectorAzureCustomRoleName})
+		bundle, err = connectors.RenderAzureBundle(connectors.AzureRenderOptions{SubscriptionID: textutil.FirstNonEmptyTrimmed(strings.TrimSpace(connectorAzureSubscriptionID), strings.TrimSpace(syncAzureSubscription)), TenantID: connectorAzureTenantID, Location: connectorAzureLocation, PrincipalDisplayName: connectorAzureDisplayName, CustomRoleName: connectorAzureCustomRoleName})
 	default:
 		return fmt.Errorf("unsupported connector provider %q", args[0])
 	}
@@ -333,7 +334,7 @@ func runAWSConnectorValidate(ctx context.Context) (connectorValidationReport, er
 		checks = append(checks, connectorValidationCheck{ID: "auth", Status: "failed", Detail: fmt.Sprintf("sts:GetCallerIdentity failed: %v", err)})
 		return finish(fmt.Errorf("aws connector auth: %w", err))
 	}
-	report.Principal = firstNonEmptyString(aws.ToString(ident.Arn), aws.ToString(ident.UserId))
+	report.Principal = textutil.FirstNonEmptyTrimmed(aws.ToString(ident.Arn), aws.ToString(ident.UserId))
 	checks = append(checks, connectorValidationCheck{ID: "auth", Status: "passed", Detail: fmt.Sprintf("caller=%s account=%s", report.Principal, aws.ToString(ident.Account))})
 
 	ec2Client := ec2.NewFromConfig(cfg)
@@ -451,7 +452,7 @@ func runAzureConnectorValidate(ctx context.Context) (connectorValidationReport, 
 		return report, err
 	}
 
-	subscriptionID := firstNonEmptyString(strings.TrimSpace(syncAzureSubscription), strings.TrimSpace(connectorAzureSubscriptionID))
+	subscriptionID := textutil.FirstNonEmptyTrimmed(strings.TrimSpace(syncAzureSubscription), strings.TrimSpace(connectorAzureSubscriptionID))
 	if subscriptionID == "" {
 		return finish(fmt.Errorf("--azure-subscription is required for Azure connector validation"))
 	}
@@ -465,7 +466,7 @@ func runAzureConnectorValidate(ctx context.Context) (connectorValidationReport, 
 		checks = append(checks, connectorValidationCheck{ID: "auth", Status: "failed", Detail: err.Error()})
 		return finish(fmt.Errorf("azure connector auth token: %w", err))
 	}
-	report.Principal = firstNonEmptyString(strings.TrimSpace(connectorAzureTenantID), "default_credential")
+	report.Principal = textutil.FirstNonEmptyTrimmed(strings.TrimSpace(connectorAzureTenantID), "default_credential")
 	checks = append(checks, connectorValidationCheck{ID: "auth", Status: "passed", Detail: fmt.Sprintf("management token acquired exp=%s", token.ExpiresOn.UTC().Format(time.RFC3339))})
 
 	if err := azureSubscriptionReadProbe(ctx, token.Token, subscriptionID); err != nil {
@@ -587,7 +588,7 @@ func awsDryRunCreateSnapshot(ctx context.Context, client *ec2.Client, volumeID, 
 		DryRun:      aws.Bool(true),
 		TagSpecifications: []ec2types.TagSpecification{{
 			ResourceType: ec2types.ResourceTypeSnapshot,
-			Tags:         []ec2types.Tag{{Key: aws.String(firstNonEmptyString(strings.TrimSpace(tagKey), "CerebroManagedBy")), Value: aws.String(firstNonEmptyString(strings.TrimSpace(tagValue), "cerebro"))}},
+			Tags:         []ec2types.Tag{{Key: aws.String(textutil.FirstNonEmptyTrimmed(strings.TrimSpace(tagKey), "CerebroManagedBy")), Value: aws.String(textutil.FirstNonEmptyTrimmed(strings.TrimSpace(tagValue), "cerebro"))}},
 		}},
 	})
 	return err
@@ -595,11 +596,11 @@ func awsDryRunCreateSnapshot(ctx context.Context, client *ec2.Client, volumeID, 
 
 func awsDryRunCopySnapshot(ctx context.Context, client *ec2.Client, snapshotID, tagKey, tagValue string) error {
 	_, err := client.CopySnapshot(ctx, &ec2.CopySnapshotInput{
-		SourceRegion:      aws.String(firstNonEmptyString(strings.TrimSpace(connectorAWSRegion), "us-east-1")),
+		SourceRegion:      aws.String(textutil.FirstNonEmptyTrimmed(strings.TrimSpace(connectorAWSRegion), "us-east-1")),
 		SourceSnapshotId:  aws.String(snapshotID),
 		Description:       aws.String("cerebro connector validate"),
 		DryRun:            aws.Bool(true),
-		TagSpecifications: []ec2types.TagSpecification{{ResourceType: ec2types.ResourceTypeSnapshot, Tags: []ec2types.Tag{{Key: aws.String(firstNonEmptyString(strings.TrimSpace(tagKey), "CerebroManagedBy")), Value: aws.String(firstNonEmptyString(strings.TrimSpace(tagValue), "cerebro"))}}}},
+		TagSpecifications: []ec2types.TagSpecification{{ResourceType: ec2types.ResourceTypeSnapshot, Tags: []ec2types.Tag{{Key: aws.String(textutil.FirstNonEmptyTrimmed(strings.TrimSpace(tagKey), "CerebroManagedBy")), Value: aws.String(textutil.FirstNonEmptyTrimmed(strings.TrimSpace(tagValue), "cerebro"))}}}},
 	})
 	return err
 }
@@ -786,13 +787,4 @@ func azureActionMatches(pattern, required string) bool {
 
 func policyTokenRequestOptions() azpolicy.TokenRequestOptions {
 	return azpolicy.TokenRequestOptions{Scopes: []string{"https://management.azure.com/.default"}}
-}
-
-func firstNonEmptyString(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
 }

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestRenderAWSBundleDefaults(t *testing.T) {
@@ -121,5 +123,73 @@ func TestRenderAzureBundleEscapesJSONValues(t *testing.T) {
 	subscription := paramValues["subscriptionId"].(map[string]any)
 	if subscription["value"] != opts.SubscriptionID {
 		t.Fatalf("expected subscription value %q, got %#v", opts.SubscriptionID, subscription["value"])
+	}
+}
+
+func TestRenderAWSBundleEscapesYAMLScalars(t *testing.T) {
+	opts := AWSRenderOptions{
+		PrincipalARN:  "arn:aws:iam::111122223333:role/Cerebro",
+		ExternalID:    "true",
+		RoleName:      `Cerebro "Ops"`,
+		ManagedTagKey: "*managed",
+		ManagedTagVal: "${unsafe}",
+	}
+	bundle, err := RenderAWSBundle(opts)
+	if err != nil {
+		t.Fatalf("RenderAWSBundle: %v", err)
+	}
+	var root yaml.Node
+	if err := yaml.Unmarshal([]byte(bundle.Files[0].Content), &root); err != nil {
+		t.Fatalf("expected valid YAML template: %v\n%s", err, bundle.Files[0].Content)
+	}
+	if !strings.Contains(bundle.Files[0].Content, `Default: "true"`) {
+		t.Fatalf("expected external ID to remain quoted YAML string, got:\n%s", bundle.Files[0].Content)
+	}
+	if !strings.Contains(bundle.Files[0].Content, `"aws:RequestTag/*managed": "${unsafe}"`) {
+		t.Fatalf("expected managed tag condition to be YAML-quoted, got:\n%s", bundle.Files[0].Content)
+	}
+}
+
+func TestRenderGCPBundleEscapesHCLDefaults(t *testing.T) {
+	opts := GCPRenderOptions{
+		ProjectID:                `project"one`,
+		ServiceAccountID:         `svc\acct`,
+		WorkloadIdentityAudience: `%{ if injected }`,
+		PrincipalSubject:         `repo:${injected}`,
+	}
+	bundle, err := RenderGCPBundle(opts)
+	if err != nil {
+		t.Fatalf("RenderGCPBundle: %v", err)
+	}
+	variables := bundle.Files[1].Content
+	if !strings.Contains(variables, `default = "project\"one"`) {
+		t.Fatalf("expected project ID to be HCL-escaped, got:\n%s", variables)
+	}
+	if !strings.Contains(variables, `default = "svc\\acct"`) {
+		t.Fatalf("expected service account ID to escape backslashes, got:\n%s", variables)
+	}
+	if !strings.Contains(variables, `default = "%%{ if injected }"`) {
+		t.Fatalf("expected HCL directive opener to be escaped, got:\n%s", variables)
+	}
+	if !strings.Contains(variables, `default = "repo:$${injected}"`) {
+		t.Fatalf("expected HCL interpolation opener to be escaped, got:\n%s", variables)
+	}
+}
+
+func TestRenderAzureBundleEscapesHCLDefaults(t *testing.T) {
+	opts := AzureRenderOptions{
+		PrincipalDisplayName: `cerebro "${danger}"`,
+		CustomRoleName:       `%{ if danger }`,
+	}
+	bundle, err := RenderAzureBundle(opts)
+	if err != nil {
+		t.Fatalf("RenderAzureBundle: %v", err)
+	}
+	variables := bundle.Files[3].Content
+	if !strings.Contains(variables, `default = "cerebro \"$${danger}\""`) {
+		t.Fatalf("expected display name interpolation to be escaped, got:\n%s", variables)
+	}
+	if !strings.Contains(variables, `default = "%%{ if danger }"`) {
+		t.Fatalf("expected custom role name directive opener to be escaped, got:\n%s", variables)
 	}
 }
