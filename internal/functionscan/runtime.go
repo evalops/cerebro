@@ -24,13 +24,30 @@ const defaultCleanupTimeout = 2 * time.Minute
 const redactedSecretValue = "<redacted>"
 
 var (
-	embeddedURLPattern  = regexp.MustCompile(`https?://[^\s"'<>]+`)
-	envSecretKeyPattern = regexp.MustCompile(`(?i)(secret|token|password|passwd|api[_-]?key|credential|private[_-]?key|connection[_-]?string)`)
-	awsAccessKeyPattern = regexp.MustCompile(`AKIA[0-9A-Z]{16}`)
-	githubTokenPattern  = regexp.MustCompile(`gh[pousr]_[A-Za-z0-9_]{20,}`)
-	slackTokenPattern   = regexp.MustCompile(`xox[baprs]-[A-Za-z0-9-]{10,}`)
-	privateKeyPattern   = regexp.MustCompile(`-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----`)
-	inlineSecretPattern = regexp.MustCompile(`(?i)(password|passwd|pwd|secret|token|api[_-]?key)\s*[:=]`)
+	embeddedURLPattern   = regexp.MustCompile(`https?://[^\s"'<>]+`)
+	envSecretKeyPattern  = regexp.MustCompile(`(?i)(secret|token|password|passwd|api[_-]?key|credential|private[_-]?key|connection[_-]?string)`)
+	awsAccessKeyPattern  = regexp.MustCompile(`AKIA[0-9A-Z]{16}`)
+	githubTokenPattern   = regexp.MustCompile(`gh[pousr]_[A-Za-z0-9_]{20,}`)
+	slackTokenPattern    = regexp.MustCompile(`xox[baprs]-[A-Za-z0-9-]{10,}`)
+	privateKeyPattern    = regexp.MustCompile(`-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----`)
+	inlineSecretPattern  = regexp.MustCompile(`(?i)(password|passwd|pwd|secret|token|api[_-]?key)\s*[:=]`)
+	persistedSafeEnvKeys = map[string]struct{}{
+		"AWS_DEFAULT_REGION":          {},
+		"AWS_REGION":                  {},
+		"FUNCTIONS_EXTENSION_VERSION": {},
+		"FUNCTIONS_WORKER_RUNTIME":    {},
+		"FUNCTION_SIGNATURE_TYPE":     {},
+		"FUNCTION_TARGET":             {},
+		"GOOGLE_ENTRYPOINT":           {},
+		"GOOGLE_RUNTIME":              {},
+		"K_CONFIGURATION":             {},
+		"K_REVISION":                  {},
+		"K_SERVICE":                   {},
+		"LOG_LEVEL":                   {},
+		"NODE_ENV":                    {},
+		"PORT":                        {},
+		"WEBSITE_SITE_NAME":           {},
+	}
 )
 
 type EventEmitter interface {
@@ -646,11 +663,17 @@ func redactSensitiveEnv(src map[string]string) map[string]string {
 	}
 	out := make(map[string]string, len(src))
 	for key, value := range src {
-		if envSecretKeyPattern.MatchString(strings.TrimSpace(key)) || (looksSensitiveValue(value) && !looksPlaceholderValue(value)) {
-			out[key] = redactedSecretValue
+		trimmedKey := strings.ToUpper(strings.TrimSpace(key))
+		trimmedValue := strings.TrimSpace(value)
+		if trimmedValue == "" {
+			out[key] = value
 			continue
 		}
-		out[key] = value
+		if _, ok := persistedSafeEnvKeys[trimmedKey]; ok {
+			out[key] = value
+			continue
+		}
+		out[key] = redactedSecretValue
 	}
 	return out
 }

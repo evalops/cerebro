@@ -172,11 +172,15 @@ func TestRunnerPersistsResultsAndEmitsLifecycleEvents(t *testing.T) {
 	provider := &fakeProvider{
 		kind: ProviderAWS,
 		descriptor: &FunctionDescriptor{
-			ID:          "arn:aws:lambda:us-east-1:123:function:demo",
-			Name:        "demo",
-			Runtime:     "python3.8",
-			CodeSHA256:  "sha256-demo",
-			Environment: map[string]string{"DB_PASSWORD": "supersecret-value"},
+			ID:         "arn:aws:lambda:us-east-1:123:function:demo",
+			Name:       "demo",
+			Runtime:    "python3.8",
+			CodeSHA256: "sha256-demo",
+			Environment: map[string]string{
+				"DB_PASSWORD":              "supersecret-value",
+				"AzureWebJobsStorage":      "DefaultEndpointsProtocol=https;AccountName=acct;AccountKey=supersecret",
+				"FUNCTIONS_WORKER_RUNTIME": "python",
+			},
 			Artifacts: []ArtifactRef{
 				{ID: "function_code", Kind: ArtifactFunctionCode, Format: ArchiveFormatZIP},
 			},
@@ -223,6 +227,12 @@ func TestRunnerPersistsResultsAndEmitsLifecycleEvents(t *testing.T) {
 	if got := run.Descriptor.Environment["DB_PASSWORD"]; got != redactedSecretValue {
 		t.Fatalf("expected persisted environment secret to be redacted, got %q", got)
 	}
+	if got := run.Descriptor.Environment["AzureWebJobsStorage"]; got != redactedSecretValue {
+		t.Fatalf("expected non-allowlisted environment value to be redacted by default, got %q", got)
+	}
+	if got := run.Descriptor.Environment["FUNCTIONS_WORKER_RUNTIME"]; got != "python" {
+		t.Fatalf("expected allowlisted runtime environment value to remain visible, got %q", got)
+	}
 	if run.Analysis.CodeSecretCount != 1 {
 		t.Fatalf("expected one code secret, got %d", run.Analysis.CodeSecretCount)
 	}
@@ -241,6 +251,23 @@ func TestRunnerPersistsResultsAndEmitsLifecycleEvents(t *testing.T) {
 	}
 	if persisted == nil || persisted.Analysis == nil {
 		t.Fatal("expected persisted run with analysis")
+	}
+}
+
+func TestRedactSensitiveEnvDefaultsToRedaction(t *testing.T) {
+	got := redactSensitiveEnv(map[string]string{
+		"AzureWebJobsStorage":      "DefaultEndpointsProtocol=https;AccountName=acct;AccountKey=supersecret",
+		"FUNCTIONS_WORKER_RUNTIME": "node",
+		"EMPTY_VALUE":              "",
+	})
+	if got["AzureWebJobsStorage"] != redactedSecretValue {
+		t.Fatalf("expected AzureWebJobsStorage to be redacted, got %q", got["AzureWebJobsStorage"])
+	}
+	if got["FUNCTIONS_WORKER_RUNTIME"] != "node" {
+		t.Fatalf("expected allowlisted runtime key to remain visible, got %q", got["FUNCTIONS_WORKER_RUNTIME"])
+	}
+	if got["EMPTY_VALUE"] != "" {
+		t.Fatalf("expected empty values to remain empty, got %q", got["EMPTY_VALUE"])
 	}
 }
 
