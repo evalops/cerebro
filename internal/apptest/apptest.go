@@ -50,6 +50,7 @@ func NewConfig(t *testing.T) *app.Config {
 
 // NewApp creates a minimal in-memory App suitable for cross-package tests.
 func NewApp(t *testing.T) *app.App {
+	t.Helper()
 	return NewAppWithWarehouse(t, nil)
 }
 
