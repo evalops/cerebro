@@ -32,6 +32,57 @@ func TestImportEPSSCSVRejectsOversizedInputs(t *testing.T) {
 	}
 }
 
+func TestImportKEVJSONRejectsOversizedInputs(t *testing.T) {
+	store, err := NewSQLiteStore(t.TempDir() + "/vulndb.db")
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	service := NewService(store)
+
+	previousBytes := maxKEVImportBytes
+	previousRows := maxKEVImportRows
+	maxKEVImportBytes = 32
+	maxKEVImportRows = 2
+	t.Cleanup(func() {
+		maxKEVImportBytes = previousBytes
+		maxKEVImportRows = previousRows
+	})
+
+	_, err = service.ImportKEVJSON(context.Background(), "kev-test", strings.NewReader(`{"vulnerabilities":[{"cveID":"CVE-2026-0001"},{"cveID":"CVE-2026-0002"},{"cveID":"CVE-2026-0003"}]}`))
+	if err == nil {
+		t.Fatal("expected oversized KEV input to fail")
+	}
+	if !strings.Contains(err.Error(), "exceeded maximum") {
+		t.Fatalf("expected maximum-bound error, got %v", err)
+	}
+}
+
+func TestImportKEVJSONStreamsAndMatches(t *testing.T) {
+	store, err := NewSQLiteStore(t.TempDir() + "/vulndb.db")
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	service := NewService(store)
+
+	if err := store.UpsertAdvisory(context.Background(), Vulnerability{
+		ID:      "GHSA-test-0001",
+		Aliases: []string{"CVE-2026-0001"},
+		Source:  "osv",
+	}, nil); err != nil {
+		t.Fatalf("UpsertAdvisory: %v", err)
+	}
+
+	report, err := service.ImportKEVJSON(context.Background(), "kev-test", strings.NewReader(`{"title":"KEV","vulnerabilities":[{"cveID":"CVE-2026-0001"},{"cveID":"CVE-2026-9999"}]}`))
+	if err != nil {
+		t.Fatalf("ImportKEVJSON: %v", err)
+	}
+	if report.Imported != 2 || report.MatchedKEV != 1 {
+		t.Fatalf("expected streamed KEV import to count two records and match one advisory, got %#v", report)
+	}
+}
+
 func TestImportEPSSCSVSkipsCommentLines(t *testing.T) {
 	store, err := NewSQLiteStore(t.TempDir() + "/vulndb.db")
 	if err != nil {

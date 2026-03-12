@@ -26,6 +26,8 @@ var (
 	vulnDBSyncEPSS     string
 )
 
+var importHTTPTransport http.RoundTripper = http.DefaultTransport
+
 var vulndbCmd = &cobra.Command{
 	Use:   "vulndb",
 	Short: "Manage the persisted vulnerability advisory database",
@@ -187,7 +189,7 @@ func runVulnDBSync(cmd *cobra.Command, _ []string) error {
 		if item.input == "" {
 			continue
 		}
-		reader, closerFunc, source, err := openImportReader(commandContextOrBackground(cmd), item.input, item.defaultSource, vulnDBAllowHTTP)
+		reader, closerFunc, source, err := openImportReader(commandContextOrBackground(cmd), item.input, "", item.defaultSource, vulnDBAllowHTTP)
 		if err != nil {
 			return fmt.Errorf("%s sync source: %w", item.kind, err)
 		}
@@ -235,7 +237,7 @@ func runVulnDBImport(ctx context.Context, defaultSource string, importer func(co
 		return err
 	}
 	defer func() { _ = closer.Close() }()
-	reader, closerFunc, source, err := openImportReader(ctx, vulnDBImportInput, firstNonEmptyString(vulnDBImportSource, defaultSource), vulnDBAllowHTTP)
+	reader, closerFunc, source, err := openImportReader(ctx, vulnDBImportInput, vulnDBImportSource, defaultSource, vulnDBAllowHTTP)
 	if err != nil {
 		return err
 	}
@@ -267,13 +269,14 @@ func runVulnDBImport(ctx context.Context, defaultSource string, importer func(co
 	return nil
 }
 
-func openImportReader(ctx context.Context, input, fallbackSource string, allowInsecureHTTP bool) (io.Reader, func() error, string, error) {
+func openImportReader(ctx context.Context, input, explicitSource, fallbackSource string, allowInsecureHTTP bool) (io.Reader, func() error, string, error) {
 	input = strings.TrimSpace(input)
 	if input == "" {
 		return nil, nil, "", fmt.Errorf("--input is required")
 	}
+	sourceLabel := sanitizeSourceLabel(firstNonEmptyString(explicitSource, fallbackSource, input))
 	if input == "-" {
-		return os.Stdin, nil, fallbackSource, nil
+		return os.Stdin, nil, sourceLabel, nil
 	}
 	if strings.HasPrefix(input, "http://") || strings.HasPrefix(input, "https://") {
 		if strings.HasPrefix(input, "http://") && !allowInsecureHTTP {
@@ -283,14 +286,14 @@ func openImportReader(ctx context.Context, input, fallbackSource string, allowIn
 		if requestContext == nil {
 			requestContext = context.Background()
 		}
-		if strings.HasPrefix(input, "http://") {
-			fmt.Fprintf(os.Stderr, "warning: allowing insecure advisory feed import over http: %s\n", sanitizeSourceLabel(input))
+		if err := validateImportURLScheme(input, allowInsecureHTTP); err != nil {
+			return nil, nil, "", err
 		}
 		req, err := http.NewRequestWithContext(requestContext, http.MethodGet, input, nil)
 		if err != nil {
 			return nil, nil, "", fmt.Errorf("build import request: %w", err)
 		}
-		resp, err := (&http.Client{Timeout: 60 * time.Second}).Do(req) // #nosec G107 -- explicit user-provided ingest URL for feed import
+		resp, err := newImportHTTPClient(allowInsecureHTTP).Do(req) // #nosec G107 -- explicit user-provided ingest URL for feed import
 		if err != nil {
 			return nil, nil, "", fmt.Errorf("fetch import source: %w", err)
 		}
@@ -298,13 +301,45 @@ func openImportReader(ctx context.Context, input, fallbackSource string, allowIn
 			_ = resp.Body.Close()
 			return nil, nil, "", fmt.Errorf("import source returned status %d", resp.StatusCode)
 		}
-		return resp.Body, resp.Body.Close, sanitizeSourceLabel(firstNonEmptyString(vulnDBImportSource, input, fallbackSource)), nil
+		return resp.Body, resp.Body.Close, sourceLabel, nil
 	}
 	file, err := os.Open(input) // #nosec G304 -- explicit operator-provided feed path for local advisory import
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("open import source: %w", err)
 	}
-	return file, file.Close, sanitizeSourceLabel(firstNonEmptyString(vulnDBImportSource, input, fallbackSource)), nil
+	return file, file.Close, sourceLabel, nil
+}
+
+func newImportHTTPClient(allowInsecureHTTP bool) *http.Client {
+	return &http.Client{
+		Timeout:   60 * time.Second,
+		Transport: importHTTPTransport,
+		CheckRedirect: func(req *http.Request, _ []*http.Request) error {
+			if err := validateImportURLScheme(req.URL.String(), allowInsecureHTTP); err != nil {
+				return err
+			}
+			return nil
+		},
+	}
+}
+
+func validateImportURLScheme(raw string, allowInsecureHTTP bool) error {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return fmt.Errorf("parse import url: %w", err)
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "https":
+		return nil
+	case "http":
+		if !allowInsecureHTTP {
+			return fmt.Errorf("insecure http advisory feeds require --allow-insecure-http: %s", sanitizeSourceLabel(raw))
+		}
+		fmt.Fprintf(os.Stderr, "warning: allowing insecure advisory feed import over http: %s\n", sanitizeSourceLabel(raw))
+		return nil
+	default:
+		return fmt.Errorf("unsupported import URL scheme %q", parsed.Scheme)
+	}
 }
 
 func firstNonEmptyString(values ...string) string {
