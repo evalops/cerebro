@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -22,6 +23,8 @@ import (
 	nativesync "github.com/evalops/cerebro/internal/sync"
 	"golang.org/x/sync/errgroup"
 )
+
+var postSyncGraphUpdateTimeout = 30 * time.Minute
 
 func (s *Server) backfillRelationshipIDs(w http.ResponseWriter, r *http.Request) {
 	var req struct {
@@ -820,7 +823,10 @@ func (s *Server) applySecurityGraphUpdateAfterSync(ctx context.Context, provider
 	}
 
 	trigger := "sync_" + strings.ToLower(strings.TrimSpace(provider))
-	summary, err := s.app.ApplySecurityGraphChanges(ctx, trigger)
+	graphCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), postSyncGraphUpdateTimeout)
+	defer cancel()
+
+	summary, err := s.app.ApplySecurityGraphChanges(graphCtx, trigger)
 	if err != nil {
 		s.app.Logger.Warn("post-sync graph update failed", "provider", provider, "error", err)
 		return map[string]any{

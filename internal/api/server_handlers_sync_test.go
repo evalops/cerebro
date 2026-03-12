@@ -2,9 +2,7 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -20,12 +18,22 @@ type syncGraphSource struct {
 	latest time.Time
 	events []map[string]any
 	err    error
+	block  bool
 }
 
 func (s *syncGraphSource) Query(ctx context.Context, query string, args ...any) (*graph.QueryResult, error) {
 	_ = ctx
 	_ = args
 	lower := strings.ToLower(query)
+
+	s.mu.Lock()
+	block := s.block
+	s.mu.Unlock()
+
+	if block {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -350,7 +358,7 @@ func TestSyncAWS_GraphUpdateFailureIsSanitized(t *testing.T) {
 	s := newTestServer(t)
 	s.app.Snowflake = &snowflake.Client{}
 
-	source := &syncGraphSource{}
+	source := &syncGraphSource{block: true}
 	builder := graph.NewBuilder(source, s.app.Logger)
 	s.app.SecurityGraphBuilder = builder
 	s.app.SecurityGraph = builder.Graph()
@@ -363,19 +371,13 @@ func TestSyncAWS_GraphUpdateFailureIsSanitized(t *testing.T) {
 		}, nil
 	}
 
-	bodyBytes, err := json.Marshal(map[string]interface{}{
+	originalTimeout := postSyncGraphUpdateTimeout
+	postSyncGraphUpdateTimeout = 5 * time.Millisecond
+	t.Cleanup(func() { postSyncGraphUpdateTimeout = originalTimeout })
+
+	w := do(t, s, http.MethodPost, "/api/v1/sync/aws", map[string]interface{}{
 		"region": "us-east-1",
 	})
-	if err != nil {
-		t.Fatalf("marshal body: %v", err)
-	}
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync/aws", strings.NewReader(string(bodyBytes)))
-	req.Header.Set("Content-Type", "application/json")
-	ctx, cancel := context.WithCancel(req.Context())
-	cancel()
-	req = req.WithContext(ctx)
-	w := httptest.NewRecorder()
-	s.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
@@ -394,8 +396,53 @@ func TestSyncAWS_GraphUpdateFailureIsSanitized(t *testing.T) {
 	if graphUpdate["error_code"] != "GRAPH_UPDATE_FAILED" {
 		t.Fatalf("expected graph update error code, got %#v", graphUpdate["error_code"])
 	}
-	if strings.Contains(w.Body.String(), context.Canceled.Error()) {
+	if strings.Contains(w.Body.String(), context.DeadlineExceeded.Error()) {
 		t.Fatalf("expected raw backend error to stay out of response body, got %s", w.Body.String())
+	}
+}
+
+func TestSyncAWS_GraphUpdateNoopSummaryUsesEmptyTablesArray(t *testing.T) {
+	s := newTestServer(t)
+	s.app.Snowflake = &snowflake.Client{}
+
+	source := &syncGraphSource{}
+	builder := graph.NewBuilder(source, s.app.Logger)
+	s.app.SecurityGraphBuilder = builder
+	s.app.SecurityGraph = builder.Graph()
+
+	originalRun := runAWSSyncWithOptions
+	t.Cleanup(func() { runAWSSyncWithOptions = originalRun })
+	runAWSSyncWithOptions = func(ctx context.Context, client *snowflake.Client, req awsSyncRequest) (*awsSyncOutcome, error) {
+		return &awsSyncOutcome{
+			Results: []nativesync.SyncResult{{Table: "aws_s3_buckets", Synced: 1}},
+		}, nil
+	}
+
+	w := do(t, s, http.MethodPost, "/api/v1/sync/aws", map[string]interface{}{
+		"region": "us-east-1",
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	body := decodeJSON(t, w)
+	graphUpdate, ok := body["graph_update"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected graph_update payload, got %#v", body["graph_update"])
+	}
+	if graphUpdate["status"] != "noop" {
+		t.Fatalf("expected graph update status noop, got %#v", graphUpdate)
+	}
+	summary, ok := graphUpdate["summary"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected graph update summary, got %#v", graphUpdate["summary"])
+	}
+	tables, ok := summary["tables"].([]any)
+	if !ok {
+		t.Fatalf("expected tables array, got %#v", summary["tables"])
+	}
+	if len(tables) != 0 {
+		t.Fatalf("expected empty tables array, got %#v", tables)
 	}
 }
 

@@ -62,6 +62,7 @@ func (b *Builder) ApplyChanges(ctx context.Context, since time.Time) (GraphMutat
 	summary.EventsProcessed = len(events)
 	if len(events) == 0 {
 		now := time.Now().UTC()
+		summary.Tables = []string{}
 		summary.Until = now
 		summary.NodeCount = currentGraph.NodeCount()
 		summary.EdgeCount = currentGraph.EdgeCount()
@@ -785,11 +786,15 @@ func firstNonEmpty(values ...string) string {
 }
 
 func (s GraphMutationSummary) Payload(trigger string) map[string]any {
+	tables := s.Tables
+	if tables == nil {
+		tables = []string{}
+	}
 	payload := map[string]any{
 		"mode":             s.Mode,
 		"since":            s.Since.UTC().Format(time.RFC3339Nano),
 		"until":            s.Until.UTC().Format(time.RFC3339Nano),
-		"tables":           s.Tables,
+		"tables":           tables,
 		"events_processed": s.EventsProcessed,
 		"nodes_added":      s.NodesAdded,
 		"nodes_updated":    s.NodesUpdated,
