@@ -102,6 +102,7 @@ func (a *App) maybeStartGraphConsistencyCheck(trigger string, summary graph.Grap
 	}
 	a.graphConsistencyRun = true
 	a.graphConsistencyLast = now
+	a.graphConsistencyWG.Add(1)
 	baseCtx := a.graphCtx
 	if baseCtx == nil {
 		baseCtx = context.Background()
@@ -110,7 +111,6 @@ func (a *App) maybeStartGraphConsistencyCheck(trigger string, summary graph.Grap
 	a.graphConsistencyCancel = cancel
 	a.graphConsistencyMu.Unlock()
 
-	a.graphConsistencyWG.Add(1)
 	go func() {
 		defer a.graphConsistencyWG.Done()
 		defer func() {
