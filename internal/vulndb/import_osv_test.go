@@ -56,3 +56,18 @@ func TestImportEPSSCSVSkipsCommentLines(t *testing.T) {
 		t.Fatalf("expected comment-prefixed EPSS import to match one record, got %#v", report)
 	}
 }
+
+func TestExtractOSVSeverityParsesCVSSVectors(t *testing.T) {
+	severity, score := extractOSVSeverity(osvAdvisory{
+		Severity: []osvSeverity{{
+			Type:  "CVSS_V3",
+			Score: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+		}},
+	})
+	if severity != "critical" {
+		t.Fatalf("expected critical severity from CVSS vector, got %q", severity)
+	}
+	if score < 9.8 {
+		t.Fatalf("expected CVSS score near 9.8, got %f", score)
+	}
+}

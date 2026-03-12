@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -315,12 +316,105 @@ func extractOSVSeverity(doc osvAdvisory) (string, float64) {
 		}
 	}
 	for _, sev := range doc.Severity {
-		score, err := strconv.ParseFloat(strings.TrimSpace(sev.Score), 64)
+		score, err := parseSeverityScore(strings.TrimSpace(sev.Score))
 		if err == nil {
 			return severityFromScore(score), score
 		}
 	}
 	return "unknown", 0
+}
+
+func parseSeverityScore(raw string) (float64, error) {
+	score, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err == nil {
+		return score, nil
+	}
+	return parseCVSSVectorScore(raw)
+}
+
+func parseCVSSVectorScore(raw string) (float64, error) {
+	vector := strings.TrimSpace(raw)
+	if vector == "" {
+		return 0, fmt.Errorf("empty cvss vector")
+	}
+	parts := strings.Split(vector, "/")
+	if len(parts) < 2 || !strings.HasPrefix(parts[0], "CVSS:3.") {
+		return 0, fmt.Errorf("unsupported cvss vector %q", raw)
+	}
+	metrics := make(map[string]string, len(parts)-1)
+	for _, part := range parts[1:] {
+		key, value, ok := strings.Cut(part, ":")
+		if !ok {
+			continue
+		}
+		metrics[strings.TrimSpace(key)] = strings.TrimSpace(value)
+	}
+	scope := metrics["S"]
+	if scope != "U" && scope != "C" {
+		return 0, fmt.Errorf("missing scope metric")
+	}
+	av, ok := map[string]float64{"N": 0.85, "A": 0.62, "L": 0.55, "P": 0.2}[metrics["AV"]]
+	if !ok {
+		return 0, fmt.Errorf("missing attack vector metric")
+	}
+	ac, ok := map[string]float64{"L": 0.77, "H": 0.44}[metrics["AC"]]
+	if !ok {
+		return 0, fmt.Errorf("missing attack complexity metric")
+	}
+	ui, ok := map[string]float64{"N": 0.85, "R": 0.62}[metrics["UI"]]
+	if !ok {
+		return 0, fmt.Errorf("missing user interaction metric")
+	}
+	pr, ok := privilegeRequiredWeight(metrics["PR"], scope)
+	if !ok {
+		return 0, fmt.Errorf("missing privileges required metric")
+	}
+	conf, ok := map[string]float64{"H": 0.56, "L": 0.22, "N": 0}[metrics["C"]]
+	if !ok {
+		return 0, fmt.Errorf("missing confidentiality metric")
+	}
+	integ, ok := map[string]float64{"H": 0.56, "L": 0.22, "N": 0}[metrics["I"]]
+	if !ok {
+		return 0, fmt.Errorf("missing integrity metric")
+	}
+	avail, ok := map[string]float64{"H": 0.56, "L": 0.22, "N": 0}[metrics["A"]]
+	if !ok {
+		return 0, fmt.Errorf("missing availability metric")
+	}
+
+	iss := 1 - ((1 - conf) * (1 - integ) * (1 - avail))
+	var impact float64
+	if scope == "U" {
+		impact = 6.42 * iss
+	} else {
+		impact = 7.52*(iss-0.029) - 3.25*math.Pow(iss-0.02, 15)
+	}
+	if impact <= 0 {
+		return 0, nil
+	}
+	exploitability := 8.22 * av * ac * pr * ui
+	var scoreValue float64
+	if scope == "U" {
+		scoreValue = math.Min(impact+exploitability, 10)
+	} else {
+		scoreValue = math.Min(1.08*(impact+exploitability), 10)
+	}
+	return roundUpOneDecimal(scoreValue), nil
+}
+
+func privilegeRequiredWeight(raw, scope string) (float64, bool) {
+	switch scope {
+	case "C":
+		value, ok := map[string]float64{"N": 0.85, "L": 0.68, "H": 0.5}[raw]
+		return value, ok
+	default:
+		value, ok := map[string]float64{"N": 0.85, "L": 0.62, "H": 0.27}[raw]
+		return value, ok
+	}
+}
+
+func roundUpOneDecimal(value float64) float64 {
+	return math.Ceil(value*10) / 10
 }
 
 func firstNonSpaceByte(r *bufio.Reader) (byte, error) {
