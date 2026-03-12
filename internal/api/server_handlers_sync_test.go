@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"sync"
@@ -443,6 +444,47 @@ func TestSyncAWS_GraphUpdateNoopSummaryUsesEmptyTablesArray(t *testing.T) {
 	}
 	if len(tables) != 0 {
 		t.Fatalf("expected empty tables array, got %#v", tables)
+	}
+}
+
+func TestSyncAWS_FullRebuildFallbackReportsAppliedStatus(t *testing.T) {
+	s := newTestServer(t)
+	s.app.Snowflake = &snowflake.Client{}
+
+	source := &syncGraphSource{err: errors.New("cdc unavailable")}
+	builder := graph.NewBuilder(source, s.app.Logger)
+	s.app.SecurityGraphBuilder = builder
+	s.app.SecurityGraph = builder.Graph()
+
+	originalRun := runAWSSyncWithOptions
+	t.Cleanup(func() { runAWSSyncWithOptions = originalRun })
+	runAWSSyncWithOptions = func(ctx context.Context, client *snowflake.Client, req awsSyncRequest) (*awsSyncOutcome, error) {
+		return &awsSyncOutcome{
+			Results: []nativesync.SyncResult{{Table: "aws_s3_buckets", Synced: 1}},
+		}, nil
+	}
+
+	w := do(t, s, http.MethodPost, "/api/v1/sync/aws", map[string]interface{}{
+		"region": "us-east-1",
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	body := decodeJSON(t, w)
+	graphUpdate, ok := body["graph_update"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected graph_update payload, got %#v", body["graph_update"])
+	}
+	if graphUpdate["status"] != "applied" {
+		t.Fatalf("expected graph update status applied after full rebuild fallback, got %#v", graphUpdate)
+	}
+	summary, ok := graphUpdate["summary"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected graph update summary, got %#v", graphUpdate["summary"])
+	}
+	if summary["mode"] != graph.GraphMutationModeFullRebuild {
+		t.Fatalf("expected full rebuild summary mode, got %#v", summary["mode"])
 	}
 }
 

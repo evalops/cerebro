@@ -19,6 +19,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
 	orgtypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/evalops/cerebro/internal/graph"
 	"github.com/evalops/cerebro/internal/snowflake"
 	nativesync "github.com/evalops/cerebro/internal/sync"
 	"golang.org/x/sync/errgroup"
@@ -838,7 +839,7 @@ func (s *Server) applySecurityGraphUpdateAfterSync(ctx context.Context, provider
 	}
 
 	status := "noop"
-	if summary.EventsProcessed > 0 {
+	if summary.Mode == graph.GraphMutationModeFullRebuild || summary.HasChanges() {
 		status = "applied"
 	}
 	return map[string]any{
