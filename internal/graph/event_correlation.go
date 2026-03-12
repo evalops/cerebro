@@ -328,6 +328,9 @@ func purgeDerivedEventCorrelationEdges(g *Graph) int {
 			}
 		}
 	}
+	if removed > 0 {
+		g.CompactDeletedEdges()
+	}
 	return removed
 }
 

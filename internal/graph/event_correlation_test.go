@@ -83,6 +83,12 @@ func TestMaterializeEventCorrelationsBuildsCausalChain(t *testing.T) {
 	if got := countMaterializedCorrelationEdges(g); got != 2 {
 		t.Fatalf("expected 2 active materialized correlation edges after rerun, got %d", got)
 	}
+	if got := len(g.outEdges["deployment:payments:deploy-1"]); got != 2 {
+		t.Fatalf("expected compacted deployment adjacency to keep 2 edges, got %d", got)
+	}
+	if got := len(g.outEdges["incident:inc-1"]); got != 2 {
+		t.Fatalf("expected compacted incident adjacency to keep 2 edges, got %d", got)
+	}
 }
 
 func TestQueryEventCorrelationsIncludesFailureSpikeAnomaly(t *testing.T) {
