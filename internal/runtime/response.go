@@ -72,8 +72,11 @@ var supportedResponseActions = []ResponseActionType{
 	ActionKillProcess,
 	ActionIsolateContainer,
 	ActionIsolateHost,
+	ActionQuarantineFile,
 	ActionBlockIP,
 	ActionBlockDomain,
+	ActionRevokeCredentials,
+	ActionScaleDown,
 	ActionAlert,
 	ActionCreateTicket,
 }
@@ -185,6 +188,13 @@ func (e *ResponseEngine) SetSharedExecutor(shared *actionengine.Executor) {
 		return
 	}
 	e.shared = shared
+}
+
+func (e *ResponseEngine) Blocklist() *Blocklist {
+	if e == nil {
+		return nil
+	}
+	return e.blocklist
 }
 
 func (e *ResponseEngine) loadDefaultPolicies() {
@@ -398,6 +408,17 @@ func (e *ResponseEngine) executeAction(ctx context.Context, action PolicyAction,
 		if finding.Event != nil && finding.Event.Network != nil {
 			return e.actionHandler.BlockDomain(ctx, finding.Event.Network.Domain)
 		}
+
+	case ActionQuarantineFile:
+		if finding.Event != nil && finding.Event.File != nil {
+			return e.actionHandler.QuarantineFile(ctx, finding.ResourceID, finding.Event.File.Path)
+		}
+
+	case ActionRevokeCredentials:
+		return e.actionHandler.RevokeCredentials(ctx, runtimePrincipalIDFromFinding(finding), runtimeProviderFromFinding(finding))
+
+	case ActionScaleDown:
+		return e.actionHandler.ScaleDown(ctx, runtimeScaleDownTargetFromFinding(finding), runtimeScaleDownReplicas(action))
 
 	case ActionAlert:
 		// Alert is handled separately by notification system
