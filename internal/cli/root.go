@@ -121,4 +121,5 @@ func init() {
 	rootCmd.AddCommand(ingestCmd)
 	rootCmd.AddCommand(workloadScanCmd)
 	rootCmd.AddCommand(imageScanCmd)
+	rootCmd.AddCommand(functionScanCmd)
 }

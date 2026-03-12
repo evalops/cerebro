@@ -2,7 +2,7 @@
 
 Generated from `internal/app/app_config.go` (`LoadConfig`) via `go run ./scripts/generate_config_docs/main.go`.
 
-Total variables: **301**
+Total variables: **305**
 
 | Variable | Reader(s) | Default(s) | Config Field(s) | Validation rule(s) |
 |---|---|---|---|---|
@@ -75,7 +75,7 @@ Total variables: **301**
 | `ENTRA_CLIENT_ID` | `getEnv` | `""` | `EntraClientID` | `-` |
 | `ENTRA_CLIENT_SECRET` | `getEnv` | `""` | `EntraClientSecret` | `-` |
 | `ENTRA_TENANT_ID` | `getEnv` | `""` | `EntraTenantID` | `-` |
-| `EXECUTION_STORE_FILE` | `getEnv` | `filepath.Join(".cerebro", "executions.db")` | `ExecutionStoreFile`, `ImageScanStateFile`, `WorkloadScanStateFile` | `-` |
+| `EXECUTION_STORE_FILE` | `getEnv` | `filepath.Join(".cerebro", "executions.db")` | `ExecutionStoreFile`, `FunctionScanStateFile`, `ImageScanStateFile`, `WorkloadScanStateFile` | `-` |
 | `FIGMA_API_TOKEN` | `getEnv` | `""` | `FigmaAPIToken` | `-` |
 | `FIGMA_BASE_URL` | `getEnv` | `"https://api.figma.com"` | `FigmaBaseURL` | `-` |
 | `FIGMA_TEAM_ID` | `getEnv` | `""` | `FigmaTeamID` | `-` |
@@ -90,6 +90,10 @@ Total variables: **301**
 | `FINDING_ATTESTATION_TIMEOUT` | `getEnvDuration` | `3 * time.Second` | `FindingAttestationTimeout` | `when FINDING_ATTESTATION_ENABLED=true, the signing key is required and timeout must be positive` |
 | `FORGEROCK_API_TOKEN` | `getEnv` | `""` | `ForgeRockAPIToken` | `-` |
 | `FORGEROCK_URL` | `getEnv` | `""` | `ForgeRockURL` | `-` |
+| `FUNCTION_SCAN_CLEANUP_TIMEOUT` | `getEnvDuration` | `2 * time.Minute` | `FunctionScanCleanupTimeout` | `-` |
+| `FUNCTION_SCAN_ROOTFS_BASE_PATH` | `getEnv` | `filepath.Join(".cerebro", "function-scan", "rootfs")` | `FunctionScanRootFSBasePath` | `-` |
+| `FUNCTION_SCAN_STATE_FILE` | `getEnv` | `getEnv("EXECUTION_STORE_FILE", filepath.Join(".cerebro", "executions.db"))` | `FunctionScanStateFile` | `-` |
+| `FUNCTION_SCAN_TRIVY_BINARY` | `getEnv` | `"trivy"` | `FunctionScanTrivyBinary` | `-` |
 | `GITHUB_ORG` | `getEnv` | `""` | `GitHubOrg` | `-` |
 | `GITHUB_TOKEN` | `getEnv` | `""` | `GitHubToken` | `-` |
 | `GITLAB_BASE_URL` | `getEnv` | `"https://gitlab.com"` | `GitLabBaseURL` | `-` |

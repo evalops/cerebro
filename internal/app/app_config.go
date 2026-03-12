@@ -386,6 +386,12 @@ type Config struct {
 	ImageScanCleanupTimeout time.Duration
 	ImageScanTrivyBinary    string
 
+	// Serverless function package scanning
+	FunctionScanStateFile      string
+	FunctionScanRootFSBasePath string
+	FunctionScanCleanupTimeout time.Duration
+	FunctionScanTrivyBinary    string
+
 	// Finding attestation chain
 	FindingsMaxInMemory                int
 	FindingsResolvedRetention          time.Duration
@@ -715,6 +721,10 @@ func LoadConfig() *Config {
 			ImageScanRootFSBasePath:             getEnv("IMAGE_SCAN_ROOTFS_BASE_PATH", filepath.Join(".cerebro", "image-scan", "rootfs")),
 			ImageScanCleanupTimeout:             getEnvDuration("IMAGE_SCAN_CLEANUP_TIMEOUT", 2*time.Minute),
 			ImageScanTrivyBinary:                getEnv("IMAGE_SCAN_TRIVY_BINARY", "trivy"),
+			FunctionScanStateFile:               getEnv("FUNCTION_SCAN_STATE_FILE", getEnv("EXECUTION_STORE_FILE", filepath.Join(".cerebro", "executions.db"))),
+			FunctionScanRootFSBasePath:          getEnv("FUNCTION_SCAN_ROOTFS_BASE_PATH", filepath.Join(".cerebro", "function-scan", "rootfs")),
+			FunctionScanCleanupTimeout:          getEnvDuration("FUNCTION_SCAN_CLEANUP_TIMEOUT", 2*time.Minute),
+			FunctionScanTrivyBinary:             getEnv("FUNCTION_SCAN_TRIVY_BINARY", "trivy"),
 			FindingsMaxInMemory:                 getEnvInt("FINDINGS_MAX_IN_MEMORY", findings.DefaultMaxFindings),
 			FindingsResolvedRetention:           getEnvDuration("FINDINGS_RESOLVED_RETENTION", findings.DefaultResolvedRetention),
 			FindingsSemanticDedupEnabled:        getEnvBool("FINDINGS_SEMANTIC_DEDUP_ENABLED", findings.DefaultSemanticDedupEnabled),

@@ -170,6 +170,9 @@ const (
 	EventSecurityImageScanStarted           EventType = "security.image_scan.started"
 	EventSecurityImageScanCompleted         EventType = "security.image_scan.completed"
 	EventSecurityImageScanFailed            EventType = "security.image_scan.failed"
+	EventSecurityFunctionScanStarted        EventType = "security.function_scan.started"
+	EventSecurityFunctionScanCompleted      EventType = "security.function_scan.completed"
+	EventSecurityFunctionScanFailed         EventType = "security.function_scan.failed"
 )
 
 var defaultEventTypes = []EventType{
@@ -222,6 +225,9 @@ var defaultEventTypes = []EventType{
 	EventSecurityImageScanStarted,
 	EventSecurityImageScanCompleted,
 	EventSecurityImageScanFailed,
+	EventSecurityFunctionScanStarted,
+	EventSecurityFunctionScanCompleted,
+	EventSecurityFunctionScanFailed,
 }
 
 // DefaultEventTypes returns the list of webhook event types registered by default.
@@ -462,7 +468,8 @@ func isValidEventType(e EventType) bool {
 		EventSecurityWorkloadScanStarted, EventSecurityWorkloadScanCompleted,
 		EventSecurityWorkloadScanFailed, EventSecurityWorkloadScanReconciled,
 		EventSecurityImageScanStarted, EventSecurityImageScanCompleted,
-		EventSecurityImageScanFailed:
+		EventSecurityImageScanFailed, EventSecurityFunctionScanStarted,
+		EventSecurityFunctionScanCompleted, EventSecurityFunctionScanFailed:
 		return true
 	default:
 		return false
