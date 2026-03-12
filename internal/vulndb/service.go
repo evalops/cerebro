@@ -85,6 +85,9 @@ func (s *Service) MatchPackages(ctx context.Context, _ filesystemanalyzer.OSInfo
 			return nil, err
 		}
 		for _, candidate := range candidates {
+			if candidate.Vulnerability.WithdrawnAt != nil {
+				continue
+			}
 			matched, fixedVersion := matchPackageVersion(pkg.Version, candidate.Affected)
 			if !matched {
 				continue

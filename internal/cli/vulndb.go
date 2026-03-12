@@ -20,6 +20,7 @@ var (
 	vulnDBOutput       = FormatTable
 	vulnDBImportInput  string
 	vulnDBImportSource string
+	vulnDBAllowHTTP    bool
 	vulnDBSyncOSV      string
 	vulnDBSyncKEV      string
 	vulnDBSyncEPSS     string
@@ -77,11 +78,13 @@ func init() {
 	for _, cmd := range []*cobra.Command{vulndbImportOSVCmd, vulndbImportKEVCmd, vulndbImportEPSSCmd} {
 		cmd.Flags().StringVar(&vulnDBImportInput, "input", "", "Path, URL, or - for stdin")
 		cmd.Flags().StringVar(&vulnDBImportSource, "source", "", "Source label recorded in sync state")
+		cmd.Flags().BoolVar(&vulnDBAllowHTTP, "allow-insecure-http", false, "Allow advisory imports over plaintext http:// transport")
 		cmd.Flags().StringVarP(&vulnDBOutput, "output", "o", FormatTable, "Output format (table,json)")
 	}
 	vulndbSyncCmd.Flags().StringVar(&vulnDBSyncOSV, "osv", "", "OSV JSON/JSONL path or URL")
 	vulndbSyncCmd.Flags().StringVar(&vulnDBSyncKEV, "kev", "", "CISA KEV JSON path or URL")
 	vulndbSyncCmd.Flags().StringVar(&vulnDBSyncEPSS, "epss", "", "EPSS CSV path or URL")
+	vulndbSyncCmd.Flags().BoolVar(&vulnDBAllowHTTP, "allow-insecure-http", false, "Allow advisory imports over plaintext http:// transport")
 	vulndbSyncCmd.Flags().StringVarP(&vulnDBOutput, "output", "o", FormatTable, "Output format (table,json)")
 	vulndbCmd.AddCommand(vulndbStatsCmd)
 	vulndbCmd.AddCommand(vulndbImportOSVCmd)
@@ -184,7 +187,7 @@ func runVulnDBSync(cmd *cobra.Command, _ []string) error {
 		if item.input == "" {
 			continue
 		}
-		reader, closerFunc, source, err := openImportReader(commandContextOrBackground(cmd), item.input, item.defaultSource)
+		reader, closerFunc, source, err := openImportReader(commandContextOrBackground(cmd), item.input, item.defaultSource, vulnDBAllowHTTP)
 		if err != nil {
 			return fmt.Errorf("%s sync source: %w", item.kind, err)
 		}
@@ -232,7 +235,7 @@ func runVulnDBImport(ctx context.Context, defaultSource string, importer func(co
 		return err
 	}
 	defer func() { _ = closer.Close() }()
-	reader, closerFunc, source, err := openImportReader(ctx, vulnDBImportInput, firstNonEmptyString(vulnDBImportSource, defaultSource))
+	reader, closerFunc, source, err := openImportReader(ctx, vulnDBImportInput, firstNonEmptyString(vulnDBImportSource, defaultSource), vulnDBAllowHTTP)
 	if err != nil {
 		return err
 	}
@@ -264,7 +267,7 @@ func runVulnDBImport(ctx context.Context, defaultSource string, importer func(co
 	return nil
 }
 
-func openImportReader(ctx context.Context, input, fallbackSource string) (io.Reader, func() error, string, error) {
+func openImportReader(ctx context.Context, input, fallbackSource string, allowInsecureHTTP bool) (io.Reader, func() error, string, error) {
 	input = strings.TrimSpace(input)
 	if input == "" {
 		return nil, nil, "", fmt.Errorf("--input is required")
@@ -273,9 +276,15 @@ func openImportReader(ctx context.Context, input, fallbackSource string) (io.Rea
 		return os.Stdin, nil, fallbackSource, nil
 	}
 	if strings.HasPrefix(input, "http://") || strings.HasPrefix(input, "https://") {
+		if strings.HasPrefix(input, "http://") && !allowInsecureHTTP {
+			return nil, nil, "", fmt.Errorf("insecure http advisory feeds require --allow-insecure-http: %s", sanitizeSourceLabel(input))
+		}
 		requestContext := ctx
 		if requestContext == nil {
 			requestContext = context.Background()
+		}
+		if strings.HasPrefix(input, "http://") {
+			fmt.Fprintf(os.Stderr, "warning: allowing insecure advisory feed import over http: %s\n", sanitizeSourceLabel(input))
 		}
 		req, err := http.NewRequestWithContext(requestContext, http.MethodGet, input, nil)
 		if err != nil {

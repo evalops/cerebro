@@ -290,7 +290,7 @@ func (s *SQLiteStore) ListPackageCandidates(ctx context.Context, ecosystem, pack
 			p.ecosystem, p.package_name, p.range_type, p.introduced, p.fixed, p.last_affected, p.vulnerable_version, p.distribution, p.distribution_version
 		FROM package_advisories p
 		JOIN vulnerabilities v ON v.id = p.vulnerability_id
-		WHERE p.ecosystem = ? AND p.package_name = ?
+		WHERE p.ecosystem = ? AND p.package_name = ? AND v.withdrawn_at IS NULL
 		ORDER BY v.modified_at DESC, v.id ASC
 	`, strings.TrimSpace(strings.ToLower(ecosystem)), strings.TrimSpace(strings.ToLower(packageName)))
 	if err != nil {

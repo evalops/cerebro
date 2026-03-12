@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/evalops/cerebro/internal/filesystemanalyzer"
 )
@@ -96,5 +97,38 @@ func TestServiceImportsOSVAndMatchesPackages(t *testing.T) {
 	}
 	if len(syncStates) != 3 {
 		t.Fatalf("expected 3 sync states, got %#v", syncStates)
+	}
+}
+
+func TestServiceMatchPackagesSkipsWithdrawnAdvisories(t *testing.T) {
+	store, err := NewSQLiteStore(t.TempDir() + "/vulndb.db")
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	service := NewService(store)
+
+	withdrawn := time.Date(2026, time.March, 1, 12, 0, 0, 0, time.UTC).Format(time.RFC3339)
+	osv := `
+{"id":"GHSA-test-withdrawn","aliases":["CVE-2026-9999"],"summary":"withdrawn advisory","details":"duplicate record","database_specific":{"severity":"HIGH"},"withdrawn":"` + withdrawn + `","affected":[{"package":{"ecosystem":"npm","name":"lodash"},"ranges":[{"type":"SEMVER","events":[{"introduced":"0"},{"fixed":"4.17.21"}]}]}]}
+`
+	report, err := service.ImportOSVJSON(context.Background(), "osv-test", strings.NewReader(osv))
+	if err != nil {
+		t.Fatalf("ImportOSVJSON: %v", err)
+	}
+	if report.Imported != 1 {
+		t.Fatalf("expected 1 imported advisory, got %#v", report)
+	}
+
+	matches, err := service.MatchPackages(context.Background(), filesystemanalyzer.OSInfo{}, []filesystemanalyzer.PackageRecord{{
+		Ecosystem: "npm",
+		Name:      "lodash",
+		Version:   "4.17.20",
+	}})
+	if err != nil {
+		t.Fatalf("MatchPackages: %v", err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("expected withdrawn advisory to be skipped, got %#v", matches)
 	}
 }
