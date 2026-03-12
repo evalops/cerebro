@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -637,6 +638,112 @@ func (a *App) rematerializeEventCorrelations(securityGraph *graph.Graph, reason 
 		"created", summary.CorrelationsCreated,
 		"removed", summary.CorrelationsRemoved,
 	)
+}
+
+func (a *App) initEventCorrelationRefreshLoop(ctx context.Context) {
+	if a == nil || a.eventCorrelationRefreshCh != nil {
+		return
+	}
+	loopCtx, cancel := context.WithCancel(ctx)
+	a.eventCorrelationRefreshCh = make(chan string, 1)
+	a.eventCorrelationRefreshCancel = cancel
+	a.eventCorrelationRefreshWG.Add(1)
+	go func() {
+		defer a.eventCorrelationRefreshWG.Done()
+		const debounce = 2 * time.Second
+		pendingReasons := make(map[string]struct{})
+		var (
+			timer   *time.Timer
+			timerCh <-chan time.Time
+		)
+		flush := func() {
+			if len(pendingReasons) == 0 {
+				return
+			}
+			reasons := make([]string, 0, len(pendingReasons))
+			for reason := range pendingReasons {
+				reasons = append(reasons, reason)
+			}
+			sort.Strings(reasons)
+			pendingReasons = make(map[string]struct{})
+			a.rematerializeEventCorrelations(a.CurrentSecurityGraph(), strings.Join(reasons, ","))
+		}
+		for {
+			select {
+			case <-loopCtx.Done():
+				if timer != nil {
+					timer.Stop()
+				}
+				return
+			case reason := <-a.eventCorrelationRefreshCh:
+				reason = strings.TrimSpace(reason)
+				if reason == "" {
+					reason = "tap_mapping"
+				}
+				pendingReasons[reason] = struct{}{}
+				if timer == nil {
+					timer = time.NewTimer(debounce)
+					timerCh = timer.C
+					continue
+				}
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
+				timer.Reset(debounce)
+			case <-timerCh:
+				timerCh = nil
+				if timer != nil {
+					timer.Stop()
+					timer = nil
+				}
+				flush()
+			}
+		}
+	}()
+}
+
+func (a *App) queueEventCorrelationRefresh(reason string) {
+	if a == nil {
+		return
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		reason = "tap_mapping"
+	}
+	if a.eventCorrelationRefreshCh == nil {
+		a.rematerializeEventCorrelations(a.CurrentSecurityGraph(), reason)
+		return
+	}
+	select {
+	case a.eventCorrelationRefreshCh <- reason:
+	default:
+	}
+}
+
+func (a *App) stopEventCorrelationRefreshLoop() {
+	if a == nil {
+		return
+	}
+	if a.eventCorrelationRefreshCancel != nil {
+		a.eventCorrelationRefreshCancel()
+	}
+	done := make(chan struct{})
+	go func() {
+		a.eventCorrelationRefreshWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(appShutdownTimeout):
+		if a.Logger != nil {
+			a.Logger.Warn("timed out waiting for event correlation refresh loop to stop", "timeout", appShutdownTimeout)
+		}
+	}
+	a.eventCorrelationRefreshCh = nil
+	a.eventCorrelationRefreshCancel = nil
 }
 
 func shouldRefreshEventCorrelations(securityGraph *graph.Graph, nodeIDs []string) bool {

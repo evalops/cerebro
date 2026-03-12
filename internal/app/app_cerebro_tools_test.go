@@ -179,6 +179,10 @@ func TestCerebroCorrelateEventsTool(t *testing.T) {
 	if got, ok := summary["correlation_count"].(float64); !ok || int(got) != 2 {
 		t.Fatalf("expected 2 correlations, got %#v", payload)
 	}
+
+	if _, err := tool.Handler(context.Background(), json.RawMessage(`{"pattern_id":"pr_deploy_chain"}`)); err == nil {
+		t.Fatal("expected scope validation error for correlate_events without event_id or entity_id")
+	}
 }
 
 func TestCerebroIntelligenceReportTool(t *testing.T) {

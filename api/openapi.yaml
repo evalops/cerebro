@@ -6396,24 +6396,24 @@ paths:
       tags:
         - Platform
       summary: Query derived event correlation chains
-      description: Returns materialized causal event links plus optional anomaly summaries in the same event or entity neighborhood.
+      description: Returns materialized causal event links for one event or entity neighborhood, with optional scoped anomaly summaries.
       parameters:
         - name: event_id
           in: query
           required: false
-          description: Optional event node ID seed for expanding a local causal neighborhood.
+          description: Event node ID seed for expanding a local causal neighborhood. Either `event_id` or `entity_id` is required.
           schema:
             type: string
         - name: entity_id
           in: query
           required: false
-          description: Optional entity ID scope (for example `service:payments`) used to find related events.
+          description: Entity ID scope (for example `service:payments`) used to find related events. Either `event_id` or `entity_id` is required.
           schema:
             type: string
         - name: pattern_id
           in: query
           required: false
-          description: Optional built-in correlation pattern filter.
+          description: Optional built-in correlation pattern filter applied after event or entity scoping.
           schema:
             type: string
         - name: limit
@@ -6427,9 +6427,10 @@ paths:
         - name: include_anomalies
           in: query
           required: false
-          description: Include anomaly summaries in the response.
+          description: Include anomaly summaries in the response. Defaults to false to avoid broad read-path scans.
           schema:
             type: boolean
+            default: false
         - name: since
           in: query
           required: false
@@ -6468,24 +6469,24 @@ paths:
       tags:
         - Platform
       summary: Query event anomaly summaries
-      description: Returns baseline deviations for event frequency in one event or entity context.
+      description: Returns baseline deviations for event frequency in one event or entity context. `event_id` or `entity_id` is required.
       parameters:
         - name: event_id
           in: query
           required: false
-          description: Optional event node ID seed for scoping anomalies.
+          description: Event node ID seed for scoping anomalies. Either `event_id` or `entity_id` is required.
           schema:
             type: string
         - name: entity_id
           in: query
           required: false
-          description: Optional entity ID scope (for example `service:payments`) used to filter anomalies.
+          description: Entity ID scope (for example `service:payments`) used to filter anomalies. Either `event_id` or `entity_id` is required.
           schema:
             type: string
         - name: pattern_id
           in: query
           required: false
-          description: Optional built-in correlation pattern filter.
+          description: Optional built-in correlation pattern filter applied after event or entity scoping.
           schema:
             type: string
         - name: limit
@@ -13239,6 +13240,7 @@ components:
           format: date-time
         include_anomalies:
           type: boolean
+          default: false
     EventCorrelationSummary:
       type: object
       additionalProperties: false

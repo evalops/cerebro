@@ -29,11 +29,11 @@ func (a *App) toolCerebroCorrelateEvents(_ context.Context, args json.RawMessage
 		return "", err
 	}
 
-	if strings.TrimSpace(req.EventID) == "" && strings.TrimSpace(req.EntityID) == "" && strings.TrimSpace(req.PatternID) == "" {
-		return "", fmt.Errorf("event_id, entity_id, or pattern_id is required")
+	if strings.TrimSpace(req.EventID) == "" && strings.TrimSpace(req.EntityID) == "" {
+		return "", fmt.Errorf("event_id or entity_id is required")
 	}
 
-	includeAnomalies := true
+	includeAnomalies := false
 	if req.IncludeAnomalies != nil {
 		includeAnomalies = *req.IncludeAnomalies
 	}

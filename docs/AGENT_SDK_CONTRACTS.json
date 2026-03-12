@@ -486,7 +486,7 @@
             "type": "string"
           },
           "include_anomalies": {
-            "default": true,
+            "default": false,
             "description": "Include anomaly summaries for the same event/entity context.",
             "type": "boolean"
           },
@@ -496,7 +496,7 @@
             "type": "integer"
           },
           "pattern_id": {
-            "description": "Optional built-in correlation pattern filter.",
+            "description": "Optional built-in correlation pattern filter applied after event_id/entity_id scoping.",
             "type": "string"
           }
         },
@@ -505,7 +505,7 @@
       "example_input": {
         "entity_id": "service:payments",
         "event_id": "event_id",
-        "include_anomalies": true,
+        "include_anomalies": false,
         "limit": 25,
         "pattern_id": "pattern_id"
       },

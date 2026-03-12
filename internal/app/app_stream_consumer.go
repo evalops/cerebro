@@ -62,6 +62,7 @@ func (a *App) initTapGraphConsumer(ctx context.Context) {
 		return
 	}
 	a.TapConsumer = consumer
+	a.initEventCorrelationRefreshLoop(ctx)
 	if a.Health != nil {
 		a.Health.Register("tap_consumer", func(_ context.Context) health.CheckResult {
 			start := time.Now().UTC()
@@ -344,7 +345,7 @@ func (a *App) applyTapDeclarativeMappings(evt events.CloudEvent) (bool, error) {
 		)
 	}
 	if result.Matched && shouldRefreshEventCorrelations(securityGraph, result.NodesUpserted) {
-		a.rematerializeEventCorrelations(securityGraph, "tap_mapping")
+		a.queueEventCorrelationRefresh("tap_mapping")
 	}
 	if (result.EventsRejected > 0 || result.NodesRejected > 0 || result.EdgesRejected > 0) && a.Logger != nil {
 		a.Logger.Warn("tap declarative mapping rejected invalid writes",

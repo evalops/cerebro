@@ -204,7 +204,7 @@ Generated from the shared `App.AgentSDKTools()` registry and `internal/agentsdk`
 {
   "entity_id": "service:payments",
   "event_id": "event_id",
-  "include_anomalies": true,
+  "include_anomalies": false,
   "limit": 25,
   "pattern_id": "pattern_id"
 }

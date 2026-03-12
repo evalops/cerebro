@@ -266,6 +266,50 @@ func TestHandleTapCloudEvent_MaterializesEventCorrelations(t *testing.T) {
 	}
 }
 
+func TestQueueEventCorrelationRefresh_DebouncesHotPathRebuilds(t *testing.T) {
+	a := &App{SecurityGraph: graph.New()}
+	base := time.Date(2026, 3, 12, 10, 0, 0, 0, time.UTC)
+	a.SecurityGraph.AddNode(&graph.Node{ID: "service:payments", Kind: graph.NodeKindService, Name: "Payments"})
+	a.SecurityGraph.AddNode(&graph.Node{
+		ID:   "pull_request:payments:42",
+		Kind: graph.NodeKindPullRequest,
+		Name: "payments pr",
+		Properties: map[string]any{
+			"state":       "merged",
+			"observed_at": base.Format(time.RFC3339),
+			"valid_from":  base.Format(time.RFC3339),
+		},
+	})
+	a.SecurityGraph.AddNode(&graph.Node{
+		ID:   "deployment:payments:deploy-1",
+		Kind: graph.NodeKindDeploymentRun,
+		Name: "deploy-1",
+		Properties: map[string]any{
+			"service_id":  "payments",
+			"status":      "succeeded",
+			"observed_at": base.Add(5 * time.Minute).Format(time.RFC3339),
+			"valid_from":  base.Add(5 * time.Minute).Format(time.RFC3339),
+		},
+	})
+	a.SecurityGraph.AddEdge(&graph.Edge{ID: "pr->service", Source: "pull_request:payments:42", Target: "service:payments", Kind: graph.EdgeKindTargets, Effect: graph.EdgeEffectAllow})
+	a.SecurityGraph.AddEdge(&graph.Edge{ID: "deploy->service", Source: "deployment:payments:deploy-1", Target: "service:payments", Kind: graph.EdgeKindTargets, Effect: graph.EdgeEffectAllow})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	a.initEventCorrelationRefreshLoop(ctx)
+	defer a.stopEventCorrelationRefreshLoop()
+
+	a.queueEventCorrelationRefresh("tap_mapping")
+	if graphEdgeExists(a.SecurityGraph.GetOutEdges("deployment:payments:deploy-1"), graph.EdgeKindTriggeredBy, "pull_request:payments:42") {
+		t.Fatal("expected debounced refresh to avoid immediate rematerialization")
+	}
+
+	time.Sleep(2500 * time.Millisecond)
+	if !graphEdgeExists(a.SecurityGraph.GetOutEdges("deployment:payments:deploy-1"), graph.EdgeKindTriggeredBy, "pull_request:payments:42") {
+		t.Fatal("expected debounced refresh to materialize correlation after debounce window")
+	}
+}
+
 func TestHandleTapCloudEvent_InvalidCustomMapperPathDoesNotBlockPipeline(t *testing.T) {
 	t.Setenv("GRAPH_EVENT_MAPPING_PATH", "/tmp/non-existent-mapper.yaml")
 

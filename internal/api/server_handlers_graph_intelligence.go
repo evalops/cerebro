@@ -55,7 +55,7 @@ func (s *Server) graphIntelligenceEventCorrelations(w http.ResponseWriter, r *ht
 		until = parsed
 	}
 
-	includeAnomalies := true
+	includeAnomalies := false
 	if raw := strings.TrimSpace(r.URL.Query().Get("include_anomalies")); raw != "" {
 		parsed, err := strconv.ParseBool(raw)
 		if err != nil {
@@ -65,10 +65,18 @@ func (s *Server) graphIntelligenceEventCorrelations(w http.ResponseWriter, r *ht
 		includeAnomalies = parsed
 	}
 
+	eventID := strings.TrimSpace(r.URL.Query().Get("event_id"))
+	entityID := strings.TrimSpace(r.URL.Query().Get("entity_id"))
+	patternID := strings.TrimSpace(r.URL.Query().Get("pattern_id"))
+	if eventID == "" && entityID == "" {
+		s.error(w, http.StatusBadRequest, "event_id or entity_id is required")
+		return
+	}
+
 	result := graph.QueryEventCorrelations(s.app.SecurityGraph, time.Now().UTC(), graph.EventCorrelationQuery{
-		EventID:          strings.TrimSpace(r.URL.Query().Get("event_id")),
-		EntityID:         strings.TrimSpace(r.URL.Query().Get("entity_id")),
-		PatternID:        strings.TrimSpace(r.URL.Query().Get("pattern_id")),
+		EventID:          eventID,
+		EntityID:         entityID,
+		PatternID:        patternID,
 		Limit:            limit,
 		Since:            since,
 		Until:            until,
@@ -93,10 +101,18 @@ func (s *Server) graphIntelligenceEventAnomalies(w http.ResponseWriter, r *http.
 		limit = parsed
 	}
 
+	eventID := strings.TrimSpace(r.URL.Query().Get("event_id"))
+	entityID := strings.TrimSpace(r.URL.Query().Get("entity_id"))
+	patternID := strings.TrimSpace(r.URL.Query().Get("pattern_id"))
+	if eventID == "" && entityID == "" {
+		s.error(w, http.StatusBadRequest, "event_id or entity_id is required")
+		return
+	}
+
 	result := graph.QueryEventCorrelations(s.app.SecurityGraph, time.Now().UTC(), graph.EventCorrelationQuery{
-		EventID:          strings.TrimSpace(r.URL.Query().Get("event_id")),
-		EntityID:         strings.TrimSpace(r.URL.Query().Get("entity_id")),
-		PatternID:        strings.TrimSpace(r.URL.Query().Get("pattern_id")),
+		EventID:          eventID,
+		EntityID:         entityID,
+		PatternID:        patternID,
 		Limit:            limit,
 		IncludeAnomalies: true,
 	})

@@ -139,6 +139,16 @@ func TestGraphIntelligenceEventCorrelationEndpoints(t *testing.T) {
 	if _, ok := decodeJSON(t, anomalies)["anomalies"].([]any); !ok {
 		t.Fatalf("expected anomalies array, got %s", anomalies.Body.String())
 	}
+
+	unscopedCorrelations := do(t, s, http.MethodGet, "/api/v1/platform/intelligence/event-correlations?limit=10", nil)
+	if unscopedCorrelations.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for unscoped event-correlations, got %d: %s", unscopedCorrelations.Code, unscopedCorrelations.Body.String())
+	}
+
+	unscopedAnomalies := do(t, s, http.MethodGet, "/api/v1/platform/intelligence/event-anomalies?limit=10", nil)
+	if unscopedAnomalies.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for unscoped event-anomalies, got %d: %s", unscopedAnomalies.Code, unscopedAnomalies.Body.String())
+	}
 }
 
 func TestGraphIntelligenceInsightsEndpoint_InvalidParams(t *testing.T) {

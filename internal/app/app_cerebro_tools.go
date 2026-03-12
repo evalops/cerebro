@@ -597,7 +597,7 @@ func (a *App) cerebroTools() []agents.Tool {
 					},
 					"pattern_id": map[string]any{
 						"type":        "string",
-						"description": "Optional built-in correlation pattern filter.",
+						"description": "Optional built-in correlation pattern filter applied after event_id/entity_id scoping.",
 					},
 					"limit": map[string]any{
 						"type":        "integer",
@@ -607,7 +607,7 @@ func (a *App) cerebroTools() []agents.Tool {
 					"include_anomalies": map[string]any{
 						"type":        "boolean",
 						"description": "Include anomaly summaries for the same event/entity context.",
-						"default":     true,
+						"default":     false,
 					},
 				},
 			},
