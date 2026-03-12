@@ -239,7 +239,9 @@ type RunRecord struct {
 }
 
 type RunListOptions struct {
-	Statuses   []RunStatus
-	ActiveOnly bool
-	Limit      int
+	Statuses           []RunStatus
+	ActiveOnly         bool
+	Limit              int
+	Offset             int
+	OrderBySubmittedAt bool
 }

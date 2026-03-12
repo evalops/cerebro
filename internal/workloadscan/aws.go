@@ -14,6 +14,30 @@ import (
 
 const defaultAWSProviderPollInterval = 5 * time.Second
 
+var awsAttachmentDeviceNames = []string{
+	"/dev/sdf",
+	"/dev/sdg",
+	"/dev/sdh",
+	"/dev/sdi",
+	"/dev/sdj",
+	"/dev/sdk",
+	"/dev/sdl",
+	"/dev/sdm",
+	"/dev/sdn",
+	"/dev/sdo",
+	"/dev/sdp",
+	"/dev/sdq",
+	"/dev/sdr",
+	"/dev/sds",
+	"/dev/sdt",
+	"/dev/sdu",
+	"/dev/sdv",
+	"/dev/sdw",
+	"/dev/sdx",
+	"/dev/sdy",
+	"/dev/sdz",
+}
+
 type awsEC2API interface {
 	DescribeInstances(ctx context.Context, params *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
 	DescribeVolumes(ctx context.Context, params *ec2.DescribeVolumesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeVolumesOutput, error)
@@ -53,6 +77,10 @@ func NewAWSProviderWithClient(client awsEC2API) *AWSProvider {
 }
 
 func (p *AWSProvider) Kind() ProviderKind { return ProviderAWS }
+
+func (p *AWSProvider) MaxConcurrentAttachments() int {
+	return len(awsAttachmentDeviceNames)
+}
 
 func (p *AWSProvider) InventoryVolumes(ctx context.Context, target VMTarget) ([]SourceVolume, error) {
 	if p == nil || p.client == nil {
@@ -253,7 +281,10 @@ func (p *AWSProvider) AttachInspectionVolume(ctx context.Context, _ VMTarget, sc
 	if p == nil || p.client == nil {
 		return nil, fmt.Errorf("aws provider is not configured")
 	}
-	deviceName := deviceNameForIndex(index)
+	deviceName, err := deviceNameForIndex(index)
+	if err != nil {
+		return nil, err
+	}
 	if _, err := p.client.AttachVolume(ctx, &ec2.AttachVolumeInput{
 		Device:     aws.String(deviceName),
 		InstanceId: aws.String(strings.TrimSpace(scannerHost.HostID)),
@@ -428,10 +459,12 @@ func deleteOnTermination(mappings []ec2types.InstanceBlockDeviceMapping, volumeI
 	return false
 }
 
-func deviceNameForIndex(index int) string {
-	suffixes := []string{"f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"}
+func deviceNameForIndex(index int) (string, error) {
 	if index < 0 {
 		index = 0
 	}
-	return "/dev/sd" + suffixes[index%len(suffixes)]
+	if index >= len(awsAttachmentDeviceNames) {
+		return "", fmt.Errorf("aws attachment slot %d exceeds supported device count %d", index, len(awsAttachmentDeviceNames))
+	}
+	return awsAttachmentDeviceNames[index], nil
 }

@@ -45,6 +45,10 @@ type Analyzer interface {
 	Analyze(ctx context.Context, input AnalysisInput) (*AnalysisReport, error)
 }
 
+type attachmentSlotProvider interface {
+	MaxConcurrentAttachments() int
+}
+
 type NoopAnalyzer struct{}
 
 func (NoopAnalyzer) Analyze(_ context.Context, input AnalysisInput) (*AnalysisReport, error) {
@@ -214,6 +218,13 @@ func (r *Runner) RunVMScan(ctx context.Context, req ScanRequest) (*RunRecord, er
 		limit = r.maxConcurrentSnapshots
 	}
 	sem := make(chan struct{}, limit)
+	var attachmentSlots chan int
+	if slotCapacity := attachmentSlotCapacity(provider); slotCapacity > 0 {
+		attachmentSlots = make(chan int, slotCapacity)
+		for slot := 0; slot < slotCapacity; slot++ {
+			attachmentSlots <- slot
+		}
+	}
 	var (
 		runMu sync.Mutex
 		wg    sync.WaitGroup
@@ -234,7 +245,7 @@ func (r *Runner) RunVMScan(ctx context.Context, req ScanRequest) (*RunRecord, er
 				return
 			}
 			defer func() { <-sem }()
-			if err := r.processVolume(ctx, provider, req, run, i, &runMu); err != nil {
+			if err := r.processVolume(ctx, provider, req, run, i, attachmentSlots, &runMu); err != nil {
 				errMu.Lock()
 				errs = append(errs, err)
 				errMu.Unlock()
@@ -269,61 +280,74 @@ func (r *Runner) Reconcile(ctx context.Context, olderThan time.Duration) ([]RunR
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	runs, err := r.store.ListRuns(ctx, RunListOptions{Limit: 500})
-	if err != nil {
-		return nil, err
-	}
 	reconciled := make([]RunRecord, 0)
 	now := r.now().UTC()
-	for i := range runs {
-		run := runs[i]
-		if !runNeedsReconciliation(run) {
-			continue
-		}
-		if olderThan > 0 && now.Sub(run.UpdatedAt.UTC()) < olderThan {
-			continue
-		}
-		provider, ok := r.providers[run.Provider]
-		if !ok {
-			continue
-		}
-		changed := false
-		for idx := range run.Volumes {
-			if reconcileErr := r.reconcileVolume(ctx, provider, &run, idx); reconcileErr != nil {
-				run.Error = reconcileErr.Error()
-				run.Status = RunStatusFailed
-				run.Stage = RunStageReconcile
-			}
-			if run.Volumes[idx].Cleanup.Reconciled {
-				changed = true
-			}
-		}
-		if !changed {
-			continue
-		}
-		run.UpdatedAt = now
-		recomputeSummary(&run)
-		if allVolumesTerminal(run.Volumes) && run.Error == "" {
-			run.Status = RunStatusSucceeded
-			run.Stage = RunStageCompleted
-			if run.CompletedAt == nil {
-				completed := now
-				run.CompletedAt = &completed
-			}
-		} else if run.Status != RunStatusFailed {
-			run.Stage = RunStageReconcile
-		}
-		if err := r.saveRun(ctx, &run); err != nil {
+	const reconcilePageSize = 500
+	for offset := 0; ; offset += reconcilePageSize {
+		runs, err := r.store.ListRuns(ctx, RunListOptions{
+			Limit:              reconcilePageSize,
+			Offset:             offset,
+			OrderBySubmittedAt: true,
+		})
+		if err != nil {
 			return reconciled, err
 		}
-		r.recordRunEvent(ctx, &run, run.Status, RunStageReconcile, "reconciled orphaned workload scan artifacts", nil)
-		r.emitLifecycleEvent(ctx, webhooks.EventSecurityWorkloadScanReconciled, &run, nil)
-		reconciled = append(reconciled, run)
+		if len(runs) == 0 {
+			break
+		}
+		for i := range runs {
+			run := runs[i]
+			if !runNeedsReconciliation(run) {
+				continue
+			}
+			if olderThan > 0 && now.Sub(run.UpdatedAt.UTC()) < olderThan {
+				continue
+			}
+			provider, ok := r.providers[run.Provider]
+			if !ok {
+				continue
+			}
+			changed := false
+			for idx := range run.Volumes {
+				if reconcileErr := r.reconcileVolume(ctx, provider, &run, idx); reconcileErr != nil {
+					run.Error = reconcileErr.Error()
+					run.Status = RunStatusFailed
+					run.Stage = RunStageReconcile
+				}
+				if run.Volumes[idx].Cleanup.Reconciled {
+					changed = true
+				}
+			}
+			if !changed {
+				continue
+			}
+			run.UpdatedAt = now
+			recomputeSummary(&run)
+			if allVolumesTerminal(run.Volumes) && run.Error == "" {
+				run.Status = RunStatusSucceeded
+				run.Stage = RunStageCompleted
+				if run.CompletedAt == nil {
+					completed := now
+					run.CompletedAt = &completed
+				}
+			} else if run.Status != RunStatusFailed {
+				run.Stage = RunStageReconcile
+			}
+			if err := r.saveRun(ctx, &run); err != nil {
+				return reconciled, err
+			}
+			r.recordRunEvent(ctx, &run, run.Status, RunStageReconcile, "reconciled orphaned workload scan artifacts", nil)
+			r.emitLifecycleEvent(ctx, webhooks.EventSecurityWorkloadScanReconciled, &run, nil)
+			reconciled = append(reconciled, run)
+		}
+		if len(runs) < reconcilePageSize {
+			break
+		}
 	}
 	return reconciled, nil
 }
 
-func (r *Runner) processVolume(ctx context.Context, provider Provider, req ScanRequest, run *RunRecord, idx int, runMu *sync.Mutex) error {
+func (r *Runner) processVolume(ctx context.Context, provider Provider, req ScanRequest, run *RunRecord, idx int, attachmentSlots chan int, runMu *sync.Mutex) error {
 	source := run.Volumes[idx].Source
 	r.updateVolume(ctx, run, idx, runMu, func(volume *VolumeScanRecord) {
 		volume.Status = RunStatusRunning
@@ -367,9 +391,21 @@ func (r *Runner) processVolume(ctx context.Context, provider Provider, req ScanR
 		volume.Inspection = inspection
 		volume.UpdatedAt = r.now().UTC()
 	}, "inspection volume ready", map[string]any{"inspection_volume_id": inspection.ID})
-
+	attachmentSlot := idx
+	releaseAttachmentSlot := func() {}
+	if attachmentSlots != nil {
+		select {
+		case attachmentSlot = <-attachmentSlots:
+			releaseAttachmentSlot = func() {
+				attachmentSlots <- attachmentSlot
+			}
+		case <-ctx.Done():
+			return r.failVolume(ctx, run, idx, runMu, RunStageAttach, ctx.Err())
+		}
+	}
+	defer releaseAttachmentSlot()
 	attachment, _, err := scanner.WithRetryValue(ctx, r.retry, func() (*VolumeAttachment, error) {
-		return provider.AttachInspectionVolume(ctx, req.Target, req.ScannerHost, *inspection, idx)
+		return provider.AttachInspectionVolume(ctx, req.Target, req.ScannerHost, *inspection, attachmentSlot)
 	})
 	if err != nil {
 		return r.failVolume(ctx, run, idx, runMu, RunStageAttach, fmt.Errorf("attach inspection volume %s: %w", inspection.ID, err))
@@ -840,6 +876,17 @@ func cloneAnyMap(src map[string]any) map[string]any {
 		out[key] = value
 	}
 	return out
+}
+
+func attachmentSlotCapacity(provider Provider) int {
+	slotProvider, ok := provider.(attachmentSlotProvider)
+	if !ok || slotProvider == nil {
+		return 0
+	}
+	if slots := slotProvider.MaxConcurrentAttachments(); slots > 0 {
+		return slots
+	}
+	return 0
 }
 
 func defaultWorkloadRetryOptions(opts scanner.RetryOptions) scanner.RetryOptions {

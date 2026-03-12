@@ -157,10 +157,21 @@ func (s *SQLiteRunStore) ListRuns(ctx context.Context, opts RunListOptions) ([]R
 		// #nosec G202 -- clause strings are fixed SQL literals assembled above; user-controlled values remain parameterized.
 		query += ` WHERE ` + strings.Join(clauses, ` AND `)
 	}
-	query += ` ORDER BY updated_at DESC`
+	if opts.OrderBySubmittedAt {
+		query += ` ORDER BY submitted_at DESC, run_id DESC`
+	} else {
+		query += ` ORDER BY updated_at DESC, run_id DESC`
+	}
 	if opts.Limit > 0 {
 		query += ` LIMIT ?`
 		args = append(args, opts.Limit)
+	}
+	if opts.Offset > 0 {
+		if opts.Limit <= 0 {
+			query += ` LIMIT -1`
+		}
+		query += ` OFFSET ?`
+		args = append(args, opts.Offset)
 	}
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {

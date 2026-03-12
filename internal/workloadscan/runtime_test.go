@@ -16,6 +16,8 @@ type fakeProvider struct {
 	volumes               []SourceVolume
 	currentSnapshots      int
 	maxConcurrentSnapshot int
+	maxAttachmentSlots    int
+	attachmentSlots       []int
 	failDeleteVolume      int
 	failDeleteSnapshot    int
 	deletedVolumes        []string
@@ -71,7 +73,16 @@ func (p *fakeProvider) CreateInspectionVolume(_ context.Context, _ VMTarget, _ S
 	}, nil
 }
 
+func (p *fakeProvider) MaxConcurrentAttachments() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.maxAttachmentSlots
+}
+
 func (p *fakeProvider) AttachInspectionVolume(_ context.Context, _ VMTarget, scannerHost ScannerHost, volume InspectionVolume, index int) (*VolumeAttachment, error) {
+	p.mu.Lock()
+	p.attachmentSlots = append(p.attachmentSlots, index)
+	p.mu.Unlock()
 	return &VolumeAttachment{
 		VolumeID:   volume.ID,
 		HostID:     scannerHost.HostID,
@@ -329,5 +340,105 @@ func TestRunnerReconcileCleansUpAfterFailedCleanup(t *testing.T) {
 	}
 	if !loaded.Volumes[0].Cleanup.Reconciled {
 		t.Fatalf("expected reconciled flag on volume cleanup, got %#v", loaded.Volumes[0].Cleanup)
+	}
+}
+
+func TestRunnerReconcilePagesOlderRuns(t *testing.T) {
+	store, err := NewSQLiteRunStore(filepath.Join(t.TempDir(), "workload-scan.db"))
+	if err != nil {
+		t.Fatalf("new sqlite run store: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	provider := &fakeProvider{}
+	runner := NewRunner(RunnerOptions{
+		Store:     store,
+		Providers: []Provider{provider},
+		Mounter:   &fakeMounter{},
+		Analyzer:  fakeAnalyzer{},
+	})
+
+	base := time.Date(2026, 3, 11, 12, 0, 0, 0, time.UTC)
+	for i := 0; i < 505; i++ {
+		run := &RunRecord{
+			ID:          fmt.Sprintf("workload_scan:reconcile:%03d", i),
+			Provider:    ProviderAWS,
+			Status:      RunStatusFailed,
+			Stage:       RunStageCleanup,
+			Target:      VMTarget{Provider: ProviderAWS, Region: "us-east-1", InstanceID: fmt.Sprintf("i-%03d", i)},
+			ScannerHost: ScannerHost{HostID: "i-scan", Region: "us-east-1"},
+			SubmittedAt: base.Add(time.Duration(i) * time.Minute),
+			UpdatedAt:   base.Add(time.Duration(i) * time.Minute),
+			Volumes: []VolumeScanRecord{
+				{
+					Source:     SourceVolume{ID: fmt.Sprintf("source-%03d", i), SizeGiB: 10},
+					Status:     RunStatusFailed,
+					Stage:      RunStageCleanup,
+					StartedAt:  base.Add(time.Duration(i) * time.Minute),
+					UpdatedAt:  base.Add(time.Duration(i) * time.Minute),
+					Snapshot:   &SnapshotArtifact{ID: fmt.Sprintf("snap-%03d", i), VolumeID: fmt.Sprintf("source-%03d", i)},
+					Inspection: &InspectionVolume{ID: fmt.Sprintf("vol-%03d", i), SnapshotID: fmt.Sprintf("snap-%03d", i)},
+					Attachment: &VolumeAttachment{VolumeID: fmt.Sprintf("vol-%03d", i), HostID: "i-scan"},
+					Mount:      &MountedVolume{VolumeID: fmt.Sprintf("vol-%03d", i), MountPath: fmt.Sprintf("/mnt/vol-%03d", i)},
+				},
+			},
+		}
+		if err := store.SaveRun(context.Background(), run); err != nil {
+			t.Fatalf("save run %d: %v", i, err)
+		}
+	}
+
+	reconciled, err := runner.Reconcile(context.Background(), 0)
+	if err != nil {
+		t.Fatalf("reconcile paged runs: %v", err)
+	}
+	if len(reconciled) != 505 {
+		t.Fatalf("expected 505 reconciled runs, got %d", len(reconciled))
+	}
+	if len(provider.deletedVolumes) != 505 || len(provider.deletedSnapshots) != 505 {
+		t.Fatalf("expected all leaked artifacts to be cleaned up, got volumes=%d snapshots=%d", len(provider.deletedVolumes), len(provider.deletedSnapshots))
+	}
+}
+
+func TestRunnerUsesAttachmentSlotsInsteadOfVolumeIndexes(t *testing.T) {
+	store, err := NewSQLiteRunStore(filepath.Join(t.TempDir(), "workload-scan.db"))
+	if err != nil {
+		t.Fatalf("new sqlite run store: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	provider := &fakeProvider{
+		maxAttachmentSlots: 2,
+		volumes: []SourceVolume{
+			{ID: "vol-a", SizeGiB: 1},
+			{ID: "vol-b", SizeGiB: 1},
+			{ID: "vol-c", SizeGiB: 1},
+			{ID: "vol-d", SizeGiB: 1},
+			{ID: "vol-e", SizeGiB: 1},
+		},
+	}
+	runner := NewRunner(RunnerOptions{
+		Store:                  store,
+		Providers:              []Provider{provider},
+		Mounter:                &fakeMounter{},
+		Analyzer:               fakeAnalyzer{},
+		MaxConcurrentSnapshots: 5,
+	})
+
+	if _, err := runner.RunVMScan(context.Background(), ScanRequest{
+		ID:          "workload_scan:attachment-slots",
+		Target:      VMTarget{Provider: ProviderAWS, Region: "us-east-1", InstanceID: "i-target"},
+		ScannerHost: ScannerHost{HostID: "i-scan", Region: "us-east-1"},
+	}); err != nil {
+		t.Fatalf("run vm scan with attachment slots: %v", err)
+	}
+
+	if len(provider.attachmentSlots) != len(provider.volumes) {
+		t.Fatalf("expected %d attachment slot records, got %d", len(provider.volumes), len(provider.attachmentSlots))
+	}
+	for _, slot := range provider.attachmentSlots {
+		if slot < 0 || slot >= provider.maxAttachmentSlots {
+			t.Fatalf("expected attachment slot to stay within [0,%d), got %d", provider.maxAttachmentSlots, slot)
+		}
 	}
 }

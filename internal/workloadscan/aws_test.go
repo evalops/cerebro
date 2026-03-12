@@ -82,3 +82,16 @@ func TestAWSProviderWaitForSnapshotCompletedUsesCompletionTime(t *testing.T) {
 		t.Fatalf("expected completion time %s, got %s", completionTime, readyAt)
 	}
 }
+
+func TestDeviceNameForIndexRejectsUnsupportedSlots(t *testing.T) {
+	deviceName, err := deviceNameForIndex(0)
+	if err != nil {
+		t.Fatalf("device name for first slot: %v", err)
+	}
+	if deviceName != "/dev/sdf" {
+		t.Fatalf("expected /dev/sdf, got %s", deviceName)
+	}
+	if _, err := deviceNameForIndex(len(awsAttachmentDeviceNames)); err == nil {
+		t.Fatal("expected attachment slot exhaustion to return an error")
+	}
+}
