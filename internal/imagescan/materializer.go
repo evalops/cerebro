@@ -213,12 +213,20 @@ func applyTarEntry(rootfsPath string, header *tar.Header, reader io.Reader) (int
 		if err := removeReplaceableTarget(targetPath); err != nil {
 			return 0, 0, err
 		}
-		return 0, 0, os.MkdirAll(targetPath, os.FileMode(header.Mode))
+		mode, err := tarEntryMode(header.Mode)
+		if err != nil {
+			return 0, 0, err
+		}
+		return 0, 0, os.MkdirAll(targetPath, mode)
 	case tar.TypeReg:
 		if err := removeReplaceableTarget(targetPath); err != nil {
 			return 0, 0, err
 		}
-		file, err := os.OpenFile(targetPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.FileMode(header.Mode))
+		mode, err := tarEntryMode(header.Mode)
+		if err != nil {
+			return 0, 0, err
+		}
+		file, err := os.OpenFile(targetPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode) // #nosec G304 -- targetPath is constrained beneath the materialized rootfs and rejects symlink traversal.
 		if err != nil {
 			return 0, 0, err
 		}
@@ -362,6 +370,13 @@ func removeReplaceableTarget(path string) error {
 		return os.Remove(path)
 	}
 	return os.RemoveAll(path)
+}
+
+func tarEntryMode(raw int64) (os.FileMode, error) {
+	if raw < 0 || raw > 0o7777 {
+		return 0, fmt.Errorf("tar entry mode %d is out of range", raw)
+	}
+	return os.FileMode(raw), nil
 }
 
 func sanitizePathComponent(raw string) string {
