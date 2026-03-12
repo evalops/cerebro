@@ -290,3 +290,82 @@ func TestApproveExecutionDoesNotHoldEngineLock(t *testing.T) {
 		t.Fatal("ApproveExecution did not finish")
 	}
 }
+
+func TestRejectExecutionFailsOnceApprovalIsRunning(t *testing.T) {
+	engine := NewResponseEngine()
+	handler := &blockingActionHandler{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	engine.SetActionHandler(handler)
+	engine.policies = map[string]*ResponsePolicy{
+		"approve-block-ip": {
+			ID:              "approve-block-ip",
+			Name:            "Approve Block IP",
+			Enabled:         true,
+			RequireApproval: true,
+			Triggers: []PolicyTrigger{
+				{Type: "finding", Category: CategoryReverseShell, Severity: "high"},
+			},
+			Actions: []PolicyAction{
+				{Type: ActionBlockIP, Parameters: map[string]string{"target": "destination"}},
+			},
+		},
+	}
+
+	finding := &RuntimeFinding{
+		ID:           "finding-reject-race",
+		RuleID:       "reverse-shell",
+		Category:     CategoryReverseShell,
+		Severity:     "critical",
+		ResourceID:   "pod-1",
+		ResourceType: "pod",
+		Event: &RuntimeEvent{
+			ID:           "event-reject-race",
+			ResourceID:   "pod-1",
+			ResourceType: "pod",
+			Network: &NetworkEvent{
+				SrcIP: "10.0.0.5",
+				DstIP: "203.0.113.10",
+			},
+		},
+	}
+
+	execution, err := engine.ProcessFinding(context.Background(), finding)
+	if err != nil {
+		t.Fatalf("ProcessFinding: %v", err)
+	}
+	if execution == nil {
+		t.Fatal("expected execution")
+	}
+
+	approveDone := make(chan error, 1)
+	go func() {
+		approveDone <- engine.ApproveExecution(context.Background(), execution.ID, "alice")
+	}()
+
+	select {
+	case <-handler.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("approval execution never started")
+	}
+
+	if err := engine.RejectExecution(execution.ID, "bob", "too late"); err == nil {
+		t.Fatal("expected rejection to fail once approval is already running")
+	}
+
+	close(handler.release)
+
+	select {
+	case err := <-approveDone:
+		if err != nil {
+			t.Fatalf("ApproveExecution: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("ApproveExecution did not finish")
+	}
+
+	if execution.Status != StatusCompleted {
+		t.Fatalf("status = %s, want %s", execution.Status, StatusCompleted)
+	}
+}
