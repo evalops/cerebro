@@ -367,12 +367,13 @@ func TestQueueEventCorrelationRefresh_DebouncesHotPathRebuilds(t *testing.T) {
 	defer a.stopEventCorrelationRefreshLoop()
 
 	a.queueEventCorrelationRefresh("tap_mapping")
-	if graphEdgeExists(a.SecurityGraph.GetOutEdges("deployment:payments:deploy-1"), graph.EdgeKindTriggeredBy, "pull_request:payments:42") {
+	if current := a.CurrentSecurityGraph(); current != nil && graphEdgeExists(current.GetOutEdges("deployment:payments:deploy-1"), graph.EdgeKindTriggeredBy, "pull_request:payments:42") {
 		t.Fatal("expected debounced refresh to avoid immediate rematerialization")
 	}
 
 	time.Sleep(2500 * time.Millisecond)
-	if !graphEdgeExists(a.SecurityGraph.GetOutEdges("deployment:payments:deploy-1"), graph.EdgeKindTriggeredBy, "pull_request:payments:42") {
+	current := a.CurrentSecurityGraph()
+	if current == nil || !graphEdgeExists(current.GetOutEdges("deployment:payments:deploy-1"), graph.EdgeKindTriggeredBy, "pull_request:payments:42") {
 		t.Fatal("expected debounced refresh to materialize correlation after debounce window")
 	}
 }
