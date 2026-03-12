@@ -421,29 +421,10 @@ func summarizeRun(run RunRecord) (scanSummary, map[string]packageAggregate, map[
 			if id == "" {
 				continue
 			}
-			if _, exists := vulns[id]; !exists {
+			if existing, exists := vulns[id]; exists {
+				vulns[id] = vulnerabilityAggregate{record: mergeVulnerabilityRecord(existing.record, vuln)}
+			} else {
 				vulns[id] = vulnerabilityAggregate{record: vuln}
-			}
-			switch normalizeSeverity(vuln.Severity) {
-			case "critical":
-				summary.CriticalVulnerabilityCount++
-			case "high":
-				summary.HighVulnerabilityCount++
-			case "medium":
-				summary.MediumVulnerabilityCount++
-			case "low":
-				summary.LowVulnerabilityCount++
-			default:
-				summary.UnknownVulnerabilityCount++
-			}
-			if vuln.InKEV {
-				summary.KnownExploitedCount++
-			}
-			if vuln.Exploitable {
-				summary.ExploitableCount++
-			}
-			if strings.TrimSpace(vuln.FixedVersion) != "" {
-				summary.FixableCount++
 			}
 			for _, pkg := range catalog.Packages {
 				if !strings.EqualFold(strings.TrimSpace(pkg.Name), strings.TrimSpace(vuln.Package)) {
@@ -463,8 +444,62 @@ func summarizeRun(run RunRecord) (scanSummary, map[string]packageAggregate, map[
 
 	summary.PackageCount = len(packages)
 	summary.VulnerabilityCount = len(vulns)
+	for _, vulnAgg := range vulns {
+		switch normalizeSeverity(vulnAgg.record.Severity) {
+		case "critical":
+			summary.CriticalVulnerabilityCount++
+		case "high":
+			summary.HighVulnerabilityCount++
+		case "medium":
+			summary.MediumVulnerabilityCount++
+		case "low":
+			summary.LowVulnerabilityCount++
+		default:
+			summary.UnknownVulnerabilityCount++
+		}
+		if vulnAgg.record.InKEV {
+			summary.KnownExploitedCount++
+		}
+		if vulnAgg.record.Exploitable {
+			summary.ExploitableCount++
+		}
+		if strings.TrimSpace(vulnAgg.record.FixedVersion) != "" {
+			summary.FixableCount++
+		}
+	}
 	summary.Risk = summaryRisk(summary)
 	return summary, packages, vulns, relations
+}
+
+func mergeVulnerabilityRecord(existing, incoming scanner.ImageVulnerability) scanner.ImageVulnerability {
+	merged := existing
+	if strings.TrimSpace(merged.CVE) == "" {
+		merged.CVE = incoming.CVE
+	}
+	if strings.TrimSpace(merged.ID) == "" {
+		merged.ID = incoming.ID
+	}
+	if vulnerabilitySeverityRank(incoming.Severity) > vulnerabilitySeverityRank(merged.Severity) {
+		merged.Severity = incoming.Severity
+	}
+	if strings.TrimSpace(merged.Package) == "" {
+		merged.Package = incoming.Package
+	}
+	if strings.TrimSpace(merged.InstalledVersion) == "" {
+		merged.InstalledVersion = incoming.InstalledVersion
+	}
+	if strings.TrimSpace(merged.FixedVersion) == "" {
+		merged.FixedVersion = incoming.FixedVersion
+	}
+	if incoming.CVSS > merged.CVSS {
+		merged.CVSS = incoming.CVSS
+	}
+	merged.InKEV = merged.InKEV || incoming.InKEV
+	merged.Exploitable = merged.Exploitable || incoming.Exploitable
+	if merged.Published.IsZero() && !incoming.Published.IsZero() {
+		merged.Published = incoming.Published
+	}
+	return merged
 }
 
 func buildPackageNode(pkg filesystemanalyzer.PackageRecord, target *graph.Node, metadata graph.WriteMetadata) *graph.Node {
@@ -626,6 +661,23 @@ func normalizeSeverity(value string) string {
 		return "low"
 	default:
 		return "unknown"
+	}
+}
+
+func vulnerabilitySeverityRank(value string) int {
+	switch normalizeSeverity(value) {
+	case "critical":
+		return 5
+	case "high":
+		return 4
+	case "medium":
+		return 3
+	case "low":
+		return 2
+	case "unknown":
+		return 1
+	default:
+		return 0
 	}
 }
 
