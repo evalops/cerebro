@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -288,13 +289,13 @@ func openImportReader(ctx context.Context, input, fallbackSource string) (io.Rea
 			_ = resp.Body.Close()
 			return nil, nil, "", fmt.Errorf("import source returned status %d", resp.StatusCode)
 		}
-		return resp.Body, resp.Body.Close, firstNonEmptyString(vulnDBImportSource, input, fallbackSource), nil
+		return resp.Body, resp.Body.Close, sanitizeSourceLabel(firstNonEmptyString(vulnDBImportSource, input, fallbackSource)), nil
 	}
 	file, err := os.Open(input) // #nosec G304 -- explicit operator-provided feed path for local advisory import
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("open import source: %w", err)
 	}
-	return file, file.Close, firstNonEmptyString(vulnDBImportSource, input, fallbackSource), nil
+	return file, file.Close, sanitizeSourceLabel(firstNonEmptyString(vulnDBImportSource, input, fallbackSource)), nil
 }
 
 func firstNonEmptyString(values ...string) string {
@@ -304,4 +305,19 @@ func firstNonEmptyString(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func sanitizeSourceLabel(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return trimmed
+	}
+	parsed.User = nil
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String()
 }

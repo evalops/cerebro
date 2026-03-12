@@ -5,11 +5,17 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
 	"strings"
 	"time"
+)
+
+var (
+	maxEPSSImportBytes int64 = 256 << 20
+	maxEPSSImportRows        = 1_000_000
 )
 
 type osvAdvisory struct {
@@ -166,17 +172,27 @@ func (s *Service) ImportEPSSCSV(ctx context.Context, source string, r io.Reader)
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	reader := csv.NewReader(r)
-	records, err := reader.ReadAll()
-	if err != nil {
-		return ImportReport{}, fmt.Errorf("read epss csv: %w", err)
-	}
+	limited := &io.LimitedReader{R: r, N: maxEPSSImportBytes + 1}
+	reader := csv.NewReader(limited)
+	reader.FieldsPerRecord = -1
 	report := ImportReport{Source: strings.TrimSpace(source)}
-	for i, record := range records {
+	rowCount := 0
+	for {
+		record, err := reader.Read()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return ImportReport{}, fmt.Errorf("read epss csv: %w", err)
+		}
+		rowCount++
+		if rowCount > maxEPSSImportRows {
+			return report, fmt.Errorf("epss csv exceeded maximum row count %d", maxEPSSImportRows)
+		}
 		if len(record) < 3 {
 			continue
 		}
-		if i == 0 && strings.EqualFold(strings.TrimSpace(record[0]), "cve") {
+		if rowCount == 1 && strings.EqualFold(strings.TrimSpace(record[0]), "cve") {
 			continue
 		}
 		score, err := strconv.ParseFloat(strings.TrimSpace(record[1]), 64)
@@ -193,6 +209,9 @@ func (s *Service) ImportEPSSCSV(ctx context.Context, source string, r io.Reader)
 		}
 		report.Imported++
 		report.MatchedEPSS += updated
+	}
+	if limited.N == 0 {
+		return report, fmt.Errorf("epss csv exceeded maximum size %d bytes", maxEPSSImportBytes)
 	}
 	now := s.now().UTC()
 	if err := s.store.UpdateSyncState(ctx, SyncState{Source: report.Source, LastAttemptAt: now, LastSuccessAt: now, RecordsSynced: report.Imported}); err != nil {
