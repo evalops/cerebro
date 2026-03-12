@@ -102,16 +102,23 @@ func (a *App) maybeStartGraphConsistencyCheck(trigger string, summary graph.Grap
 	}
 	a.graphConsistencyRun = true
 	a.graphConsistencyLast = now
+	baseCtx := a.graphCtx
+	if baseCtx == nil {
+		baseCtx = context.Background()
+	}
+	checkCtx, cancel := context.WithTimeout(baseCtx, 30*time.Minute)
+	a.graphConsistencyCancel = cancel
 	a.graphConsistencyMu.Unlock()
 
+	a.graphConsistencyWG.Add(1)
 	go func() {
+		defer a.graphConsistencyWG.Done()
 		defer func() {
 			a.graphConsistencyMu.Lock()
+			a.graphConsistencyCancel = nil
 			a.graphConsistencyRun = false
 			a.graphConsistencyMu.Unlock()
 		}()
-
-		checkCtx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 		defer cancel()
 
 		candidate, _, err := a.SecurityGraphBuilder.BuildCandidate(checkCtx)

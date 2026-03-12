@@ -463,6 +463,7 @@ func (a *App) initSecurityGraph(ctx context.Context) {
 	a.Propagation = graph.NewPropagationEngine(securityGraph)
 
 	graphCtx, cancel := context.WithCancel(backgroundWorkContext(ctx))
+	a.graphCtx = graphCtx
 	a.graphCancel = cancel
 	a.setGraphBuildState(GraphBuildBuilding, time.Time{}, nil)
 
