@@ -252,6 +252,15 @@ func TestQueryEventCorrelationsFailsClosedForUnknownScope(t *testing.T) {
 	if len(result.Correlations) != 0 || len(result.Anomalies) != 0 {
 		t.Fatalf("expected unknown event scope to fail closed, got %#v", result)
 	}
+
+	result = QueryEventCorrelations(g, base.Add(10*time.Minute), EventCorrelationQuery{
+		EntityID:         "service:does-not-exist",
+		IncludeAnomalies: true,
+		Limit:            10,
+	})
+	if len(result.Correlations) != 0 || len(result.Anomalies) != 0 {
+		t.Fatalf("expected unknown entity scope to fail closed, got %#v", result)
+	}
 }
 
 func hasActiveEdge(edges []*Edge, kind EdgeKind, target string) bool {
