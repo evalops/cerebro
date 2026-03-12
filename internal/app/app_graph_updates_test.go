@@ -72,3 +72,26 @@ func TestAppCloseCancelsGraphConsistencyChecks(t *testing.T) {
 		t.Fatal("expected Close to cancel and wait for graph consistency checks")
 	}
 }
+
+func TestSetSecurityGraphRefreshesPropagationEngine(t *testing.T) {
+	application := &App{}
+
+	first := graph.New()
+	first.AddNode(&graph.Node{ID: "service:first", Kind: graph.NodeKindService, Name: "first"})
+	application.setSecurityGraph(first)
+	firstEngine := application.propagationEngine()
+	if firstEngine == nil {
+		t.Fatal("expected propagation engine for first graph")
+	}
+
+	second := graph.New()
+	second.AddNode(&graph.Node{ID: "service:second", Kind: graph.NodeKindService, Name: "second"})
+	application.setSecurityGraph(second)
+	secondEngine := application.propagationEngine()
+	if secondEngine == nil {
+		t.Fatal("expected propagation engine for second graph")
+	}
+	if firstEngine == secondEngine {
+		t.Fatal("expected propagation engine to refresh after graph swap")
+	}
+}
