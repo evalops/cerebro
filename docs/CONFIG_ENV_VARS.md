@@ -2,7 +2,7 @@
 
 Generated from `internal/app/app_config.go` (`LoadConfig`) via `go run ./scripts/generate_config_docs/main.go`.
 
-Total variables: **291**
+Total variables: **296**
 
 | Variable | Reader(s) | Default(s) | Config Field(s) | Validation rule(s) |
 |---|---|---|---|---|
@@ -292,6 +292,11 @@ Total variables: **291**
 | `WIZ_TOKEN_URL` | `getEnv` | `"https://auth.app.wiz.io/oauth/token"` | `WizTokenURL` | `-` |
 | `WORKDAY_API_TOKEN` | `getEnv` | `""` | `WorkdayAPIToken` | `-` |
 | `WORKDAY_URL` | `getEnv` | `""` | `WorkdayURL` | `-` |
+| `WORKLOAD_SCAN_CLEANUP_TIMEOUT` | `getEnvDuration` | `2 * time.Minute` | `WorkloadScanCleanupTimeout` | `-` |
+| `WORKLOAD_SCAN_MAX_CONCURRENT_SNAPSHOTS` | `getEnvInt` | `2` | `WorkloadScanMaxConcurrentSnapshots` | `-` |
+| `WORKLOAD_SCAN_MOUNT_BASE_PATH` | `getEnv` | `filepath.Join(".cerebro", "workload-scan", "mounts")` | `WorkloadScanMountBasePath` | `-` |
+| `WORKLOAD_SCAN_RECONCILE_OLDER_THAN` | `getEnvDuration` | `30 * time.Minute` | `WorkloadScanReconcileOlderThan` | `-` |
+| `WORKLOAD_SCAN_STATE_FILE` | `getEnv` | `filepath.Join(".cerebro", "workload-scan", "runs.db")` | `WorkloadScanStateFile` | `-` |
 | `ZOOM_ACCOUNT_ID` | `getEnv` | `""` | `ZoomAccountID` | `-` |
 | `ZOOM_API_URL` | `getEnv` | `"https://api.zoom.us/v2"` | `ZoomAPIURL` | `-` |
 | `ZOOM_CLIENT_ID` | `getEnv` | `""` | `ZoomClientID` | `-` |

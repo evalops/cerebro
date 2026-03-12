@@ -5,6 +5,51 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 49 - Durable VM Snapshot Scan Runtime (2026-03-11)
+
+### Review findings
+- [x] Gap: issue `#177` still existed only as an architecture outline; there was no typed runtime for inventory/snapshot/mount/analyze/cleanup execution.
+- [x] Gap: workload scan orchestration would have defaulted to in-memory state without a persisted run/event model, which is not acceptable for long-running cloud snapshot workflows.
+- [x] Gap: AWS-specific execution requirements like scanner availability zone, cross-account snapshot sharing, and cleanup reconciliation were not expressed as first-class contracts.
+- [x] Gap: the CLI had no operator surface for listing, launching, or reconciling workload scans, so the connector work from cycle 48 had nothing concrete to feed.
+
+### Execution plan
+- [x] Add a durable workload scan runtime:
+  - [x] add typed run, volume, artifact, cost, cleanup, and event contracts under `internal/workloadscan`
+  - [x] persist workload scan runs and event timelines in SQLite instead of process-local memory
+  - [x] add reconciliation that can recover leaked artifacts from persisted incomplete runs
+- [x] Add the first provider and host seams:
+  - [x] add `Provider`, `Mounter`, `Analyzer`, and `EventEmitter` interfaces
+  - [x] implement AWS volume inventory, snapshot, share, inspection-volume creation, attach, detach, and cleanup
+  - [x] implement local read-only mounting for scanner hosts
+- [x] Add operator surface:
+  - [x] add `cerebro workload-scan list`
+  - [x] add `cerebro workload-scan run aws`
+  - [x] add `cerebro workload-scan reconcile aws`
+  - [x] make `scanner-zone` explicit at the CLI contract level
+- [x] Wire runtime observability and config:
+  - [x] add workload scan lifecycle webhook event types
+  - [x] add workload scan config/env knobs and validation
+  - [x] add workload scan architecture documentation
+- [x] Add focused regressions for runtime orchestration, config loading, CLI command shape, and webhook validation
+
+### Detailed follow-on backlog
+- [ ] Track A - Provider breadth
+  - Exit criteria:
+  - [ ] add GCP persistent disk snapshot orchestration behind the same provider contract
+  - [ ] add Azure managed disk snapshot orchestration behind the same provider contract
+  - [ ] normalize provider-specific cost and cleanup metadata for cross-cloud reporting
+- [ ] Track B - Analyzer integration
+  - Exit criteria:
+  - [ ] replace `NoopAnalyzer` with a real analyzer contract implementation from issue `#180`
+  - [ ] record analyzer outputs as persisted run artifacts instead of log-only side effects
+  - [ ] map scan outputs into graph evidence/claims for later intelligence surfaces
+- [ ] Track C - Execution surface hardening
+  - Exit criteria:
+  - [ ] expose workload scan runs/events over the platform API or job surface instead of CLI-only delivery
+  - [ ] decide whether the long-term state backend remains SQLite or moves to a shared multi-worker store
+  - [ ] add bounded mount-space accounting and artifact-retention policies
+
 ## Deep Review Cycle 48 - Connector Provisioning Contracts + Dry-Run Validation (2026-03-11)
 
 ### Review findings

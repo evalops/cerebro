@@ -87,6 +87,31 @@ func TestLoadConfigPlatformReportPersistencePaths(t *testing.T) {
 	}
 }
 
+func TestLoadConfigWorkloadScanPathsAndControls(t *testing.T) {
+	t.Setenv("WORKLOAD_SCAN_STATE_FILE", "/tmp/cerebro-workload-scan.db")
+	t.Setenv("WORKLOAD_SCAN_MOUNT_BASE_PATH", "/tmp/cerebro-workload-mounts")
+	t.Setenv("WORKLOAD_SCAN_MAX_CONCURRENT_SNAPSHOTS", "7")
+	t.Setenv("WORKLOAD_SCAN_CLEANUP_TIMEOUT", "4m")
+	t.Setenv("WORKLOAD_SCAN_RECONCILE_OLDER_THAN", "45m")
+
+	cfg := LoadConfig()
+	if cfg.WorkloadScanStateFile != "/tmp/cerebro-workload-scan.db" {
+		t.Fatalf("expected workload scan state file to be set, got %q", cfg.WorkloadScanStateFile)
+	}
+	if cfg.WorkloadScanMountBasePath != "/tmp/cerebro-workload-mounts" {
+		t.Fatalf("expected workload scan mount base path to be set, got %q", cfg.WorkloadScanMountBasePath)
+	}
+	if cfg.WorkloadScanMaxConcurrentSnapshots != 7 {
+		t.Fatalf("expected workload scan max concurrent snapshots 7, got %d", cfg.WorkloadScanMaxConcurrentSnapshots)
+	}
+	if cfg.WorkloadScanCleanupTimeout != 4*time.Minute {
+		t.Fatalf("expected workload scan cleanup timeout 4m, got %s", cfg.WorkloadScanCleanupTimeout)
+	}
+	if cfg.WorkloadScanReconcileOlderThan != 45*time.Minute {
+		t.Fatalf("expected workload scan reconcile older than 45m, got %s", cfg.WorkloadScanReconcileOlderThan)
+	}
+}
+
 func TestLoadConfigGraphSchemaValidationMode(t *testing.T) {
 	t.Setenv("GRAPH_SCHEMA_VALIDATION_MODE", "enforce")
 	cfg := LoadConfig()
