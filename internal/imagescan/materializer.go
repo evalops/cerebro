@@ -197,17 +197,27 @@ func applyTarEntry(rootfsPath string, header *tar.Header, reader io.Reader) (int
 	if strings.HasPrefix(base, ".wh.") {
 		return 0, 0, applyWhiteout(rootfsPath, dir, base)
 	}
-	targetPath, err := safeJoin(rootfsPath, relPath)
+	parentPath, err := safePathNoFollow(rootfsPath, dir, false)
 	if err != nil {
 		return 0, 0, err
 	}
-	if err := os.MkdirAll(filepath.Dir(targetPath), 0o750); err != nil {
+	if err := os.MkdirAll(parentPath, 0o750); err != nil {
+		return 0, 0, err
+	}
+	targetPath, err := safePathNoFollow(rootfsPath, relPath, true)
+	if err != nil {
 		return 0, 0, err
 	}
 	switch header.Typeflag {
 	case tar.TypeDir:
+		if err := removeReplaceableTarget(targetPath); err != nil {
+			return 0, 0, err
+		}
 		return 0, 0, os.MkdirAll(targetPath, os.FileMode(header.Mode))
 	case tar.TypeReg:
+		if err := removeReplaceableTarget(targetPath); err != nil {
+			return 0, 0, err
+		}
 		file, err := os.OpenFile(targetPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.FileMode(header.Mode))
 		if err != nil {
 			return 0, 0, err
@@ -219,14 +229,18 @@ func applyTarEntry(rootfsPath string, header *tar.Header, reader io.Reader) (int
 		}
 		return 1, written, nil
 	case tar.TypeSymlink:
-		_ = os.RemoveAll(targetPath)
+		if err := removeReplaceableTarget(targetPath); err != nil {
+			return 0, 0, err
+		}
 		return 0, 0, os.Symlink(header.Linkname, targetPath)
 	case tar.TypeLink:
-		linkTarget, err := safeJoin(rootfsPath, sanitizeTarPath(header.Linkname))
+		linkTarget, err := safePathNoFollow(rootfsPath, sanitizeTarPath(header.Linkname), false)
 		if err != nil {
 			return 0, 0, err
 		}
-		_ = os.RemoveAll(targetPath)
+		if err := removeReplaceableTarget(targetPath); err != nil {
+			return 0, 0, err
+		}
 		return 0, 0, os.Link(linkTarget, targetPath)
 	default:
 		return 0, 0, nil
@@ -234,7 +248,7 @@ func applyTarEntry(rootfsPath string, header *tar.Header, reader io.Reader) (int
 }
 
 func applyWhiteout(rootfsPath, dir, base string) error {
-	dirPath, err := safeJoin(rootfsPath, dir)
+	dirPath, err := safePathNoFollow(rootfsPath, dir, false)
 	if err != nil {
 		return err
 	}
@@ -251,7 +265,7 @@ func applyWhiteout(rootfsPath, dir, base string) error {
 		return nil
 	}
 	targetName := strings.TrimPrefix(base, ".wh.")
-	targetPath, err := safeJoin(rootfsPath, filepath.Join(dir, targetName))
+	targetPath, err := safePathNoFollow(rootfsPath, filepath.Join(dir, targetName), true)
 	if err != nil {
 		return err
 	}
@@ -299,24 +313,55 @@ func sanitizeTarPath(raw string) string {
 	return raw
 }
 
-func safeJoin(rootfsPath, relPath string) (string, error) {
+func safePathNoFollow(rootfsPath, relPath string, allowFinalSymlink bool) (string, error) {
 	rootfsPath, err := filepath.Abs(rootfsPath)
 	if err != nil {
 		return "", err
 	}
-	resolvedPath := filepath.Join(rootfsPath, relPath)
-	resolvedPath, err = filepath.Abs(resolvedPath)
+	relPath = sanitizeTarPath(relPath)
+	if relPath == "" {
+		return rootfsPath, nil
+	}
+	parts := strings.Split(relPath, string(filepath.Separator))
+	current := rootfsPath
+	for idx, part := range parts {
+		current = filepath.Join(current, part)
+		relative, err := filepath.Rel(rootfsPath, current)
+		if err != nil {
+			return "", err
+		}
+		if relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			return "", fmt.Errorf("path %s escapes rootfs %s", current, rootfsPath)
+		}
+		info, err := os.Lstat(current)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return "", err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			isLast := idx == len(parts)-1
+			if !isLast || !allowFinalSymlink {
+				return "", fmt.Errorf("path %s traverses symlink component", current)
+			}
+		}
+	}
+	return current, nil
+}
+
+func removeReplaceableTarget(path string) error {
+	info, err := os.Lstat(path)
 	if err != nil {
-		return "", err
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
 	}
-	relative, err := filepath.Rel(rootfsPath, resolvedPath)
-	if err != nil {
-		return "", err
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return os.Remove(path)
 	}
-	if relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("path %s escapes rootfs %s", resolvedPath, rootfsPath)
-	}
-	return resolvedPath, nil
+	return os.RemoveAll(path)
 }
 
 func sanitizePathComponent(raw string) string {

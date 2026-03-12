@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -160,6 +161,89 @@ func TestLocalMaterializerAppliesWhiteouts(t *testing.T) {
 	}
 }
 
+func TestLocalMaterializerRejectsWriteThroughSymlinkParent(t *testing.T) {
+	outsideDir := filepath.Join(t.TempDir(), "outside")
+	if err := os.MkdirAll(outsideDir, 0o750); err != nil {
+		t.Fatalf("mkdir outside: %v", err)
+	}
+	layer1 := gzipTarEntries(t, []tarEntry{{
+		name:     "linkdir",
+		typeflag: tar.TypeSymlink,
+		linkname: outsideDir,
+	}})
+	layer2 := gzipTarLayer(t, map[string]string{
+		"linkdir/pwned.txt": "nope\n",
+	}, nil)
+
+	manifest := &scanner.ImageManifest{
+		Layers: []scanner.Layer{
+			{Digest: "sha256:one", MediaType: "application/vnd.oci.image.layer.v1.tar+gzip"},
+			{Digest: "sha256:two", MediaType: "application/vnd.oci.image.layer.v1.tar+gzip"},
+		},
+	}
+	materializer := NewLocalMaterializer(filepath.Join(t.TempDir(), "rootfs"))
+	_, _, err := materializer.Materialize(context.Background(), "image_scan:symlink-write", manifest, func(_ context.Context, digest string) (io.ReadCloser, error) {
+		switch digest {
+		case "sha256:one":
+			return io.NopCloser(bytes.NewReader(layer1)), nil
+		case "sha256:two":
+			return io.NopCloser(bytes.NewReader(layer2)), nil
+		default:
+			return nil, fmt.Errorf("unexpected digest %s", digest)
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("expected symlink traversal error, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outsideDir, "pwned.txt")); !os.IsNotExist(err) {
+		t.Fatalf("expected outside file to remain absent, got %v", err)
+	}
+}
+
+func TestLocalMaterializerRejectsWhiteoutThroughSymlinkParent(t *testing.T) {
+	outsideDir := filepath.Join(t.TempDir(), "outside")
+	if err := os.MkdirAll(outsideDir, 0o750); err != nil {
+		t.Fatalf("mkdir outside: %v", err)
+	}
+	victimPath := filepath.Join(outsideDir, "victim.txt")
+	if err := os.WriteFile(victimPath, []byte("keep\n"), 0o640); err != nil {
+		t.Fatalf("write victim: %v", err)
+	}
+	layer1 := gzipTarEntries(t, []tarEntry{{
+		name:     "linkdir",
+		typeflag: tar.TypeSymlink,
+		linkname: outsideDir,
+	}})
+	layer2 := gzipTarEntries(t, []tarEntry{{
+		name: ".wh.victim.txt",
+		dir:  "linkdir",
+	}})
+
+	manifest := &scanner.ImageManifest{
+		Layers: []scanner.Layer{
+			{Digest: "sha256:one", MediaType: "application/vnd.oci.image.layer.v1.tar+gzip"},
+			{Digest: "sha256:two", MediaType: "application/vnd.oci.image.layer.v1.tar+gzip"},
+		},
+	}
+	materializer := NewLocalMaterializer(filepath.Join(t.TempDir(), "rootfs"))
+	_, _, err := materializer.Materialize(context.Background(), "image_scan:symlink-whiteout", manifest, func(_ context.Context, digest string) (io.ReadCloser, error) {
+		switch digest {
+		case "sha256:one":
+			return io.NopCloser(bytes.NewReader(layer1)), nil
+		case "sha256:two":
+			return io.NopCloser(bytes.NewReader(layer2)), nil
+		default:
+			return nil, fmt.Errorf("unexpected digest %s", digest)
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("expected symlink traversal error, got %v", err)
+	}
+	if _, err := os.Stat(victimPath); err != nil {
+		t.Fatalf("expected victim to remain after rejected whiteout, got %v", err)
+	}
+}
+
 func TestRunnerRunImageScanPersistsLifecycleAndCleanup(t *testing.T) {
 	store, err := NewSQLiteRunStore(filepath.Join(t.TempDir(), "image-scan.db"))
 	if err != nil {
@@ -258,31 +342,61 @@ func TestRunnerRunImageScanPersistsLifecycleAndCleanup(t *testing.T) {
 
 func gzipTarLayer(t *testing.T, files map[string]string, extraEntries []string) []byte {
 	t.Helper()
+	entries := make([]tarEntry, 0, len(files)+len(extraEntries))
+	for name, content := range files {
+		entries = append(entries, tarEntry{
+			name:     name,
+			typeflag: tar.TypeReg,
+			body:     []byte(content),
+			mode:     0o644,
+		})
+	}
+	for _, name := range extraEntries {
+		entries = append(entries, tarEntry{
+			name: name,
+			mode: 0o000,
+		})
+	}
+	return gzipTarEntries(t, entries)
+}
+
+type tarEntry struct {
+	dir      string
+	name     string
+	typeflag byte
+	linkname string
+	body     []byte
+	mode     int64
+}
+
+func gzipTarEntries(t *testing.T, entries []tarEntry) []byte {
+	t.Helper()
 	var archive bytes.Buffer
 	gz := gzip.NewWriter(&archive)
 	tw := tar.NewWriter(gz)
-	for name, content := range files {
-		data := []byte(content)
+	for _, entry := range entries {
+		name := entry.name
+		if entry.dir != "" {
+			name = filepath.Join(entry.dir, entry.name)
+		}
+		typeflag := entry.typeflag
+		if typeflag == 0 {
+			typeflag = tar.TypeReg
+		}
 		header := &tar.Header{
-			Name: name,
-			Mode: 0o644,
-			Size: int64(len(data)),
+			Name:     name,
+			Mode:     entry.mode,
+			Size:     int64(len(entry.body)),
+			Typeflag: typeflag,
+			Linkname: entry.linkname,
 		}
 		if err := tw.WriteHeader(header); err != nil {
 			t.Fatalf("write tar header %s: %v", name, err)
 		}
-		if _, err := tw.Write(data); err != nil {
-			t.Fatalf("write tar content %s: %v", name, err)
-		}
-	}
-	for _, name := range extraEntries {
-		header := &tar.Header{
-			Name: name,
-			Mode: 0o000,
-			Size: 0,
-		}
-		if err := tw.WriteHeader(header); err != nil {
-			t.Fatalf("write whiteout header %s: %v", name, err)
+		if len(entry.body) > 0 {
+			if _, err := tw.Write(entry.body); err != nil {
+				t.Fatalf("write tar content %s: %v", name, err)
+			}
 		}
 	}
 	if err := tw.Close(); err != nil {
