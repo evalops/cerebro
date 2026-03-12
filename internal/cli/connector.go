@@ -546,7 +546,7 @@ func joinValidationModes(checks []connectors.ValidationCheckSpec) string {
 
 func allConnectorChecksPassed(checks []connectorValidationCheck) bool {
 	for _, check := range checks {
-		if check.Status == "failed" {
+		if connectorStatusRank(check.Status) >= connectorStatusRank("failed") {
 			return false
 		}
 	}
@@ -610,11 +610,23 @@ func classifyAWSDryRunResult(err error, action string) (string, string) {
 }
 
 func foldConnectorStatus(current, next string) string {
-	order := map[string]int{"passed": 0, "skipped": 1, "failed": 2}
-	if order[next] > order[current] {
+	if connectorStatusRank(next) > connectorStatusRank(current) {
 		return next
 	}
 	return current
+}
+
+func connectorStatusRank(status string) int {
+	switch strings.TrimSpace(status) {
+	case "passed":
+		return 0
+	case "skipped":
+		return 1
+	case "failed":
+		return 2
+	default:
+		return 3
+	}
 }
 
 func connectorGCPCredentials(ctx context.Context, authCfg *scheduledGCPAuthConfig) (*google.Credentials, error) {

@@ -1,6 +1,7 @@
 package connectors
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -63,5 +64,62 @@ func TestRenderAzureBundleIncludesARMAndTerraform(t *testing.T) {
 		if !paths[required] {
 			t.Fatalf("expected generated file %q", required)
 		}
+	}
+}
+
+func TestRenderAWSBundleEscapesJSONValues(t *testing.T) {
+	opts := AWSRenderOptions{
+		PrincipalARN: `arn:aws:iam::111122223333:role/Cerebro"Ops`,
+		ExternalID:   "ext\\line\nbreak",
+		RoleName:     "role\tname",
+	}
+	bundle, err := RenderAWSBundle(opts)
+	if err != nil {
+		t.Fatalf("RenderAWSBundle: %v", err)
+	}
+	var params []map[string]string
+	if err := json.Unmarshal([]byte(bundle.Files[1].Content), &params); err != nil {
+		t.Fatalf("expected valid AWS parameters JSON: %v\n%s", err, bundle.Files[1].Content)
+	}
+	if got := params[0]["ParameterValue"]; got != opts.PrincipalARN {
+		t.Fatalf("expected principal ARN %q, got %q", opts.PrincipalARN, got)
+	}
+	if got := params[1]["ParameterValue"]; got != opts.ExternalID {
+		t.Fatalf("expected external ID %q, got %q", opts.ExternalID, got)
+	}
+	if got := params[2]["ParameterValue"]; got != opts.RoleName {
+		t.Fatalf("expected role name %q, got %q", opts.RoleName, got)
+	}
+}
+
+func TestRenderAzureBundleEscapesJSONValues(t *testing.T) {
+	opts := AzureRenderOptions{
+		SubscriptionID: "sub\\id",
+		CustomRoleName: "Cerebro \"Snapshot\"\nOperator",
+	}
+	bundle, err := RenderAzureBundle(opts)
+	if err != nil {
+		t.Fatalf("RenderAzureBundle: %v", err)
+	}
+	var arm map[string]any
+	if err := json.Unmarshal([]byte(bundle.Files[0].Content), &arm); err != nil {
+		t.Fatalf("expected valid ARM JSON: %v\n%s", err, bundle.Files[0].Content)
+	}
+	parameters, ok := arm["parameters"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected ARM parameters map, got %T", arm["parameters"])
+	}
+	role, ok := parameters["roleName"].(map[string]any)
+	if !ok || role["defaultValue"] != opts.CustomRoleName {
+		t.Fatalf("expected escaped roleName defaultValue %q, got %#v", opts.CustomRoleName, parameters["roleName"])
+	}
+	var params map[string]any
+	if err := json.Unmarshal([]byte(bundle.Files[1].Content), &params); err != nil {
+		t.Fatalf("expected valid ARM parameters JSON: %v\n%s", err, bundle.Files[1].Content)
+	}
+	paramValues := params["parameters"].(map[string]any)
+	subscription := paramValues["subscriptionId"].(map[string]any)
+	if subscription["value"] != opts.SubscriptionID {
+		t.Fatalf("expected subscription value %q, got %#v", opts.SubscriptionID, subscription["value"])
 	}
 }

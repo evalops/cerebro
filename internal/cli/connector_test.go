@@ -10,38 +10,98 @@ import (
 )
 
 type connectorTestState struct {
-	output                string
-	outputDir             string
-	dryRun                bool
-	awsPrincipalARN       string
-	awsExternalID         string
-	awsRoleName           string
-	awsTagKey             string
-	awsTagValue           string
-	gcpProjectID          string
-	azureSubscriptionID   string
-	syncAzureSubscription string
-	runAWS                func(context.Context) (connectorValidationReport, error)
-	runGCP                func(context.Context) (connectorValidationReport, error)
-	runAzure              func(context.Context) (connectorValidationReport, error)
+	output                 string
+	outputDir              string
+	dryRun                 bool
+	awsPrincipalARN        string
+	awsExternalID          string
+	awsRoleName            string
+	awsTagKey              string
+	awsTagValue            string
+	awsVolumeID            string
+	awsSnapshotID          string
+	awsInstanceID          string
+	gcpProjectID           string
+	gcpServiceAccountID    string
+	gcpCustomRoleID        string
+	gcpEnableWIF           bool
+	gcpWIFPoolID           string
+	gcpWIFProviderID       string
+	gcpWIFIssuerURI        string
+	gcpWIFAudience         string
+	gcpPrincipalSubject    string
+	azureSubscriptionID    string
+	azureTenantID          string
+	azureLocation          string
+	azureDisplayName       string
+	azureCustomRoleName    string
+	syncAWSProfile         string
+	syncAWSConfigFile      string
+	syncAWSSharedCredsFile string
+	syncAWSCredentialProc  string
+	syncAWSWebIDTokenFile  string
+	syncAWSWebIDRoleARN    string
+	syncAWSRoleARN         string
+	syncAWSRoleSession     string
+	syncAWSRoleExternalID  string
+	syncAWSRoleSourceID    string
+	syncRegion             string
+	syncGCPCredentialsFile string
+	syncGCPImpersonateSA   string
+	syncGCPImpersonateDel  string
+	syncGCPImpersonateTTL  string
+	syncAzureSubscription  string
+	runAWS                 func(context.Context) (connectorValidationReport, error)
+	runGCP                 func(context.Context) (connectorValidationReport, error)
+	runAzure               func(context.Context) (connectorValidationReport, error)
 }
 
 func snapshotConnectorTestState() connectorTestState {
 	return connectorTestState{
-		output:                connectorOutput,
-		outputDir:             connectorScaffoldOutputDir,
-		dryRun:                connectorValidateDryRun,
-		awsPrincipalARN:       connectorAWSPrincipalARN,
-		awsExternalID:         connectorAWSExternalID,
-		awsRoleName:           connectorAWSRoleName,
-		awsTagKey:             connectorAWSTagKey,
-		awsTagValue:           connectorAWSTagValue,
-		gcpProjectID:          connectorGCPProjectID,
-		azureSubscriptionID:   connectorAzureSubscriptionID,
-		syncAzureSubscription: syncAzureSubscription,
-		runAWS:                runAWSConnectorValidateFn,
-		runGCP:                runGCPConnectorValidateFn,
-		runAzure:              runAzureConnectorValidateFn,
+		output:                 connectorOutput,
+		outputDir:              connectorScaffoldOutputDir,
+		dryRun:                 connectorValidateDryRun,
+		awsPrincipalARN:        connectorAWSPrincipalARN,
+		awsExternalID:          connectorAWSExternalID,
+		awsRoleName:            connectorAWSRoleName,
+		awsTagKey:              connectorAWSTagKey,
+		awsTagValue:            connectorAWSTagValue,
+		awsVolumeID:            connectorAWSVolumeID,
+		awsSnapshotID:          connectorAWSSnapshotID,
+		awsInstanceID:          connectorAWSInstanceID,
+		gcpProjectID:           connectorGCPProjectID,
+		gcpServiceAccountID:    connectorGCPServiceAccountID,
+		gcpCustomRoleID:        connectorGCPCustomRoleID,
+		gcpEnableWIF:           connectorGCPEnableWIF,
+		gcpWIFPoolID:           connectorGCPWIFPoolID,
+		gcpWIFProviderID:       connectorGCPWIFProviderID,
+		gcpWIFIssuerURI:        connectorGCPWIFIssuerURI,
+		gcpWIFAudience:         connectorGCPWIFAudience,
+		gcpPrincipalSubject:    connectorGCPPrincipalSubject,
+		azureSubscriptionID:    connectorAzureSubscriptionID,
+		azureTenantID:          connectorAzureTenantID,
+		azureLocation:          connectorAzureLocation,
+		azureDisplayName:       connectorAzureDisplayName,
+		azureCustomRoleName:    connectorAzureCustomRoleName,
+		syncAWSProfile:         syncAWSProfile,
+		syncAWSConfigFile:      syncAWSConfigFile,
+		syncAWSSharedCredsFile: syncAWSSharedCredsFile,
+		syncAWSCredentialProc:  syncAWSCredentialProc,
+		syncAWSWebIDTokenFile:  syncAWSWebIDTokenFile,
+		syncAWSWebIDRoleARN:    syncAWSWebIDRoleARN,
+		syncAWSRoleARN:         syncAWSRoleARN,
+		syncAWSRoleSession:     syncAWSRoleSession,
+		syncAWSRoleExternalID:  syncAWSRoleExternalID,
+		syncAWSRoleSourceID:    syncAWSRoleSourceID,
+		syncRegion:             syncRegion,
+		syncGCPCredentialsFile: syncGCPCredentialsFile,
+		syncGCPImpersonateSA:   syncGCPImpersonateSA,
+		syncGCPImpersonateDel:  syncGCPImpersonateDel,
+		syncGCPImpersonateTTL:  syncGCPImpersonateTTL,
+		syncAzureSubscription:  syncAzureSubscription,
+		runAWS:                 runAWSConnectorValidateFn,
+		runGCP:                 runGCPConnectorValidateFn,
+		runAzure:               runAzureConnectorValidateFn,
 	}
 }
 
@@ -54,8 +114,38 @@ func restoreConnectorTestState(state connectorTestState) {
 	connectorAWSRoleName = state.awsRoleName
 	connectorAWSTagKey = state.awsTagKey
 	connectorAWSTagValue = state.awsTagValue
+	connectorAWSVolumeID = state.awsVolumeID
+	connectorAWSSnapshotID = state.awsSnapshotID
+	connectorAWSInstanceID = state.awsInstanceID
 	connectorGCPProjectID = state.gcpProjectID
+	connectorGCPServiceAccountID = state.gcpServiceAccountID
+	connectorGCPCustomRoleID = state.gcpCustomRoleID
+	connectorGCPEnableWIF = state.gcpEnableWIF
+	connectorGCPWIFPoolID = state.gcpWIFPoolID
+	connectorGCPWIFProviderID = state.gcpWIFProviderID
+	connectorGCPWIFIssuerURI = state.gcpWIFIssuerURI
+	connectorGCPWIFAudience = state.gcpWIFAudience
+	connectorGCPPrincipalSubject = state.gcpPrincipalSubject
 	connectorAzureSubscriptionID = state.azureSubscriptionID
+	connectorAzureTenantID = state.azureTenantID
+	connectorAzureLocation = state.azureLocation
+	connectorAzureDisplayName = state.azureDisplayName
+	connectorAzureCustomRoleName = state.azureCustomRoleName
+	syncAWSProfile = state.syncAWSProfile
+	syncAWSConfigFile = state.syncAWSConfigFile
+	syncAWSSharedCredsFile = state.syncAWSSharedCredsFile
+	syncAWSCredentialProc = state.syncAWSCredentialProc
+	syncAWSWebIDTokenFile = state.syncAWSWebIDTokenFile
+	syncAWSWebIDRoleARN = state.syncAWSWebIDRoleARN
+	syncAWSRoleARN = state.syncAWSRoleARN
+	syncAWSRoleSession = state.syncAWSRoleSession
+	syncAWSRoleExternalID = state.syncAWSRoleExternalID
+	syncAWSRoleSourceID = state.syncAWSRoleSourceID
+	syncRegion = state.syncRegion
+	syncGCPCredentialsFile = state.syncGCPCredentialsFile
+	syncGCPImpersonateSA = state.syncGCPImpersonateSA
+	syncGCPImpersonateDel = state.syncGCPImpersonateDel
+	syncGCPImpersonateTTL = state.syncGCPImpersonateTTL
 	syncAzureSubscription = state.syncAzureSubscription
 	runAWSConnectorValidateFn = state.runAWS
 	runGCPConnectorValidateFn = state.runGCP
@@ -154,6 +244,22 @@ func TestClassifyAWSDryRunResult(t *testing.T) {
 	status, _ = classifyAWSDryRunResult(staticConnectorErr("UnauthorizedOperation"), "ec2:CreateSnapshot")
 	if status != "failed" {
 		t.Fatalf("expected UnauthorizedOperation to fail, got %s", status)
+	}
+}
+
+func TestFoldConnectorStatusUnknownWinsOverKnown(t *testing.T) {
+	if got := foldConnectorStatus("passed", "unexpected"); got != "unexpected" {
+		t.Fatalf("expected unknown status to surface, got %q", got)
+	}
+	if got := foldConnectorStatus("unexpected", "failed"); got != "unexpected" {
+		t.Fatalf("expected existing unknown status to remain highest severity, got %q", got)
+	}
+}
+
+func TestAllConnectorChecksPassedRejectsUnknownStatus(t *testing.T) {
+	checks := []connectorValidationCheck{{ID: "mystery", Status: "unexpected", Detail: "unknown"}}
+	if allConnectorChecksPassed(checks) {
+		t.Fatal("expected unknown connector check status to fail report success")
 	}
 }
 

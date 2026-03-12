@@ -2,6 +2,7 @@ package connectors
 
 import (
 	"bytes"
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"text/template"
@@ -56,7 +57,7 @@ func RenderAWSBundle(opts AWSRenderOptions) (Bundle, error) {
 	}
 	files := []GeneratedFile{
 		{Path: filepath.ToSlash("aws/stackset.yaml"), Content: renderTemplate(awsStackSetTemplate, data)},
-		{Path: filepath.ToSlash("aws/parameters.example.json"), Content: renderTemplate(awsParametersTemplate, data)},
+		{Path: filepath.ToSlash("aws/parameters.example.json"), Content: renderJSONTemplate(awsParametersTemplate, data)},
 		{Path: filepath.ToSlash("aws/README.md"), Content: renderTemplate(awsReadmeTemplate, data)},
 	}
 	return Bundle{Provider: ProviderAWS, Summary: "AWS cross-account snapshot connector bundle", Files: files}, nil
@@ -92,8 +93,8 @@ func RenderAzureBundle(opts AzureRenderOptions) (Bundle, error) {
 		"CustomRoleName":       firstNonEmpty(strings.TrimSpace(opts.CustomRoleName), "Cerebro Snapshot Operator"),
 	}
 	files := []GeneratedFile{
-		{Path: filepath.ToSlash("azure/arm-template.json"), Content: renderTemplate(azureARMTemplate, data)},
-		{Path: filepath.ToSlash("azure/parameters.example.json"), Content: renderTemplate(azureARMParametersTemplate, data)},
+		{Path: filepath.ToSlash("azure/arm-template.json"), Content: renderJSONTemplate(azureARMTemplate, data)},
+		{Path: filepath.ToSlash("azure/parameters.example.json"), Content: renderJSONTemplate(azureARMParametersTemplate, data)},
 		{Path: filepath.ToSlash("azure/main.tf"), Content: renderTemplate(azureMainTemplate, data)},
 		{Path: filepath.ToSlash("azure/variables.tf"), Content: renderTemplate(azureVariablesTemplate, data)},
 		{Path: filepath.ToSlash("azure/outputs.tf"), Content: renderTemplate(azureOutputsTemplate, data)},
@@ -104,6 +105,23 @@ func RenderAzureBundle(opts AzureRenderOptions) (Bundle, error) {
 
 func renderTemplate(src string, data any) string {
 	tmpl := template.Must(template.New("bundle").Parse(src))
+	return executeTemplate(tmpl, data)
+}
+
+func renderJSONTemplate(src string, data any) string {
+	tmpl := template.Must(template.New("bundle").Funcs(template.FuncMap{
+		"jsonString": func(value any) string {
+			encoded, err := json.Marshal(value)
+			if err != nil {
+				panic(err)
+			}
+			return string(encoded)
+		},
+	}).Parse(src))
+	return executeTemplate(tmpl, data)
+}
+
+func executeTemplate(tmpl *template.Template, data any) string {
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, data); err != nil {
 		panic(err)
@@ -219,15 +237,15 @@ Outputs:
 const awsParametersTemplate = `[
   {
     "ParameterKey": "CerebroPrincipalArn",
-    "ParameterValue": "{{.PrincipalARN}}"
+    "ParameterValue": {{jsonString .PrincipalARN}}
   },
   {
     "ParameterKey": "ExternalId",
-    "ParameterValue": "{{.ExternalID}}"
+    "ParameterValue": {{jsonString .ExternalID}}
   },
   {
     "ParameterKey": "RoleName",
-    "ParameterValue": "{{.RoleName}}"
+    "ParameterValue": {{jsonString .RoleName}}
   }
 ]
 `
@@ -406,11 +424,11 @@ const azureARMTemplate = `{
     },
     "roleName": {
       "type": "string",
-      "defaultValue": "{{.CustomRoleName}}"
+      "defaultValue": {{jsonString .CustomRoleName}}
     },
     "subscriptionId": {
       "type": "string",
-      "defaultValue": "{{.SubscriptionID}}"
+      "defaultValue": {{jsonString .SubscriptionID}}
     }
   },
   "variables": {
@@ -479,7 +497,7 @@ const azureARMParametersTemplate = `{
       "value": "00000000-0000-0000-0000-000000000000"
     },
     "subscriptionId": {
-      "value": "{{.SubscriptionID}}"
+      "value": {{jsonString .SubscriptionID}}
     }
   }
 }
