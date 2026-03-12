@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/evalops/cerebro/internal/scanner"
@@ -84,6 +85,42 @@ func TestAnalyzerIncludesVulnerabilityScannerResults(t *testing.T) {
 	}
 	if len(report.Vulnerabilities) != 1 || len(report.Findings) == 0 {
 		t.Fatalf("expected vulnerability scanner results, got %#v %#v", report.Vulnerabilities, report.Findings)
+	}
+}
+
+func TestAnalyzerRecordsUnreadableFileErrors(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "etc", "os-release"), "ID=ubuntu\nNAME=Ubuntu\nVERSION_ID=22.04\n")
+	statusPath := filepath.Join(root, "var", "lib", "dpkg", "status")
+	mustWriteFile(t, statusPath, "Package: openssl\nVersion: 3.0.2-0ubuntu1\n")
+	if err := os.Chmod(statusPath, 0); err != nil {
+		t.Fatalf("Chmod(%s): %v", statusPath, err)
+	}
+	defer func() {
+		_ = os.Chmod(statusPath, 0o644)
+	}()
+
+	report, err := New(Options{}).Analyze(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	rawErrors, ok := report.Metadata["errors"]
+	if !ok {
+		t.Fatalf("expected metadata errors, got %#v", report.Metadata)
+	}
+	errors, ok := rawErrors.([]string)
+	if !ok {
+		t.Fatalf("expected []string metadata errors, got %T", rawErrors)
+	}
+	found := false
+	for _, entry := range errors {
+		if strings.Contains(entry, "var/lib/dpkg/status") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected unreadable file error for dpkg status, got %#v", errors)
 	}
 }
 

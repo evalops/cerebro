@@ -369,7 +369,7 @@ func readLimitedFile(root *os.Root, filePath string, limit int64) ([]byte, bool,
 	}
 	data, err := root.ReadFile(filePath)
 	if err != nil {
-		return nil, false, nil
+		return nil, false, fmt.Errorf("read %s: %w", filePath, err)
 	}
 	if int64(len(data)) > limit {
 		return nil, false, nil
