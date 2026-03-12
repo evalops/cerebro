@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -15,6 +17,8 @@ import (
 )
 
 const defaultCleanupTimeout = 2 * time.Minute
+
+var embeddedURLPattern = regexp.MustCompile(`https?://[^\s"'<>]+`)
 
 type EventEmitter interface {
 	EmitWithErrors(ctx context.Context, eventType webhooks.EventType, data map[string]interface{}) error
@@ -321,16 +325,17 @@ func (r *Runner) completeRun(ctx context.Context, run *RunRecord, message string
 
 func (r *Runner) failRun(ctx context.Context, run *RunRecord, stage RunStage, err error) (*RunRecord, error) {
 	failedAt := r.now().UTC()
+	safeError := operatorSafeErrorMessage(err)
 	run.Status = RunStatusFailed
 	run.Stage = stage
-	run.Error = err.Error()
+	run.Error = safeError
 	run.CompletedAt = &failedAt
 	run.UpdatedAt = failedAt
 	if saveErr := r.saveRun(ctx, run); saveErr != nil {
 		return nil, saveErr
 	}
-	r.recordRunEvent(ctx, run, run.Status, run.Stage, err.Error(), nil)
-	r.emitLifecycleEvent(ctx, webhooks.EventSecurityImageScanFailed, run, map[string]any{"error": err.Error()})
+	r.recordRunEvent(ctx, run, run.Status, run.Stage, safeError, nil)
+	r.emitLifecycleEvent(ctx, webhooks.EventSecurityImageScanFailed, run, map[string]any{"error": safeError})
 	return run, err
 }
 
@@ -479,4 +484,29 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func operatorSafeErrorMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	message := strings.TrimSpace(err.Error())
+	if message == "" {
+		return "image scan failed"
+	}
+	return embeddedURLPattern.ReplaceAllStringFunc(message, sanitizeEmbeddedURL)
+}
+
+func sanitizeEmbeddedURL(raw string) string {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		if idx := strings.Index(raw, "?"); idx >= 0 {
+			return raw[:idx]
+		}
+		return raw
+	}
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	parsed.User = nil
+	return parsed.String()
 }

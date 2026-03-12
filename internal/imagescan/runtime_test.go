@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,6 +24,7 @@ type fakeRegistry struct {
 	manifest *scanner.ImageManifest
 	vulns    []scanner.ImageVulnerability
 	blobs    map[string][]byte
+	blobErr  error
 }
 
 func (r *fakeRegistry) Name() string { return r.name }
@@ -45,6 +47,9 @@ func (r *fakeRegistry) GetVulnerabilities(context.Context, string, string) ([]sc
 	return append([]scanner.ImageVulnerability(nil), r.vulns...), nil
 }
 func (r *fakeRegistry) DownloadBlob(_ context.Context, _ string, digest string) (io.ReadCloser, error) {
+	if r.blobErr != nil {
+		return nil, r.blobErr
+	}
 	data, ok := r.blobs[digest]
 	if !ok {
 		return nil, fmt.Errorf("blob %s not found", digest)
@@ -65,11 +70,21 @@ func (s fakeFilesystemScanner) ScanFilesystem(_ context.Context, _ string) (*sca
 }
 
 type captureEmitter struct {
-	events []webhooks.EventType
+	events   []webhooks.EventType
+	payloads []map[string]any
 }
 
-func (e *captureEmitter) EmitWithErrors(_ context.Context, eventType webhooks.EventType, _ map[string]interface{}) error {
+func (e *captureEmitter) EmitWithErrors(_ context.Context, eventType webhooks.EventType, data map[string]interface{}) error {
 	e.events = append(e.events, eventType)
+	if data == nil {
+		e.payloads = append(e.payloads, nil)
+	} else {
+		payload := make(map[string]any, len(data))
+		for key, value := range data {
+			payload[key] = value
+		}
+		e.payloads = append(e.payloads, payload)
+	}
 	return nil
 }
 
@@ -413,6 +428,80 @@ func TestRunnerRunImageScanPreservesFilesystemVulnerabilityCountAcrossDedup(t *t
 	}
 	if run.Analysis.Result.Summary.Total != 1 {
 		t.Fatalf("expected one merged vulnerability, got %#v", run.Analysis.Result.Summary)
+	}
+}
+
+func TestRunnerRunImageScanSanitizesPersistedAndEmittedErrors(t *testing.T) {
+	store, err := NewSQLiteRunStore(filepath.Join(t.TempDir(), "image-scan.db"))
+	if err != nil {
+		t.Fatalf("new sqlite run store: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	registry := &fakeRegistry{
+		name: "ecr",
+		host: "123456789012.dkr.ecr.us-east-1.amazonaws.com",
+		manifest: &scanner.ImageManifest{
+			Digest: "sha256:image",
+			Layers: []scanner.Layer{
+				{Digest: "sha256:layer", MediaType: "application/vnd.oci.image.layer.v1.tar+gzip"},
+			},
+		},
+		blobErr: &url.Error{
+			Op:  "Get",
+			URL: "https://registry.example.com/layer?X-Amz-Signature=secret&X-Amz-Credential=creds",
+			Err: context.DeadlineExceeded,
+		},
+	}
+	emitter := &captureEmitter{}
+	runner := NewRunner(RunnerOptions{
+		Store:        store,
+		Registries:   []scanner.RegistryClient{registry},
+		Materializer: NewLocalMaterializer(filepath.Join(t.TempDir(), "rootfs")),
+		Events:       emitter,
+	})
+
+	run, err := runner.RunImageScan(context.Background(), ScanRequest{
+		ID: "image_scan:redacted-error",
+		Target: ScanTarget{
+			Registry:   RegistryECR,
+			Repository: "repo",
+			Tag:        "latest",
+		},
+	})
+	if err == nil {
+		t.Fatal("expected scan failure")
+	}
+	if run == nil {
+		t.Fatal("expected failed run record")
+	}
+	if strings.Contains(run.Error, "X-Amz-Signature=secret") || strings.Contains(run.Error, "X-Amz-Credential=creds") {
+		t.Fatalf("expected run error to redact presigned query params, got %q", run.Error)
+	}
+	events, err := store.LoadEvents(context.Background(), run.ID)
+	if err != nil {
+		t.Fatalf("load events: %v", err)
+	}
+	foundFailure := false
+	for _, event := range events {
+		if event.Status != RunStatusFailed {
+			continue
+		}
+		foundFailure = true
+		if strings.Contains(event.Message, "X-Amz-Signature=secret") || strings.Contains(event.Message, "X-Amz-Credential=creds") {
+			t.Fatalf("expected persisted failure event to redact presigned query params, got %q", event.Message)
+		}
+	}
+	if !foundFailure {
+		t.Fatalf("expected failed lifecycle event, got %#v", events)
+	}
+	if len(emitter.payloads) == 0 {
+		t.Fatal("expected emitted lifecycle payloads")
+	}
+	failedPayload := emitter.payloads[len(emitter.payloads)-1]
+	errorValue, _ := failedPayload["error"].(string)
+	if strings.Contains(errorValue, "X-Amz-Signature=secret") || strings.Contains(errorValue, "X-Amz-Credential=creds") {
+		t.Fatalf("expected emitted failure payload to redact presigned query params, got %q", errorValue)
 	}
 }
 

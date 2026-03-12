@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,6 +40,12 @@ type stubSignedRegistry struct {
 	*stubRegistry
 	signature    *SignatureVerification
 	signatureErr error
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }
 
 func (s *stubRegistry) Name() string { return s.name }
@@ -517,6 +524,44 @@ func TestGCRClientDownloadBlobQualifiesRepository(t *testing.T) {
 	}
 	if requestedPath != "/v2/my-project/repo/blobs/sha256:layer" {
 		t.Fatalf("unexpected blob path %q", requestedPath)
+	}
+}
+
+func TestECRClientDownloadBlobSanitizesPresignedURLTransportErrors(t *testing.T) {
+	originalClient := http.DefaultClient
+	http.DefaultClient = &http.Client{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return nil, &url.Error{
+				Op:  req.Method,
+				URL: req.URL.String(),
+				Err: context.DeadlineExceeded,
+			}
+		}),
+	}
+	t.Cleanup(func() {
+		http.DefaultClient = originalClient
+	})
+
+	stub := &stubECR{
+		getDownloadURLForLayerFn: func(input *ecr.GetDownloadUrlForLayerInput) (*ecr.GetDownloadUrlForLayerOutput, error) {
+			if got := aws.ToString(input.RepositoryName); got != "repo" {
+				t.Fatalf("unexpected repository %q", got)
+			}
+			return &ecr.GetDownloadUrlForLayerOutput{
+				DownloadUrl: aws.String("https://registry.example.com/layer?X-Amz-Signature=secret&X-Amz-Credential=creds"),
+			}, nil
+		},
+	}
+	client := NewECRClientWithAPI("us-west-2", "", stub)
+	_, err := client.DownloadBlob(context.Background(), "repo", "sha256:layer")
+	if err == nil {
+		t.Fatal("expected transport error")
+	}
+	if strings.Contains(err.Error(), "X-Amz-Signature=secret") || strings.Contains(err.Error(), "X-Amz-Credential=creds") {
+		t.Fatalf("expected sanitized transport error, got %q", err)
+	}
+	if !strings.Contains(err.Error(), "https://registry.example.com/layer") {
+		t.Fatalf("expected sanitized error to retain base URL context, got %q", err)
 	}
 }
 

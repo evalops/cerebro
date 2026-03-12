@@ -3,10 +3,13 @@ package scanner
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os/exec"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -701,7 +704,7 @@ func (c *ECRClient) DownloadBlob(ctx context.Context, repo, digest string) (io.R
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, sanitizeTransportError(err)
 	}
 	if resp.StatusCode >= 400 {
 		defer func() { _ = resp.Body.Close() }()
@@ -910,7 +913,7 @@ func (c *GCRClient) DownloadBlob(ctx context.Context, repo, digest string) (io.R
 	}
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, sanitizeTransportError(err)
 	}
 	if resp.StatusCode >= 400 {
 		defer func() { _ = resp.Body.Close() }()
@@ -962,7 +965,7 @@ func (c *GCRClient) doRequest(ctx context.Context, method, url, accept string) (
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, sanitizeTransportError(err)
 	}
 	defer func() {
 		_ = resp.Body.Close()
@@ -1078,7 +1081,7 @@ func (c *ACRClient) DownloadBlob(ctx context.Context, repo, digest string) (io.R
 	}
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, sanitizeTransportError(err)
 	}
 	if resp.StatusCode >= 400 {
 		defer func() { _ = resp.Body.Close() }()
@@ -1122,7 +1125,7 @@ func (c *ACRClient) doRequest(ctx context.Context, method, url, accept string) (
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, sanitizeTransportError(err)
 	}
 	defer func() {
 		_ = resp.Body.Close()
@@ -1306,4 +1309,49 @@ func stripURLScheme(host string) string {
 	host = strings.TrimPrefix(host, "https://")
 	host = strings.TrimPrefix(host, "http://")
 	return host
+}
+
+func sanitizeTransportError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%s", sanitizeTransportMessage(err))
+}
+
+var scannerEmbeddedURLPattern = regexp.MustCompile(`https?://[^\s"'<>]+`)
+
+func sanitizeTransportMessage(err error) string {
+	if err == nil {
+		return "registry transport request failed"
+	}
+	var urlErr *url.Error
+	if !errors.As(err, &urlErr) {
+		return scannerEmbeddedURLPattern.ReplaceAllStringFunc(strings.TrimSpace(err.Error()), sanitizeTransportURLString)
+	}
+	target := strings.TrimSpace(urlErr.URL)
+	if target == "" {
+		return "registry transport request failed: " + sanitizeTransportMessage(urlErr.Err)
+	}
+	target = sanitizeTransportURLString(target)
+	if target == "" {
+		return "registry transport request failed: " + sanitizeTransportMessage(urlErr.Err)
+	}
+	return fmt.Sprintf("registry transport request failed for %s: %s", target, sanitizeTransportMessage(urlErr.Err))
+}
+
+func sanitizeTransportURLString(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return raw
+	}
+	if parsed, err := url.Parse(raw); err == nil {
+		parsed.RawQuery = ""
+		parsed.Fragment = ""
+		parsed.User = nil
+		return parsed.String()
+	}
+	if idx := strings.Index(raw, "?"); idx >= 0 {
+		return raw[:idx]
+	}
+	return raw
 }
