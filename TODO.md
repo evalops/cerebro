@@ -5,6 +5,46 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 47 - Shared Test Helpers + Narrow Service Interfaces for Testability (2026-03-11)
+
+### Review findings
+- [x] Gap: `internal/testutil` was still too thin to standardize new test suites; common setup lived ad hoc in package-local helpers, especially `internal/api/server_test.go`.
+- [x] Gap: several services still consumed concrete implementations where they only needed a small capability slice, forcing tests to construct `*policy.Engine`, `*webhooks.Service`, or `*ticketing.Service` even for isolated behavior.
+- [x] Gap: moving app-level test construction directly into `internal/testutil` would create import cycles for same-package `internal/app` tests, so shared helper extraction needed a separate app-aware test package instead of a naive move.
+- [x] Gap: interface seams were not being proven directly, which meant "testability" claims could drift back into concrete-type coupling without targeted regressions.
+
+### Execution plan
+- [x] Expand shared test helpers without introducing cycles:
+  - [x] add `testutil.NewMemoryWarehouse()` with stable metadata defaults
+  - [x] keep `internal/testutil` app-agnostic so `internal/app` tests can continue importing it safely
+  - [x] add `internal/apptest` with `NewConfig`, `NewApp`, and `NewAppWithWarehouse`
+- [x] Narrow concrete dependencies to capability interfaces:
+  - [x] add `scanner.PolicyEvaluator`
+  - [x] add `findings.PolicyCatalog`
+  - [x] add `agents.PolicyEvaluator`
+  - [x] add `remediation.TicketService`
+  - [x] add `remediation.NotificationSender`
+  - [x] add `remediation.FindingsWriter`
+  - [x] add `remediation.EventPublisher`
+- [x] Move shared API app setup onto the new helper package:
+  - [x] replace the in-file `newTestApp()` implementation in `internal/api/server_test.go` with `apptest.NewApp(t)`
+  - [x] preserve legacy API-test behavior by keeping the default shared app helper warehouse-free unless a test explicitly injects one
+- [x] Add direct regressions proving the seams:
+  - [x] add `internal/apptest` tests for config/path and injected warehouse behavior
+  - [x] add interface-focused scanner, findings, agents, remediation, and testutil tests
+  - [x] keep the full repo green under `go test ./...`
+
+### Detailed follow-on backlog
+- [ ] Track A - Handler/service decomposition
+  - Exit criteria:
+  - [ ] continue issue `#146` by defining handler-facing `GraphQuerier`, `FindingsReader`, and related API service interfaces
+  - [ ] remove direct `*app.App` field reach-through from at least one handler family as proof of concept
+  - [ ] make new handler tests depend on minimal interface mocks instead of the full app container
+- [ ] Track B - Shared mock/test fixture generation
+  - Exit criteria:
+  - [ ] decide whether a small curated `go:generate` mockgen surface is worth it for the now-stable service interfaces
+  - [ ] consolidate repeated fake providers/stores in agents, notifications, and provider tests onto shared fixtures where it reduces duplication without obscuring behavior
+
 ## Deep Review Cycle 46 - CDC-Driven Incremental Graph Updates + Copy-On-Write Rebuilds (2026-03-11)
 
 ### Review findings
