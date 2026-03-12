@@ -18,6 +18,7 @@ type connectorTestState struct {
 	awsRoleName            string
 	awsTagKey              string
 	awsTagValue            string
+	awsRegion              string
 	awsVolumeID            string
 	awsSnapshotID          string
 	awsInstanceID          string
@@ -66,6 +67,7 @@ func snapshotConnectorTestState() connectorTestState {
 		awsRoleName:            connectorAWSRoleName,
 		awsTagKey:              connectorAWSTagKey,
 		awsTagValue:            connectorAWSTagValue,
+		awsRegion:              connectorAWSRegion,
 		awsVolumeID:            connectorAWSVolumeID,
 		awsSnapshotID:          connectorAWSSnapshotID,
 		awsInstanceID:          connectorAWSInstanceID,
@@ -114,6 +116,7 @@ func restoreConnectorTestState(state connectorTestState) {
 	connectorAWSRoleName = state.awsRoleName
 	connectorAWSTagKey = state.awsTagKey
 	connectorAWSTagValue = state.awsTagValue
+	connectorAWSRegion = state.awsRegion
 	connectorAWSVolumeID = state.awsVolumeID
 	connectorAWSSnapshotID = state.awsSnapshotID
 	connectorAWSInstanceID = state.awsInstanceID
@@ -280,6 +283,25 @@ func TestAWSDescribeInstancesInputUsesMaxResultsWithoutInstanceID(t *testing.T) 
 	}
 	if len(input.InstanceIds) != 0 {
 		t.Fatalf("expected no instance IDs when none provided, got %#v", input.InstanceIds)
+	}
+}
+
+func TestConnectorValidateRegionUsesDedicatedDefault(t *testing.T) {
+	state := snapshotConnectorTestState()
+	defer restoreConnectorTestState(state)
+
+	syncRegion = ""
+	connectorAWSRegion = "us-east-1"
+
+	flag := connectorValidateCmd.Flag("region")
+	if flag == nil {
+		t.Fatal("expected connector validate region flag to be registered")
+	}
+	if flag.DefValue != "us-east-1" {
+		t.Fatalf("expected connector validate region default us-east-1, got %q", flag.DefValue)
+	}
+	if connectorAWSRegion != "us-east-1" {
+		t.Fatalf("expected dedicated connector AWS region default to remain us-east-1, got %q", connectorAWSRegion)
 	}
 }
 

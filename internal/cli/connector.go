@@ -72,6 +72,7 @@ var (
 	connectorAWSRoleName     string
 	connectorAWSTagKey       string
 	connectorAWSTagValue     string
+	connectorAWSRegion       string
 	connectorAWSVolumeID     string
 	connectorAWSSnapshotID   string
 	connectorAWSInstanceID   string
@@ -176,7 +177,7 @@ func init() {
 	connectorValidateCmd.Flags().StringVar(&syncAWSRoleSession, "aws-role-session-name", "cerebro-connector-validate", "Session name for AWS role assumption")
 	connectorValidateCmd.Flags().StringVar(&syncAWSRoleExternalID, "aws-role-external-id", "", "External ID for AWS role assumption")
 	connectorValidateCmd.Flags().StringVar(&syncAWSRoleSourceID, "aws-role-source-identity", "", "Source identity for AWS role assumption")
-	connectorValidateCmd.Flags().StringVarP(&syncRegion, "region", "r", "us-east-1", "AWS region for validation")
+	connectorValidateCmd.Flags().StringVarP(&connectorAWSRegion, "region", "r", "us-east-1", "AWS region for validation")
 	connectorValidateCmd.Flags().StringVar(&connectorAWSVolumeID, "aws-volume-id", "", "Sample EBS volume ID used for AWS dry-run mutation checks")
 	connectorValidateCmd.Flags().StringVar(&connectorAWSSnapshotID, "aws-snapshot-id", "", "Sample snapshot ID used for AWS dry-run mutation checks")
 	connectorValidateCmd.Flags().StringVar(&connectorAWSInstanceID, "aws-instance-id", "", "Optional sample instance ID to confirm read access context")
@@ -323,7 +324,7 @@ func runAWSConnectorValidate(ctx context.Context) (connectorValidationReport, er
 		checks = append(checks, connectorValidationCheck{ID: "auth", Status: "failed", Detail: fmt.Sprintf("assume AWS role: %v", err)})
 		return finish(fmt.Errorf("aws connector auth: %w", err))
 	}
-	if region := strings.TrimSpace(syncRegion); region != "" {
+	if region := strings.TrimSpace(connectorAWSRegion); region != "" {
 		cfg.Region = region
 	}
 	stsClient := sts.NewFromConfig(cfg)
@@ -594,7 +595,7 @@ func awsDryRunCreateSnapshot(ctx context.Context, client *ec2.Client, volumeID, 
 
 func awsDryRunCopySnapshot(ctx context.Context, client *ec2.Client, snapshotID, tagKey, tagValue string) error {
 	_, err := client.CopySnapshot(ctx, &ec2.CopySnapshotInput{
-		SourceRegion:      aws.String(firstNonEmptyString(strings.TrimSpace(syncRegion), "us-east-1")),
+		SourceRegion:      aws.String(firstNonEmptyString(strings.TrimSpace(connectorAWSRegion), "us-east-1")),
 		SourceSnapshotId:  aws.String(snapshotID),
 		Description:       aws.String("cerebro connector validate"),
 		DryRun:            aws.Bool(true),
