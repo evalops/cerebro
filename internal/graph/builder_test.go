@@ -307,6 +307,20 @@ func TestBuilder_BuildUsesCopyOnWriteSwap(t *testing.T) {
 	}
 }
 
+func TestBuilder_BuildPreservesSchemaValidationMode(t *testing.T) {
+	source := newMockDataSource()
+	builder := NewBuilder(source, slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError})))
+	builder.Graph().SetSchemaValidationMode(SchemaValidationEnforce)
+
+	if err := builder.Build(context.Background()); err != nil {
+		t.Fatalf("Build failed: %v", err)
+	}
+
+	if got := builder.Graph().SchemaValidationMode(); got != SchemaValidationEnforce {
+		t.Fatalf("expected schema validation mode %q, got %q", SchemaValidationEnforce, got)
+	}
+}
+
 func TestNormalizeRelID(t *testing.T) {
 	arn := "arn:aws:iam::123456789012:role/TestRole"
 	tests := []struct {

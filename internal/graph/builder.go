@@ -105,11 +105,19 @@ func (b *Builder) BuildCandidate(ctx context.Context) (*Graph, GraphMutationSumm
 		return nil, GraphMutationSummary{}, err
 	}
 
+	validationMode := SchemaValidationWarn
+	b.stateMu.RLock()
+	if b.graph != nil {
+		validationMode = b.graph.SchemaValidationMode()
+	}
+	b.stateMu.RUnlock()
+
 	working := &Builder{
 		source: b.source,
 		graph:  New(),
 		logger: b.logger,
 	}
+	working.graph.SetSchemaValidationMode(validationMode)
 	start := time.Now()
 
 	working.logger.Info("building graph platform")
