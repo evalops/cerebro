@@ -175,6 +175,7 @@ func (s *Service) ImportEPSSCSV(ctx context.Context, source string, r io.Reader)
 	limited := &io.LimitedReader{R: r, N: maxEPSSImportBytes + 1}
 	reader := csv.NewReader(limited)
 	reader.FieldsPerRecord = -1
+	reader.Comment = '#'
 	report := ImportReport{Source: strings.TrimSpace(source)}
 	rowCount := 0
 	for {
