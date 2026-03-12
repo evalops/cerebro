@@ -644,7 +644,7 @@ func (a *App) initEventCorrelationRefreshLoop(ctx context.Context) {
 	if a == nil || a.eventCorrelationRefreshCh != nil {
 		return
 	}
-	loopCtx, cancel := context.WithCancel(ctx)
+	loopCtx, cancel := context.WithCancel(ctx) // #nosec G118 -- cancel is stored on App and invoked by stopEventCorrelationRefreshLoop during shutdown.
 	a.eventCorrelationRefreshCh = make(chan string, 1)
 	a.eventCorrelationRefreshCancel = cancel
 	a.eventCorrelationRefreshWG.Add(1)
