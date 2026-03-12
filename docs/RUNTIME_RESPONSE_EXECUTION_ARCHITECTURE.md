@@ -7,6 +7,8 @@ The design goal is practical:
 - make default runtime response policies capable of taking real action
 - avoid building a second orchestration subsystem beside `internal/actionengine`
 - distinguish between actions Cerebro can do directly now and actions that require remote execution
+- require an explicit trusted actuation scope before destructive runtime targets are accepted
+- keep the default destructive runtime policies approval-gated until source identity binding exists
 
 ## Execution Tiers
 
@@ -59,6 +61,8 @@ Default tool names are:
 
 If no remote tool provider is configured, these actions fail with a typed capability error instead of silently pretending to succeed.
 
+If no trusted actuation scope is attached to the execution context, these actions fail closed before any local or remote containment target is invoked.
+
 ### 3. Control-plane side effects handled elsewhere
 
 These remain outside the runtime action handler itself:
@@ -102,6 +106,8 @@ This is intentionally narrow:
 - `statefulset`
 
 Anything else must resolve through metadata or fall back to a remote tool.
+
+`scale_down`, `block_ip`, and `block_domain` also require a trusted actuation scope. Cerebro will not mutate containment state from unauthenticated runtime target identifiers.
 
 ## Follow-On Gaps
 

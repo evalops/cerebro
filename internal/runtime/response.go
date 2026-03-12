@@ -212,7 +212,7 @@ func (e *ResponseEngine) loadDefaultPolicies() {
 				{Type: ActionKillProcess, Timeout: 30},
 				{Type: ActionAlert, Parameters: map[string]string{"channel": "security"}},
 			},
-			RequireApproval: false,
+			RequireApproval: true,
 		},
 		{
 			ID:          "auto-isolate-container-escape",
@@ -228,7 +228,7 @@ func (e *ResponseEngine) loadDefaultPolicies() {
 				{Type: ActionAlert, Parameters: map[string]string{"channel": "security", "severity": "critical"}},
 				{Type: ActionCreateTicket, Parameters: map[string]string{"priority": "critical"}},
 			},
-			RequireApproval: false,
+			RequireApproval: true,
 		},
 		{
 			ID:          "auto-kill-reverse-shell",
@@ -244,7 +244,7 @@ func (e *ResponseEngine) loadDefaultPolicies() {
 				{Type: ActionBlockIP, Parameters: map[string]string{"target": "destination"}},
 				{Type: ActionAlert, Parameters: map[string]string{"channel": "security", "severity": "critical"}},
 			},
-			RequireApproval: false,
+			RequireApproval: true,
 		},
 		{
 			ID:          "block-c2-communication",

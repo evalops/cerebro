@@ -13,6 +13,7 @@ Status: executed end-to-end via PR workflow
 - [x] Gap: Cerebro needed an explicit split between direct local actions, Ensemble-delegated actions, and control-plane side effects instead of one undifferentiated handler interface.
 - [x] Gap: scale-down actions needed a typed workload target contract or they would stay permanently heuristic and silently broken.
 - [x] Gap: the architecture/docs still had no record of which runtime actions are genuinely local today versus which ones require remote actuator coverage.
+- [x] Gap: default destructive runtime policies were auto-executing against finding-derived target identifiers without a trusted source/ownership gate.
 
 ### Execution plan
 - [x] Add a concrete runtime action handler:
@@ -27,6 +28,10 @@ Status: executed end-to-end via PR workflow
 - [x] Wire runtime response initialization in the app:
   - [x] set `runtime.NewDefaultActionHandler(...)` during `initRuntime()`
   - [x] feed the runtime blocklist and optional `RemoteTools` provider into that handler
+- [x] Add trust boundaries for destructive actuation:
+  - [x] require a trusted actuation scope before destructive runtime targets are accepted
+  - [x] force the default destructive runtime policies back behind approval until source identity binding exists
+  - [x] reject out-of-range direct scale-down replica counts
 - [x] Add focused regression coverage:
   - [x] blocklist containment tests
   - [x] Ensemble delegation tests

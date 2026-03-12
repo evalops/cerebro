@@ -18,6 +18,7 @@ const (
 	defaultRuntimeRemoteActionTimeout = 30 * time.Second
 	runtimeSourceSystem               = "runtime_response"
 	runtimeSourceActor                = "cerebro"
+	maxRuntimeScaleReplicas           = 1<<31 - 1
 )
 
 const (
@@ -36,7 +37,7 @@ type RemoteActionCaller interface {
 }
 
 type WorkloadScaler interface {
-	ScaleDown(ctx context.Context, target WorkloadTarget, replicas int) error
+	ScaleDown(ctx context.Context, target WorkloadTarget, replicas int32) error
 }
 
 type WorkloadTarget struct {
@@ -58,6 +59,17 @@ type ActionCapabilityError struct {
 	Message string
 }
 
+type TrustedActuationScope struct {
+	AllowedResourceIDs      []string
+	AllowedContainerIDs     []string
+	AllowedNamespaces       []string
+	AllowedWorkloadTargets  []string
+	AllowedPrincipalIDs     []string
+	AllowNetworkContainment bool
+}
+
+type trustedActuationScopeContextKey struct{}
+
 func (e *ActionCapabilityError) Error() string {
 	if e == nil {
 		return ""
@@ -66,6 +78,25 @@ func (e *ActionCapabilityError) Error() string {
 		return fmt.Sprintf("runtime action %s unavailable (%s)", e.Action, e.Code)
 	}
 	return e.Message
+}
+
+func WithTrustedActuationScope(ctx context.Context, scope TrustedActuationScope) context.Context {
+	return context.WithValue(ctx, trustedActuationScopeContextKey{}, TrustedActuationScope{
+		AllowedResourceIDs:      append([]string(nil), scope.AllowedResourceIDs...),
+		AllowedContainerIDs:     append([]string(nil), scope.AllowedContainerIDs...),
+		AllowedNamespaces:       append([]string(nil), scope.AllowedNamespaces...),
+		AllowedWorkloadTargets:  append([]string(nil), scope.AllowedWorkloadTargets...),
+		AllowedPrincipalIDs:     append([]string(nil), scope.AllowedPrincipalIDs...),
+		AllowNetworkContainment: scope.AllowNetworkContainment,
+	})
+}
+
+func TrustedActuationScopeFromContext(ctx context.Context) (TrustedActuationScope, bool) {
+	if ctx == nil {
+		return TrustedActuationScope{}, false
+	}
+	scope, ok := ctx.Value(trustedActuationScopeContextKey{}).(TrustedActuationScope)
+	return scope, ok
 }
 
 type DefaultActionHandlerOptions struct {
@@ -132,10 +163,13 @@ func (h *DefaultActionHandler) BlockIP(ctx context.Context, ip string) error {
 	if ip == "" {
 		return fmt.Errorf("ip is required")
 	}
+	if err := authorizeActuation(ctx, ActionBlockIP, map[string]any{"ip": ip}); err != nil {
+		return err
+	}
 	if h.blocklist != nil {
 		h.blocklist.AddIP(ip, "runtime response containment", runtimeSourceSystem, runtimeSourceActor, nil)
 	}
-	_ = h.callRemoteBestEffort(ctx, runtimeToolBlockIP, map[string]any{"ip": ip})
+	_ = h.callRemoteBestEffort(ctx, ActionBlockIP, runtimeToolBlockIP, map[string]any{"ip": ip})
 	return nil
 }
 
@@ -144,10 +178,13 @@ func (h *DefaultActionHandler) BlockDomain(ctx context.Context, domain string) e
 	if domain == "" {
 		return fmt.Errorf("domain is required")
 	}
+	if err := authorizeActuation(ctx, ActionBlockDomain, map[string]any{"domain": domain}); err != nil {
+		return err
+	}
 	if h.blocklist != nil {
 		h.blocklist.AddDomain(domain, "runtime response containment", runtimeSourceSystem, runtimeSourceActor, nil)
 	}
-	_ = h.callRemoteBestEffort(ctx, runtimeToolBlockDomain, map[string]any{"domain": domain})
+	_ = h.callRemoteBestEffort(ctx, ActionBlockDomain, runtimeToolBlockDomain, map[string]any{"domain": domain})
 	return nil
 }
 
@@ -163,15 +200,25 @@ func (h *DefaultActionHandler) ScaleDown(ctx context.Context, resourceID string,
 	if replicas < 0 {
 		return fmt.Errorf("replicas must be non-negative")
 	}
+	if err := authorizeActuation(ctx, ActionScaleDown, map[string]any{
+		"resource_id": resourceID,
+		"replicas":    replicas,
+	}); err != nil {
+		return err
+	}
+	replicas32, err := runtimeScaleReplicas32(replicas)
+	if err != nil {
+		return err
+	}
 	target, err := ParseWorkloadTarget(resourceID)
 	if err == nil && h.workloadScaler != nil {
-		if scaleErr := h.workloadScaler.ScaleDown(ctx, target, replicas); scaleErr == nil {
+		if scaleErr := h.workloadScaler.ScaleDown(ctx, target, replicas32); scaleErr == nil {
 			return nil
 		} else {
 			err = scaleErr
 		}
 	}
-	if remoteErr := h.callRemoteBestEffort(ctx, runtimeToolScaleDown, map[string]any{
+	if remoteErr := h.callRemoteBestEffort(ctx, ActionScaleDown, runtimeToolScaleDown, map[string]any{
 		"resource_id": resourceID,
 		"replicas":    replicas,
 	}); remoteErr == nil {
@@ -195,6 +242,9 @@ func (h *DefaultActionHandler) callRemoteRequired(ctx context.Context, action Re
 			Message: fmt.Sprintf("runtime action %s requires an Ensemble remote tool", action),
 		}
 	}
+	if err := authorizeActuation(ctx, action, payload); err != nil {
+		return err
+	}
 	args, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshal runtime remote payload: %w", err)
@@ -203,9 +253,12 @@ func (h *DefaultActionHandler) callRemoteRequired(ctx context.Context, action Re
 	return err
 }
 
-func (h *DefaultActionHandler) callRemoteBestEffort(ctx context.Context, tool string, payload map[string]any) error {
+func (h *DefaultActionHandler) callRemoteBestEffort(ctx context.Context, action ResponseActionType, tool string, payload map[string]any) error {
 	if h == nil || h.remoteCaller == nil {
 		return fmt.Errorf("remote tool caller not configured")
+	}
+	if err := authorizeActuation(ctx, action, payload); err != nil {
+		return err
 	}
 	args, err := json.Marshal(payload)
 	if err != nil {
@@ -213,6 +266,74 @@ func (h *DefaultActionHandler) callRemoteBestEffort(ctx context.Context, tool st
 	}
 	_, err = h.remoteCaller.CallTool(ctx, tool, args, remainingRuntimeTimeout(ctx, h.remoteTimeout))
 	return err
+}
+
+func authorizeActuation(ctx context.Context, action ResponseActionType, payload map[string]any) error {
+	scope, ok := TrustedActuationScopeFromContext(ctx)
+	if !ok {
+		return &ActionCapabilityError{
+			Action:  action,
+			Code:    "trusted_scope_required",
+			Message: fmt.Sprintf("runtime action %s requires a trusted actuation scope", action),
+		}
+	}
+
+	switch action {
+	case ActionKillProcess, ActionIsolateHost, ActionQuarantineFile:
+		if !scopeAllows(scope.AllowedResourceIDs, runtimeMapValueToString(payload, "resource_id")) {
+			return unauthorizedRuntimeTargetError(action)
+		}
+	case ActionIsolateContainer:
+		containerID := runtimeMapValueToString(payload, "container_id")
+		namespace := runtimeMapValueToString(payload, "namespace")
+		if !scopeAllows(scope.AllowedContainerIDs, containerID) || !scopeAllows(scope.AllowedNamespaces, namespace) {
+			return unauthorizedRuntimeTargetError(action)
+		}
+	case ActionRevokeCredentials:
+		if !scopeAllows(scope.AllowedPrincipalIDs, runtimeMapValueToString(payload, "principal_id")) {
+			return unauthorizedRuntimeTargetError(action)
+		}
+	case ActionScaleDown:
+		if !scopeAllows(scope.AllowedWorkloadTargets, runtimeMapValueToString(payload, "resource_id")) {
+			return unauthorizedRuntimeTargetError(action)
+		}
+	case ActionBlockIP, ActionBlockDomain:
+		if !scope.AllowNetworkContainment {
+			return unauthorizedRuntimeTargetError(action)
+		}
+	}
+	return nil
+}
+
+func unauthorizedRuntimeTargetError(action ResponseActionType) error {
+	return &ActionCapabilityError{
+		Action:  action,
+		Code:    "target_not_authorized",
+		Message: fmt.Sprintf("runtime action %s target is outside the trusted actuation scope", action),
+	}
+}
+
+func scopeAllows(values []string, candidate string) bool {
+	candidate = strings.TrimSpace(candidate)
+	if candidate == "" {
+		return false
+	}
+	for _, value := range values {
+		if strings.EqualFold(strings.TrimSpace(value), candidate) {
+			return true
+		}
+	}
+	return false
+}
+
+func runtimeScaleReplicas32(replicas int) (int32, error) {
+	if replicas < 0 {
+		return 0, fmt.Errorf("replicas must be non-negative")
+	}
+	if replicas > maxRuntimeScaleReplicas {
+		return 0, fmt.Errorf("replicas must be <= %d", maxRuntimeScaleReplicas)
+	}
+	return int32(replicas), nil
 }
 
 func remainingRuntimeTimeout(ctx context.Context, fallback time.Duration) time.Duration {
@@ -283,7 +404,7 @@ func NewKubernetesWorkloadScaler(kubeconfig, kubeContext string) *KubernetesWork
 	}
 }
 
-func (s *KubernetesWorkloadScaler) ScaleDown(ctx context.Context, target WorkloadTarget, replicas int) error {
+func (s *KubernetesWorkloadScaler) ScaleDown(ctx context.Context, target WorkloadTarget, replicas int32) error {
 	config, err := s.loadConfig()
 	if err != nil {
 		return err
@@ -298,7 +419,7 @@ func (s *KubernetesWorkloadScaler) ScaleDown(ctx context.Context, target Workloa
 		if getErr != nil {
 			return fmt.Errorf("get deployment scale: %w", getErr)
 		}
-		scale.Spec.Replicas = int32(replicas)
+		scale.Spec.Replicas = replicas
 		_, updateErr := client.AppsV1().Deployments(target.Namespace).UpdateScale(ctx, target.Name, scale, metav1.UpdateOptions{})
 		return updateErr
 	case "statefulset":
@@ -306,7 +427,7 @@ func (s *KubernetesWorkloadScaler) ScaleDown(ctx context.Context, target Workloa
 		if getErr != nil {
 			return fmt.Errorf("get statefulset scale: %w", getErr)
 		}
-		scale.Spec.Replicas = int32(replicas)
+		scale.Spec.Replicas = replicas
 		_, updateErr := client.AppsV1().StatefulSets(target.Namespace).UpdateScale(ctx, target.Name, scale, metav1.UpdateOptions{})
 		return updateErr
 	default:

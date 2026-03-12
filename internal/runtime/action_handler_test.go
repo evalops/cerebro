@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -25,10 +26,10 @@ func (r *recordingRemoteCaller) CallTool(_ context.Context, toolName string, arg
 
 type recordingScaler struct {
 	target   WorkloadTarget
-	replicas int
+	replicas int32
 }
 
-func (r *recordingScaler) ScaleDown(_ context.Context, target WorkloadTarget, replicas int) error {
+func (r *recordingScaler) ScaleDown(_ context.Context, target WorkloadTarget, replicas int32) error {
 	r.target = target
 	r.replicas = replicas
 	return nil
@@ -78,11 +79,14 @@ func TestDefaultActionHandlerBlocklistActionsAddEntries(t *testing.T) {
 	handler := NewDefaultActionHandler(DefaultActionHandlerOptions{
 		Blocklist: blocklist,
 	})
+	ctx := WithTrustedActuationScope(context.Background(), TrustedActuationScope{
+		AllowNetworkContainment: true,
+	})
 
-	if err := handler.BlockIP(context.Background(), "203.0.113.10"); err != nil {
+	if err := handler.BlockIP(ctx, "203.0.113.10"); err != nil {
 		t.Fatalf("BlockIP: %v", err)
 	}
-	if err := handler.BlockDomain(context.Background(), "evil.example"); err != nil {
+	if err := handler.BlockDomain(ctx, "evil.example"); err != nil {
 		t.Fatalf("BlockDomain: %v", err)
 	}
 
@@ -99,8 +103,11 @@ func TestDefaultActionHandlerKillProcessUsesRemoteCaller(t *testing.T) {
 	handler := NewDefaultActionHandler(DefaultActionHandlerOptions{
 		RemoteCaller: caller,
 	})
+	ctx := WithTrustedActuationScope(context.Background(), TrustedActuationScope{
+		AllowedResourceIDs: []string{"pod-1"},
+	})
 
-	if err := handler.KillProcess(context.Background(), "pod-1", 4242); err != nil {
+	if err := handler.KillProcess(ctx, "pod-1", 4242); err != nil {
 		t.Fatalf("KillProcess: %v", err)
 	}
 
@@ -132,13 +139,36 @@ func TestDefaultActionHandlerKillProcessRequiresEnsemble(t *testing.T) {
 	}
 }
 
+func TestDefaultActionHandlerKillProcessRequiresTrustedScope(t *testing.T) {
+	caller := &recordingRemoteCaller{}
+	handler := NewDefaultActionHandler(DefaultActionHandlerOptions{
+		RemoteCaller: caller,
+	})
+
+	err := handler.KillProcess(context.Background(), "pod-1", 4242)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	var capabilityErr *ActionCapabilityError
+	if !errors.As(err, &capabilityErr) {
+		t.Fatalf("expected ActionCapabilityError, got %T", err)
+	}
+	if capabilityErr.Code != "trusted_scope_required" {
+		t.Fatalf("code = %q, want trusted_scope_required", capabilityErr.Code)
+	}
+}
+
 func TestDefaultActionHandlerScaleDownUsesScaler(t *testing.T) {
 	scaler := &recordingScaler{}
 	handler := NewDefaultActionHandler(DefaultActionHandlerOptions{
 		WorkloadScaler: scaler,
 	})
+	ctx := WithTrustedActuationScope(context.Background(), TrustedActuationScope{
+		AllowedWorkloadTargets: []string{"deployment:prod/payments-api"},
+	})
 
-	if err := handler.ScaleDown(context.Background(), "deployment:prod/payments-api", 0); err != nil {
+	if err := handler.ScaleDown(ctx, "deployment:prod/payments-api", 0); err != nil {
 		t.Fatalf("ScaleDown: %v", err)
 	}
 
@@ -147,6 +177,36 @@ func TestDefaultActionHandlerScaleDownUsesScaler(t *testing.T) {
 	}
 	if scaler.replicas != 0 {
 		t.Fatalf("replicas = %d, want 0", scaler.replicas)
+	}
+}
+
+func TestDefaultActionHandlerScaleDownRequiresTrustedTarget(t *testing.T) {
+	scaler := &recordingScaler{}
+	handler := NewDefaultActionHandler(DefaultActionHandlerOptions{
+		WorkloadScaler: scaler,
+	})
+
+	err := handler.ScaleDown(context.Background(), "deployment:prod/payments-api", 0)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	var capabilityErr *ActionCapabilityError
+	if !errors.As(err, &capabilityErr) {
+		t.Fatalf("expected ActionCapabilityError, got %T", err)
+	}
+	if capabilityErr.Code != "trusted_scope_required" {
+		t.Fatalf("code = %q, want trusted_scope_required", capabilityErr.Code)
+	}
+}
+
+func TestDefaultActionHandlerScaleDownRejectsOutOfRangeReplicas(t *testing.T) {
+	_, err := runtimeScaleReplicas32(maxRuntimeScaleReplicas + 1)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "replicas must be <=") {
+		t.Fatalf("err = %v, want range error", err)
 	}
 }
 
