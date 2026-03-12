@@ -5,6 +5,55 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 50 - Durable Container Image Scan Runtime (2026-03-11)
+
+### Review findings
+- [x] Gap: issue `#178` still existed only as a problem statement; there was no durable container image scan runtime or operator surface.
+- [x] Gap: the existing registry clients could list repositories/tags and fetch manifests, but they did not yet resolve manifest lists, fetch config blobs, or download layers directly.
+- [x] Gap: container image analysis would have drifted back into process-local orchestration unless it adopted the same persisted run/event model as workload scans.
+- [x] Gap: workload scan and image scan were on track to create separate SQLite silos unless they shared at least the execution-store default path.
+- [x] Gap: the issue stack `#179 -> #182` needed a stable rootfs/image execution substrate before deeper analyzers, vuln knowledge, or graph integration could land cleanly.
+
+### Execution plan
+- [x] Harden the registry scanner substrate:
+  - [x] add manifest list / OCI index resolution
+  - [x] load config blobs for labels, history, architecture, and base image hints
+  - [x] add direct blob/layer download support for ECR, GCR, and ACR
+- [x] Add a durable image scan runtime under `internal/imagescan`:
+  - [x] add typed run, event, filesystem, layer, and analysis contracts
+  - [x] persist runs/events in SQLite
+  - [x] add a local rootfs materializer with gzip/zstd support and OCI whiteout handling
+- [x] Add a first analyzer bridge:
+  - [x] add `scanner.TrivyFilesystemScanner`
+  - [x] analyze reconstructed rootfs paths instead of requiring a daemon image pull
+  - [x] merge native registry findings with filesystem findings
+- [x] Add operator/config surface:
+  - [x] add `cerebro image-scan list`
+  - [x] add `cerebro image-scan run ecr|gcr|acr`
+  - [x] add image-scan env/config controls
+  - [x] default workload/image execution state to shared `EXECUTION_STORE_FILE`
+- [x] Add architecture/test coverage:
+  - [x] add image scan architecture doc with OSS implementation references
+  - [x] add store round-trip regressions
+  - [x] add rootfs whiteout/materialization regressions
+  - [x] add persisted runner lifecycle/cleanup regressions
+
+### Detailed follow-on backlog
+- [ ] Track A - Serverless and filesystem analyzer reuse
+  - Exit criteria:
+  - [ ] reuse the image-scan rootfs/analyzer substrate for issue `#179` serverless package scans where functions are container-backed
+  - [ ] unify the container/serverless/VM analyzer contracts around the richer filesystem analyzer from issue `#180`
+- [ ] Track B - Vulnerability knowledge + graph integration
+  - Exit criteria:
+  - [ ] feed image scan package/vulnerability outputs into the vulnerability knowledge pipeline from issue `#181`
+  - [ ] attach image scan runs, packages, and vulnerabilities to the temporal graph from issue `#182`
+  - [ ] correlate image digests to running workloads so prioritization can use runtime exposure, not just repository presence
+- [ ] Track C - Shared execution store extraction
+  - Exit criteria:
+  - [ ] move workload/image scan run storage off per-runtime helpers and onto a shared execution-store package
+  - [ ] expose execution resources over platform APIs instead of CLI-only surfaces
+  - [ ] decide whether the long-term backend remains SQLite with leadering or moves to a multi-worker store
+
 ## Deep Review Cycle 49 - Durable VM Snapshot Scan Runtime (2026-03-11)
 
 ### Review findings

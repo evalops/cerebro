@@ -23,6 +23,7 @@ type stubECR struct {
 	describeRepositoriesFn      func(*ecr.DescribeRepositoriesInput) (*ecr.DescribeRepositoriesOutput, error)
 	describeImagesFn            func(*ecr.DescribeImagesInput) (*ecr.DescribeImagesOutput, error)
 	batchGetImageFn             func(*ecr.BatchGetImageInput) (*ecr.BatchGetImageOutput, error)
+	getDownloadURLForLayerFn    func(*ecr.GetDownloadUrlForLayerInput) (*ecr.GetDownloadUrlForLayerOutput, error)
 	describeImageScanFindingsFn func(*ecr.DescribeImageScanFindingsInput) (*ecr.DescribeImageScanFindingsOutput, error)
 }
 
@@ -121,6 +122,13 @@ func (s *stubECR) BatchGetImage(_ context.Context, params *ecr.BatchGetImageInpu
 		return nil, errors.New("BatchGetImage not configured")
 	}
 	return s.batchGetImageFn(params)
+}
+
+func (s *stubECR) GetDownloadUrlForLayer(_ context.Context, params *ecr.GetDownloadUrlForLayerInput, _ ...func(*ecr.Options)) (*ecr.GetDownloadUrlForLayerOutput, error) {
+	if s.getDownloadURLForLayerFn == nil {
+		return nil, errors.New("GetDownloadUrlForLayer not configured")
+	}
+	return s.getDownloadURLForLayerFn(params)
 }
 
 func (s *stubECR) DescribeImageScanFindings(_ context.Context, params *ecr.DescribeImageScanFindingsInput, _ ...func(*ecr.Options)) (*ecr.DescribeImageScanFindingsOutput, error) {
@@ -747,6 +755,32 @@ func TestTrivyScannerError(t *testing.T) {
 
 	scanner := NewTrivyScanner(path)
 	_, err := scanner.ScanImage(context.Background(), "repo:tag")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestTrivyFilesystemScanner(t *testing.T) {
+	payload := `{"Results":[{"Target":"rootfs","Vulnerabilities":[{"VulnerabilityID":"CVE-1","PkgName":"openssl","InstalledVersion":"1","FixedVersion":"2","Severity":"HIGH","Description":"desc","CVSS":{"nvd":{"V3Score":7.5}}}]}]}`
+	script := "#!/bin/sh\nprintf '%s' '" + payload + "'\n"
+	path := writeExecutable(t, script)
+
+	scanner := NewTrivyFilesystemScanner(path)
+	result, err := scanner.ScanFilesystem(context.Background(), t.TempDir())
+	if err != nil {
+		t.Fatalf("ScanFilesystem: %v", err)
+	}
+	if result.Summary.High != 1 || len(result.Vulnerabilities) != 1 {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+}
+
+func TestTrivyFilesystemScannerError(t *testing.T) {
+	script := "#!/bin/sh\necho boom >&2\nexit 1\n"
+	path := writeExecutable(t, script)
+
+	scanner := NewTrivyFilesystemScanner(path)
+	_, err := scanner.ScanFilesystem(context.Background(), t.TempDir())
 	if err == nil {
 		t.Fatal("expected error")
 	}
