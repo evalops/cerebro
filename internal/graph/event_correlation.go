@@ -730,9 +730,24 @@ func detectEventAnomalies(g *Graph, now time.Time, allowedContextIDs map[string]
 			}
 			return out[i].DeviationRatio > out[j].DeviationRatio
 		}
-		return out[i].Severity > out[j].Severity
+		return eventAnomalySeverityRank(out[i].Severity) < eventAnomalySeverityRank(out[j].Severity)
 	})
 	return out
+}
+
+func eventAnomalySeverityRank(severity string) int {
+	switch strings.ToLower(strings.TrimSpace(severity)) {
+	case "critical":
+		return 0
+	case "high":
+		return 1
+	case "medium":
+		return 2
+	case "low":
+		return 3
+	default:
+		return 4
+	}
 }
 
 func buildEventCorrelationEdge(pattern EventCorrelationPatternDefinition, cause, effect eventCorrelationCandidate, sharedTargetIDs []string, gap time.Duration, now time.Time) *Edge {

@@ -144,6 +144,70 @@ func TestQueryEventCorrelationsIncludesFailureSpikeAnomaly(t *testing.T) {
 	}
 }
 
+func TestQueryEventCorrelationsSortsAnomaliesBySeverityRank(t *testing.T) {
+	g := New()
+	now := time.Date(2026, 3, 12, 12, 0, 0, 0, time.UTC)
+	g.AddNode(&Node{ID: "service:payments", Kind: NodeKindService, Name: "Payments"})
+
+	for i := 0; i < 3; i++ {
+		at := now.Add(-time.Duration(i+1) * 24 * time.Hour)
+		g.AddNode(&Node{
+			ID:   "deployment:payments:failed-" + string(rune('a'+i)),
+			Kind: NodeKindDeploymentRun,
+			Name: "failed",
+			Properties: map[string]any{
+				"deploy_id":   "failed",
+				"service_id":  "payments",
+				"environment": "prod",
+				"status":      "failed",
+				"observed_at": at.Format(time.RFC3339),
+				"valid_from":  at.Format(time.RFC3339),
+			},
+		})
+	}
+	for i := 0; i < 4; i++ {
+		at := now.Add(-time.Duration(14+i*5) * 24 * time.Hour)
+		g.AddNode(&Node{
+			ID:   "deployment:payments:baseline-failed-" + string(rune('a'+i)),
+			Kind: NodeKindDeploymentRun,
+			Name: "baseline-failed",
+			Properties: map[string]any{
+				"deploy_id":   "baseline-failed",
+				"service_id":  "payments",
+				"environment": "prod",
+				"status":      "failed",
+				"observed_at": at.Format(time.RFC3339),
+				"valid_from":  at.Format(time.RFC3339),
+			},
+		})
+	}
+	g.AddNode(&Node{
+		ID:   "incident:inc-current",
+		Kind: NodeKindIncident,
+		Name: "inc-current",
+		Properties: map[string]any{
+			"incident_id": "inc-current",
+			"status":      "open",
+			"severity":    "high",
+			"service_id":  "payments",
+			"observed_at": now.Add(-2 * time.Hour).Format(time.RFC3339),
+			"valid_from":  now.Add(-2 * time.Hour).Format(time.RFC3339),
+		},
+	})
+
+	result := QueryEventCorrelations(g, now, EventCorrelationQuery{
+		EntityID:         "service:payments",
+		Limit:            10,
+		IncludeAnomalies: true,
+	})
+	if len(result.Anomalies) < 2 {
+		t.Fatalf("expected at least 2 anomalies, got %#v", result.Anomalies)
+	}
+	if result.Anomalies[0].Severity != "high" {
+		t.Fatalf("expected highest severity anomaly first, got %#v", result.Anomalies)
+	}
+}
+
 func hasActiveEdge(edges []*Edge, kind EdgeKind, target string) bool {
 	for _, edge := range edges {
 		if edge == nil {
