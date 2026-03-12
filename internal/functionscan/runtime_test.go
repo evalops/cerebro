@@ -213,6 +213,9 @@ func TestRunnerPersistsResultsAndEmitsLifecycleEvents(t *testing.T) {
 	if run.Analysis.EnvironmentSecretCount != 1 {
 		t.Fatalf("expected one environment secret, got %d", run.Analysis.EnvironmentSecretCount)
 	}
+	if got := run.Descriptor.Environment["DB_PASSWORD"]; got != redactedSecretValue {
+		t.Fatalf("expected persisted environment secret to be redacted, got %q", got)
+	}
 	if run.Analysis.CodeSecretCount != 1 {
 		t.Fatalf("expected one code secret, got %d", run.Analysis.CodeSecretCount)
 	}
@@ -235,6 +238,10 @@ func TestRunnerPersistsResultsAndEmitsLifecycleEvents(t *testing.T) {
 }
 
 func TestOpenHTTPArtifactSanitizesResponseBodyURLs(t *testing.T) {
+	originalValidator := artifactURLValidator
+	artifactURLValidator = func(string) error { return nil }
+	defer func() { artifactURLValidator = originalValidator }()
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		_, _ = io.WriteString(w, "download failed for https://example.com/object.zip?X-Amz-Signature=supersecret&X-Amz-Credential=abc")
@@ -250,6 +257,42 @@ func TestOpenHTTPArtifactSanitizesResponseBodyURLs(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "https://example.com/object.zip") {
 		t.Fatalf("expected sanitized url to remain addressable, got %q", err)
+	}
+}
+
+func TestLocalMaterializerRejectsOversizedArchiveEntry(t *testing.T) {
+	originalEntryBytes := maxArchiveEntryBytes
+	maxArchiveEntryBytes = 8
+	defer func() { maxArchiveEntryBytes = originalEntryBytes }()
+
+	materializer := NewLocalMaterializer(filepath.Join(t.TempDir(), "rootfs"))
+	descriptor := &FunctionDescriptor{
+		Artifacts: []ArtifactRef{{ID: "function_code", Kind: ArtifactFunctionCode, Format: ArchiveFormatZIP}},
+	}
+	_, _, err := materializer.Materialize(context.Background(), "function_scan:oversized-entry", descriptor, func(_ context.Context, artifact ArtifactRef) (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(zipBytes(t, map[string]string{
+			"handler.py": "this payload is too large",
+		}))), nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "max extracted size") {
+		t.Fatalf("expected max extracted size error, got %v", err)
+	}
+}
+
+func TestLocalMaterializerRejectsOversizedDownload(t *testing.T) {
+	originalDownloadBytes := maxArtifactDownloadBytes
+	maxArtifactDownloadBytes = 16
+	defer func() { maxArtifactDownloadBytes = originalDownloadBytes }()
+
+	materializer := NewLocalMaterializer(filepath.Join(t.TempDir(), "rootfs"))
+	descriptor := &FunctionDescriptor{
+		Artifacts: []ArtifactRef{{ID: "function_code", Kind: ArtifactFunctionCode, Format: ArchiveFormatZIP}},
+	}
+	_, _, err := materializer.Materialize(context.Background(), "function_scan:oversized-download", descriptor, func(_ context.Context, artifact ArtifactRef) (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(bytes.Repeat([]byte("a"), 32))), nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "max download size") {
+		t.Fatalf("expected max download size error, got %v", err)
 	}
 }
 

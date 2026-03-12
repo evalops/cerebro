@@ -21,6 +21,8 @@ import (
 
 const defaultCleanupTimeout = 2 * time.Minute
 
+const redactedSecretValue = "<redacted>"
+
 var (
 	embeddedURLPattern  = regexp.MustCompile(`https?://[^\s"'<>]+`)
 	envSecretKeyPattern = regexp.MustCompile(`(?i)(secret|token|password|passwd|api[_-]?key|credential|private[_-]?key|connection[_-]?string)`)
@@ -223,7 +225,8 @@ func (r *Runner) RunFunctionScan(ctx context.Context, req ScanRequest) (*RunReco
 	if err != nil {
 		return r.failRun(ctx, run, RunStageDescribe, fmt.Errorf("describe function: %w", err))
 	}
-	run.Descriptor = descriptor
+	analysisDescriptor := cloneFunctionDescriptor(descriptor)
+	run.Descriptor = redactFunctionDescriptorSecrets(cloneFunctionDescriptor(descriptor))
 	run.UpdatedAt = r.now().UTC()
 	if err := r.saveRun(ctx, run); err != nil {
 		return nil, err
@@ -233,14 +236,14 @@ func (r *Runner) RunFunctionScan(ctx context.Context, req ScanRequest) (*RunReco
 		return r.completeRun(ctx, run, "function scan dry-run completed")
 	}
 
-	if r.materializer != nil && descriptor != nil && len(descriptor.Artifacts) > 0 {
+	if r.materializer != nil && analysisDescriptor != nil && len(analysisDescriptor.Artifacts) > 0 {
 		run.Stage = RunStageMaterialize
 		run.UpdatedAt = r.now().UTC()
 		if err := r.saveRun(ctx, run); err != nil {
 			return nil, err
 		}
-		r.recordRunEvent(ctx, run, RunStatusRunning, RunStageMaterialize, "materializing function package", map[string]any{"artifact_count": len(descriptor.Artifacts)})
-		artifact, applied, err := r.materializer.Materialize(ctx, run.ID, descriptor, func(ctx context.Context, artifact ArtifactRef) (io.ReadCloser, error) {
+		r.recordRunEvent(ctx, run, RunStatusRunning, RunStageMaterialize, "materializing function package", map[string]any{"artifact_count": len(analysisDescriptor.Artifacts)})
+		artifact, applied, err := r.materializer.Materialize(ctx, run.ID, analysisDescriptor, func(ctx context.Context, artifact ArtifactRef) (io.ReadCloser, error) {
 			return provider.OpenArtifact(ctx, req.Target, artifact)
 		})
 		if err != nil {
@@ -260,7 +263,7 @@ func (r *Runner) RunFunctionScan(ctx context.Context, req ScanRequest) (*RunReco
 		return nil, err
 	}
 	r.recordRunEvent(ctx, run, RunStatusRunning, RunStageAnalyze, "analyzing function package", nil)
-	report, err := r.analyze(ctx, run)
+	report, err := r.analyze(ctx, run, analysisDescriptor)
 	if err != nil {
 		cleanupFilesystem(ctx, r.materializer, run.Filesystem, run, r.now)
 		return r.failRun(ctx, run, RunStageAnalyze, err)
@@ -295,9 +298,11 @@ func (r *Runner) RunFunctionScan(ctx context.Context, req ScanRequest) (*RunReco
 	return r.completeRun(ctx, run, "function scan completed")
 }
 
-func (r *Runner) analyze(ctx context.Context, run *RunRecord) (*AnalysisReport, error) {
+func (r *Runner) analyze(ctx context.Context, run *RunRecord, descriptor *FunctionDescriptor) (*AnalysisReport, error) {
 	input := AnalysisInput{RunID: run.ID, Target: run.Target, Filesystem: run.Filesystem, Metadata: cloneStringMap(run.Metadata)}
-	if run.Descriptor != nil {
+	if descriptor != nil {
+		input.Descriptor = *descriptor
+	} else if run.Descriptor != nil {
 		input.Descriptor = *run.Descriptor
 	}
 	report, err := r.analyzer.Analyze(ctx, input)
@@ -585,6 +590,59 @@ func cloneAnyMap(src map[string]any) map[string]any {
 	}
 	out := make(map[string]any, len(src))
 	for key, value := range src {
+		out[key] = value
+	}
+	return out
+}
+
+func cloneFunctionDescriptor(src *FunctionDescriptor) *FunctionDescriptor {
+	if src == nil {
+		return nil
+	}
+	cloned := *src
+	cloned.Architectures = append([]string(nil), src.Architectures...)
+	cloned.Environment = cloneStringMap(src.Environment)
+	cloned.BuildEnvironment = cloneStringMap(src.BuildEnvironment)
+	cloned.EventSources = append([]string(nil), src.EventSources...)
+	cloned.Metadata = cloneAnyMap(src.Metadata)
+	cloned.VpcConfig = cloneAnyMap(src.VpcConfig)
+	if len(src.Artifacts) > 0 {
+		cloned.Artifacts = make([]ArtifactRef, len(src.Artifacts))
+		for i, artifact := range src.Artifacts {
+			cloned.Artifacts[i] = artifact
+			cloned.Artifacts[i].Metadata = cloneAnyMap(artifact.Metadata)
+		}
+	}
+	if len(src.Layers) > 0 {
+		cloned.Layers = make([]FunctionLayer, len(src.Layers))
+		for i, layer := range src.Layers {
+			cloned.Layers[i] = layer
+			cloned.Layers[i].Architectures = append([]string(nil), layer.Architectures...)
+			cloned.Layers[i].Metadata = cloneAnyMap(layer.Metadata)
+		}
+	}
+	return &cloned
+}
+
+func redactFunctionDescriptorSecrets(src *FunctionDescriptor) *FunctionDescriptor {
+	if src == nil {
+		return nil
+	}
+	src.Environment = redactSensitiveEnv(src.Environment)
+	src.BuildEnvironment = redactSensitiveEnv(src.BuildEnvironment)
+	return src
+}
+
+func redactSensitiveEnv(src map[string]string) map[string]string {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(src))
+	for key, value := range src {
+		if envSecretKeyPattern.MatchString(strings.TrimSpace(key)) || (looksSensitiveValue(value) && !looksPlaceholderValue(value)) {
+			out[key] = redactedSecretValue
+			continue
+		}
 		out[key] = value
 	}
 	return out

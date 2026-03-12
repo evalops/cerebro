@@ -11,6 +11,14 @@ import (
 	"time"
 )
 
+var (
+	maxArtifactDownloadBytes   int64   = 512 << 20
+	maxArchiveTotalBytes       int64   = 1 << 30
+	maxArchiveEntryBytes       int64   = 256 << 20
+	maxArchiveEntryCount       int64   = 100000
+	maxArchiveCompressionRatio float64 = 1000
+)
+
 type ArchiveOpener func(ctx context.Context, artifact ArtifactRef) (io.ReadCloser, error)
 
 type Materializer interface {
@@ -74,7 +82,7 @@ func (m *LocalMaterializer) Materialize(ctx context.Context, runID string, descr
 		if err == nil {
 			record.Size = info.Size()
 		}
-		countDelta, byteDelta, err := applyArchive(rootfsPath, archivePath, artifact)
+		countDelta, byteDelta, err := applyArchive(rootfsPath, archivePath, artifact, fileCount, byteSize)
 		if err != nil {
 			return nil, applied, fmt.Errorf("apply artifact %s: %w", artifact.ID, err)
 		}
@@ -130,13 +138,17 @@ func (m *LocalMaterializer) writeArchive(runID string, artifact ArtifactRef, rea
 		return "", err
 	}
 	defer func() { _ = file.Close() }()
-	if _, err := io.Copy(file, reader); err != nil {
+	written, err := io.Copy(file, io.LimitReader(reader, maxArtifactDownloadBytes+1))
+	if err != nil {
 		return "", err
+	}
+	if written > maxArtifactDownloadBytes {
+		return "", fmt.Errorf("artifact %s exceeds max download size of %d bytes", artifact.ID, maxArtifactDownloadBytes)
 	}
 	return archivePath, nil
 }
 
-func applyArchive(rootfsPath, archivePath string, artifact ArtifactRef) (int64, int64, error) {
+func applyArchive(rootfsPath, archivePath string, artifact ArtifactRef, existingFileCount, existingByteSize int64) (int64, int64, error) {
 	if artifact.Format != "" && artifact.Format != ArchiveFormatZIP {
 		return 0, 0, fmt.Errorf("unsupported archive format %s", artifact.Format)
 	}
@@ -150,7 +162,21 @@ func applyArchive(rootfsPath, archivePath string, artifact ArtifactRef) (int64, 
 		byteSize  int64
 	)
 	for _, entry := range zr.File {
-		countDelta, byteDelta, err := applyZipEntry(rootfsPath, entry)
+		if !entry.FileInfo().IsDir() {
+			if existingFileCount+fileCount+1 > maxArchiveEntryCount {
+				return fileCount, byteSize, fmt.Errorf("zip entry count exceeds max of %d", maxArchiveEntryCount)
+			}
+			if entry.UncompressedSize64 > uint64(maxArchiveEntryBytes) {
+				return fileCount, byteSize, fmt.Errorf("zip entry %s exceeds max extracted size of %d bytes", entry.Name, maxArchiveEntryBytes)
+			}
+			if entry.CompressedSize64 > 0 && float64(entry.UncompressedSize64)/float64(entry.CompressedSize64) > maxArchiveCompressionRatio {
+				return fileCount, byteSize, fmt.Errorf("zip entry %s exceeds max compression ratio of %.0f", entry.Name, maxArchiveCompressionRatio)
+			}
+			if existingByteSize+byteSize+int64(entry.UncompressedSize64) > maxArchiveTotalBytes {
+				return fileCount, byteSize, fmt.Errorf("extracted archive bytes exceed max of %d", maxArchiveTotalBytes)
+			}
+		}
+		countDelta, byteDelta, err := applyZipEntry(rootfsPath, entry, maxArchiveEntryBytes)
 		if err != nil {
 			return fileCount, byteSize, err
 		}
@@ -160,7 +186,7 @@ func applyArchive(rootfsPath, archivePath string, artifact ArtifactRef) (int64, 
 	return fileCount, byteSize, nil
 }
 
-func applyZipEntry(rootfsPath string, entry *zip.File) (int64, int64, error) {
+func applyZipEntry(rootfsPath string, entry *zip.File, maxBytes int64) (int64, int64, error) {
 	relPath := sanitizeArchivePath(entry.Name)
 	if relPath == "" {
 		return 0, 0, nil
@@ -205,9 +231,12 @@ func applyZipEntry(rootfsPath string, entry *zip.File) (int64, int64, error) {
 		return 0, 0, err
 	}
 	defer func() { _ = file.Close() }()
-	written, err := io.Copy(file, rc)
+	written, err := io.Copy(file, io.LimitReader(rc, maxBytes+1))
 	if err != nil {
 		return 0, written, err
+	}
+	if written > maxBytes {
+		return 0, written, fmt.Errorf("zip entry %s exceeds max extracted size of %d bytes", entry.Name, maxBytes)
 	}
 	return 1, written, nil
 }

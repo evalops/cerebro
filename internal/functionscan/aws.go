@@ -151,11 +151,17 @@ func (p *AWSProvider) OpenArtifact(ctx context.Context, target FunctionTarget, a
 		if err != nil {
 			return nil, fmt.Errorf("get lambda function package %s: %w", functionID, err)
 		}
+		if out.Code == nil {
+			return nil, fmt.Errorf("lambda function %s does not expose downloadable code metadata", functionID)
+		}
 		downloadURL = strings.TrimSpace(aws.ToString(out.Code.Location))
 	case ArtifactLayer:
 		out, err := p.client.GetLayerVersionByArn(ctx, &lambda.GetLayerVersionByArnInput{Arn: aws.String(strings.TrimSpace(artifact.ID))})
 		if err != nil {
 			return nil, fmt.Errorf("get lambda layer %s: %w", artifact.ID, err)
+		}
+		if out.Content == nil {
+			return nil, fmt.Errorf("lambda layer %s does not expose downloadable content metadata", artifact.ID)
 		}
 		downloadURL = strings.TrimSpace(aws.ToString(out.Content.Location))
 	default:

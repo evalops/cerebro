@@ -139,15 +139,22 @@ func stringDictionaryValue(values map[string]*string, key string) string {
 
 func azureRuntimeFromSettings(env map[string]string) string {
 	worker := strings.TrimSpace(env["FUNCTIONS_WORKER_RUNTIME"])
+	joinRuntime := func(version string) string {
+		version = strings.TrimSpace(version)
+		if version == "" {
+			return worker
+		}
+		return worker + "|" + version
+	}
 	switch strings.ToLower(worker) {
 	case "node":
-		return firstNonEmpty(worker+"|"+strings.TrimSpace(env["WEBSITE_NODE_DEFAULT_VERSION"]), worker)
+		return joinRuntime(env["WEBSITE_NODE_DEFAULT_VERSION"])
 	case "python":
-		return firstNonEmpty(worker+"|"+strings.TrimSpace(env["PYTHON_VERSION"]), worker)
+		return joinRuntime(env["PYTHON_VERSION"])
 	case "java":
-		return firstNonEmpty(worker+"|"+strings.TrimSpace(env["JAVA_VERSION"]), worker)
+		return joinRuntime(env["JAVA_VERSION"])
 	case "dotnet", "dotnet-isolated":
-		return firstNonEmpty(worker+"|"+strings.TrimSpace(env["FUNCTIONS_EXTENSION_VERSION"]), worker)
+		return joinRuntime(env["FUNCTIONS_EXTENSION_VERSION"])
 	default:
 		return worker
 	}
