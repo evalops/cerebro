@@ -34612,6 +34612,82 @@
               "type": "string"
             },
             {
+              "path": "graph_update",
+              "type": "object"
+            },
+            {
+              "path": "graph_update.error",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.status",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary",
+              "type": "object"
+            },
+            {
+              "path": "graph_update.summary.duration",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary.duration_ms",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.edges",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.events_processed",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.mode",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary.nodes",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.nodes_added",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.nodes_removed",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.nodes_updated",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.since",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary.tables",
+              "type": "array"
+            },
+            {
+              "path": "graph_update.summary.tables[]",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary.trigger",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary.until",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.trigger",
+              "type": "string"
+            },
+            {
               "path": "provider",
               "type": "string"
             },
@@ -34728,6 +34804,82 @@
               "type": "string"
             },
             {
+              "path": "graph_update",
+              "type": "object"
+            },
+            {
+              "path": "graph_update.error",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.status",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary",
+              "type": "object"
+            },
+            {
+              "path": "graph_update.summary.duration",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary.duration_ms",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.edges",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.events_processed",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.mode",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary.nodes",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.nodes_added",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.nodes_removed",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.nodes_updated",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.since",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary.tables",
+              "type": "array"
+            },
+            {
+              "path": "graph_update.summary.tables[]",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary.trigger",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary.until",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.trigger",
+              "type": "string"
+            },
+            {
               "path": "provider",
               "type": "string"
             },
@@ -34841,6 +34993,82 @@
             },
             {
               "path": "account_errors[]",
+              "type": "string"
+            },
+            {
+              "path": "graph_update",
+              "type": "object"
+            },
+            {
+              "path": "graph_update.error",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.status",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary",
+              "type": "object"
+            },
+            {
+              "path": "graph_update.summary.duration",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary.duration_ms",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.edges",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.events_processed",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.mode",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary.nodes",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.nodes_added",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.nodes_removed",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.nodes_updated",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.since",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary.tables",
+              "type": "array"
+            },
+            {
+              "path": "graph_update.summary.tables[]",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary.trigger",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary.until",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.trigger",
               "type": "string"
             },
             {
@@ -35002,6 +35230,82 @@
               "type": "string"
             },
             {
+              "path": "graph_update",
+              "type": "object"
+            },
+            {
+              "path": "graph_update.error",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.status",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary",
+              "type": "object"
+            },
+            {
+              "path": "graph_update.summary.duration",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary.duration_ms",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.edges",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.events_processed",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.mode",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary.nodes",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.nodes_added",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.nodes_removed",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.nodes_updated",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.since",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary.tables",
+              "type": "array"
+            },
+            {
+              "path": "graph_update.summary.tables[]",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary.trigger",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary.until",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.trigger",
+              "type": "string"
+            },
+            {
               "path": "provider",
               "type": "string"
             },
@@ -35128,6 +35432,82 @@
               "type": "string"
             },
             {
+              "path": "graph_update",
+              "type": "object"
+            },
+            {
+              "path": "graph_update.error",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.status",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary",
+              "type": "object"
+            },
+            {
+              "path": "graph_update.summary.duration",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary.duration_ms",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.edges",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.events_processed",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.mode",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary.nodes",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.nodes_added",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.nodes_removed",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.nodes_updated",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.since",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary.tables",
+              "type": "array"
+            },
+            {
+              "path": "graph_update.summary.tables[]",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary.trigger",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary.until",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.trigger",
+              "type": "string"
+            },
+            {
               "path": "provider",
               "type": "string"
             },
@@ -35241,6 +35621,82 @@
             },
             {
               "path": "account_errors[]",
+              "type": "string"
+            },
+            {
+              "path": "graph_update",
+              "type": "object"
+            },
+            {
+              "path": "graph_update.error",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.status",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary",
+              "type": "object"
+            },
+            {
+              "path": "graph_update.summary.duration",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary.duration_ms",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.edges",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.events_processed",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.mode",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary.nodes",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.nodes_added",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.nodes_removed",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.nodes_updated",
+              "type": "integer"
+            },
+            {
+              "path": "graph_update.summary.since",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary.tables",
+              "type": "array"
+            },
+            {
+              "path": "graph_update.summary.tables[]",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary.trigger",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.summary.until",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.trigger",
               "type": "string"
             },
             {
