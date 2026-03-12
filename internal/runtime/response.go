@@ -804,30 +804,47 @@ func firstNonEmptyRuntime(values ...string) string {
 // ApproveExecution approves a pending execution
 func (e *ResponseEngine) ApproveExecution(ctx context.Context, executionID, approver string) error {
 	e.mu.Lock()
-	defer e.mu.Unlock()
-
+	var target *ResponseExecution
+	var policyCopy *ResponsePolicy
+	var sharedExecution *actionengine.Execution
+	var signal actionengine.Signal
 	for _, exec := range e.executions {
 		if exec.ID == executionID {
 			if exec.Status != StatusApproval {
+				e.mu.Unlock()
 				return fmt.Errorf("execution not awaiting approval")
 			}
 
 			policy, ok := e.policies[exec.PolicyID]
 			if !ok {
+				e.mu.Unlock()
 				return fmt.Errorf("policy not found")
 			}
-			signal := runtimeSignalFromTriggerData(exec.TriggerData)
-			sharedExecution := runtimeExecutionToShared(exec)
-			if err := e.shared.Approve(ctx, sharedExecution, approver, runtimePlaybookFromPolicy(policy), signal, runtimeStepRunner{engine: e}); err != nil {
-				applySharedResponseExecution(exec, sharedExecution)
-				return err
-			}
-			applySharedResponseExecution(exec, sharedExecution)
-			return nil
+			target = exec
+			policyCopy = cloneResponsePolicy(policy)
+			now := time.Now().UTC()
+			target.Status = StatusRunning
+			target.ApprovedBy = approver
+			target.ApprovedAt = &now
+			target.Error = ""
+			sharedExecution = runtimeExecutionToShared(target)
+			signal = runtimeSignalFromTriggerData(target.TriggerData)
+			break
 		}
 	}
+	e.mu.Unlock()
 
-	return fmt.Errorf("execution not found")
+	if target == nil || policyCopy == nil || sharedExecution == nil {
+		return fmt.Errorf("execution not found")
+	}
+	err := e.shared.Approve(ctx, sharedExecution, approver, runtimePlaybookFromPolicy(policyCopy), signal, runtimeStepRunner{engine: e})
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	applySharedResponseExecution(target, sharedExecution)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // RejectExecution rejects a pending execution

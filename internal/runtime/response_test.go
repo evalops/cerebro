@@ -3,7 +3,9 @@ package runtime
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
+	"time"
 )
 
 type noopActionHandler struct{}
@@ -74,6 +76,52 @@ func (h *recordingActionHandler) RevokeCredentials(ctx context.Context, principa
 }
 
 func (h *recordingActionHandler) ScaleDown(ctx context.Context, resourceID string, replicas int) error {
+	return nil
+}
+
+type blockingActionHandler struct {
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (h *blockingActionHandler) KillProcess(ctx context.Context, resourceID string, pid int) error {
+	return nil
+}
+
+func (h *blockingActionHandler) IsolateContainer(ctx context.Context, containerID, namespace string) error {
+	return nil
+}
+
+func (h *blockingActionHandler) IsolateHost(ctx context.Context, resourceID, reason string) error {
+	return nil
+}
+
+func (h *blockingActionHandler) QuarantineFile(ctx context.Context, filePath, reason string) error {
+	return nil
+}
+
+func (h *blockingActionHandler) BlockIP(ctx context.Context, ip string) error {
+	h.once.Do(func() {
+		close(h.started)
+	})
+	select {
+	case <-h.release:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (h *blockingActionHandler) BlockDomain(ctx context.Context, domain string) error {
+	return nil
+}
+
+func (h *blockingActionHandler) RevokeCredentials(ctx context.Context, principalID, provider string) error {
+	return nil
+}
+
+func (h *blockingActionHandler) ScaleDown(ctx context.Context, resourceID string, replicas int) error {
 	return nil
 }
 
@@ -157,5 +205,88 @@ func TestApproveExecutionReusesStoredFindingContext(t *testing.T) {
 	}
 	if len(handler.blockedIPs) != 1 || handler.blockedIPs[0] != "203.0.113.10" {
 		t.Fatalf("blocked IPs = %v, want [203.0.113.10]", handler.blockedIPs)
+	}
+}
+
+func TestApproveExecutionDoesNotHoldEngineLock(t *testing.T) {
+	engine := NewResponseEngine()
+	handler := &blockingActionHandler{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	engine.SetActionHandler(handler)
+	engine.policies = map[string]*ResponsePolicy{
+		"approve-block-ip": {
+			ID:              "approve-block-ip",
+			Name:            "Approve Block IP",
+			Enabled:         true,
+			RequireApproval: true,
+			Triggers: []PolicyTrigger{
+				{Type: "finding", Category: CategoryReverseShell, Severity: "high"},
+			},
+			Actions: []PolicyAction{
+				{Type: ActionBlockIP, Parameters: map[string]string{"target": "destination"}},
+			},
+		},
+	}
+
+	finding := &RuntimeFinding{
+		ID:           "finding-lock-test",
+		RuleID:       "reverse-shell",
+		Category:     CategoryReverseShell,
+		Severity:     "critical",
+		ResourceID:   "pod-1",
+		ResourceType: "pod",
+		Event: &RuntimeEvent{
+			ID:           "event-lock-test",
+			ResourceID:   "pod-1",
+			ResourceType: "pod",
+			Network: &NetworkEvent{
+				SrcIP: "10.0.0.5",
+				DstIP: "203.0.113.10",
+			},
+		},
+	}
+
+	execution, err := engine.ProcessFinding(context.Background(), finding)
+	if err != nil {
+		t.Fatalf("ProcessFinding: %v", err)
+	}
+	if execution == nil {
+		t.Fatal("expected execution")
+	}
+
+	approveDone := make(chan error, 1)
+	go func() {
+		approveDone <- engine.ApproveExecution(context.Background(), execution.ID, "alice")
+	}()
+
+	select {
+	case <-handler.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("approval execution never started")
+	}
+
+	listDone := make(chan struct{})
+	go func() {
+		_ = engine.ListPolicies()
+		close(listDone)
+	}()
+
+	select {
+	case <-listDone:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("ListPolicies blocked while approval action was running")
+	}
+
+	close(handler.release)
+
+	select {
+	case err := <-approveDone:
+		if err != nil {
+			t.Fatalf("ApproveExecution: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("ApproveExecution did not finish")
 	}
 }
