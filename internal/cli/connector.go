@@ -129,6 +129,8 @@ type gcpTestIAMPermissionsResponse struct {
 	Permissions []string `json:"permissions"`
 }
 
+const awsDescribeProbeMaxResults = 5
+
 func init() {
 	connectorCatalogCmd.Flags().StringVarP(&connectorOutput, "output", "o", FormatTable, "Output format (table,json)")
 	connectorScaffoldCmd.Flags().StringVarP(&connectorOutput, "output", "o", FormatTable, "Output format (table,json)")
@@ -213,6 +215,9 @@ func runConnectorScaffold(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	provider := connectors.NormalizeProviderID(args[0])
+	if _, ok := connectors.ProviderByID(provider); !ok {
+		return fmt.Errorf("unsupported connector provider %q", args[0])
+	}
 	var (
 		bundle connectors.Bundle
 		err    error
@@ -260,6 +265,9 @@ func runConnectorValidate(cmd *cobra.Command, args []string) error {
 	defer cancel()
 
 	provider := connectors.NormalizeProviderID(args[0])
+	if _, ok := connectors.ProviderByID(provider); !ok {
+		return fmt.Errorf("unsupported connector provider %q", args[0])
+	}
 	var (
 		report connectorValidationReport
 		err    error
@@ -546,13 +554,13 @@ func allConnectorChecksPassed(checks []connectorValidationCheck) bool {
 }
 
 func awsDescribeProbe(ctx context.Context, client *ec2.Client, instanceID string) error {
-	if _, err := client.DescribeVolumes(ctx, &ec2.DescribeVolumesInput{MaxResults: aws.Int32(1)}); err != nil {
+	if _, err := client.DescribeVolumes(ctx, &ec2.DescribeVolumesInput{MaxResults: aws.Int32(awsDescribeProbeMaxResults)}); err != nil {
 		return fmt.Errorf("ec2:DescribeVolumes failed: %w", err)
 	}
-	if _, err := client.DescribeSnapshots(ctx, &ec2.DescribeSnapshotsInput{MaxResults: aws.Int32(1), OwnerIds: []string{"self"}}); err != nil {
+	if _, err := client.DescribeSnapshots(ctx, &ec2.DescribeSnapshotsInput{MaxResults: aws.Int32(awsDescribeProbeMaxResults), OwnerIds: []string{"self"}}); err != nil {
 		return fmt.Errorf("ec2:DescribeSnapshots failed: %w", err)
 	}
-	input := &ec2.DescribeInstancesInput{MaxResults: aws.Int32(1)}
+	input := &ec2.DescribeInstancesInput{MaxResults: aws.Int32(awsDescribeProbeMaxResults)}
 	if strings.TrimSpace(instanceID) != "" {
 		input.InstanceIds = []string{strings.TrimSpace(instanceID)}
 	}

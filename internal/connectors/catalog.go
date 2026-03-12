@@ -1,7 +1,6 @@
 package connectors
 
 import (
-	"fmt"
 	"sort"
 	"strings"
 )
@@ -191,12 +190,4 @@ func ProviderByID(id string) (ProviderCatalog, bool) {
 
 func NormalizeProviderID(id string) string {
 	return strings.ToLower(strings.TrimSpace(id))
-}
-
-func MustProvider(id string) ProviderCatalog {
-	provider, ok := ProviderByID(id)
-	if !ok {
-		panic(fmt.Sprintf("unknown provider %q", id))
-	}
-	return provider
 }

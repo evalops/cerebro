@@ -24,6 +24,16 @@ func TestRenderAWSBundleDefaults(t *testing.T) {
 	}
 }
 
+func TestProviderByIDFindsBuiltIns(t *testing.T) {
+	provider, ok := ProviderByID("aws")
+	if !ok {
+		t.Fatal("expected aws provider catalog to be registered")
+	}
+	if provider.ID != ProviderAWS {
+		t.Fatalf("expected provider ID %q, got %q", ProviderAWS, provider.ID)
+	}
+}
+
 func TestRenderGCPBundleIncludesWIFResources(t *testing.T) {
 	bundle, err := RenderGCPBundle(GCPRenderOptions{EnableWIF: true})
 	if err != nil {
