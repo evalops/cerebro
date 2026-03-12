@@ -5,6 +5,51 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 46 - CDC-Driven Incremental Graph Updates + Copy-On-Write Rebuilds (2026-03-11)
+
+### Review findings
+- [x] Gap: the graph scheduler already knew how to read CDC deltas, but successful sync endpoints still returned without advancing the live graph, leaving freshness tied to the rebuild interval instead of sync completion.
+- [x] Gap: full graph rebuilds still mutated the builder’s live graph instance in place, so the rebuild path could expose a partially rebuilt graph during long-running warehouse reads.
+- [x] Gap: there was no reusable app-level graph update workflow; scheduler logic, manual rebuilds, and sync-triggered mutation paths were drifting into separate behaviors.
+- [x] Gap: incremental mutation correctness had no first-class consistency-check loop against a fresh full rebuild.
+
+### Execution plan
+- [x] Make full rebuilds copy-on-write:
+  - [x] add a fresh-graph candidate build path in `internal/graph.Builder`
+  - [x] swap the completed graph into the builder only after the candidate build finishes
+  - [x] add regression coverage proving the live graph remains readable while a rebuild is in progress
+- [x] Centralize app-level graph mutation orchestration:
+  - [x] add one `ApplySecurityGraphChanges(...)` path that prefers incremental CDC apply and falls back to full rebuild only on failure
+  - [x] serialize graph update operations through the app so scheduler/manual/sync paths stop racing each other
+- [x] Trigger graph updates directly after successful syncs:
+  - [x] wire `/api/v1/sync/aws`
+  - [x] wire `/api/v1/sync/aws-org`
+  - [x] wire `/api/v1/sync/azure`
+  - [x] wire `/api/v1/sync/gcp`
+  - [x] wire `/api/v1/sync/gcp-asset`
+  - [x] wire `/api/v1/sync/k8s`
+  - [x] surface `graph_update` status in sync responses
+- [x] Add drift checking:
+  - [x] add optional `GRAPH_CONSISTENCY_CHECK_ENABLED`
+  - [x] add optional `GRAPH_CONSISTENCY_CHECK_INTERVAL`
+  - [x] run background consistency diffs between the live incremental graph and a fresh rebuild candidate
+- [x] Validate and document:
+  - [x] add graph/api/app tests for copy-on-write rebuild and post-sync incremental apply
+  - [x] regenerate config docs
+  - [x] update OpenAPI sync response schema
+
+### Detailed follow-on backlog
+- [ ] Track A - Reduce incremental edge rebuild cost
+  - Exit criteria:
+  - [ ] replace whole-graph edge rebuilds during CDC apply with table-scoped or entity-scoped edge invalidation
+  - [ ] persist and consume a durable CDC cursor so incremental applies can recover independently of process memory
+  - [ ] measure p95/p99 incremental apply latency by table family and publish it in graph freshness/status reporting
+- [ ] Track B - Durable graph state beyond process memory
+  - Exit criteria:
+  - [ ] define the durable live-graph backing model instead of relying on in-process memory plus snapshots
+  - [ ] decide whether the source of truth for live graph state is warehouse tables, append-only mutation log, or both
+  - [ ] add restart restore semantics for the live graph that do not require a full rebuild before serving reads
+
 ## Deep Review Cycle 45 - JetStream Historical Replay for Graph Ingest (2026-03-11)
 
 ### Review findings

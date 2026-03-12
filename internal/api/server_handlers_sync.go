@@ -115,11 +115,15 @@ func (s *Server) syncAzure(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.json(w, http.StatusOK, map[string]interface{}{
+	resp := map[string]interface{}{
 		"provider": "azure",
 		"validate": req.Validate,
 		"results":  results,
-	})
+	}
+	if graphUpdate := s.applySecurityGraphUpdateAfterSync(r.Context(), "azure", req.Validate); graphUpdate != nil {
+		resp["graph_update"] = graphUpdate
+	}
+	s.json(w, http.StatusOK, resp)
 }
 
 type k8sSyncRequest struct {
@@ -188,11 +192,15 @@ func (s *Server) syncK8s(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.json(w, http.StatusOK, map[string]interface{}{
+	resp := map[string]interface{}{
 		"provider": "k8s",
 		"validate": req.Validate,
 		"results":  results,
-	})
+	}
+	if graphUpdate := s.applySecurityGraphUpdateAfterSync(r.Context(), "k8s", req.Validate); graphUpdate != nil {
+		resp["graph_update"] = graphUpdate
+	}
+	s.json(w, http.StatusOK, resp)
 }
 
 type awsSyncRequest struct {
@@ -313,6 +321,9 @@ func (s *Server) syncAWS(w http.ResponseWriter, r *http.Request) {
 	}
 	if outcome.RelationshipsSkippedReason != "" {
 		resp["relationships_skipped_reason"] = outcome.RelationshipsSkippedReason
+	}
+	if graphUpdate := s.applySecurityGraphUpdateAfterSync(r.Context(), "aws", req.Validate); graphUpdate != nil {
+		resp["graph_update"] = graphUpdate
 	}
 
 	s.json(w, http.StatusOK, resp)
@@ -483,6 +494,9 @@ func (s *Server) syncAWSOrg(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(outcome.AccountErrors) > 0 {
 		resp["account_errors"] = outcome.AccountErrors
+	}
+	if graphUpdate := s.applySecurityGraphUpdateAfterSync(r.Context(), "aws_org", req.Validate); graphUpdate != nil {
+		resp["graph_update"] = graphUpdate
 	}
 
 	s.json(w, http.StatusOK, resp)
@@ -696,6 +710,9 @@ func (s *Server) syncGCP(w http.ResponseWriter, r *http.Request) {
 	if outcome.RelationshipsSkippedReason != "" {
 		resp["relationships_skipped_reason"] = outcome.RelationshipsSkippedReason
 	}
+	if graphUpdate := s.applySecurityGraphUpdateAfterSync(r.Context(), "gcp", req.Validate); graphUpdate != nil {
+		resp["graph_update"] = graphUpdate
+	}
 
 	s.json(w, http.StatusOK, resp)
 }
@@ -761,11 +778,15 @@ func (s *Server) syncGCPAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.json(w, http.StatusOK, map[string]interface{}{
+	resp := map[string]interface{}{
 		"provider": "gcp_asset",
 		"validate": req.Validate,
 		"results":  results,
-	})
+	}
+	if graphUpdate := s.applySecurityGraphUpdateAfterSync(r.Context(), "gcp_asset", req.Validate); graphUpdate != nil {
+		resp["graph_update"] = graphUpdate
+	}
+	s.json(w, http.StatusOK, resp)
 }
 
 func normalizeSyncProjects(raw []string) []string {
@@ -791,6 +812,33 @@ func normalizeSyncProjects(raw []string) []string {
 		return nil
 	}
 	return normalized
+}
+
+func (s *Server) applySecurityGraphUpdateAfterSync(ctx context.Context, provider string, validate bool) map[string]any {
+	if validate || s == nil || s.app == nil || s.app.SecurityGraphBuilder == nil {
+		return nil
+	}
+
+	trigger := "sync_" + strings.ToLower(strings.TrimSpace(provider))
+	summary, err := s.app.ApplySecurityGraphChanges(ctx, trigger)
+	if err != nil {
+		s.app.Logger.Warn("post-sync graph update failed", "provider", provider, "error", err)
+		return map[string]any{
+			"status":  "failed",
+			"trigger": trigger,
+			"error":   err.Error(),
+		}
+	}
+
+	status := "noop"
+	if summary.EventsProcessed > 0 {
+		status = "applied"
+	}
+	return map[string]any{
+		"status":  status,
+		"trigger": trigger,
+		"summary": summary.Payload(trigger),
+	}
 }
 
 func normalizeSyncAccountIDs(raw []string) []string {

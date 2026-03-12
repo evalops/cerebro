@@ -544,6 +544,9 @@ func (a *App) RebuildSecurityGraph(ctx context.Context) error {
 		return fmt.Errorf("security graph not initialized")
 	}
 
+	a.graphUpdateMu.Lock()
+	defer a.graphUpdateMu.Unlock()
+
 	start := time.Now()
 	a.setGraphBuildState(GraphBuildBuilding, time.Time{}, nil)
 	if err := a.SecurityGraphBuilder.Build(ctx); err != nil {

@@ -420,6 +420,8 @@ type Config struct {
 	GraphEventMapperValidationMode      string
 	GraphEventMapperDeadLetterPath      string
 	GraphMigrateLegacyActivityOnStart   bool
+	GraphConsistencyCheckEnabled        bool
+	GraphConsistencyCheckInterval       time.Duration
 	GraphFreshnessDefaultSLA            time.Duration
 	GraphFreshnessProviderSLAs          map[string]time.Duration
 	GraphOntologyFallbackWarnPct        float64
@@ -730,6 +732,8 @@ func LoadConfig() *Config {
 			GraphEventMapperValidationMode:      getEnv("GRAPH_EVENT_MAPPER_VALIDATION_MODE", "enforce"),
 			GraphEventMapperDeadLetterPath:      getEnv("GRAPH_EVENT_MAPPER_DEAD_LETTER_PATH", filepath.Join(findings.DefaultFilePath(), "graph-event-mapper.dlq.jsonl")),
 			GraphMigrateLegacyActivityOnStart:   getEnvBool("GRAPH_MIGRATE_LEGACY_ACTIVITY_ON_START", false),
+			GraphConsistencyCheckEnabled:        getEnvBool("GRAPH_CONSISTENCY_CHECK_ENABLED", false),
+			GraphConsistencyCheckInterval:       getEnvDuration("GRAPH_CONSISTENCY_CHECK_INTERVAL", 6*time.Hour),
 			GraphFreshnessDefaultSLA:            getEnvDuration("CEREBRO_GRAPH_FRESHNESS_DEFAULT_SLA", 6*time.Hour),
 			GraphFreshnessProviderSLAs:          parseDurationEnvMap("CEREBRO_FRESHNESS_SLA_"),
 			GraphOntologyFallbackWarnPct:        getEnvFloat("GRAPH_ONTOLOGY_FALLBACK_WARN_PERCENT", 12),

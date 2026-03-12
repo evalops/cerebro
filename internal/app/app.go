@@ -143,10 +143,14 @@ type App struct {
 	Propagation           *graph.PropagationEngine
 	graphReady            chan struct{} // closed when initial graph build completes
 	graphCancel           context.CancelFunc
+	graphUpdateMu         sync.Mutex
 	graphBuildMu          sync.RWMutex
 	graphBuildState       GraphBuildState
 	graphBuildLastAt      time.Time
 	graphBuildErr         string
+	graphConsistencyMu    sync.Mutex
+	graphConsistencyLast  time.Time
+	graphConsistencyRun   bool
 	threatIntelSyncCancel context.CancelFunc
 	threatIntelSyncWG     sync.WaitGroup
 	traceShutdown         func(context.Context) error
