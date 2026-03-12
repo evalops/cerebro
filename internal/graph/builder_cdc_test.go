@@ -329,6 +329,69 @@ func TestBuilderHasChanges_UsesCDCEventTime(t *testing.T) {
 	}
 }
 
+func TestBuilderApplyChanges_NoopPreservesWatermark(t *testing.T) {
+	source := newCDCRoutingSource()
+	builder := NewBuilder(source, nil)
+
+	previous := time.Now().UTC().Add(-2 * time.Minute).Round(time.Second)
+	builder.lastBuildTime = previous
+
+	summary, err := builder.ApplyChanges(context.Background(), previous)
+	if err != nil {
+		t.Fatalf("ApplyChanges failed: %v", err)
+	}
+
+	if summary.EventsProcessed != 0 {
+		t.Fatalf("expected no events processed, got %d", summary.EventsProcessed)
+	}
+	if !summary.Until.Equal(previous) {
+		t.Fatalf("expected noop summary to preserve watermark %s, got %s", previous, summary.Until)
+	}
+	if !builder.lastBuildTime.Equal(previous) {
+		t.Fatalf("expected builder watermark to remain %s, got %s", previous, builder.lastBuildTime)
+	}
+}
+
+func TestBuilderApplyChanges_DoesNotRegressWatermarkOnHistoricalReplay(t *testing.T) {
+	source := newCDCRoutingSource()
+	builder := NewBuilder(source, nil)
+
+	current := time.Now().UTC().Add(-1 * time.Minute).Round(time.Second)
+	historical := current.Add(-30 * time.Second)
+	builder.lastBuildTime = current
+	source.events = []map[string]any{{
+		"event_id":    "evt-historical-1",
+		"table_name":  "aws_s3_buckets",
+		"resource_id": "arn:aws:s3:::historical-bucket",
+		"change_type": "added",
+		"provider":    "aws",
+		"region":      "us-east-1",
+		"account_id":  "111111111111",
+		"payload": map[string]any{
+			"arn":        "arn:aws:s3:::historical-bucket",
+			"name":       "historical-bucket",
+			"account_id": "111111111111",
+			"region":     "us-east-1",
+		},
+		"event_time": historical.Add(5 * time.Second),
+	}}
+
+	summary, err := builder.ApplyChanges(context.Background(), historical)
+	if err != nil {
+		t.Fatalf("ApplyChanges failed: %v", err)
+	}
+
+	if !summary.Until.Equal(current) {
+		t.Fatalf("expected summary watermark to remain at %s, got %s", current, summary.Until)
+	}
+	if !builder.lastBuildTime.Equal(current) {
+		t.Fatalf("expected builder watermark to remain at %s, got %s", current, builder.lastBuildTime)
+	}
+	if _, ok := builder.Graph().GetNode("arn:aws:s3:::historical-bucket"); !ok {
+		t.Fatal("expected historical node to be applied while preserving watermark")
+	}
+}
+
 func TestBuilderApplyChanges_KubernetesEventsMaterializeTypedNodesAndEdges(t *testing.T) {
 	source := newCDCRoutingSource()
 	source.routes["from k8s_core_pods"] = &QueryResult{Rows: []map[string]any{{

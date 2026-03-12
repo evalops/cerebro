@@ -36,8 +36,9 @@ func (b *Builder) ApplyChanges(ctx context.Context, since time.Time) (GraphMutat
 	defer b.updateMu.Unlock()
 
 	b.stateMu.RLock()
+	currentWatermark := b.lastBuildTime
 	if since.IsZero() {
-		since = b.lastBuildTime
+		since = currentWatermark
 	}
 	currentGraph := b.graph
 	availableTables := cloneAvailableTables(b.availableTables)
@@ -68,15 +69,18 @@ func (b *Builder) ApplyChanges(ctx context.Context, since time.Time) (GraphMutat
 	}
 	summary.EventsProcessed = len(events)
 	if len(events) == 0 {
-		now := time.Now().UTC()
+		until := currentWatermark
+		if until.IsZero() {
+			until = since
+		}
 		summary.Tables = []string{}
-		summary.Until = now
+		summary.Until = until
 		summary.NodeCount = currentGraph.NodeCount()
 		summary.EdgeCount = currentGraph.EdgeCount()
 		summary.Duration = time.Since(start)
 		b.stateMu.Lock()
 		b.availableTables = working.availableTables
-		b.lastBuildTime = now
+		b.lastBuildTime = until
 		b.lastMutation = summary
 		b.stateMu.Unlock()
 		return summary, nil
@@ -140,6 +144,9 @@ func (b *Builder) ApplyChanges(ctx context.Context, since time.Time) (GraphMutat
 	now := time.Now().UTC()
 	if latest.IsZero() {
 		latest = now
+	}
+	if latest.Before(currentWatermark) {
+		latest = currentWatermark
 	}
 	summary.Until = latest
 	summary.Duration = time.Since(start)
