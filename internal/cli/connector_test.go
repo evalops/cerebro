@@ -263,6 +263,26 @@ func TestAllConnectorChecksPassedRejectsUnknownStatus(t *testing.T) {
 	}
 }
 
+func TestAWSDescribeInstancesInputOmitsMaxResultsWhenInstanceIDProvided(t *testing.T) {
+	input := awsDescribeInstancesInput("i-0123456789abcdef0")
+	if len(input.InstanceIds) != 1 || input.InstanceIds[0] != "i-0123456789abcdef0" {
+		t.Fatalf("expected instance ID to be preserved, got %#v", input.InstanceIds)
+	}
+	if input.MaxResults != nil {
+		t.Fatalf("expected MaxResults to be unset when InstanceIds are provided, got %v", *input.MaxResults)
+	}
+}
+
+func TestAWSDescribeInstancesInputUsesMaxResultsWithoutInstanceID(t *testing.T) {
+	input := awsDescribeInstancesInput("")
+	if input.MaxResults == nil || *input.MaxResults != awsDescribeProbeMaxResults {
+		t.Fatalf("expected MaxResults %d, got %#v", awsDescribeProbeMaxResults, input.MaxResults)
+	}
+	if len(input.InstanceIds) != 0 {
+		t.Fatalf("expected no instance IDs when none provided, got %#v", input.InstanceIds)
+	}
+}
+
 type staticErr string
 
 func (e staticErr) Error() string { return string(e) }

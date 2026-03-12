@@ -131,6 +131,11 @@ type gcpTestIAMPermissionsResponse struct {
 
 const awsDescribeProbeMaxResults = 5
 
+const (
+	connectorScaffoldDirPerm  = 0o750
+	connectorScaffoldFilePerm = 0o600
+)
+
 func init() {
 	connectorCatalogCmd.Flags().StringVarP(&connectorOutput, "output", "o", FormatTable, "Output format (table,json)")
 	connectorScaffoldCmd.Flags().StringVarP(&connectorOutput, "output", "o", FormatTable, "Output format (table,json)")
@@ -495,10 +500,10 @@ func writeGeneratedBundle(root string, bundle connectors.Bundle) ([]string, erro
 	files := make([]string, 0, len(bundle.Files))
 	for _, file := range bundle.Files {
 		target := filepath.Join(root, filepath.FromSlash(file.Path))
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(target), connectorScaffoldDirPerm); err != nil {
 			return nil, fmt.Errorf("mkdir %s: %w", filepath.Dir(target), err)
 		}
-		if err := os.WriteFile(target, []byte(file.Content), 0o644); err != nil {
+		if err := os.WriteFile(target, []byte(file.Content), connectorScaffoldFilePerm); err != nil {
 			return nil, fmt.Errorf("write %s: %w", target, err)
 		}
 		files = append(files, filepath.ToSlash(target))
@@ -560,14 +565,18 @@ func awsDescribeProbe(ctx context.Context, client *ec2.Client, instanceID string
 	if _, err := client.DescribeSnapshots(ctx, &ec2.DescribeSnapshotsInput{MaxResults: aws.Int32(awsDescribeProbeMaxResults), OwnerIds: []string{"self"}}); err != nil {
 		return fmt.Errorf("ec2:DescribeSnapshots failed: %w", err)
 	}
-	input := &ec2.DescribeInstancesInput{MaxResults: aws.Int32(awsDescribeProbeMaxResults)}
-	if strings.TrimSpace(instanceID) != "" {
-		input.InstanceIds = []string{strings.TrimSpace(instanceID)}
-	}
+	input := awsDescribeInstancesInput(instanceID)
 	if _, err := client.DescribeInstances(ctx, input); err != nil {
 		return fmt.Errorf("ec2:DescribeInstances failed: %w", err)
 	}
 	return nil
+}
+
+func awsDescribeInstancesInput(instanceID string) *ec2.DescribeInstancesInput {
+	if strings.TrimSpace(instanceID) != "" {
+		return &ec2.DescribeInstancesInput{InstanceIds: []string{strings.TrimSpace(instanceID)}}
+	}
+	return &ec2.DescribeInstancesInput{MaxResults: aws.Int32(awsDescribeProbeMaxResults)}
 }
 
 func awsDryRunCreateSnapshot(ctx context.Context, client *ec2.Client, volumeID, tagKey, tagValue string) error {

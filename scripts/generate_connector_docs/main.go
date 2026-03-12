@@ -19,7 +19,7 @@ func main() {
 	if err := writeJSON(outputCatalogPath, catalog); err != nil {
 		panic(err)
 	}
-	if err := os.WriteFile(outputMarkdownPath, []byte(renderMarkdown(catalog)), 0o644); err != nil {
+	if err := os.WriteFile(outputMarkdownPath, []byte(renderMarkdown(catalog)), 0o644); err != nil { // #nosec G306 -- generated docs are repository-readable artifacts.
 		panic(err)
 	}
 }
@@ -30,7 +30,7 @@ func writeJSON(path string, data any) error {
 		return err
 	}
 	encoded = append(encoded, '\n')
-	return os.WriteFile(path, encoded, 0o644)
+	return os.WriteFile(path, encoded, 0o644) // #nosec G306 -- generated docs are repository-readable artifacts.
 }
 
 func renderMarkdown(catalog connectors.Catalog) string {
