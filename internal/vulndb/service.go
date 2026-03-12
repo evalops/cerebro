@@ -125,7 +125,8 @@ func matchPackageVersion(installed string, affected AffectedPackage) (bool, stri
 	if affected.VulnerableVersion != "" {
 		return installed == strings.TrimSpace(affected.VulnerableVersion), affected.Fixed
 	}
-	if !strings.EqualFold(affected.RangeType, "SEMVER") && affected.RangeType != "" {
+	rangeType := strings.TrimSpace(strings.ToUpper(affected.RangeType))
+	if rangeType != "" && rangeType != "SEMVER" && rangeType != "ECOSYSTEM" {
 		return false, ""
 	}
 	installedVersion, ok := parseSemverLoose(installed)
@@ -254,6 +255,8 @@ func normalizeEcosystem(value string) string {
 	case "nuget":
 		return "nuget"
 	case "apk":
+		return "apk"
+	case "alpine":
 		return "apk"
 	case "deb", "debian":
 		return "deb"

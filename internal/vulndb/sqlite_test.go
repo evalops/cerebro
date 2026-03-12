@@ -132,3 +132,59 @@ func TestServiceMatchPackagesSkipsWithdrawnAdvisories(t *testing.T) {
 		t.Fatalf("expected withdrawn advisory to be skipped, got %#v", matches)
 	}
 }
+
+func TestServiceMatchesEcosystemRanges(t *testing.T) {
+	store, err := NewSQLiteStore(t.TempDir() + "/vulndb.db")
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	service := NewService(store)
+
+	osv := `
+{"id":"GHSA-test-ecosystem","aliases":["CVE-2026-1001"],"summary":"lodash vulnerable","details":"Prototype pollution","database_specific":{"severity":"HIGH"},"affected":[{"package":{"ecosystem":"npm","name":"lodash"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"},{"fixed":"4.17.21"}]}]}]}
+`
+	if _, err := service.ImportOSVJSON(context.Background(), "osv-test", strings.NewReader(osv)); err != nil {
+		t.Fatalf("ImportOSVJSON: %v", err)
+	}
+
+	matches, err := service.MatchPackages(context.Background(), filesystemanalyzer.OSInfo{}, []filesystemanalyzer.PackageRecord{{
+		Ecosystem: "npm",
+		Name:      "lodash",
+		Version:   "4.17.20",
+	}})
+	if err != nil {
+		t.Fatalf("MatchPackages: %v", err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected one ECOSYSTEM range match, got %#v", matches)
+	}
+}
+
+func TestServiceMatchesAlpineAliasAsAPK(t *testing.T) {
+	store, err := NewSQLiteStore(t.TempDir() + "/vulndb.db")
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	service := NewService(store)
+
+	osv := `
+{"id":"GHSA-test-alpine","aliases":["CVE-2026-2001"],"summary":"apk vulnerable","details":"alpine package advisory","database_specific":{"severity":"HIGH"},"affected":[{"package":{"ecosystem":"Alpine","name":"busybox"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"},{"fixed":"3.18.5-r0"}]}]}]}
+`
+	if _, err := service.ImportOSVJSON(context.Background(), "osv-test", strings.NewReader(osv)); err != nil {
+		t.Fatalf("ImportOSVJSON: %v", err)
+	}
+
+	matches, err := service.MatchPackages(context.Background(), filesystemanalyzer.OSInfo{}, []filesystemanalyzer.PackageRecord{{
+		Ecosystem: "apk",
+		Name:      "busybox",
+		Version:   "3.18.4-r0",
+	}})
+	if err != nil {
+		t.Fatalf("MatchPackages: %v", err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected alpine/apk alias match, got %#v", matches)
+	}
+}

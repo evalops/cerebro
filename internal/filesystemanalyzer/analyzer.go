@@ -942,9 +942,13 @@ func dedupeVulnerabilities(vulns []scanner.ImageVulnerability) []scanner.ImageVu
 	seen := make(map[string]struct{}, len(vulns))
 	out := make([]scanner.ImageVulnerability, 0, len(vulns))
 	for _, vuln := range vulns {
-		key := strings.TrimSpace(vuln.CVE) + "|" + strings.TrimSpace(vuln.Package) + "|" + strings.TrimSpace(vuln.InstalledVersion)
+		identifier := strings.TrimSpace(vuln.CVE)
+		if identifier == "" {
+			identifier = firstNonEmpty(strings.TrimSpace(vuln.ID), strings.TrimSpace(vuln.Description))
+		}
+		key := identifier + "|" + strings.TrimSpace(vuln.Package) + "|" + strings.TrimSpace(vuln.InstalledVersion)
 		if key == "||" {
-			key = strings.TrimSpace(vuln.ID)
+			key = strings.TrimSpace(vuln.FixedVersion) + "|" + strings.TrimSpace(vuln.Severity)
 		}
 		if _, ok := seen[key]; ok {
 			continue
