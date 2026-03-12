@@ -34620,6 +34620,10 @@
               "type": "string"
             },
             {
+              "path": "graph_update.error_code",
+              "type": "string"
+            },
+            {
               "path": "graph_update.status",
               "type": "string"
             },
@@ -34812,6 +34816,10 @@
               "type": "string"
             },
             {
+              "path": "graph_update.error_code",
+              "type": "string"
+            },
+            {
               "path": "graph_update.status",
               "type": "string"
             },
@@ -35001,6 +35009,10 @@
             },
             {
               "path": "graph_update.error",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.error_code",
               "type": "string"
             },
             {
@@ -35238,6 +35250,10 @@
               "type": "string"
             },
             {
+              "path": "graph_update.error_code",
+              "type": "string"
+            },
+            {
               "path": "graph_update.status",
               "type": "string"
             },
@@ -35440,6 +35456,10 @@
               "type": "string"
             },
             {
+              "path": "graph_update.error_code",
+              "type": "string"
+            },
+            {
               "path": "graph_update.status",
               "type": "string"
             },
@@ -35629,6 +35649,10 @@
             },
             {
               "path": "graph_update.error",
+              "type": "string"
+            },
+            {
+              "path": "graph_update.error_code",
               "type": "string"
             },
             {

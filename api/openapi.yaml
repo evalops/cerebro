@@ -10071,6 +10071,8 @@ components:
           type: string
         error:
           type: string
+        error_code:
+          type: string
         summary:
           $ref: '#/components/schemas/GraphMutationSummary'
     GraphMutationSummary:

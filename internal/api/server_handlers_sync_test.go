@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -17,6 +19,7 @@ type syncGraphSource struct {
 	mu     sync.Mutex
 	latest time.Time
 	events []map[string]any
+	err    error
 }
 
 func (s *syncGraphSource) Query(ctx context.Context, query string, args ...any) (*graph.QueryResult, error) {
@@ -31,6 +34,9 @@ func (s *syncGraphSource) Query(ctx context.Context, query string, args ...any) 
 		return &graph.QueryResult{Rows: []map[string]any{{"latest": s.latest}}, Count: 1}, nil
 	}
 	if strings.Contains(lower, "select event_id") && strings.Contains(lower, "from cdc_events") {
+		if s.err != nil {
+			return nil, s.err
+		}
 		rows := make([]map[string]any, 0, len(s.events))
 		rows = append(rows, s.events...)
 		return &graph.QueryResult{Rows: rows, Count: len(rows)}, nil
@@ -337,6 +343,59 @@ func TestSyncAWS_AppliesIncrementalGraphChangesAfterSync(t *testing.T) {
 	}
 	if _, ok := s.app.SecurityGraph.GetNode("arn:aws:s3:::sync-bucket"); !ok {
 		t.Fatal("expected incrementally applied bucket node in live security graph")
+	}
+}
+
+func TestSyncAWS_GraphUpdateFailureIsSanitized(t *testing.T) {
+	s := newTestServer(t)
+	s.app.Snowflake = &snowflake.Client{}
+
+	source := &syncGraphSource{}
+	builder := graph.NewBuilder(source, s.app.Logger)
+	s.app.SecurityGraphBuilder = builder
+	s.app.SecurityGraph = builder.Graph()
+
+	originalRun := runAWSSyncWithOptions
+	t.Cleanup(func() { runAWSSyncWithOptions = originalRun })
+	runAWSSyncWithOptions = func(ctx context.Context, client *snowflake.Client, req awsSyncRequest) (*awsSyncOutcome, error) {
+		return &awsSyncOutcome{
+			Results: []nativesync.SyncResult{{Table: "aws_s3_buckets", Synced: 1}},
+		}, nil
+	}
+
+	bodyBytes, err := json.Marshal(map[string]interface{}{
+		"region": "us-east-1",
+	})
+	if err != nil {
+		t.Fatalf("marshal body: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync/aws", strings.NewReader(string(bodyBytes)))
+	req.Header.Set("Content-Type", "application/json")
+	ctx, cancel := context.WithCancel(req.Context())
+	cancel()
+	req = req.WithContext(ctx)
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	body := decodeJSON(t, w)
+	graphUpdate, ok := body["graph_update"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected graph_update payload, got %#v", body["graph_update"])
+	}
+	if graphUpdate["status"] != "failed" {
+		t.Fatalf("expected graph update status failed, got %#v", graphUpdate)
+	}
+	if graphUpdate["error"] != "graph update failed" {
+		t.Fatalf("expected sanitized graph update error, got %#v", graphUpdate["error"])
+	}
+	if graphUpdate["error_code"] != "GRAPH_UPDATE_FAILED" {
+		t.Fatalf("expected graph update error code, got %#v", graphUpdate["error_code"])
+	}
+	if strings.Contains(w.Body.String(), context.Canceled.Error()) {
+		t.Fatalf("expected raw backend error to stay out of response body, got %s", w.Body.String())
 	}
 }
 

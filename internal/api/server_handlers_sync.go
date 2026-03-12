@@ -824,9 +824,10 @@ func (s *Server) applySecurityGraphUpdateAfterSync(ctx context.Context, provider
 	if err != nil {
 		s.app.Logger.Warn("post-sync graph update failed", "provider", provider, "error", err)
 		return map[string]any{
-			"status":  "failed",
-			"trigger": trigger,
-			"error":   err.Error(),
+			"status":     "failed",
+			"trigger":    trigger,
+			"error":      "graph update failed",
+			"error_code": "GRAPH_UPDATE_FAILED",
 		}
 	}
 
