@@ -460,15 +460,17 @@ func (a *App) initSecurityGraph(ctx context.Context) {
 	securityGraph := a.SecurityGraphBuilder.Graph()
 	a.configureGraphSchemaValidation(securityGraph)
 	a.setSecurityGraph(securityGraph)
-	a.Propagation = graph.NewPropagationEngine(securityGraph)
 
 	graphCtx, cancel := context.WithCancel(backgroundWorkContext(ctx))
+	a.graphCtx = graphCtx
 	a.graphCancel = cancel
 	a.setGraphBuildState(GraphBuildBuilding, time.Time{}, nil)
 
 	// Build initial graph in background
 	go func() {
 		defer close(a.graphReady)
+		a.graphUpdateMu.Lock()
+		defer a.graphUpdateMu.Unlock()
 
 		if err := a.SecurityGraphBuilder.Build(graphCtx); err != nil {
 			a.setGraphBuildState(GraphBuildFailed, time.Now().UTC(), err)
@@ -543,6 +545,9 @@ func (a *App) RebuildSecurityGraph(ctx context.Context) error {
 	if a.SecurityGraphBuilder == nil {
 		return fmt.Errorf("security graph not initialized")
 	}
+
+	a.graphUpdateMu.Lock()
+	defer a.graphUpdateMu.Unlock()
 
 	start := time.Now()
 	a.setGraphBuildState(GraphBuildBuilding, time.Time{}, nil)

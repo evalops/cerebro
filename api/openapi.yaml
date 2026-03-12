@@ -10049,10 +10049,77 @@ components:
           type: integer
         relationships_skipped_reason:
           type: string
+        graph_update:
+          $ref: '#/components/schemas/GraphUpdateStatus'
         results:
           type: array
           items:
             $ref: '#/components/schemas/SyncTableResult'
+    GraphUpdateStatus:
+      type: object
+      required:
+        - status
+        - trigger
+      properties:
+        status:
+          type: string
+          enum:
+            - applied
+            - busy
+            - noop
+            - failed
+        trigger:
+          type: string
+        error:
+          type: string
+        error_code:
+          type: string
+        summary:
+          $ref: '#/components/schemas/GraphMutationSummary'
+    GraphMutationSummary:
+      type: object
+      required:
+        - mode
+        - since
+        - until
+        - tables
+        - events_processed
+        - nodes_added
+        - nodes_updated
+        - nodes_removed
+        - nodes
+        - edges
+        - duration
+        - duration_ms
+      properties:
+        mode:
+          type: string
+        trigger:
+          type: string
+        since:
+          type: string
+        until:
+          type: string
+        tables:
+          type: array
+          items:
+            type: string
+        events_processed:
+          type: integer
+        nodes_added:
+          type: integer
+        nodes_updated:
+          type: integer
+        nodes_removed:
+          type: integer
+        nodes:
+          type: integer
+        edges:
+          type: integer
+        duration:
+          type: string
+        duration_ms:
+          type: integer
     SyncTableResult:
       type: object
       required:

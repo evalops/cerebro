@@ -2,7 +2,7 @@
 
 Generated from `internal/app/app_config.go` (`LoadConfig`) via `go run ./scripts/generate_config_docs/main.go`.
 
-Total variables: **289**
+Total variables: **291**
 
 | Variable | Reader(s) | Default(s) | Config Field(s) | Validation rule(s) |
 |---|---|---|---|---|
@@ -101,6 +101,8 @@ Total variables: **289**
 | `GOOGLE_WORKSPACE_CREDENTIALS_JSON` | `getEnv` | `""` | `GoogleWorkspaceCredentialsJSON` | `-` |
 | `GOOGLE_WORKSPACE_DOMAIN` | `getEnv` | `""` | `GoogleWorkspaceDomain` | `-` |
 | `GOOGLE_WORKSPACE_IMPERSONATOR_EMAIL` | `getEnv` | `""` | `GoogleWorkspaceImpersonatorEmail` | `-` |
+| `GRAPH_CONSISTENCY_CHECK_ENABLED` | `getEnvBool` | `false` | `GraphConsistencyCheckEnabled` | `-` |
+| `GRAPH_CONSISTENCY_CHECK_INTERVAL` | `getEnvDuration` | `6 * time.Hour` | `GraphConsistencyCheckInterval` | `-` |
 | `GRAPH_CROSS_TENANT_MIN_SUPPORT` | `getEnvInt` | `2` | `GraphCrossTenantMinSupport` | `when GRAPH_CROSS_TENANT_REQUIRE_SIGNED_INGEST=true, signing key is required and skew/TTL/support thresholds must be positive` |
 | `GRAPH_CROSS_TENANT_MIN_TENANTS` | `getEnvInt` | `2` | `GraphCrossTenantMinTenants` | `when GRAPH_CROSS_TENANT_REQUIRE_SIGNED_INGEST=true, signing key is required and skew/TTL/support thresholds must be positive` |
 | `GRAPH_CROSS_TENANT_REPLAY_TTL` | `getEnvDuration` | `24 * time.Hour` | `GraphCrossTenantReplayTTL` | `when GRAPH_CROSS_TENANT_REQUIRE_SIGNED_INGEST=true, signing key is required and skew/TTL/support thresholds must be positive` |
