@@ -372,6 +372,13 @@ type Config struct {
 	ScanRetryBackoff          time.Duration
 	ScanRetryMaxBackoff       time.Duration
 
+	// Agentless workload snapshot scanning
+	WorkloadScanStateFile              string
+	WorkloadScanMountBasePath          string
+	WorkloadScanMaxConcurrentSnapshots int
+	WorkloadScanCleanupTimeout         time.Duration
+	WorkloadScanReconcileOlderThan     time.Duration
+
 	// Finding attestation chain
 	FindingsMaxInMemory                int
 	FindingsResolvedRetention          time.Duration
@@ -691,6 +698,11 @@ func LoadConfig() *Config {
 			ScanRetryAttempts:                   getEnvInt("SCAN_RETRY_ATTEMPTS", 3),
 			ScanRetryBackoff:                    getEnvDuration("SCAN_RETRY_BACKOFF", 2*time.Second),
 			ScanRetryMaxBackoff:                 getEnvDuration("SCAN_RETRY_MAX_BACKOFF", 30*time.Second),
+			WorkloadScanStateFile:               getEnv("WORKLOAD_SCAN_STATE_FILE", filepath.Join(".cerebro", "workload-scan", "runs.db")),
+			WorkloadScanMountBasePath:           getEnv("WORKLOAD_SCAN_MOUNT_BASE_PATH", filepath.Join(".cerebro", "workload-scan", "mounts")),
+			WorkloadScanMaxConcurrentSnapshots:  getEnvInt("WORKLOAD_SCAN_MAX_CONCURRENT_SNAPSHOTS", 2),
+			WorkloadScanCleanupTimeout:          getEnvDuration("WORKLOAD_SCAN_CLEANUP_TIMEOUT", 2*time.Minute),
+			WorkloadScanReconcileOlderThan:      getEnvDuration("WORKLOAD_SCAN_RECONCILE_OLDER_THAN", 30*time.Minute),
 			FindingsMaxInMemory:                 getEnvInt("FINDINGS_MAX_IN_MEMORY", findings.DefaultMaxFindings),
 			FindingsResolvedRetention:           getEnvDuration("FINDINGS_RESOLVED_RETENTION", findings.DefaultResolvedRetention),
 			FindingsSemanticDedupEnabled:        getEnvBool("FINDINGS_SEMANTIC_DEDUP_ENABLED", findings.DefaultSemanticDedupEnabled),

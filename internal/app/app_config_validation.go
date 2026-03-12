@@ -265,6 +265,16 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	if c.WorkloadScanMaxConcurrentSnapshots <= 0 {
+		problems = addConfigProblem(problems, "WORKLOAD_SCAN_MAX_CONCURRENT_SNAPSHOTS must be > 0")
+	}
+	if c.WorkloadScanCleanupTimeout <= 0 {
+		problems = addConfigProblem(problems, "WORKLOAD_SCAN_CLEANUP_TIMEOUT must be > 0")
+	}
+	if c.WorkloadScanReconcileOlderThan <= 0 {
+		problems = addConfigProblem(problems, "WORKLOAD_SCAN_RECONCILE_OLDER_THAN must be > 0")
+	}
+
 	if c.GraphCrossTenantRequireSignedIngest {
 		if strings.TrimSpace(c.GraphCrossTenantSigningKey) == "" {
 			problems = addConfigProblem(problems, "GRAPH_CROSS_TENANT_SIGNING_KEY is required when GRAPH_CROSS_TENANT_REQUIRE_SIGNED_INGEST=true")

@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 func TestRootCmd(t *testing.T) {
@@ -36,12 +38,16 @@ func TestSubcommands(t *testing.T) {
 	// Check at least some expected commands exist
 	foundServe := false
 	foundPolicy := false
+	foundWorkloadScan := false
 	for _, cmd := range subcommands {
 		if cmd.Name() == "serve" {
 			foundServe = true
 		}
 		if cmd.Name() == "policy" {
 			foundPolicy = true
+		}
+		if cmd.Name() == "workload-scan" {
+			foundWorkloadScan = true
 		}
 	}
 
@@ -51,6 +57,10 @@ func TestSubcommands(t *testing.T) {
 
 	if !foundPolicy {
 		t.Error("expected policy subcommand")
+	}
+
+	if !foundWorkloadScan {
+		t.Error("expected workload-scan subcommand")
 	}
 }
 
@@ -154,22 +164,75 @@ func TestCompletionCommandArgs(t *testing.T) {
 	}
 }
 
+func TestWorkloadScanCommands(t *testing.T) {
+	if workloadScanCmd == nil {
+		t.Fatal("workloadScanCmd should not be nil")
+	}
+
+	if workloadScanCmd.Name() != "workload-scan" {
+		t.Fatalf("expected workload-scan command, got %s", workloadScanCmd.Name())
+	}
+
+	subcommands := workloadScanCmd.Commands()
+	foundList := false
+	foundRun := false
+	foundReconcile := false
+	for _, cmd := range subcommands {
+		switch cmd.Name() {
+		case "list":
+			foundList = true
+		case "run":
+			foundRun = true
+		case "reconcile":
+			foundReconcile = true
+		}
+	}
+	if !foundList || !foundRun || !foundReconcile {
+		t.Fatalf("expected workload-scan list/run/reconcile subcommands, got list=%t run=%t reconcile=%t", foundList, foundRun, foundReconcile)
+	}
+}
+
+func TestWorkloadScanAWSRequiredFlags(t *testing.T) {
+	for _, name := range []string{"region", "instance-id", "scanner-instance-id", "scanner-zone"} {
+		flag := workloadScanRunAWSCmd.Flags().Lookup(name)
+		if flag == nil {
+			t.Fatalf("expected %s flag to exist", name)
+		}
+		if values, ok := flag.Annotations[cobra.BashCompOneRequiredFlag]; !ok || len(values) == 0 {
+			t.Fatalf("expected %s to be marked required", name)
+		}
+	}
+}
+
+func TestWorkloadScanReconcileAWSRequiredFlags(t *testing.T) {
+	flag := workloadScanReconcileAWSCmd.Flags().Lookup("region")
+	if flag == nil {
+		t.Fatal("expected reconcile aws region flag to exist")
+	}
+	if values, ok := flag.Annotations[cobra.BashCompOneRequiredFlag]; !ok || len(values) == 0 {
+		t.Fatal("expected reconcile aws region flag to be marked required")
+	}
+}
+
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
 
 	originalStdout := os.Stdout
-	reader, writer, err := os.Pipe()
+	file, err := os.CreateTemp(t.TempDir(), "cerebro-cli-stdout-*.txt")
 	if err != nil {
-		t.Fatalf("failed to create pipe: %v", err)
+		t.Fatalf("failed to create temp stdout file: %v", err)
 	}
+	defer func() { _ = file.Close() }()
 
-	os.Stdout = writer
+	os.Stdout = file
 	fn()
-	_ = writer.Close()
 	os.Stdout = originalStdout
 
-	output, err := io.ReadAll(reader)
-	_ = reader.Close()
+	if _, err := file.Seek(0, 0); err != nil {
+		t.Fatalf("failed to rewind stdout capture: %v", err)
+	}
+
+	output, err := io.ReadAll(file)
 	if err != nil {
 		t.Fatalf("failed to read output: %v", err)
 	}

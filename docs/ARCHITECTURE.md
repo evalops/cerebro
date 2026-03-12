@@ -14,6 +14,7 @@ Graph-specific architecture references:
 - [Graph Report Extensibility Research](./GRAPH_REPORT_EXTENSIBILITY_RESEARCH.md)
 - [Graph Asset Deepening Research](./GRAPH_ASSET_DEEPENING_RESEARCH.md)
 - [Connector Provisioning Architecture](./CONNECTOR_PROVISIONING_ARCHITECTURE.md)
+- [Workload Scan Architecture](./WORKLOAD_SCAN_ARCHITECTURE.md)
 - [Connector Provisioning Auto-Generated Catalog](./CONNECTOR_PROVISIONING_AUTOGEN.md)
 - [Connector Provisioning Machine-Readable Catalog](./CONNECTOR_PROVISIONING_CATALOG.json)
 - [Graph Entity Facet Architecture](./GRAPH_ENTITY_FACET_ARCHITECTURE.md)
