@@ -1,0 +1,100 @@
+package vulndb
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/evalops/cerebro/internal/filesystemanalyzer"
+)
+
+func TestServiceImportsOSVAndMatchesPackages(t *testing.T) {
+	store, err := NewSQLiteStore(t.TempDir() + "/vulndb.db")
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	service := NewService(store)
+
+	osv := `
+{"id":"GHSA-test-0001","aliases":["CVE-2026-0001"],"summary":"lodash vulnerable","details":"Prototype pollution","database_specific":{"severity":"HIGH"},"affected":[{"package":{"ecosystem":"npm","name":"lodash"},"ranges":[{"type":"SEMVER","events":[{"introduced":"0"},{"fixed":"4.17.21"}]}]}]}
+`
+	report, err := service.ImportOSVJSON(context.Background(), "osv-test", strings.NewReader(osv))
+	if err != nil {
+		t.Fatalf("ImportOSVJSON: %v", err)
+	}
+	if report.Imported != 1 {
+		t.Fatalf("expected 1 imported advisory, got %#v", report)
+	}
+
+	stats, err := service.Stats(context.Background())
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if stats.VulnerabilityCount != 1 || stats.PackageRangeCount != 1 {
+		t.Fatalf("unexpected stats: %#v", stats)
+	}
+
+	matches, err := service.MatchPackages(context.Background(), filesystemanalyzer.OSInfo{}, []filesystemanalyzer.PackageRecord{{
+		Ecosystem: "npm",
+		Name:      "lodash",
+		Version:   "4.17.20",
+	}})
+	if err != nil {
+		t.Fatalf("MatchPackages: %v", err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected 1 vulnerability match, got %#v", matches)
+	}
+	if matches[0].CVE != "CVE-2026-0001" {
+		t.Fatalf("expected CVE alias to be primary id, got %#v", matches[0])
+	}
+	if matches[0].FixedVersion != "4.17.21" {
+		t.Fatalf("expected fixed version 4.17.21, got %#v", matches[0])
+	}
+	if matches[0].Severity != "high" {
+		t.Fatalf("expected high severity, got %#v", matches[0])
+	}
+
+	info, ok := service.LookupCVE("CVE-2026-0001")
+	if !ok {
+		t.Fatal("expected LookupCVE to find imported alias")
+	}
+	if info.InKEV {
+		t.Fatalf("expected imported advisory to start without KEV flag, got %#v", info)
+	}
+
+	kev := `{"vulnerabilities":[{"cveID":"CVE-2026-0001"}]}`
+	kevReport, err := service.ImportKEVJSON(context.Background(), "kev-test", strings.NewReader(kev))
+	if err != nil {
+		t.Fatalf("ImportKEVJSON: %v", err)
+	}
+	if kevReport.MatchedKEV != 1 {
+		t.Fatalf("expected one KEV match, got %#v", kevReport)
+	}
+
+	epss := "cve,epss,percentile\nCVE-2026-0001,0.91,0.99\n"
+	epssReport, err := service.ImportEPSSCSV(context.Background(), "epss-test", strings.NewReader(epss))
+	if err != nil {
+		t.Fatalf("ImportEPSSCSV: %v", err)
+	}
+	if epssReport.MatchedEPSS != 1 {
+		t.Fatalf("expected one EPSS match, got %#v", epssReport)
+	}
+
+	info, ok = service.LookupCVE("CVE-2026-0001")
+	if !ok {
+		t.Fatal("expected LookupCVE after KEV/EPSS enrichment")
+	}
+	if !info.InKEV || !info.Exploitable {
+		t.Fatalf("expected KEV/EPSS enrichment to make advisory exploitable, got %#v", info)
+	}
+
+	syncStates, err := service.ListSyncStates(context.Background())
+	if err != nil {
+		t.Fatalf("ListSyncStates: %v", err)
+	}
+	if len(syncStates) != 3 {
+		t.Fatalf("expected 3 sync states, got %#v", syncStates)
+	}
+}
