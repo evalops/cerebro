@@ -8,8 +8,8 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -746,7 +746,8 @@ func azureActionMatches(pattern, required string) bool {
 	if pattern == "*" {
 		return true
 	}
-	ok, err := path.Match(pattern, required)
+	expr := "^" + strings.ReplaceAll(regexp.QuoteMeta(pattern), "\\*", ".*") + "$"
+	ok, err := regexp.MatchString(expr, required)
 	return err == nil && ok
 }
 

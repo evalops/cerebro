@@ -116,6 +116,9 @@ func TestAzureActionMatchesWildcard(t *testing.T) {
 	if !azureActionMatches("Microsoft.Compute/*/read", "Microsoft.Compute/virtualMachines/read") {
 		t.Fatal("expected wildcard Azure action match")
 	}
+	if !azureActionMatches("*/read", "Microsoft.Compute/virtualMachines/read") {
+		t.Fatal("expected global read Azure wildcard match")
+	}
 	if azureActionMatches("Microsoft.Compute/snapshots/delete", "Microsoft.Compute/snapshots/write") {
 		t.Fatal("expected different Azure actions not to match")
 	}
