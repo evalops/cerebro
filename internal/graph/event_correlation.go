@@ -278,6 +278,9 @@ func QueryEventCorrelations(g *Graph, now time.Time, query EventCorrelationQuery
 
 	filtered := collectEventCorrelationRecords(g, filteredPatterns)
 	allowedEventIDs, allowedContextIDs := correlationNeighborhoodFilters(g, query)
+	if (query.EventID != "" || query.EntityID != "") && len(allowedEventIDs) == 0 && len(allowedContextIDs) == 0 {
+		return result
+	}
 	filtered = filterEventCorrelationRecords(filtered, query, allowedEventIDs, allowedContextIDs)
 	sort.Slice(filtered, func(i, j int) bool {
 		if !filtered[i].Effect.ObservedAt.Equal(filtered[j].Effect.ObservedAt) {
@@ -294,7 +297,7 @@ func QueryEventCorrelations(g *Graph, now time.Time, query EventCorrelationQuery
 	result.Correlations = filtered
 	result.Summary.CorrelationCount = len(filtered)
 
-	if query.IncludeAnomalies {
+	if query.IncludeAnomalies && len(allowedContextIDs) > 0 {
 		anomalies := detectEventAnomalies(g, now, allowedContextIDs)
 		if len(anomalies) > query.Limit {
 			anomalies = anomalies[:query.Limit]

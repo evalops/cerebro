@@ -214,6 +214,46 @@ func TestQueryEventCorrelationsSortsAnomaliesBySeverityRank(t *testing.T) {
 	}
 }
 
+func TestQueryEventCorrelationsFailsClosedForUnknownScope(t *testing.T) {
+	g := New()
+	base := time.Date(2026, 3, 12, 10, 0, 0, 0, time.UTC)
+
+	g.AddNode(&Node{ID: "service:payments", Kind: NodeKindService, Name: "Payments"})
+	g.AddNode(&Node{
+		ID:   "pull_request:payments:42",
+		Kind: NodeKindPullRequest,
+		Name: "payments pr",
+		Properties: map[string]any{
+			"state":       "merged",
+			"observed_at": base.Format(time.RFC3339),
+			"valid_from":  base.Format(time.RFC3339),
+		},
+	})
+	g.AddNode(&Node{
+		ID:   "deployment:payments:deploy-1",
+		Kind: NodeKindDeploymentRun,
+		Name: "deploy-1",
+		Properties: map[string]any{
+			"service_id":  "payments",
+			"status":      "failed",
+			"observed_at": base.Add(5 * time.Minute).Format(time.RFC3339),
+			"valid_from":  base.Add(5 * time.Minute).Format(time.RFC3339),
+		},
+	})
+	g.AddEdge(&Edge{ID: "pr->service", Source: "pull_request:payments:42", Target: "service:payments", Kind: EdgeKindTargets, Effect: EdgeEffectAllow})
+	g.AddEdge(&Edge{ID: "deploy->service", Source: "deployment:payments:deploy-1", Target: "service:payments", Kind: EdgeKindTargets, Effect: EdgeEffectAllow})
+	MaterializeEventCorrelations(g, base.Add(10*time.Minute))
+
+	result := QueryEventCorrelations(g, base.Add(10*time.Minute), EventCorrelationQuery{
+		EventID:          "incident:does-not-exist",
+		IncludeAnomalies: true,
+		Limit:            10,
+	})
+	if len(result.Correlations) != 0 || len(result.Anomalies) != 0 {
+		t.Fatalf("expected unknown event scope to fail closed, got %#v", result)
+	}
+}
+
 func hasActiveEdge(edges []*Edge, kind EdgeKind, target string) bool {
 	for _, edge := range edges {
 		if edge == nil {
