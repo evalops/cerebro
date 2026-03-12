@@ -278,6 +278,9 @@ func (r *Runner) analyze(ctx context.Context, client scanner.RegistryClient, run
 			Analyzer: "noop",
 		}
 	}
+	if report.FilesystemVulnerabilityCount == 0 && len(report.Result.Vulnerabilities) > 0 {
+		report.FilesystemVulnerabilityCount = len(report.Result.Vulnerabilities)
+	}
 	report.Result.Repository = run.Target.Repository
 	report.Result.Tag = run.Target.Tag
 	report.Result.Digest = run.Target.Digest
@@ -299,7 +302,6 @@ func (r *Runner) analyze(ctx context.Context, client scanner.RegistryClient, run
 		}
 	}
 	report.Result.Summary = summarizeVulnerabilities(report.Result.Vulnerabilities)
-	report.FilesystemVulnerabilityCount = len(report.Result.Vulnerabilities) - report.NativeVulnerabilityCount
 	return report, nil
 }
 

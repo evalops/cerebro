@@ -340,6 +340,82 @@ func TestRunnerRunImageScanPersistsLifecycleAndCleanup(t *testing.T) {
 	}
 }
 
+func TestRunnerRunImageScanPreservesFilesystemVulnerabilityCountAcrossDedup(t *testing.T) {
+	store, err := NewSQLiteRunStore(filepath.Join(t.TempDir(), "image-scan.db"))
+	if err != nil {
+		t.Fatalf("new sqlite run store: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	layer := gzipTarLayer(t, map[string]string{
+		"etc/os-release": "NAME=Ubuntu\n",
+	}, nil)
+	duplicate := scanner.ImageVulnerability{
+		CVE:              "CVE-2024-0001",
+		Severity:         "high",
+		Package:          "openssl",
+		InstalledVersion: "1.0.0",
+	}
+	registry := &fakeRegistry{
+		name: "gcr",
+		host: "gcr.io",
+		manifest: &scanner.ImageManifest{
+			Digest:       "sha256:image",
+			ConfigDigest: "sha256:config",
+			Config: scanner.ImageConfig{
+				OS:           "linux",
+				Architecture: "amd64",
+			},
+			Layers: []scanner.Layer{
+				{Digest: "sha256:layer", MediaType: "application/vnd.oci.image.layer.v1.tar+gzip"},
+			},
+		},
+		vulns: []scanner.ImageVulnerability{
+			duplicate,
+			duplicate,
+		},
+		blobs: map[string][]byte{
+			"sha256:layer": layer,
+		},
+	}
+	runner := NewRunner(RunnerOptions{
+		Store:        store,
+		Registries:   []scanner.RegistryClient{registry},
+		Materializer: NewLocalMaterializer(filepath.Join(t.TempDir(), "rootfs")),
+		Analyzer: FilesystemAnalyzer{
+			Scanner: fakeFilesystemScanner{
+				result: &scanner.ContainerScanResult{
+					Vulnerabilities: []scanner.ImageVulnerability{duplicate},
+				},
+			},
+		},
+	})
+
+	run, err := runner.RunImageScan(context.Background(), ScanRequest{
+		ID: "image_scan:dedup-counts",
+		Target: ScanTarget{
+			Registry:   RegistryGCR,
+			Repository: "repo",
+			Tag:        "latest",
+		},
+	})
+	if err != nil {
+		t.Fatalf("run image scan: %v", err)
+	}
+	if run.Analysis == nil {
+		t.Fatal("expected analysis report")
+	}
+	if run.Analysis.NativeVulnerabilityCount != 2 {
+		t.Fatalf("expected native vulnerability count 2, got %d", run.Analysis.NativeVulnerabilityCount)
+	}
+	if run.Analysis.FilesystemVulnerabilityCount != 1 {
+		t.Fatalf("expected filesystem vulnerability count 1, got %d", run.Analysis.FilesystemVulnerabilityCount)
+	}
+	if run.Analysis.Result.Summary.Total != 1 {
+		t.Fatalf("expected one merged vulnerability, got %#v", run.Analysis.Result.Summary)
+	}
+}
+
 func gzipTarLayer(t *testing.T, files map[string]string, extraEntries []string) []byte {
 	t.Helper()
 	entries := make([]tarEntry, 0, len(files)+len(extraEntries))

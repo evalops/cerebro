@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -488,6 +489,34 @@ func TestGCRClientSuccess(t *testing.T) {
 	}
 	if manifest.Digest != "sha256:gcr" {
 		t.Fatalf("unexpected digest: %s", manifest.Digest)
+	}
+}
+
+func TestGCRClientDownloadBlobQualifiesRepository(t *testing.T) {
+	var requestedPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestedPath = r.URL.Path
+		_, _ = w.Write([]byte("blob"))
+	}))
+	defer server.Close()
+
+	client := NewGCRClient("my-project")
+	client.SetRegistryHost(server.URL)
+
+	reader, err := client.DownloadBlob(context.Background(), "repo", "sha256:layer")
+	if err != nil {
+		t.Fatalf("DownloadBlob: %v", err)
+	}
+	defer func() { _ = reader.Close() }()
+	body, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+	if string(body) != "blob" {
+		t.Fatalf("unexpected body %q", string(body))
+	}
+	if requestedPath != "/v2/my-project/repo/blobs/sha256:layer" {
+		t.Fatalf("unexpected blob path %q", requestedPath)
 	}
 }
 

@@ -900,7 +900,7 @@ func (c *GCRClient) GetManifest(ctx context.Context, repo, tag string) (*ImageMa
 }
 
 func (c *GCRClient) DownloadBlob(ctx context.Context, repo, digest string) (io.ReadCloser, error) {
-	url := fmt.Sprintf("%s/v2/%s/blobs/%s", c.baseURL(), strings.TrimSpace(repo), strings.TrimSpace(digest))
+	url := fmt.Sprintf("%s/v2/%s/blobs/%s", c.baseURL(), c.qualifyRepo(repo), strings.TrimSpace(digest))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
