@@ -124,6 +124,24 @@ func TestAzureActionMatchesWildcard(t *testing.T) {
 	}
 }
 
+func TestAzurePermissionAllowedRespectsAdditiveGrants(t *testing.T) {
+	grants := []struct {
+		Actions    []string `json:"actions"`
+		NotActions []string `json:"notActions"`
+	}{
+		{
+			Actions:    []string{"Microsoft.Compute/*"},
+			NotActions: []string{"Microsoft.Compute/snapshots/write"},
+		},
+		{
+			Actions: []string{"Microsoft.Compute/snapshots/write"},
+		},
+	}
+	if !azurePermissionAllowed("Microsoft.Compute/snapshots/write", grants) {
+		t.Fatal("expected later additive Azure grant to restore snapshot write permission")
+	}
+}
+
 func TestClassifyAWSDryRunResult(t *testing.T) {
 	status, detail := classifyAWSDryRunResult(nil, "ec2:CreateSnapshot")
 	if status != "passed" || !strings.Contains(detail, "succeeded") {

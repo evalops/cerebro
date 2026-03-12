@@ -719,8 +719,8 @@ func azurePermissionAllowed(required string, grants []struct {
 	Actions    []string `json:"actions"`
 	NotActions []string `json:"notActions"`
 }) bool {
-	matched := false
 	for _, grant := range grants {
+		matched := false
 		for _, action := range grant.Actions {
 			if azureActionMatches(action, required) {
 				matched = true
@@ -732,10 +732,13 @@ func azurePermissionAllowed(required string, grants []struct {
 		}
 		for _, action := range grant.NotActions {
 			if azureActionMatches(action, required) {
-				return false
+				matched = false
+				break
 			}
 		}
-		return true
+		if matched {
+			return true
+		}
 	}
 	return false
 }
