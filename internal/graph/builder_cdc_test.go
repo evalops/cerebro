@@ -9,11 +9,15 @@ import (
 )
 
 type cdcRoutingSource struct {
-	mu        sync.Mutex
-	latest    time.Time
-	events    []map[string]any
-	routes    map[string]*QueryResult
-	queryHits map[string]int
+	mu           sync.Mutex
+	latest       time.Time
+	events       []map[string]any
+	routes       map[string]*QueryResult
+	queryHits    map[string]int
+	blockNeedle  string
+	blockStart   chan struct{}
+	blockRelease chan struct{}
+	blockOnce    sync.Once
 }
 
 var _ DataSource = (*cdcRoutingSource)(nil)
@@ -29,6 +33,19 @@ func (s *cdcRoutingSource) Query(ctx context.Context, query string, args ...any)
 	_ = ctx
 	_ = args
 	lower := strings.ToLower(query)
+
+	if s.blockNeedle != "" && strings.Contains(lower, s.blockNeedle) {
+		s.blockOnce.Do(func() {
+			if s.blockStart != nil {
+				close(s.blockStart)
+			}
+		})
+		select {
+		case <-s.blockRelease:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -223,6 +240,69 @@ func TestBuilderApplyChanges_EdgeOnlyTableChangeRebuildsEdges(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected policy-derived edge from alice to sensitive-data, got %d edges", len(edges))
+	}
+}
+
+func TestBuilderApplyChanges_UsesCopyOnWriteSwap(t *testing.T) {
+	source := newCDCRoutingSource()
+	source.blockNeedle = "from aws_iam_policy_versions"
+	source.blockStart = make(chan struct{})
+	source.blockRelease = make(chan struct{})
+
+	builder := NewBuilder(source, nil)
+	live := builder.Graph()
+	live.AddNode(&Node{ID: "internet", Kind: NodeKindInternet, Provider: "external", Name: "Internet", Risk: RiskCritical})
+	live.AddNode(&Node{ID: "arn:aws:s3:::existing-bucket", Kind: NodeKindBucket, Provider: "aws", Account: "111111111111", Name: "existing-bucket"})
+	live.AddEdge(&Edge{Source: "internet", Target: "arn:aws:s3:::existing-bucket", Kind: EdgeKindExposedTo})
+	live.BuildIndex()
+
+	base := time.Now().UTC().Add(-1 * time.Minute)
+	source.events = []map[string]any{{
+		"event_id":    "evt-1",
+		"table_name":  "aws_s3_buckets",
+		"resource_id": "arn:aws:s3:::new-public-bucket",
+		"change_type": "added",
+		"provider":    "aws",
+		"region":      "us-east-1",
+		"account_id":  "111111111111",
+		"payload": map[string]any{
+			"arn":                 "arn:aws:s3:::new-public-bucket",
+			"name":                "new-public-bucket",
+			"account_id":          "111111111111",
+			"region":              "us-east-1",
+			"block_public_acls":   false,
+			"block_public_policy": false,
+		},
+		"event_time": base.Add(5 * time.Second),
+	}}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := builder.ApplyChanges(context.Background(), base)
+		done <- err
+	}()
+
+	select {
+	case <-source.blockStart:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for incremental edge rebuild to start")
+	}
+
+	if _, ok := builder.Graph().GetNode("arn:aws:s3:::new-public-bucket"); ok {
+		t.Fatal("expected live graph to remain unchanged until incremental swap completes")
+	}
+	oldEdges := builder.Graph().GetOutEdges("internet")
+	if len(oldEdges) != 1 || oldEdges[0].Target != "arn:aws:s3:::existing-bucket" {
+		t.Fatalf("expected live graph edges to remain readable during incremental rebuild, got %#v", oldEdges)
+	}
+
+	close(source.blockRelease)
+	if err := <-done; err != nil {
+		t.Fatalf("ApplyChanges failed: %v", err)
+	}
+
+	if _, ok := builder.Graph().GetNode("arn:aws:s3:::new-public-bucket"); !ok {
+		t.Fatal("expected swapped graph to contain incrementally added node")
 	}
 }
 

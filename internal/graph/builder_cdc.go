@@ -40,6 +40,7 @@ func (b *Builder) ApplyChanges(ctx context.Context, since time.Time) (GraphMutat
 		since = b.lastBuildTime
 	}
 	currentGraph := b.graph
+	availableTables := cloneAvailableTables(b.availableTables)
 	b.stateMu.RUnlock()
 
 	if currentGraph == nil {
@@ -52,10 +53,16 @@ func (b *Builder) ApplyChanges(ctx context.Context, since time.Time) (GraphMutat
 		Since: since,
 	}
 
-	// Refresh table discovery so incremental edge rebuilds see newly populated tables.
-	b.discoverTables(ctx)
+	working := &Builder{
+		source:          b.source,
+		logger:          b.logger,
+		availableTables: availableTables,
+	}
 
-	events, err := b.queryCDCEvents(ctx, since)
+	// Refresh table discovery so incremental edge rebuilds see newly populated tables.
+	working.discoverTables(ctx)
+
+	events, err := working.queryCDCEvents(ctx, since)
 	if err != nil {
 		return GraphMutationSummary{}, err
 	}
@@ -68,11 +75,14 @@ func (b *Builder) ApplyChanges(ctx context.Context, since time.Time) (GraphMutat
 		summary.EdgeCount = currentGraph.EdgeCount()
 		summary.Duration = time.Since(start)
 		b.stateMu.Lock()
+		b.availableTables = working.availableTables
 		b.lastBuildTime = now
 		b.lastMutation = summary
 		b.stateMu.Unlock()
 		return summary, nil
 	}
+
+	working.graph = currentGraph.Clone()
 
 	tableSet := make(map[string]struct{}, len(events))
 	latest := since
@@ -95,7 +105,7 @@ func (b *Builder) ApplyChanges(ctx context.Context, since time.Time) (GraphMutat
 			if nodeID == "" {
 				continue
 			}
-			if currentGraph.RemoveNode(nodeID) {
+			if working.graph.RemoveNode(nodeID) {
 				summary.NodesRemoved++
 			}
 		case "added", "modified":
@@ -103,20 +113,20 @@ func (b *Builder) ApplyChanges(ctx context.Context, since time.Time) (GraphMutat
 			if node == nil {
 				continue
 			}
-			if existing, ok := currentGraph.GetNodeIncludingDeleted(node.ID); ok && existing != nil {
+			if existing, ok := working.graph.GetNodeIncludingDeleted(node.ID); ok && existing != nil {
 				summary.NodesUpdated++
 			} else {
 				summary.NodesAdded++
 			}
-			currentGraph.AddNode(node)
+			working.graph.AddNode(node)
 		}
 	}
 
-	if _, ok := currentGraph.GetNodeIncludingDeleted("internet"); !ok {
-		b.addInternetNode()
+	if _, ok := working.graph.GetNodeIncludingDeleted("internet"); !ok {
+		working.addInternetNode()
 	}
 
-	if err := b.rebuildEdges(ctx); err != nil {
+	if err := working.rebuildEdges(ctx); err != nil {
 		return GraphMutationSummary{}, err
 	}
 
@@ -133,10 +143,10 @@ func (b *Builder) ApplyChanges(ctx context.Context, since time.Time) (GraphMutat
 	}
 	summary.Until = latest
 	summary.Duration = time.Since(start)
-	summary.NodeCount = currentGraph.NodeCount()
-	summary.EdgeCount = currentGraph.EdgeCount()
+	summary.NodeCount = working.graph.NodeCount()
+	summary.EdgeCount = working.graph.EdgeCount()
 
-	currentGraph.SetMetadata(Metadata{
+	working.graph.SetMetadata(Metadata{
 		BuiltAt:       now,
 		NodeCount:     summary.NodeCount,
 		EdgeCount:     summary.EdgeCount,
@@ -144,6 +154,8 @@ func (b *Builder) ApplyChanges(ctx context.Context, since time.Time) (GraphMutat
 	})
 
 	b.stateMu.Lock()
+	b.graph = working.graph
+	b.availableTables = working.availableTables
 	b.lastBuildTime = latest
 	b.lastMutation = summary
 	b.stateMu.Unlock()

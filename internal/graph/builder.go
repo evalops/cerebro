@@ -68,6 +68,17 @@ func (b *Builder) discoverTables(ctx context.Context) {
 	b.logger.Debug("discovered populated tables", "count", len(b.availableTables))
 }
 
+func cloneAvailableTables(tables map[string]bool) map[string]bool {
+	if len(tables) == 0 {
+		return nil
+	}
+	cloned := make(map[string]bool, len(tables))
+	for name, exists := range tables {
+		cloned[name] = exists
+	}
+	return cloned
+}
+
 // hasTable returns true if the table exists and has rows (or if discovery was skipped).
 func (b *Builder) hasTable(name string) bool {
 	if b.availableTables == nil {
