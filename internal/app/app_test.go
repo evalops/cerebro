@@ -88,6 +88,7 @@ func TestLoadConfigPlatformReportPersistencePaths(t *testing.T) {
 }
 
 func TestLoadConfigWorkloadScanPathsAndControls(t *testing.T) {
+	t.Setenv("EXECUTION_STORE_FILE", "/tmp/cerebro-executions.db")
 	t.Setenv("WORKLOAD_SCAN_STATE_FILE", "/tmp/cerebro-workload-scan.db")
 	t.Setenv("WORKLOAD_SCAN_MOUNT_BASE_PATH", "/tmp/cerebro-workload-mounts")
 	t.Setenv("WORKLOAD_SCAN_MAX_CONCURRENT_SNAPSHOTS", "7")
@@ -95,6 +96,9 @@ func TestLoadConfigWorkloadScanPathsAndControls(t *testing.T) {
 	t.Setenv("WORKLOAD_SCAN_RECONCILE_OLDER_THAN", "45m")
 
 	cfg := LoadConfig()
+	if cfg.ExecutionStoreFile != "/tmp/cerebro-executions.db" {
+		t.Fatalf("expected execution store file to be set, got %q", cfg.ExecutionStoreFile)
+	}
 	if cfg.WorkloadScanStateFile != "/tmp/cerebro-workload-scan.db" {
 		t.Fatalf("expected workload scan state file to be set, got %q", cfg.WorkloadScanStateFile)
 	}
@@ -109,6 +113,27 @@ func TestLoadConfigWorkloadScanPathsAndControls(t *testing.T) {
 	}
 	if cfg.WorkloadScanReconcileOlderThan != 45*time.Minute {
 		t.Fatalf("expected workload scan reconcile older than 45m, got %s", cfg.WorkloadScanReconcileOlderThan)
+	}
+}
+
+func TestLoadConfigImageScanPathsAndControls(t *testing.T) {
+	t.Setenv("EXECUTION_STORE_FILE", "/tmp/cerebro-executions.db")
+	t.Setenv("IMAGE_SCAN_ROOTFS_BASE_PATH", "/tmp/cerebro-image-rootfs")
+	t.Setenv("IMAGE_SCAN_CLEANUP_TIMEOUT", "5m")
+	t.Setenv("IMAGE_SCAN_TRIVY_BINARY", "/usr/local/bin/trivy")
+
+	cfg := LoadConfig()
+	if cfg.ImageScanStateFile != "/tmp/cerebro-executions.db" {
+		t.Fatalf("expected image scan state file to default to shared execution store, got %q", cfg.ImageScanStateFile)
+	}
+	if cfg.ImageScanRootFSBasePath != "/tmp/cerebro-image-rootfs" {
+		t.Fatalf("expected image scan rootfs base path to be set, got %q", cfg.ImageScanRootFSBasePath)
+	}
+	if cfg.ImageScanCleanupTimeout != 5*time.Minute {
+		t.Fatalf("expected image scan cleanup timeout 5m, got %s", cfg.ImageScanCleanupTimeout)
+	}
+	if cfg.ImageScanTrivyBinary != "/usr/local/bin/trivy" {
+		t.Fatalf("expected image scan trivy binary override, got %q", cfg.ImageScanTrivyBinary)
 	}
 }
 

@@ -2,7 +2,7 @@
 
 Generated from `internal/app/app_config.go` (`LoadConfig`) via `go run ./scripts/generate_config_docs/main.go`.
 
-Total variables: **296**
+Total variables: **301**
 
 | Variable | Reader(s) | Default(s) | Config Field(s) | Validation rule(s) |
 |---|---|---|---|---|
@@ -75,6 +75,7 @@ Total variables: **296**
 | `ENTRA_CLIENT_ID` | `getEnv` | `""` | `EntraClientID` | `-` |
 | `ENTRA_CLIENT_SECRET` | `getEnv` | `""` | `EntraClientSecret` | `-` |
 | `ENTRA_TENANT_ID` | `getEnv` | `""` | `EntraTenantID` | `-` |
+| `EXECUTION_STORE_FILE` | `getEnv` | `filepath.Join(".cerebro", "executions.db")` | `ExecutionStoreFile`, `ImageScanStateFile`, `WorkloadScanStateFile` | `-` |
 | `FIGMA_API_TOKEN` | `getEnv` | `""` | `FigmaAPIToken` | `-` |
 | `FIGMA_BASE_URL` | `getEnv` | `"https://api.figma.com"` | `FigmaBaseURL` | `-` |
 | `FIGMA_TEAM_ID` | `getEnv` | `""` | `FigmaTeamID` | `-` |
@@ -113,6 +114,10 @@ Total variables: **296**
 | `GRAPH_EVENT_MAPPER_VALIDATION_MODE` | `getEnv` | `"enforce"` | `GraphEventMapperValidationMode` | `must be one of warn, enforce` |
 | `GRAPH_MIGRATE_LEGACY_ACTIVITY_ON_START` | `getEnvBool` | `false` | `GraphMigrateLegacyActivityOnStart` | `-` |
 | `GRAPH_SCHEMA_VALIDATION_MODE` | `getEnv` | `"warn"` | `GraphSchemaValidationMode` | `must be one of off, warn, enforce` |
+| `IMAGE_SCAN_CLEANUP_TIMEOUT` | `getEnvDuration` | `2 * time.Minute` | `ImageScanCleanupTimeout` | `-` |
+| `IMAGE_SCAN_ROOTFS_BASE_PATH` | `getEnv` | `filepath.Join(".cerebro", "image-scan", "rootfs")` | `ImageScanRootFSBasePath` | `-` |
+| `IMAGE_SCAN_STATE_FILE` | `getEnv` | `getEnv("EXECUTION_STORE_FILE", filepath.Join(".cerebro", "executions.db"))` | `ImageScanStateFile` | `-` |
+| `IMAGE_SCAN_TRIVY_BINARY` | `getEnv` | `"trivy"` | `ImageScanTrivyBinary` | `-` |
 | `INTUNE_CLIENT_ID` | `getEnv` | `""` | `IntuneClientID` | `-` |
 | `INTUNE_CLIENT_SECRET` | `getEnv` | `""` | `IntuneClientSecret` | `-` |
 | `INTUNE_TENANT_ID` | `getEnv` | `""` | `IntuneTenantID` | `-` |
@@ -296,7 +301,7 @@ Total variables: **296**
 | `WORKLOAD_SCAN_MAX_CONCURRENT_SNAPSHOTS` | `getEnvInt` | `2` | `WorkloadScanMaxConcurrentSnapshots` | `-` |
 | `WORKLOAD_SCAN_MOUNT_BASE_PATH` | `getEnv` | `filepath.Join(".cerebro", "workload-scan", "mounts")` | `WorkloadScanMountBasePath` | `-` |
 | `WORKLOAD_SCAN_RECONCILE_OLDER_THAN` | `getEnvDuration` | `30 * time.Minute` | `WorkloadScanReconcileOlderThan` | `-` |
-| `WORKLOAD_SCAN_STATE_FILE` | `getEnv` | `filepath.Join(".cerebro", "workload-scan", "runs.db")` | `WorkloadScanStateFile` | `-` |
+| `WORKLOAD_SCAN_STATE_FILE` | `getEnv` | `getEnv("EXECUTION_STORE_FILE", filepath.Join(".cerebro", "executions.db"))` | `WorkloadScanStateFile` | `-` |
 | `ZOOM_ACCOUNT_ID` | `getEnv` | `""` | `ZoomAccountID` | `-` |
 | `ZOOM_API_URL` | `getEnv` | `"https://api.zoom.us/v2"` | `ZoomAPIURL` | `-` |
 | `ZOOM_CLIENT_ID` | `getEnv` | `""` | `ZoomClientID` | `-` |

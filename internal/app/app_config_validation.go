@@ -274,6 +274,9 @@ func (c *Config) Validate() error {
 	if c.WorkloadScanReconcileOlderThan <= 0 {
 		problems = addConfigProblem(problems, "WORKLOAD_SCAN_RECONCILE_OLDER_THAN must be > 0")
 	}
+	if c.ImageScanCleanupTimeout <= 0 {
+		problems = addConfigProblem(problems, "IMAGE_SCAN_CLEANUP_TIMEOUT must be > 0")
+	}
 
 	if c.GraphCrossTenantRequireSignedIngest {
 		if strings.TrimSpace(c.GraphCrossTenantSigningKey) == "" {

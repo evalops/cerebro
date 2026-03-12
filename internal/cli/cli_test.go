@@ -39,6 +39,7 @@ func TestSubcommands(t *testing.T) {
 	foundServe := false
 	foundPolicy := false
 	foundWorkloadScan := false
+	foundImageScan := false
 	for _, cmd := range subcommands {
 		if cmd.Name() == "serve" {
 			foundServe = true
@@ -48,6 +49,9 @@ func TestSubcommands(t *testing.T) {
 		}
 		if cmd.Name() == "workload-scan" {
 			foundWorkloadScan = true
+		}
+		if cmd.Name() == "image-scan" {
+			foundImageScan = true
 		}
 	}
 
@@ -61,6 +65,9 @@ func TestSubcommands(t *testing.T) {
 
 	if !foundWorkloadScan {
 		t.Error("expected workload-scan subcommand")
+	}
+	if !foundImageScan {
+		t.Error("expected image-scan subcommand")
 	}
 }
 
@@ -211,6 +218,50 @@ func TestWorkloadScanReconcileAWSRequiredFlags(t *testing.T) {
 	}
 	if values, ok := flag.Annotations[cobra.BashCompOneRequiredFlag]; !ok || len(values) == 0 {
 		t.Fatal("expected reconcile aws region flag to be marked required")
+	}
+}
+
+func TestImageScanCommands(t *testing.T) {
+	if imageScanCmd == nil {
+		t.Fatal("imageScanCmd should not be nil")
+	}
+	if imageScanCmd.Name() != "image-scan" {
+		t.Fatalf("expected image-scan command, got %s", imageScanCmd.Name())
+	}
+	subcommands := imageScanCmd.Commands()
+	foundList := false
+	foundRun := false
+	for _, cmd := range subcommands {
+		switch cmd.Name() {
+		case "list":
+			foundList = true
+		case "run":
+			foundRun = true
+		}
+	}
+	if !foundList || !foundRun {
+		t.Fatalf("expected image-scan list/run subcommands, got list=%t run=%t", foundList, foundRun)
+	}
+}
+
+func TestImageScanRegistryRequiredFlags(t *testing.T) {
+	for _, tc := range []struct {
+		cmd   *cobra.Command
+		flags []string
+	}{
+		{cmd: imageScanRunECRCmd, flags: []string{"region", "repository"}},
+		{cmd: imageScanRunGCRCmd, flags: []string{"project-id", "repository"}},
+		{cmd: imageScanRunACRCmd, flags: []string{"registry-name", "repository"}},
+	} {
+		for _, name := range tc.flags {
+			flag := tc.cmd.Flags().Lookup(name)
+			if flag == nil {
+				t.Fatalf("expected %s flag to exist on %s", name, tc.cmd.Name())
+			}
+			if values, ok := flag.Annotations[cobra.BashCompOneRequiredFlag]; !ok || len(values) == 0 {
+				t.Fatalf("expected %s flag on %s to be marked required", name, tc.cmd.Name())
+			}
+		}
 	}
 }
 
