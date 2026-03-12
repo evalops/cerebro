@@ -201,6 +201,71 @@ func TestHandleTapCloudEvent_IsIdempotentForDuplicateBusinessEvent(t *testing.T)
 	}
 }
 
+func TestHandleTapCloudEvent_MaterializesEventCorrelations(t *testing.T) {
+	a := &App{SecurityGraph: graph.New()}
+	base := time.Date(2026, 3, 12, 10, 0, 0, 0, time.UTC)
+
+	prEvent := events.CloudEvent{
+		ID:     "evt-pr-1",
+		Source: "ensemble.tap.github",
+		Type:   "ensemble.tap.github.pull_request.merged",
+		Time:   base,
+		Data: map[string]any{
+			"repository":      "payments",
+			"number":          42,
+			"title":           "Fix checkout race",
+			"merged_by":       "alice",
+			"merged_by_email": "alice@example.com",
+		},
+	}
+	deployEvent := events.CloudEvent{
+		ID:     "evt-deploy-1",
+		Source: "ensemble.tap.ci",
+		Type:   "ensemble.tap.ci.deploy.completed",
+		Time:   base.Add(5 * time.Minute),
+		Data: map[string]any{
+			"service":         "payments",
+			"deploy_id":       "deploy-1",
+			"environment":     "prod",
+			"status":          "succeeded",
+			"release_version": "2026.03.12.1",
+			"actor_email":     "alice@example.com",
+		},
+	}
+	incidentEvent := events.CloudEvent{
+		ID:     "evt-incident-1",
+		Source: "ensemble.tap.incident",
+		Type:   "ensemble.tap.incident.timeline.created",
+		Time:   base.Add(7 * time.Minute),
+		Data: map[string]any{
+			"incident_id":  "inc-1",
+			"service":      "payments",
+			"event_id":     "evt-1",
+			"status":       "open",
+			"severity":     "high",
+			"event_type":   "created",
+			"title":        "Payments incident",
+			"summary":      "Checkout latency spiked",
+			"performed_at": base.Add(7 * time.Minute).Format(time.RFC3339),
+			"actor_email":  "alice@example.com",
+		},
+	}
+	for _, evt := range []events.CloudEvent{prEvent, deployEvent, incidentEvent} {
+		if err := a.handleTapCloudEvent(context.Background(), evt); err != nil {
+			t.Fatalf("handleTapCloudEvent failed for %s: %v", evt.Type, err)
+		}
+	}
+
+	incidentEdges := a.SecurityGraph.GetOutEdges("incident:inc-1")
+	if !graphEdgeExists(incidentEdges, graph.EdgeKindCausedBy, "deployment:payments:deploy-1") {
+		t.Fatalf("expected incident caused_by deployment edge, got %#v", incidentEdges)
+	}
+	deployEdges := a.SecurityGraph.GetOutEdges("deployment:payments:deploy-1")
+	if !graphEdgeExists(deployEdges, graph.EdgeKindTriggeredBy, "pull_request:payments:42") {
+		t.Fatalf("expected deployment triggered_by PR edge, got %#v", deployEdges)
+	}
+}
+
 func TestHandleTapCloudEvent_InvalidCustomMapperPathDoesNotBlockPipeline(t *testing.T) {
 	t.Setenv("GRAPH_EVENT_MAPPING_PATH", "/tmp/non-existent-mapper.yaml")
 
@@ -603,6 +668,18 @@ func stringSliceForTest(value any) []string {
 func containsStringForTest(values []string, target string) bool {
 	for _, value := range values {
 		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func graphEdgeExists(edges []*graph.Edge, kind graph.EdgeKind, target string) bool {
+	for _, edge := range edges {
+		if edge == nil {
+			continue
+		}
+		if edge.Kind == kind && edge.Target == target && edge.DeletedAt == nil {
 			return true
 		}
 	}

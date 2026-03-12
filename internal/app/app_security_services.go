@@ -612,11 +612,51 @@ func (a *App) activateBuiltSecurityGraph(ctx context.Context, securityGraph *gra
 			"package_vulnerability_edges", materialized.PackageVulnEdges,
 		)
 	}
+	a.rematerializeEventCorrelations(securityGraph, "graph_activation")
 	a.configureGraphSchemaValidation(securityGraph)
 	a.setSecurityGraph(securityGraph)
 	meta := securityGraph.Metadata()
 	a.setGraphBuildState(GraphBuildSuccess, meta.BuiltAt, nil)
 	return meta, nil
+}
+
+func (a *App) rematerializeEventCorrelations(securityGraph *graph.Graph, reason string) {
+	if securityGraph == nil {
+		return
+	}
+	summary := graph.MaterializeEventCorrelations(securityGraph, time.Now().UTC())
+	if a == nil || a.Logger == nil {
+		return
+	}
+	if summary.CorrelationsCreated == 0 && summary.CorrelationsRemoved == 0 {
+		return
+	}
+	a.Logger.Info("materialized event correlations into security graph",
+		"reason", strings.TrimSpace(reason),
+		"patterns", summary.PatternsEvaluated,
+		"created", summary.CorrelationsCreated,
+		"removed", summary.CorrelationsRemoved,
+	)
+}
+
+func shouldRefreshEventCorrelations(securityGraph *graph.Graph, nodeIDs []string) bool {
+	if securityGraph == nil || len(nodeIDs) == 0 {
+		return false
+	}
+	for _, nodeID := range nodeIDs {
+		nodeID = strings.TrimSpace(nodeID)
+		if nodeID == "" {
+			continue
+		}
+		node, ok := securityGraph.GetNode(nodeID)
+		if !ok || node == nil {
+			continue
+		}
+		if graph.IsEventCorrelationNodeKind(node.Kind) {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *App) emitGraphRebuiltEvent(ctx context.Context, meta graph.Metadata, duration time.Duration) {

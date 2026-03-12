@@ -343,6 +343,9 @@ func (a *App) applyTapDeclarativeMappings(evt events.CloudEvent) (bool, error) {
 			"dead_lettered", result.DeadLettered,
 		)
 	}
+	if result.Matched && shouldRefreshEventCorrelations(securityGraph, result.NodesUpserted) {
+		a.rematerializeEventCorrelations(securityGraph, "tap_mapping")
+	}
 	if (result.EventsRejected > 0 || result.NodesRejected > 0 || result.EdgesRejected > 0) && a.Logger != nil {
 		a.Logger.Warn("tap declarative mapping rejected invalid writes",
 			"event_type", evt.Type,
