@@ -53,6 +53,11 @@ func (m *LocalMaterializer) Materialize(ctx context.Context, runID string, descr
 	if err != nil {
 		return nil, nil, err
 	}
+	archiveDir, err := m.archiveDirPath(runID)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = os.RemoveAll(archiveDir) }()
 	if err := os.MkdirAll(rootfsPath, 0o750); err != nil {
 		return nil, nil, fmt.Errorf("create rootfs path %s: %w", rootfsPath, err)
 	}
@@ -100,6 +105,7 @@ func (m *LocalMaterializer) Materialize(ctx context.Context, runID string, descr
 		Metadata: map[string]any{
 			"artifact_count": len(descriptor.Artifacts),
 			"layer_count":    len(descriptor.Layers),
+			"archive_dir":    archiveDir,
 		},
 	}
 	return artifact, applied, nil
@@ -120,15 +126,23 @@ func (m *LocalMaterializer) Cleanup(_ context.Context, artifact FilesystemArtifa
 	if err := os.RemoveAll(validated); err != nil {
 		return fmt.Errorf("cleanup rootfs path %s: %w", validated, err)
 	}
+	if archiveDir, _ := artifact.Metadata["archive_dir"].(string); strings.TrimSpace(archiveDir) != "" {
+		validatedArchiveDir, err := m.validateExistingPath(archiveDir)
+		if err != nil {
+			return err
+		}
+		if err := os.RemoveAll(validatedArchiveDir); err != nil {
+			return fmt.Errorf("cleanup archive dir %s: %w", validatedArchiveDir, err)
+		}
+	}
 	return nil
 }
 
 func (m *LocalMaterializer) writeArchive(runID string, artifact ArtifactRef, reader io.Reader) (string, error) {
-	basePath, err := filepath.Abs(m.basePath)
+	tempDir, err := m.archiveDirPath(runID)
 	if err != nil {
-		return "", fmt.Errorf("resolve rootfs base path %s: %w", m.basePath, err)
+		return "", err
 	}
-	tempDir := filepath.Join(basePath, sanitizePathComponent(runID)+"-archives")
 	if err := os.MkdirAll(tempDir, 0o750); err != nil {
 		return "", fmt.Errorf("create archive temp dir: %w", err)
 	}
@@ -248,6 +262,15 @@ func (m *LocalMaterializer) rootfsPath(runID string) (string, error) {
 	}
 	rootfsPath := filepath.Join(basePath, sanitizePathComponent(runID))
 	return m.validateExistingPath(rootfsPath)
+}
+
+func (m *LocalMaterializer) archiveDirPath(runID string) (string, error) {
+	basePath, err := filepath.Abs(m.basePath)
+	if err != nil {
+		return "", fmt.Errorf("resolve rootfs base path %s: %w", m.basePath, err)
+	}
+	archiveDir := filepath.Join(basePath, sanitizePathComponent(runID)+"-archives")
+	return m.validateExistingPath(archiveDir)
 }
 
 func (m *LocalMaterializer) validateExistingPath(path string) (string, error) {

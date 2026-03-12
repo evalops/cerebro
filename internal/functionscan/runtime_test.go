@@ -117,6 +117,10 @@ func TestSQLiteRunStoreRoundTripAndEvents(t *testing.T) {
 
 func TestLocalMaterializerAppliesLayersBeforeFunctionCode(t *testing.T) {
 	materializer := NewLocalMaterializer(filepath.Join(t.TempDir(), "rootfs"))
+	archiveDir, err := materializer.archiveDirPath("function_scan:test")
+	if err != nil {
+		t.Fatalf("archive dir path: %v", err)
+	}
 	descriptor := &FunctionDescriptor{
 		Artifacts: []ArtifactRef{
 			{ID: "layer", Kind: ArtifactLayer, Format: ArchiveFormatZIP},
@@ -150,6 +154,9 @@ func TestLocalMaterializerAppliesLayersBeforeFunctionCode(t *testing.T) {
 	}
 	if strings.TrimSpace(string(data)) != "print('function')" {
 		t.Fatalf("expected function code to override layer, got %q", string(data))
+	}
+	if _, err := os.Stat(archiveDir); !os.IsNotExist(err) {
+		t.Fatalf("expected archive staging dir to be removed, got %v", err)
 	}
 }
 
