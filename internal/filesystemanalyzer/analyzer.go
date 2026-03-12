@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"math"
 	"net/url"
@@ -367,7 +369,12 @@ func readLimitedFile(root *os.Root, filePath string, limit int64) ([]byte, bool,
 	if limit <= 0 {
 		return nil, false, nil
 	}
-	data, err := root.ReadFile(filePath)
+	file, err := root.Open(filePath)
+	if err != nil {
+		return nil, false, fmt.Errorf("open %s: %w", filePath, err)
+	}
+	defer func() { _ = file.Close() }()
+	data, err := io.ReadAll(io.LimitReader(file, limit+1))
 	if err != nil {
 		return nil, false, fmt.Errorf("read %s: %w", filePath, err)
 	}
@@ -858,18 +865,18 @@ func scanSecrets(filePath string, data []byte) []SecretFinding {
 		}
 		switch {
 		case awsAccessKeyPattern.MatchString(line):
-			appendFinding("aws_access_key", "critical", awsAccessKeyPattern.FindString(line), "Potential AWS access key detected.")
+			appendFinding("aws_access_key", "critical", fingerprintSecretMatch(awsAccessKeyPattern.FindString(line)), "Potential AWS access key detected.")
 		case githubTokenPattern.MatchString(line):
-			appendFinding("github_token", "high", githubTokenPattern.FindString(line), "Potential GitHub token detected.")
+			appendFinding("github_token", "high", fingerprintSecretMatch(githubTokenPattern.FindString(line)), "Potential GitHub token detected.")
 		case slackTokenPattern.MatchString(line):
-			appendFinding("slack_token", "high", slackTokenPattern.FindString(line), "Potential Slack token detected.")
+			appendFinding("slack_token", "high", fingerprintSecretMatch(slackTokenPattern.FindString(line)), "Potential Slack token detected.")
 		case privateKeyPattern.MatchString(line):
 			appendFinding("private_key", "critical", "private_key", "Private key material detected.")
 		case inlineSecretPattern.MatchString(line):
-			appendFinding("inline_secret", "high", redactLineMatch(line), "Inline secret-like assignment detected.")
+			appendFinding("inline_secret", "high", fingerprintSecretMatch(line), "Inline secret-like assignment detected.")
 		default:
 			if token := entropySecretToken(line); token != "" {
-				appendFinding("high_entropy_token", "medium", redactLineMatch(token), "High-entropy token detected in text content.")
+				appendFinding("high_entropy_token", "medium", fingerprintSecretMatch(token), "High-entropy token detected in text content.")
 			}
 		}
 	}
@@ -942,12 +949,13 @@ func findingID(prefix, value string) string {
 	return prefix + ":" + replacer.Replace(value)
 }
 
-func redactLineMatch(value string) string {
+func fingerprintSecretMatch(value string) string {
 	value = strings.TrimSpace(value)
-	if len(value) <= 8 {
+	if value == "" {
 		return "<redacted>"
 	}
-	return value[:4] + "..." + value[len(value)-4:]
+	sum := sha256.Sum256([]byte(value))
+	return fmt.Sprintf("sha256:%x", sum[:8])
 }
 
 func looksBinary(data []byte) bool {

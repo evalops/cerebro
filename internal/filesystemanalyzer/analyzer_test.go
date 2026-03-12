@@ -124,6 +124,33 @@ func TestAnalyzerRecordsUnreadableFileErrors(t *testing.T) {
 	}
 }
 
+func TestAnalyzerRedactsPersistedSecretMatches(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "home", "user", ".env"), strings.Join([]string{
+		"AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF",
+		"GITHUB_TOKEN=ghp_1234567890abcdefghijklmn",
+		"PASSWORD=super-secret-password",
+	}, "\n"))
+
+	report, err := New(Options{}).Analyze(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	if len(report.Secrets) < 3 {
+		t.Fatalf("expected secret findings, got %#v", report.Secrets)
+	}
+	for _, finding := range report.Secrets {
+		if strings.Contains(finding.Match, "AKIA1234567890ABCDEF") ||
+			strings.Contains(finding.Match, "ghp_1234567890abcdefghijklmn") ||
+			strings.Contains(finding.Match, "super-secret-password") {
+			t.Fatalf("expected redacted persisted match, got %#v", finding)
+		}
+		if finding.Type != "private_key" && finding.Match != "<redacted>" && !strings.HasPrefix(finding.Match, "sha256:") {
+			t.Fatalf("expected fingerprinted match, got %#v", finding)
+		}
+	}
+}
+
 func mustWriteFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
