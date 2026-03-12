@@ -469,6 +469,8 @@ func (a *App) initSecurityGraph(ctx context.Context) {
 	// Build initial graph in background
 	go func() {
 		defer close(a.graphReady)
+		a.graphUpdateMu.Lock()
+		defer a.graphUpdateMu.Unlock()
 
 		if err := a.SecurityGraphBuilder.Build(graphCtx); err != nil {
 			a.setGraphBuildState(GraphBuildFailed, time.Now().UTC(), err)
