@@ -294,6 +294,33 @@ func TestOpenHTTPArtifactSanitizesResponseBodyURLs(t *testing.T) {
 	}
 }
 
+func TestOpenHTTPArtifactValidatesDialTarget(t *testing.T) {
+	originalValidator := artifactURLValidator
+	artifactURLValidator = func(string) error { return nil }
+	defer func() { artifactURLValidator = originalValidator }()
+
+	originalDialValidator := artifactDialTargetValidator
+	callCount := 0
+	artifactDialTargetValidator = func(host string) error {
+		callCount++
+		return fmt.Errorf("blocked dial target %s", host)
+	}
+	defer func() { artifactDialTargetValidator = originalDialValidator }()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	_, err := openHTTPArtifact(context.Background(), server.Client(), server.URL)
+	if err == nil || !strings.Contains(err.Error(), "blocked dial target") {
+		t.Fatalf("expected dial target validation error, got %v", err)
+	}
+	if callCount == 0 {
+		t.Fatal("expected dial target validator to be invoked")
+	}
+}
+
 func TestLocalMaterializerRejectsOversizedArchiveEntry(t *testing.T) {
 	originalEntryBytes := maxArchiveEntryBytes
 	maxArchiveEntryBytes = 8

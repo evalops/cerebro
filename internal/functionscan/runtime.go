@@ -661,6 +661,8 @@ func redactSensitiveEnv(src map[string]string) map[string]string {
 	if len(src) == 0 {
 		return nil
 	}
+	// Persisted run descriptors fail closed: only explicitly allowlisted
+	// operational keys survive durable storage.
 	out := make(map[string]string, len(src))
 	for key, value := range src {
 		trimmedKey := strings.ToUpper(strings.TrimSpace(key))

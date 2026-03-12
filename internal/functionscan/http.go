@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -12,6 +14,7 @@ import (
 )
 
 var artifactURLValidator = webhooks.ValidateWebhookURL
+var artifactDialTargetValidator = validateArtifactDialTarget
 
 const maxArtifactRedirects = 10
 
@@ -27,6 +30,23 @@ func openHTTPArtifact(ctx context.Context, client *http.Client, rawURL string) (
 		client = &http.Client{Timeout: 2 * time.Minute}
 	}
 	cloned := *client
+	transport := cloneArtifactTransport(cloned.Transport)
+	baseDialContext := transport.DialContext
+	if baseDialContext == nil {
+		dialer := &net.Dialer{}
+		baseDialContext = dialer.DialContext
+	}
+	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		host, _, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, err
+		}
+		if err := artifactDialTargetValidator(host); err != nil {
+			return nil, err
+		}
+		return baseDialContext(ctx, network, addr)
+	}
+	cloned.Transport = transport
 	existingRedirectPolicy := cloned.CheckRedirect
 	cloned.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= maxArtifactRedirects {
@@ -54,4 +74,30 @@ func openHTTPArtifact(ctx context.Context, client *http.Client, rawURL string) (
 		return nil, fmt.Errorf("artifact download failed %d: %s", resp.StatusCode, sanitizeEmbeddedURL(strings.TrimSpace(string(body))))
 	}
 	return resp.Body, nil
+}
+
+func cloneArtifactTransport(base http.RoundTripper) *http.Transport {
+	switch transport := base.(type) {
+	case nil:
+		return http.DefaultTransport.(*http.Transport).Clone()
+	case *http.Transport:
+		return transport.Clone()
+	default:
+		return http.DefaultTransport.(*http.Transport).Clone()
+	}
+}
+
+func validateArtifactDialTarget(host string) error {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return fmt.Errorf("artifact download hostname is empty")
+	}
+	dialURL := (&url.URL{
+		Scheme: "https",
+		Host:   net.JoinHostPort(host, "443"),
+	}).String()
+	if err := artifactURLValidator(dialURL); err != nil {
+		return fmt.Errorf("validate artifact dial target: %w", err)
+	}
+	return nil
 }
