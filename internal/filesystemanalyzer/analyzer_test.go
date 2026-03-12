@@ -151,6 +151,16 @@ func TestAnalyzerRedactsPersistedSecretMatches(t *testing.T) {
 	}
 }
 
+func TestShouldSecretScanUsesConfiguredMaxBytes(t *testing.T) {
+	size := defaultMaxSecretBytes + 1
+	if shouldSecretScan("workspace/.env", 0, size, defaultMaxSecretBytes) {
+		t.Fatalf("expected file larger than default cap to be skipped")
+	}
+	if !shouldSecretScan("workspace/.env", 0, size, defaultMaxSecretBytes+1024) {
+		t.Fatalf("expected configured secret byte cap to allow scan")
+	}
+}
+
 func mustWriteFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

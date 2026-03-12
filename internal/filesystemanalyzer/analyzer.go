@@ -201,7 +201,7 @@ func (a *Analyzer) Analyze(ctx context.Context, rootfsPath string) (*Report, err
 				inv.metadataErrors = append(inv.metadataErrors, err.Error())
 			}
 		}
-		if shouldSecretScan(filePath, info.Mode(), info.Size()) {
+		if shouldSecretScan(filePath, info.Mode(), info.Size(), a.maxSecretFileBytes) {
 			if data, ok, err := readLimitedFile(root, filePath, a.maxSecretFileBytes); err == nil && ok {
 				inv.addSecrets(scanSecrets(filePath, data)...)
 			} else if err != nil {
@@ -448,8 +448,8 @@ func shouldParseConfigFile(filePath string) bool {
 	return false
 }
 
-func shouldSecretScan(filePath string, mode fs.FileMode, size int64) bool {
-	if mode&fs.ModeSymlink != 0 || mode.IsDir() || size <= 0 || size > defaultMaxSecretBytes {
+func shouldSecretScan(filePath string, mode fs.FileMode, size int64, maxBytes int64) bool {
+	if mode&fs.ModeSymlink != 0 || mode.IsDir() || size <= 0 || size > maxBytes {
 		return false
 	}
 	if strings.Contains(filePath, "/testdata/") || strings.Contains(filePath, "/fixtures/") || strings.Contains(filePath, "/examples/") {
