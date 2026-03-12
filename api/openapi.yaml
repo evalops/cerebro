@@ -10065,6 +10065,7 @@ components:
           type: string
           enum:
             - applied
+            - busy
             - noop
             - failed
         trigger:

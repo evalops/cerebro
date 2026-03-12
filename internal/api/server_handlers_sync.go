@@ -827,7 +827,15 @@ func (s *Server) applySecurityGraphUpdateAfterSync(ctx context.Context, provider
 	graphCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), postSyncGraphUpdateTimeout)
 	defer cancel()
 
-	summary, err := s.app.ApplySecurityGraphChanges(graphCtx, trigger)
+	summary, applied, err := s.app.TryApplySecurityGraphChanges(graphCtx, trigger)
+	if !applied {
+		return map[string]any{
+			"status":     "busy",
+			"trigger":    trigger,
+			"error":      "graph update already in progress",
+			"error_code": "GRAPH_UPDATE_BUSY",
+		}
+	}
 	if err != nil {
 		s.app.Logger.Warn("post-sync graph update failed", "provider", provider, "error", err)
 		return map[string]any{

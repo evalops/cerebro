@@ -18,6 +18,25 @@ func (a *App) ApplySecurityGraphChanges(ctx context.Context, trigger string) (gr
 	a.graphUpdateMu.Lock()
 	defer a.graphUpdateMu.Unlock()
 
+	return a.applySecurityGraphChangesLocked(ctx, trigger)
+}
+
+// TryApplySecurityGraphChanges attempts a non-blocking graph update. It returns
+// applied=false when another graph update already owns the mutation lock.
+func (a *App) TryApplySecurityGraphChanges(ctx context.Context, trigger string) (graph.GraphMutationSummary, bool, error) {
+	if a == nil || a.SecurityGraphBuilder == nil {
+		return graph.GraphMutationSummary{}, false, errGraphNotInitialized()
+	}
+	if !a.graphUpdateMu.TryLock() {
+		return graph.GraphMutationSummary{}, false, nil
+	}
+	defer a.graphUpdateMu.Unlock()
+
+	summary, err := a.applySecurityGraphChangesLocked(ctx, trigger)
+	return summary, true, err
+}
+
+func (a *App) applySecurityGraphChangesLocked(ctx context.Context, trigger string) (graph.GraphMutationSummary, error) {
 	start := time.Now()
 	summary, err := a.SecurityGraphBuilder.ApplyChanges(ctx, time.Time{})
 	if err != nil {

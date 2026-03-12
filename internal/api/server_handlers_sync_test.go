@@ -402,6 +402,72 @@ func TestSyncAWS_GraphUpdateFailureIsSanitized(t *testing.T) {
 	}
 }
 
+func TestSyncAWS_GraphUpdateBusyReturnsBusyStatus(t *testing.T) {
+	s := newTestServer(t)
+	s.app.Snowflake = &snowflake.Client{}
+
+	source := &syncGraphSource{block: true}
+	builder := graph.NewBuilder(source, s.app.Logger)
+	s.app.SecurityGraphBuilder = builder
+	s.app.SecurityGraph = builder.Graph()
+
+	rebuildCtx, rebuildCancel := context.WithCancel(context.Background())
+	defer rebuildCancel()
+	rebuildDone := make(chan error, 1)
+	go func() {
+		rebuildDone <- s.app.RebuildSecurityGraph(rebuildCtx)
+	}()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		snapshot := s.app.GraphBuildSnapshot()
+		if snapshot.State == "building" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for rebuild to start, latest snapshot=%+v", snapshot)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	originalRun := runAWSSyncWithOptions
+	t.Cleanup(func() { runAWSSyncWithOptions = originalRun })
+	runAWSSyncWithOptions = func(ctx context.Context, client *snowflake.Client, req awsSyncRequest) (*awsSyncOutcome, error) {
+		return &awsSyncOutcome{
+			Results: []nativesync.SyncResult{{Table: "aws_s3_buckets", Synced: 1}},
+		}, nil
+	}
+
+	w := do(t, s, http.MethodPost, "/api/v1/sync/aws", map[string]interface{}{
+		"region": "us-east-1",
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	body := decodeJSON(t, w)
+	graphUpdate, ok := body["graph_update"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected graph_update payload, got %#v", body["graph_update"])
+	}
+	if graphUpdate["status"] != "busy" {
+		t.Fatalf("expected graph update status busy, got %#v", graphUpdate)
+	}
+	if graphUpdate["error_code"] != "GRAPH_UPDATE_BUSY" {
+		t.Fatalf("expected graph update busy code, got %#v", graphUpdate["error_code"])
+	}
+
+	rebuildCancel()
+	select {
+	case err := <-rebuildDone:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected rebuild to exit on cancel, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for blocked rebuild to exit")
+	}
+}
+
 func TestSyncAWS_GraphUpdateNoopSummaryUsesEmptyTablesArray(t *testing.T) {
 	s := newTestServer(t)
 	s.app.Snowflake = &snowflake.Client{}
