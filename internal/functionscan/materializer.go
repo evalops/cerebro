@@ -180,13 +180,21 @@ func applyArchive(rootfsPath, archivePath string, artifact ArtifactRef, existing
 			if existingFileCount+fileCount+1 > maxArchiveEntryCount {
 				return fileCount, byteSize, fmt.Errorf("zip entry count exceeds max of %d", maxArchiveEntryCount)
 			}
-			if entry.UncompressedSize64 > uint64(maxArchiveEntryBytes) {
+			maxEntryBytesU64, err := int64ToUint64(maxArchiveEntryBytes)
+			if err != nil {
+				return fileCount, byteSize, err
+			}
+			if entry.UncompressedSize64 > maxEntryBytesU64 {
 				return fileCount, byteSize, fmt.Errorf("zip entry %s exceeds max extracted size of %d bytes", entry.Name, maxArchiveEntryBytes)
 			}
 			if entry.CompressedSize64 > 0 && float64(entry.UncompressedSize64)/float64(entry.CompressedSize64) > maxArchiveCompressionRatio {
 				return fileCount, byteSize, fmt.Errorf("zip entry %s exceeds max compression ratio of %.0f", entry.Name, maxArchiveCompressionRatio)
 			}
-			if existingByteSize+byteSize+int64(entry.UncompressedSize64) > maxArchiveTotalBytes {
+			exceeds, err := exceedsArchiveSizeLimit(existingByteSize, byteSize, entry.UncompressedSize64)
+			if err != nil {
+				return fileCount, byteSize, err
+			}
+			if exceeds {
 				return fileCount, byteSize, fmt.Errorf("extracted archive bytes exceed max of %d", maxArchiveTotalBytes)
 			}
 		}
@@ -221,7 +229,7 @@ func applyZipEntry(rootfsPath string, entry *zip.File, maxBytes int64) (int64, i
 		return 0, 0, fmt.Errorf("zip entry %s contains unsupported symlink", entry.Name)
 	}
 	if entry.FileInfo().IsDir() {
-		if err := removeReplaceableTarget(targetPath); err != nil {
+		if err := removeReplaceableTarget(rootfsPath, relPath); err != nil {
 			return 0, 0, err
 		}
 		if mode == 0 {
@@ -229,7 +237,7 @@ func applyZipEntry(rootfsPath string, entry *zip.File, maxBytes int64) (int64, i
 		}
 		return 0, 0, os.MkdirAll(targetPath, mode.Perm())
 	}
-	if err := removeReplaceableTarget(targetPath); err != nil {
+	if err := removeReplaceableTarget(rootfsPath, relPath); err != nil {
 		return 0, 0, err
 	}
 	if mode == 0 {
@@ -339,8 +347,17 @@ func safePathNoFollow(rootfsPath, relPath string, allowFinalSymlink bool) (strin
 	return current, nil
 }
 
-func removeReplaceableTarget(path string) error {
-	info, err := os.Lstat(path)
+func removeReplaceableTarget(rootfsPath, relPath string) error {
+	relPath = sanitizeArchivePath(relPath)
+	if relPath == "" {
+		return nil
+	}
+	root, err := os.OpenRoot(rootfsPath)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Close() }()
+	info, err := root.Lstat(relPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -348,9 +365,39 @@ func removeReplaceableTarget(path string) error {
 		return err
 	}
 	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-		return os.Remove(path)
+		return root.Remove(relPath)
 	}
-	return os.RemoveAll(path)
+	return root.RemoveAll(relPath)
+}
+
+func exceedsArchiveSizeLimit(existingByteSize, byteSize int64, entryByteSize uint64) (bool, error) {
+	existingU64, err := int64ToUint64(existingByteSize)
+	if err != nil {
+		return false, err
+	}
+	currentU64, err := int64ToUint64(byteSize)
+	if err != nil {
+		return false, err
+	}
+	maxArchiveTotalBytesU64, err := int64ToUint64(maxArchiveTotalBytes)
+	if err != nil {
+		return false, err
+	}
+	if existingU64 > maxArchiveTotalBytesU64 || currentU64 > maxArchiveTotalBytesU64 {
+		return true, nil
+	}
+	if currentU64 > maxArchiveTotalBytesU64-existingU64 {
+		return true, nil
+	}
+	used := existingU64 + currentU64
+	return entryByteSize > maxArchiveTotalBytesU64-used, nil
+}
+
+func int64ToUint64(value int64) (uint64, error) {
+	if value < 0 {
+		return 0, fmt.Errorf("negative size %d is not supported", value)
+	}
+	return uint64(value), nil
 }
 
 func sanitizePathComponent(raw string) string {

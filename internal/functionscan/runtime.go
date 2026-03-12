@@ -471,11 +471,19 @@ func detectFilesystemSecrets(artifact *FilesystemArtifact) ([]scanner.ContainerF
 	if artifact == nil || strings.TrimSpace(artifact.Path) == "" {
 		return nil, 0, nil
 	}
+	root, err := os.OpenRoot(artifact.Path)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = root.Close() }()
 	findings := make([]scanner.ContainerFinding, 0)
 	count := 0
-	err := filepath.WalkDir(artifact.Path, func(path string, entry fs.DirEntry, err error) error {
+	err = fs.WalkDir(root.FS(), ".", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
+		}
+		if path == "." {
+			return nil
 		}
 		if entry.IsDir() {
 			name := entry.Name()
@@ -491,7 +499,7 @@ func detectFilesystemSecrets(artifact *FilesystemArtifact) ([]scanner.ContainerF
 		if info.Size() > 2*1024*1024 {
 			return nil
 		}
-		data, err := os.ReadFile(path) // #nosec G304 -- path is generated from filepath.WalkDir rooted at the materialized scan filesystem.
+		data, err := root.ReadFile(path)
 		if err != nil {
 			return err
 		}
@@ -503,13 +511,12 @@ func detectFilesystemSecrets(artifact *FilesystemArtifact) ([]scanner.ContainerF
 			return nil
 		}
 		count++
-		relPath, _ := filepath.Rel(artifact.Path, path)
 		findings = append(findings, scanner.ContainerFinding{
-			ID:          "code_secret:" + sanitizeFindingID(relPath),
+			ID:          "code_secret:" + sanitizeFindingID(path),
 			Type:        "secret",
 			Severity:    "high",
 			Title:       "Potential secret in function package",
-			Description: fmt.Sprintf("Potential hardcoded secret detected in %s", relPath),
+			Description: fmt.Sprintf("Potential hardcoded secret detected in %s", path),
 			Remediation: "Remove hardcoded secrets from source and load them at runtime from a secret manager.",
 		})
 		return nil
