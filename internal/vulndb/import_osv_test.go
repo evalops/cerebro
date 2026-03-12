@@ -58,6 +58,35 @@ func TestImportKEVJSONRejectsOversizedInputs(t *testing.T) {
 	}
 }
 
+func TestImportOSVJSONRejectsOversizedInputs(t *testing.T) {
+	store, err := NewSQLiteStore(t.TempDir() + "/vulndb.db")
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	service := NewService(store)
+
+	previousBytes := maxOSVImportBytes
+	previousRows := maxOSVImportRows
+	maxOSVImportBytes = 48
+	maxOSVImportRows = 1
+	t.Cleanup(func() {
+		maxOSVImportBytes = previousBytes
+		maxOSVImportRows = previousRows
+	})
+
+	_, err = service.ImportOSVJSON(context.Background(), "osv-test", strings.NewReader(`
+{"id":"GHSA-test-0001","affected":[]}
+{"id":"GHSA-test-0002","affected":[]}
+`))
+	if err == nil {
+		t.Fatal("expected oversized OSV input to fail")
+	}
+	if !strings.Contains(err.Error(), "exceeded maximum") {
+		t.Fatalf("expected maximum-bound error, got %v", err)
+	}
+}
+
 func TestImportKEVJSONStreamsAndMatches(t *testing.T) {
 	store, err := NewSQLiteStore(t.TempDir() + "/vulndb.db")
 	if err != nil {

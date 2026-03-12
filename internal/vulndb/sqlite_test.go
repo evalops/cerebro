@@ -189,6 +189,53 @@ func TestServiceMatchesAlpineAliasAsAPK(t *testing.T) {
 	}
 }
 
+func TestServiceMatchesAPKRevisionAwareFixedVersion(t *testing.T) {
+	store, err := NewSQLiteStore(t.TempDir() + "/vulndb.db")
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	service := NewService(store)
+
+	revisionlessFixed := `
+{"id":"GHSA-test-apk-fixed","aliases":["CVE-2026-2002"],"summary":"apk fixed at base version","details":"alpine package advisory","database_specific":{"severity":"HIGH"},"affected":[{"package":{"ecosystem":"Alpine","name":"busybox"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"},{"fixed":"3.18.5"}]}]}]}
+`
+	if _, err := service.ImportOSVJSON(context.Background(), "osv-test", strings.NewReader(revisionlessFixed)); err != nil {
+		t.Fatalf("ImportOSVJSON: %v", err)
+	}
+
+	matches, err := service.MatchPackages(context.Background(), filesystemanalyzer.OSInfo{}, []filesystemanalyzer.PackageRecord{{
+		Ecosystem: "apk",
+		Name:      "busybox",
+		Version:   "3.18.5-r0",
+	}})
+	if err != nil {
+		t.Fatalf("MatchPackages: %v", err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("expected revision-aware comparison to treat 3.18.5-r0 as fixed, got %#v", matches)
+	}
+
+	revisionedFixed := `
+{"id":"GHSA-test-apk-revision","aliases":["CVE-2026-2003"],"summary":"apk fixed at later revision","details":"alpine package advisory","database_specific":{"severity":"HIGH"},"affected":[{"package":{"ecosystem":"Alpine","name":"busybox"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"},{"fixed":"3.18.5-r2"}]}]}]}
+`
+	if _, err := service.ImportOSVJSON(context.Background(), "osv-test-2", strings.NewReader(revisionedFixed)); err != nil {
+		t.Fatalf("ImportOSVJSON second advisory: %v", err)
+	}
+
+	matches, err = service.MatchPackages(context.Background(), filesystemanalyzer.OSInfo{}, []filesystemanalyzer.PackageRecord{{
+		Ecosystem: "apk",
+		Name:      "busybox",
+		Version:   "3.18.5-r1",
+	}})
+	if err != nil {
+		t.Fatalf("MatchPackages second advisory: %v", err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected later apk revision to remain vulnerable, got %#v", matches)
+	}
+}
+
 func TestServiceSkipsUnparseableRangeBounds(t *testing.T) {
 	store, err := NewSQLiteStore(t.TempDir() + "/vulndb.db")
 	if err != nil {

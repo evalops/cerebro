@@ -3,6 +3,7 @@ package vulndb
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -129,38 +130,97 @@ func matchPackageVersion(installed string, affected AffectedPackage) (bool, stri
 	if rangeType != "" && rangeType != "SEMVER" && rangeType != "ECOSYSTEM" {
 		return false, ""
 	}
-	installedVersion, ok := parseSemverLoose(installed)
-	if !ok {
-		return false, ""
-	}
 	if affected.Introduced != "" {
-		introduced, ok := parseSemverLoose(affected.Introduced)
+		cmp, ok := comparePackageVersions(affected.Ecosystem, installed, affected.Introduced)
 		if !ok {
 			return false, ""
 		}
-		if semver.Compare(installedVersion, introduced) < 0 {
+		if cmp < 0 {
 			return false, ""
 		}
 	}
 	if affected.Fixed != "" {
-		fixed, ok := parseSemverLoose(affected.Fixed)
+		cmp, ok := comparePackageVersions(affected.Ecosystem, installed, affected.Fixed)
 		if !ok {
 			return false, ""
 		}
-		if semver.Compare(installedVersion, fixed) >= 0 {
+		if cmp >= 0 {
 			return false, ""
 		}
 	}
 	if affected.LastAffected != "" {
-		lastAffected, ok := parseSemverLoose(affected.LastAffected)
+		cmp, ok := comparePackageVersions(affected.Ecosystem, installed, affected.LastAffected)
 		if !ok {
 			return false, ""
 		}
-		if semver.Compare(installedVersion, lastAffected) > 0 {
+		if cmp > 0 {
 			return false, ""
 		}
 	}
 	return true, affected.Fixed
+}
+
+func comparePackageVersions(ecosystem, left, right string) (int, bool) {
+	switch normalizeEcosystem(ecosystem) {
+	case "apk":
+		return compareAPKVersions(left, right)
+	default:
+		return compareSemverLooseVersions(left, right)
+	}
+}
+
+func compareSemverLooseVersions(left, right string) (int, bool) {
+	leftVersion, ok := parseSemverLoose(left)
+	if !ok {
+		return 0, false
+	}
+	rightVersion, ok := parseSemverLoose(right)
+	if !ok {
+		return 0, false
+	}
+	return semver.Compare(leftVersion, rightVersion), true
+}
+
+func compareAPKVersions(left, right string) (int, bool) {
+	leftBase, leftRevision, ok := splitAPKRevision(left)
+	if !ok {
+		return 0, false
+	}
+	rightBase, rightRevision, ok := splitAPKRevision(right)
+	if !ok {
+		return 0, false
+	}
+	cmp, ok := compareSemverLooseVersions(leftBase, rightBase)
+	if !ok {
+		return 0, false
+	}
+	if cmp != 0 {
+		return cmp, true
+	}
+	switch {
+	case leftRevision < rightRevision:
+		return -1, true
+	case leftRevision > rightRevision:
+		return 1, true
+	default:
+		return 0, true
+	}
+}
+
+func splitAPKRevision(value string) (string, int, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", 0, false
+	}
+	idx := strings.LastIndex(value, "-r")
+	if idx < 0 {
+		return value, 0, true
+	}
+	revision, err := strconv.Atoi(value[idx+2:])
+	if err != nil {
+		return "", 0, false
+	}
+	return value[:idx], revision, true
 }
 
 func parseSemverLoose(value string) (string, bool) {

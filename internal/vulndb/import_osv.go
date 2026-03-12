@@ -15,6 +15,8 @@ import (
 )
 
 var (
+	maxOSVImportBytes  int64 = 256 << 20
+	maxOSVImportRows         = 500_000
 	maxEPSSImportBytes int64 = 256 << 20
 	maxEPSSImportRows        = 1_000_000
 	maxKEVImportBytes  int64 = 64 << 20
@@ -76,13 +78,20 @@ func (s *Service) ImportOSVJSON(ctx context.Context, source string, r io.Reader)
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	reader := bufio.NewReader(r)
+	limited := &io.LimitedReader{R: r, N: maxOSVImportBytes + 1}
+	reader := bufio.NewReader(limited)
 	first, err := firstNonSpaceByte(reader)
 	if err != nil {
 		return ImportReport{}, err
 	}
 	decoder := json.NewDecoder(reader)
 	report := ImportReport{Source: strings.TrimSpace(source)}
+	sizeLimitErr := func(err error) error {
+		if limited.N <= 0 {
+			return fmt.Errorf("osv feed exceeded maximum size %d bytes", maxOSVImportBytes)
+		}
+		return err
+	}
 	importOne := func(doc osvAdvisory) error {
 		vuln, affected := normalizeOSVAdvisory(doc)
 		if vuln.ID == "" {
@@ -92,12 +101,15 @@ func (s *Service) ImportOSVJSON(ctx context.Context, source string, r io.Reader)
 			return err
 		}
 		report.Imported++
+		if report.Imported > maxOSVImportRows {
+			return fmt.Errorf("osv feed exceeded maximum row count %d", maxOSVImportRows)
+		}
 		return nil
 	}
 	if first == '[' {
 		tok, err := decoder.Token()
 		if err != nil {
-			return report, fmt.Errorf("read osv array start: %w", err)
+			return report, fmt.Errorf("read osv array start: %w", sizeLimitErr(err))
 		}
 		if _, ok := tok.(json.Delim); !ok {
 			return report, fmt.Errorf("invalid osv array stream")
@@ -105,14 +117,14 @@ func (s *Service) ImportOSVJSON(ctx context.Context, source string, r io.Reader)
 		for decoder.More() {
 			var doc osvAdvisory
 			if err := decoder.Decode(&doc); err != nil {
-				return report, fmt.Errorf("decode osv advisory: %w", err)
+				return report, fmt.Errorf("decode osv advisory: %w", sizeLimitErr(err))
 			}
 			if err := importOne(doc); err != nil {
 				return report, fmt.Errorf("import osv advisory %s: %w", doc.ID, err)
 			}
 		}
 		if _, err := decoder.Token(); err != nil {
-			return report, fmt.Errorf("read osv array end: %w", err)
+			return report, fmt.Errorf("read osv array end: %w", sizeLimitErr(err))
 		}
 	} else {
 		for {
@@ -121,12 +133,15 @@ func (s *Service) ImportOSVJSON(ctx context.Context, source string, r io.Reader)
 				if err == io.EOF {
 					break
 				}
-				return report, fmt.Errorf("decode osv advisory stream: %w", err)
+				return report, fmt.Errorf("decode osv advisory stream: %w", sizeLimitErr(err))
 			}
 			if err := importOne(doc); err != nil {
 				return report, fmt.Errorf("import osv advisory %s: %w", doc.ID, err)
 			}
 		}
+	}
+	if limited.N <= 0 {
+		return report, fmt.Errorf("osv feed exceeded maximum size %d bytes", maxOSVImportBytes)
 	}
 	attemptedAt := s.now().UTC()
 	if err := s.store.UpdateSyncState(ctx, SyncState{Source: report.Source, LastAttemptAt: attemptedAt, LastSuccessAt: attemptedAt, RecordsSynced: report.Imported}); err != nil {
