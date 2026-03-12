@@ -153,18 +153,22 @@ func (s *SQLiteStore) LoadRun(ctx context.Context, namespace, runID string) (*Ru
 		ctx = context.Background()
 	}
 	var env RunEnvelope
+	var startedAt sql.NullTime
+	var completedAt sql.NullTime
 	err := s.db.QueryRowContext(ctx, `
 		SELECT namespace, run_id, kind, status, stage, submitted_at, started_at, completed_at, updated_at, payload
 		FROM execution_runs
 		WHERE namespace = ? AND run_id = ?
 	`, strings.TrimSpace(namespace), strings.TrimSpace(runID)).
-		Scan(&env.Namespace, &env.RunID, &env.Kind, &env.Status, &env.Stage, &env.SubmittedAt, &env.StartedAt, &env.CompletedAt, &env.UpdatedAt, &env.Payload)
+		Scan(&env.Namespace, &env.RunID, &env.Kind, &env.Status, &env.Stage, &env.SubmittedAt, &startedAt, &completedAt, &env.UpdatedAt, &env.Payload)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("load execution run: %w", err)
 	}
+	env.StartedAt = nullableTimeValue(startedAt)
+	env.CompletedAt = nullableTimeValue(completedAt)
 	return &env, nil
 }
 
@@ -222,9 +226,13 @@ func (s *SQLiteStore) ListRuns(ctx context.Context, namespace string, opts RunLi
 	runs := make([]RunEnvelope, 0)
 	for rows.Next() {
 		var env RunEnvelope
-		if err := rows.Scan(&env.Namespace, &env.RunID, &env.Kind, &env.Status, &env.Stage, &env.SubmittedAt, &env.StartedAt, &env.CompletedAt, &env.UpdatedAt, &env.Payload); err != nil {
+		var startedAt sql.NullTime
+		var completedAt sql.NullTime
+		if err := rows.Scan(&env.Namespace, &env.RunID, &env.Kind, &env.Status, &env.Stage, &env.SubmittedAt, &startedAt, &completedAt, &env.UpdatedAt, &env.Payload); err != nil {
 			return nil, fmt.Errorf("scan execution run: %w", err)
 		}
+		env.StartedAt = nullableTimeValue(startedAt)
+		env.CompletedAt = nullableTimeValue(completedAt)
 		runs = append(runs, env)
 	}
 	if err := rows.Err(); err != nil {
@@ -331,4 +339,12 @@ func nullableTime(value *time.Time) any {
 		return nil
 	}
 	return value.UTC()
+}
+
+func nullableTimeValue(value sql.NullTime) *time.Time {
+	if !value.Valid {
+		return nil
+	}
+	ts := value.Time.UTC()
+	return &ts
 }
