@@ -188,3 +188,31 @@ func TestServiceMatchesAlpineAliasAsAPK(t *testing.T) {
 		t.Fatalf("expected alpine/apk alias match, got %#v", matches)
 	}
 }
+
+func TestServiceSkipsUnparseableRangeBounds(t *testing.T) {
+	store, err := NewSQLiteStore(t.TempDir() + "/vulndb.db")
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+	service := NewService(store)
+
+	osv := `
+{"id":"GHSA-test-debian","aliases":["CVE-2026-3001"],"summary":"debian range advisory","details":"non-semver bound","database_specific":{"severity":"HIGH"},"affected":[{"package":{"ecosystem":"npm","name":"leftpad"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"},{"fixed":"1:1.2.3-4"}]}]}]}
+`
+	if _, err := service.ImportOSVJSON(context.Background(), "osv-test", strings.NewReader(osv)); err != nil {
+		t.Fatalf("ImportOSVJSON: %v", err)
+	}
+
+	matches, err := service.MatchPackages(context.Background(), filesystemanalyzer.OSInfo{}, []filesystemanalyzer.PackageRecord{{
+		Ecosystem: "npm",
+		Name:      "leftpad",
+		Version:   "1.2.3",
+	}})
+	if err != nil {
+		t.Fatalf("MatchPackages: %v", err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("expected unparseable range bounds to fail closed, got %#v", matches)
+	}
+}

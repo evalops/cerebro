@@ -135,19 +135,28 @@ func matchPackageVersion(installed string, affected AffectedPackage) (bool, stri
 	}
 	if affected.Introduced != "" {
 		introduced, ok := parseSemverLoose(affected.Introduced)
-		if ok && semver.Compare(installedVersion, introduced) < 0 {
+		if !ok {
+			return false, ""
+		}
+		if semver.Compare(installedVersion, introduced) < 0 {
 			return false, ""
 		}
 	}
 	if affected.Fixed != "" {
 		fixed, ok := parseSemverLoose(affected.Fixed)
-		if ok && semver.Compare(installedVersion, fixed) >= 0 {
+		if !ok {
+			return false, ""
+		}
+		if semver.Compare(installedVersion, fixed) >= 0 {
 			return false, ""
 		}
 	}
 	if affected.LastAffected != "" {
 		lastAffected, ok := parseSemverLoose(affected.LastAffected)
-		if ok && semver.Compare(installedVersion, lastAffected) > 0 {
+		if !ok {
+			return false, ""
+		}
+		if semver.Compare(installedVersion, lastAffected) > 0 {
 			return false, ""
 		}
 	}
