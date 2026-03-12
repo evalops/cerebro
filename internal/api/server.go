@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
 	"runtime"
 	"strings"
@@ -62,6 +64,9 @@ func NewServer(application *app.App) *Server {
 // bundle. This keeps App as the composition root while allowing tests and
 // future workers to construct only the services they actually need.
 func NewServerWithDependencies(deps serverDependencies) *Server {
+	if deps.Logger == nil {
+		deps.Logger = slog.New(slog.NewJSONHandler(io.Discard, nil))
+	}
 	if adapter, ok := deps.graphRuntime.(*graphRuntimeAdapter); ok {
 		adapter.deps = &deps
 	}

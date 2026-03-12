@@ -56,3 +56,14 @@ func TestNewServerWithDependencies_UsesGraphRuntimeWithoutApp(t *testing.T) {
 		t.Fatalf("expected freshness healthy=false, got %#v", body)
 	}
 }
+
+func TestNewServerWithDependencies_DefaultsLoggerWhenNil(t *testing.T) {
+	s := NewServerWithDependencies(serverDependencies{
+		Config: &app.Config{},
+	})
+	t.Cleanup(func() { s.Close() })
+
+	if s.app == nil || s.app.Logger == nil {
+		t.Fatalf("expected constructor to default logger, got %#v", s.app)
+	}
+}
