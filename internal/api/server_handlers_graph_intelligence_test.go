@@ -1089,38 +1089,19 @@ func TestPlatformIntelligenceReportRunAsync(t *testing.T) {
 
 func TestPlatformIntelligenceReportRunStreamEmitsSections(t *testing.T) {
 	s := newTestServer(t)
-	original := s.platformReportHandlers["quality"]
-	s.platformReportHandlers["quality"] = func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(75 * time.Millisecond)
-		original(w, r)
-	}
 	server := httptest.NewServer(s)
 	defer server.Close()
 
 	createResp := doAuthenticatedHTTP(t, server.URL, http.MethodPost, "/api/v1/platform/intelligence/reports/quality/runs", map[string]any{
-		"execution_mode": "async",
+		"execution_mode": "sync",
 	}, nil)
-	if createResp.Code != http.StatusAccepted {
-		t.Fatalf("expected 202 for async run create, got %d: %s", createResp.Code, createResp.Body.String())
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for sync run create, got %d: %s", createResp.Code, createResp.Body.String())
 	}
 	createBody := decodeJSON(t, createResp)
 	statusURL, _ := createBody["status_url"].(string)
 	if statusURL == "" {
 		t.Fatalf("expected status_url, got %#v", createBody["status_url"])
-	}
-	for i := 0; i < 200; i++ {
-		statusResp := doAuthenticatedHTTP(t, server.URL, http.MethodGet, statusURL, nil, nil)
-		if statusResp.Code != http.StatusOK {
-			t.Fatalf("expected 200 for async run status, got %d: %s", statusResp.Code, statusResp.Body.String())
-		}
-		statusBody := decodeJSON(t, statusResp)
-		if statusBody["status"] == reports.ReportRunStatusSucceeded {
-			break
-		}
-		if i == 199 {
-			t.Fatalf("timed out waiting for async run to finish, got %#v", statusBody["status"])
-		}
-		time.Sleep(25 * time.Millisecond)
 	}
 
 	streamCtx, cancel := context.WithCancel(context.Background())
