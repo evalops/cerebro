@@ -1,11 +1,13 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"testing"
 	"time"
 
 	"github.com/evalops/cerebro/internal/graph"
+	"github.com/evalops/cerebro/internal/identity"
 )
 
 func TestIdentityReviewEndpointsRejectGraphCampaigns(t *testing.T) {
@@ -114,5 +116,64 @@ func TestIdentityReviewCreateRemainsManual(t *testing.T) {
 		if len(typedItems) != 0 {
 			t.Fatalf("expected manual identity create to avoid graph auto-generation, got %#v", typedItems)
 		}
+	}
+}
+
+func TestIdentityReviewActorsUseAuthenticatedUser(t *testing.T) {
+	s := newTestServer(t)
+
+	create := doAsUser(t, s, "user:creator", http.MethodPost, "/api/v1/identity/reviews", map[string]any{
+		"name":       "Manual identity review",
+		"created_by": "spoofed-user",
+	})
+	if create.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", create.Code, create.Body.String())
+	}
+	created := decodeJSON(t, create)
+	reviewID := created["id"].(string)
+	if created["created_by"] != "user:creator" {
+		t.Fatalf("expected authenticated creator, got %#v", created["created_by"])
+	}
+
+	if err := s.app.Identity.AddReviewItem(context.Background(), reviewID, &identity.ReviewItem{
+		Type:      "user",
+		Principal: identity.Principal{ID: "user:alice", Type: "user", Name: "alice@example.com"},
+		Access:    []identity.AccessGrant{{Resource: "bucket:prod-data", Permission: "read", GrantedAt: time.Now().UTC()}},
+	}); err != nil {
+		t.Fatalf("AddReviewItem failed: %v", err)
+	}
+
+	review, ok := s.app.Identity.GetReview(context.Background(), reviewID)
+	if !ok {
+		t.Fatalf("expected stored review")
+	}
+	itemID := review.Items[0].ID
+
+	decide := doAsUser(t, s, "user:reviewer", http.MethodPost, "/api/v1/identity/reviews/"+reviewID+"/items/"+itemID+"/decide", map[string]any{
+		"action":   "approve",
+		"reviewer": "spoofed-reviewer",
+	})
+	if decide.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", decide.Code, decide.Body.String())
+	}
+
+	review, ok = s.app.Identity.GetReview(context.Background(), reviewID)
+	if !ok {
+		t.Fatalf("expected stored review after decision")
+	}
+	if review.Items[0].Decision == nil || review.Items[0].Decision.Reviewer != "user:reviewer" {
+		t.Fatalf("expected decision reviewer to use authenticated user, got %#v", review.Items[0].Decision)
+	}
+	if len(review.Events) == 0 || review.Events[0].Actor != "user:creator" {
+		t.Fatalf("expected created event actor to use authenticated user, got %#v", review.Events)
+	}
+	foundDecisionActor := ""
+	for _, event := range review.Events {
+		if event.Type == "review.item_decided" {
+			foundDecisionActor = event.Actor
+		}
+	}
+	if foundDecisionActor != "user:reviewer" {
+		t.Fatalf("expected decision event actor to use authenticated user, got %#v", review.Events)
 	}
 }

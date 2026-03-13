@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -34,6 +35,7 @@ func (s *Server) createReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	review.GenerationSource = "manual"
+	review.CreatedBy = requestReviewActor(r.Context(), review.CreatedBy)
 
 	created, err := s.app.Identity.CreateReview(r.Context(), &review)
 	if err != nil {
@@ -107,6 +109,7 @@ func (s *Server) recordDecision(w http.ResponseWriter, r *http.Request) {
 		s.error(w, http.StatusBadRequest, "invalid request")
 		return
 	}
+	decision.Reviewer = requestReviewActor(r.Context(), decision.Reviewer)
 
 	if err := s.app.Identity.RecordDecision(r.Context(), reviewID, itemID, &decision); err != nil {
 		s.errorFromErr(w, err)
@@ -121,4 +124,11 @@ func (s *Server) identityRouteReview(r *http.Request, id string) (*identity.Acce
 		return nil, false
 	}
 	return review, true
+}
+
+func requestReviewActor(ctx context.Context, asserted string) string {
+	if userID := strings.TrimSpace(GetUserID(ctx)); userID != "" {
+		return userID
+	}
+	return strings.TrimSpace(asserted)
 }

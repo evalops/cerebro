@@ -4530,11 +4530,19 @@
               "type": "integer"
             },
             {
+              "path": "reviews[].stats.deferred",
+              "type": "integer"
+            },
+            {
               "path": "reviews[].stats.escalated",
               "type": "integer"
             },
             {
               "path": "reviews[].stats.high_risk",
+              "type": "integer"
+            },
+            {
+              "path": "reviews[].stats.modified",
               "type": "integer"
             },
             {
@@ -4949,11 +4957,19 @@
               "type": "integer"
             },
             {
+              "path": "stats.deferred",
+              "type": "integer"
+            },
+            {
               "path": "stats.escalated",
               "type": "integer"
             },
             {
               "path": "stats.high_risk",
+              "type": "integer"
+            },
+            {
+              "path": "stats.modified",
               "type": "integer"
             },
             {
@@ -31051,11 +31067,19 @@
               "type": "integer"
             },
             {
+              "path": "stats.deferred",
+              "type": "integer"
+            },
+            {
               "path": "stats.escalated",
               "type": "integer"
             },
             {
               "path": "stats.high_risk",
+              "type": "integer"
+            },
+            {
+              "path": "stats.modified",
               "type": "integer"
             },
             {

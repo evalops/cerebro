@@ -69,6 +69,26 @@ func do(t *testing.T, s *Server, method, path string, body interface{}) *httptes
 	return w
 }
 
+func doAsUser(t *testing.T, s *Server, userID, method, path string, body interface{}) *httptest.ResponseRecorder {
+	t.Helper()
+	var reader io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			t.Fatalf("marshal body: %v", err)
+		}
+		reader = bytes.NewReader(b)
+	}
+	req := httptest.NewRequest(method, path, reader)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	req = req.WithContext(context.WithValue(req.Context(), contextKeyUserID, strings.TrimSpace(userID)))
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	return w
+}
+
 // decodeJSON decodes the response body into a generic map.
 func decodeJSON(t *testing.T, w *httptest.ResponseRecorder) map[string]interface{} {
 	t.Helper()

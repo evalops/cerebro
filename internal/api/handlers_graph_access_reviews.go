@@ -44,7 +44,7 @@ func (s *Server) createGraphAccessReview(w http.ResponseWriter, r *http.Request)
 		Name:        req.Name,
 		Description: req.Description,
 		Type:        identity.ReviewTypeUserAccess,
-		CreatedBy:   req.CreatedBy,
+		CreatedBy:   requestReviewActor(r.Context(), req.CreatedBy),
 		DueAt:       req.DueDate,
 		Reviewers:   req.Reviewers,
 		Scope: identity.ReviewScope{
@@ -124,7 +124,7 @@ func (s *Server) decideGraphAccessReviewItem(w http.ResponseWriter, r *http.Requ
 	}
 	if err := s.app.Identity.RecordDecision(r.Context(), reviewID, itemID, &identity.ReviewDecision{
 		Action:    decision.Action,
-		Reviewer:  decision.DecidedBy,
+		Reviewer:  requestReviewActor(r.Context(), decision.DecidedBy),
 		Comment:   decision.Reason,
 		DecidedAt: decision.DecidedAt,
 	}); err != nil {

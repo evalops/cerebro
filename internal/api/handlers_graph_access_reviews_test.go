@@ -159,3 +159,72 @@ func TestGraphAccessReviewDecisionRejectsItemFromAnotherReview(t *testing.T) {
 		t.Fatalf("expected review A item to remain undecided")
 	}
 }
+
+func TestGraphAccessReviewActorsUseAuthenticatedUser(t *testing.T) {
+	s := newTestServer(t)
+	now := time.Now().UTC()
+	s.app.SecurityGraph.AddNode(&graph.Node{
+		ID:        "user:alice",
+		Kind:      graph.NodeKindUser,
+		Name:      "alice@example.com",
+		Provider:  "aws",
+		Account:   "123456789012",
+		CreatedAt: now.Add(-400 * 24 * time.Hour),
+	})
+	s.app.SecurityGraph.AddNode(&graph.Node{
+		ID:        "bucket:prod-data",
+		Kind:      graph.NodeKindBucket,
+		Name:      "prod-data",
+		Provider:  "aws",
+		Account:   "123456789012",
+		Risk:      graph.RiskCritical,
+		CreatedAt: now.Add(-500 * 24 * time.Hour),
+	})
+	s.app.SecurityGraph.AddEdge(&graph.Edge{ID: "alice-admin", Source: "user:alice", Target: "bucket:prod-data", Kind: graph.EdgeKindCanAdmin, Effect: graph.EdgeEffectAllow})
+
+	create := doAsUser(t, s, "user:creator", http.MethodPost, "/api/v1/graph/access-reviews", map[string]any{
+		"name":       "Graph review",
+		"created_by": "spoofed-user",
+		"scope": map[string]any{
+			"type":      "resource",
+			"resources": []string{"bucket:prod-data"},
+		},
+	})
+	if create.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", create.Code, create.Body.String())
+	}
+	review := decodeJSON(t, create)
+	reviewID := review["id"].(string)
+	itemID := review["items"].([]interface{})[0].(map[string]any)["id"].(string)
+	if review["created_by"] != "user:creator" {
+		t.Fatalf("expected authenticated creator, got %#v", review["created_by"])
+	}
+
+	decide := doAsUser(t, s, "user:reviewer", http.MethodPost, "/api/v1/graph/access-reviews/"+reviewID+"/items/"+itemID+"/decide", map[string]any{
+		"action":     "approve",
+		"decided_by": "spoofed-reviewer",
+	})
+	if decide.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", decide.Code, decide.Body.String())
+	}
+
+	stored, ok := s.app.Identity.GetReview(context.Background(), reviewID)
+	if !ok {
+		t.Fatalf("expected stored graph review")
+	}
+	if stored.Items[0].Decision == nil || stored.Items[0].Decision.Reviewer != "user:reviewer" {
+		t.Fatalf("expected decision reviewer to use authenticated user, got %#v", stored.Items[0].Decision)
+	}
+	if len(stored.Events) == 0 || stored.Events[0].Actor != "user:creator" {
+		t.Fatalf("expected created event actor to use authenticated user, got %#v", stored.Events)
+	}
+	foundDecisionActor := ""
+	for _, event := range stored.Events {
+		if event.Type == "review.item_decided" {
+			foundDecisionActor = event.Actor
+		}
+	}
+	if foundDecisionActor != "user:reviewer" {
+		t.Fatalf("expected decision event actor to use authenticated user, got %#v", stored.Events)
+	}
+}

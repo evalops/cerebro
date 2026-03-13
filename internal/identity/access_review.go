@@ -162,7 +162,9 @@ type ReviewStats struct {
 	Pending       int `json:"pending"`
 	Approved      int `json:"approved"`
 	Revoked       int `json:"revoked"`
+	Modified      int `json:"modified"`
 	Escalated     int `json:"escalated"`
+	Deferred      int `json:"deferred"`
 	HighRisk      int `json:"high_risk"`
 	CompletionPct int `json:"completion_pct"`
 }
@@ -445,8 +447,12 @@ func (r *AccessReview) recalculateStats() {
 			r.Stats.Approved++
 		case DecisionRevoke:
 			r.Stats.Revoked++
+		case DecisionModify:
+			r.Stats.Modified++
 		case DecisionEscalate:
 			r.Stats.Escalated++
+		case DecisionDefer:
+			r.Stats.Deferred++
 		}
 	}
 	if r.Stats.TotalItems > 0 {

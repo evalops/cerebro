@@ -216,6 +216,58 @@ func TestServiceRecordDecisionRevoke(t *testing.T) {
 	}
 }
 
+func TestServiceRecordDecisionCountsModifyAndDefer(t *testing.T) {
+	svc := NewService()
+
+	review, _ := svc.CreateReview(context.Background(), &AccessReview{Name: "Decision coverage review"})
+	if err := svc.AddReviewItem(context.Background(), review.ID, &ReviewItem{
+		Type:      "user",
+		Principal: Principal{ID: "user-1"},
+	}); err != nil {
+		t.Fatalf("AddReviewItem 1 failed: %v", err)
+	}
+	if err := svc.AddReviewItem(context.Background(), review.ID, &ReviewItem{
+		Type:      "user",
+		Principal: Principal{ID: "user-2"},
+	}); err != nil {
+		t.Fatalf("AddReviewItem 2 failed: %v", err)
+	}
+
+	got, _ := svc.GetReview(context.Background(), review.ID)
+	itemAID := got.Items[0].ID
+	itemBID := got.Items[1].ID
+
+	if err := svc.RecordDecision(context.Background(), review.ID, itemAID, &ReviewDecision{
+		Action:   DecisionModify,
+		Reviewer: "admin@company.com",
+	}); err != nil {
+		t.Fatalf("RecordDecision modify failed: %v", err)
+	}
+	if err := svc.RecordDecision(context.Background(), review.ID, itemBID, &ReviewDecision{
+		Action:   DecisionDefer,
+		Reviewer: "admin@company.com",
+	}); err != nil {
+		t.Fatalf("RecordDecision defer failed: %v", err)
+	}
+
+	got, _ = svc.GetReview(context.Background(), review.ID)
+	if got.Stats.Pending != 0 {
+		t.Fatalf("expected 0 pending, got %d", got.Stats.Pending)
+	}
+	if got.Stats.Modified != 1 {
+		t.Fatalf("expected 1 modified, got %d", got.Stats.Modified)
+	}
+	if got.Stats.Deferred != 1 {
+		t.Fatalf("expected 1 deferred, got %d", got.Stats.Deferred)
+	}
+	if got.Stats.CompletionPct != 100 {
+		t.Fatalf("expected 100%% completion, got %d%%", got.Stats.CompletionPct)
+	}
+	if got.Status != ReviewStatusCompleted {
+		t.Fatalf("expected review to complete after all decisions, got %s", got.Status)
+	}
+}
+
 func TestServiceRecordDecisionRejectsForeignReviewItem(t *testing.T) {
 	svc := NewService()
 

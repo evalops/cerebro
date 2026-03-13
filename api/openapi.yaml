@@ -10245,7 +10245,11 @@ components:
           type: integer
         revoked:
           type: integer
+        modified:
+          type: integer
         escalated:
+          type: integer
+        deferred:
           type: integer
         high_risk:
           type: integer
