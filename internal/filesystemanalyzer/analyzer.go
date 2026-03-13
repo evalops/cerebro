@@ -41,7 +41,7 @@ var (
 	privateKeyPattern   = regexp.MustCompile(`-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----`)
 	inlineSecretPattern = regexp.MustCompile(`(?i)(password|passwd|pwd|secret|token|api[_-]?key|client[_-]?secret|connection[_-]?string)\s*[:=]`)
 	secretTokenPattern  = regexp.MustCompile(`[A-Za-z0-9+/=_-]{20,}`)
-	databaseURLPattern  = regexp.MustCompile(`(?i)(?:jdbc:sqlserver://[^\s'"]+|(?:jdbc:)?(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\\+srv)?|redis|rediss|sqlserver)://[^\s'"]+)`)
+	databaseURLPattern  = regexp.MustCompile(`(?i)(?:jdbc:sqlserver://[^\s'"]+|(?:jdbc:)?(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|redis|rediss|sqlserver)://[^\s'"]+)`)
 )
 
 type Analyzer struct {

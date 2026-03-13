@@ -179,6 +179,7 @@ func TestAnalyzerExtractsResolvableSecretReferences(t *testing.T) {
 	mustWriteFile(t, filepath.Join(root, "home", "user", ".env"), strings.Join([]string{
 		"AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF",
 		"DATABASE_URL=postgresql://app:secret@prod-db.internal:5432/appdb?sslmode=require",
+		"MONGO_URL=mongodb+srv://app:secret@atlas-cluster.mongodb.net/appdb?retryWrites=true&w=majority",
 	}, "\n"))
 	mustWriteFile(t, filepath.Join(root, "var", "secrets", "gcp-key.json"), `{
 		"type": "service_account",
@@ -193,8 +194,12 @@ func TestAnalyzerExtractsResolvableSecretReferences(t *testing.T) {
 	}
 
 	byType := make(map[string]SecretFinding, len(report.Secrets))
+	var dbFindings []SecretFinding
 	for _, finding := range report.Secrets {
 		byType[finding.Type] = finding
+		if finding.Type == "database_connection_string" {
+			dbFindings = append(dbFindings, finding)
+		}
 	}
 
 	awsFinding, ok := byType["aws_access_key"]
@@ -205,15 +210,26 @@ func TestAnalyzerExtractsResolvableSecretReferences(t *testing.T) {
 		t.Fatalf("expected aws access key identifier, got %q", got)
 	}
 
-	dbFinding, ok := byType["database_connection_string"]
-	if !ok || len(dbFinding.References) != 1 {
-		t.Fatalf("expected database connection reference, got %#v", dbFinding)
+	if len(dbFindings) != 2 {
+		t.Fatalf("expected two database connection findings, got %#v", dbFindings)
 	}
-	if got := dbFinding.References[0].Host; got != "prod-db.internal" {
-		t.Fatalf("expected database host prod-db.internal, got %q", got)
+	foundPostgres := false
+	foundMongo := false
+	for _, finding := range dbFindings {
+		for _, ref := range finding.References {
+			if ref.Attributes["scheme"] == "postgresql" && ref.Host == "prod-db.internal" && ref.Database == "appdb" {
+				foundPostgres = true
+			}
+			if ref.Attributes["scheme"] == "mongodb+srv" && ref.Host == "atlas-cluster.mongodb.net" && ref.Database == "appdb" {
+				foundMongo = true
+			}
+		}
 	}
-	if got := dbFinding.References[0].Database; got != "appdb" {
-		t.Fatalf("expected database name appdb, got %q", got)
+	if !foundPostgres {
+		t.Fatalf("expected postgresql reference, got %#v", dbFindings)
+	}
+	if !foundMongo {
+		t.Fatalf("expected mongodb+srv reference, got %#v", dbFindings)
 	}
 
 	gcpFinding, ok := byType["gcp_service_account_key"]
