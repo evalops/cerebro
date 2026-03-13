@@ -206,10 +206,6 @@
           "requested_by": {
             "type": "string"
           },
-          "require_approval": {
-            "default": true,
-            "type": "boolean"
-          },
           "secret_node_id": {
             "type": "string"
           }
@@ -221,7 +217,6 @@
       },
       "example_input": {
         "requested_by": "requested_by",
-        "require_approval": true,
         "secret_node_id": "secret_node_id"
       },
       "execution_kind": "direct_tool"

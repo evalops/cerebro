@@ -127,7 +127,6 @@ Generated from the shared `App.AgentSDKTools()` registry and `internal/agentsdk`
 ```json
 {
   "requested_by": "requested_by",
-  "require_approval": true,
   "secret_node_id": "secret_node_id"
 }
 ```

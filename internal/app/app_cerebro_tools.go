@@ -690,9 +690,8 @@ func (a *App) cerebroTools() []agents.Tool {
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"secret_node_id":   map[string]any{"type": "string"},
-					"require_approval": map[string]any{"type": "boolean", "default": true},
-					"requested_by":     map[string]any{"type": "string"},
+					"secret_node_id": map[string]any{"type": "string"},
+					"requested_by":   map[string]any{"type": "string"},
 				},
 				"required": []string{"secret_node_id"},
 			},

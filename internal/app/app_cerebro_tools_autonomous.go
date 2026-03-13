@@ -32,9 +32,8 @@ func (a *App) toolCerebroAutonomousCredentialResponse(ctx context.Context, args 
 	}
 
 	var req struct {
-		SecretNodeID    string `json:"secret_node_id"`
-		RequireApproval *bool  `json:"require_approval"`
-		RequestedBy     string `json:"requested_by"`
+		SecretNodeID string `json:"secret_node_id"`
+		RequestedBy  string `json:"requested_by"`
 	}
 	if err := decodeToolArgs(args, &req); err != nil {
 		return "", err
@@ -49,10 +48,8 @@ func (a *App) toolCerebroAutonomousCredentialResponse(ctx context.Context, args 
 		return "", err
 	}
 
+	// Approval policy is owned by the server, not caller-controlled tool input.
 	requireApproval := true
-	if req.RequireApproval != nil {
-		requireApproval = *req.RequireApproval
-	}
 	now := time.Now().UTC()
 	run := &autonomous.RunRecord{
 		ID:                "autonomous:" + uuid.NewString(),

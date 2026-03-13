@@ -1134,6 +1134,44 @@ func TestCerebroAutonomousCredentialResponseTool_AwaitingApproval(t *testing.T) 
 	}
 }
 
+func TestCerebroAutonomousCredentialResponseTool_IgnoresCallerApprovalPreference(t *testing.T) {
+	dir := t.TempDir()
+	store, err := executionstore.NewSQLiteStore(filepath.Join(dir, "executions.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	application := &App{
+		Config:         &Config{ExecutionStoreFile: filepath.Join(dir, "executions.db")},
+		ExecutionStore: store,
+		SecurityGraph:  autonomousCredentialWorkflowGraph(),
+	}
+	tool := findCerebroTool(application.cerebroTools(), "cerebro.autonomous_credential_response")
+	if tool == nil {
+		t.Fatal("expected autonomous credential response tool")
+	}
+
+	result, err := tool.Handler(context.Background(), json.RawMessage(`{
+		"secret_node_id":"secret:public-repo:1",
+		"require_approval":false
+	}`))
+	if err != nil {
+		t.Fatalf("tool returned error: %v", err)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal([]byte(result), &body); err != nil {
+		t.Fatalf("decode tool payload: %v", err)
+	}
+	if body["status"] != string(autonomous.RunStatusAwaitingApproval) {
+		t.Fatalf("expected awaiting approval status, got %#v", body["status"])
+	}
+	if value, ok := body["require_approval"].(bool); !ok || !value {
+		t.Fatalf("expected server-owned require_approval=true, got %#v", body["require_approval"])
+	}
+}
+
 func TestCerebroAutonomousWorkflowApproveTool_CompletesRun(t *testing.T) {
 	dir := t.TempDir()
 	store, err := executionstore.NewSQLiteStore(filepath.Join(dir, "executions.db"))
