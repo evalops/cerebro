@@ -14,6 +14,9 @@ import (
 const (
 	defaultScaleProfileQueryIterations = 5
 	defaultScaleProfileMutationDepth   = 3
+	maxScaleProfileQueryIterations     = 20
+	maxScaleProfileTierCount           = 8
+	maxScaleProfileResourceCount       = 200000
 )
 
 var defaultScaleProfileTiers = []int{1000, 10000, 50000, 100000}
@@ -96,6 +99,9 @@ func NormalizeScaleProfileSpec(spec ScaleProfileSpec) ScaleProfileSpec {
 // ProfileSyntheticScale benchmarks synthetic graph tiers to guide scaling decisions.
 func ProfileSyntheticScale(spec ScaleProfileSpec) (*ScaleProfileReport, error) {
 	normalized := NormalizeScaleProfileSpec(spec)
+	if err := validateScaleProfileSpec(normalized); err != nil {
+		return nil, err
+	}
 	report := &ScaleProfileReport{
 		GeneratedAt:     time.Now().UTC(),
 		Workload:        "synthetic_estate_v1",
@@ -113,6 +119,21 @@ func ProfileSyntheticScale(spec ScaleProfileSpec) (*ScaleProfileReport, error) {
 	report.RecommendedPath = path
 	report.Recommendation = recommendation
 	return report, nil
+}
+
+func validateScaleProfileSpec(spec ScaleProfileSpec) error {
+	if len(spec.Tiers) > maxScaleProfileTierCount {
+		return fmt.Errorf("at most %d tiers may be profiled in one run", maxScaleProfileTierCount)
+	}
+	if spec.QueryIterations <= 0 || spec.QueryIterations > maxScaleProfileQueryIterations {
+		return fmt.Errorf("query iterations must be between 1 and %d", maxScaleProfileQueryIterations)
+	}
+	for _, tier := range spec.Tiers {
+		if tier > maxScaleProfileResourceCount {
+			return fmt.Errorf("resource tier %d exceeds the maximum supported tier size of %d", tier, maxScaleProfileResourceCount)
+		}
+	}
+	return nil
 }
 
 func profileSyntheticScaleTier(resourceCount, queryIterations int) (ScaleProfileMeasurement, error) {

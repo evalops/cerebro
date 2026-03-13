@@ -56,6 +56,27 @@ func TestProfileSyntheticScaleSmallTier(t *testing.T) {
 	}
 }
 
+func TestProfileSyntheticScaleRejectsUnboundedInputs(t *testing.T) {
+	if _, err := ProfileSyntheticScale(ScaleProfileSpec{
+		Tiers:           []int{1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000},
+		QueryIterations: 1,
+	}); err == nil {
+		t.Fatal("expected too-many-tiers error")
+	}
+	if _, err := ProfileSyntheticScale(ScaleProfileSpec{
+		Tiers:           []int{maxScaleProfileResourceCount + 1},
+		QueryIterations: 1,
+	}); err == nil {
+		t.Fatal("expected oversized-tier error")
+	}
+	if _, err := ProfileSyntheticScale(ScaleProfileSpec{
+		Tiers:           []int{1000},
+		QueryIterations: maxScaleProfileQueryIterations + 1,
+	}); err == nil {
+		t.Fatal("expected query-iteration error")
+	}
+}
+
 func TestBuildSyntheticScaleGraphFixture(t *testing.T) {
 	g, fixture := buildSyntheticScaleGraph(32)
 	if g == nil {
