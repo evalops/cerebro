@@ -6,6 +6,8 @@ import (
 	"strings"
 )
 
+const maxGCPIAMPolicyJSONBytes = 1 << 20
+
 // GCP Builder Methods
 
 func (b *Builder) buildGCPNodes(ctx context.Context) {
@@ -457,6 +459,9 @@ func gcpIAMBindingsFromPolicy(policy any) []map[string]any {
 	case string:
 		raw := strings.TrimSpace(typed)
 		if raw == "" {
+			return nil
+		}
+		if len(raw) > maxGCPIAMPolicyJSONBytes {
 			return nil
 		}
 		var parsed map[string]any

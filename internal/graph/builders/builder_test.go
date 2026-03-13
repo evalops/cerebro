@@ -885,6 +885,13 @@ func TestBuilder_GCPBucketIAMPolicyEdges(t *testing.T) {
 	}
 }
 
+func TestGcpIAMBindingsFromPolicyRejectsOversizedJSON(t *testing.T) {
+	oversized := strings.Repeat("x", maxGCPIAMPolicyJSONBytes+1)
+	if bindings := gcpIAMBindingsFromPolicy(oversized); len(bindings) != 0 {
+		t.Fatalf("expected oversized policy payload to be ignored, got %#v", bindings)
+	}
+}
+
 func TestBuilder_GCPIAMServiceAccountMemberResolvesToNodeID(t *testing.T) {
 	ctx := context.Background()
 	source := newMockDataSource()
