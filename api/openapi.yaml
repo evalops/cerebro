@@ -9971,11 +9971,49 @@ components:
           type: string
         name:
           type: string
+        description:
+          type: string
+        type:
+          type: string
         status:
+          type: string
+        scope:
+          $ref: '#/components/schemas/ReviewScope'
+        schedule:
+          $ref: '#/components/schemas/ReviewSchedule'
+        reviewers:
+          type: array
+          items:
+            type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReviewItem'
+        stats:
+          $ref: '#/components/schemas/ReviewStats'
+        created_by:
           type: string
         created_at:
           type: string
           format: date-time
+        started_at:
+          type: string
+          format: date-time
+        due_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        generation_source:
+          type: string
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReviewEvent'
+        metadata:
+          type: object
+          additionalProperties: true
     ReviewsResponse:
       type: object
       properties:
@@ -9993,16 +10031,226 @@ components:
       properties:
         name:
           type: string
+        description:
+          type: string
         type:
           type: string
           enum:
             - user_access
             - service_account
             - privileged
+            - entitlement
+            - application
+        created_by:
+          type: string
+        scope:
+          $ref: '#/components/schemas/ReviewScope'
+        schedule:
+          $ref: '#/components/schemas/ReviewSchedule'
         reviewers:
           type: array
           items:
             type: string
+        due_at:
+          type: string
+          format: date-time
+    ReviewScope:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum:
+            - all
+            - account
+            - principal
+            - resource
+            - high_risk
+            - cross_account
+            - privilege_creep
+        providers:
+          type: array
+          items:
+            type: string
+        accounts:
+          type: array
+          items:
+            type: string
+        applications:
+          type: array
+          items:
+            type: string
+        roles:
+          type: array
+          items:
+            type: string
+        users:
+          type: array
+          items:
+            type: string
+        resources:
+          type: array
+          items:
+            type: string
+        risk_levels:
+          type: array
+          items:
+            type: string
+    ReviewSchedule:
+      type: object
+      properties:
+        frequency:
+          type: string
+        next_run:
+          type: string
+          format: date-time
+        last_run:
+          type: string
+          format: date-time
+    ReviewItem:
+      type: object
+      properties:
+        id:
+          type: string
+        review_id:
+          type: string
+        type:
+          type: string
+        principal:
+          $ref: '#/components/schemas/ReviewPrincipal'
+        access:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReviewAccessGrant'
+        risk_score:
+          type: integer
+        risk_factors:
+          type: array
+          items:
+            type: string
+        decision:
+          $ref: '#/components/schemas/ReviewDecision'
+        recommendation:
+          $ref: '#/components/schemas/ReviewRecommendation'
+        reviewer_candidates:
+          type: array
+          items:
+            type: string
+        last_activity:
+          type: string
+          format: date-time
+        path:
+          type: array
+          items:
+            type: string
+        flags:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    ReviewPrincipal:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+        provider:
+          type: string
+        account:
+          type: string
+        last_login:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    ReviewAccessGrant:
+      type: object
+      properties:
+        id:
+          type: string
+        resource:
+          type: string
+        resource_type:
+          type: string
+        permission:
+          type: string
+        role:
+          type: string
+        granted_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        granted_by:
+          type: string
+    ReviewDecision:
+      type: object
+      properties:
+        action:
+          type: string
+        reviewer:
+          type: string
+        comment:
+          type: string
+        decided_at:
+          type: string
+          format: date-time
+        effective_at:
+          type: string
+          format: date-time
+    ReviewRecommendation:
+      type: object
+      properties:
+        action:
+          type: string
+        reason:
+          type: string
+        confidence:
+          type: string
+    ReviewEvent:
+      type: object
+      properties:
+        sequence:
+          type: integer
+        type:
+          type: string
+        recorded_at:
+          type: string
+          format: date-time
+        actor:
+          type: string
+        item_id:
+          type: string
+        decision:
+          $ref: '#/components/schemas/ReviewDecision'
+        metadata:
+          type: object
+          additionalProperties: true
+    ReviewStats:
+      type: object
+      properties:
+        total_items:
+          type: integer
+        pending:
+          type: integer
+        approved:
+          type: integer
+        revoked:
+          type: integer
+        escalated:
+          type: integer
+        high_risk:
+          type: integer
+        completion_pct:
+          type: integer
     AgentsResponse:
       type: object
       properties:

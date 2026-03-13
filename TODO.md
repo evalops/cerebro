@@ -5,6 +5,42 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 76 - Durable Graph-Powered Access Review Campaigns (2026-03-13)
+
+### Review findings
+- [x] Gap: issue `#253` was not blocked on another identity microservice; the repo already had graph access-review generation, identity review APIs, stale-access analytics, and effective-permissions calculation, but they lived in two disconnected implementations.
+- [x] Gap: the graph access-review handlers still stored campaigns in a process-local map, which breaks restart durability and contradicts the shared execution-store direction already established for reports, scans, and action execution.
+- [x] Gap: existing review items were under-enriched for real certification workflows: they lacked stable reviewer candidates, recommendation metadata, last-activity context, and graph risk signals such as toxic-combination involvement.
+- [x] Gap: upstream authorization/identity projects converged on the same structural lesson:
+  - [x] `openfga/openfga` keeps relationship state explicit and queryable rather than burying access decisions in application-local handlers.
+  - [x] `infrahq/infra` and `gravitational/teleport` both reinforce that reviewability needs durable execution state and owner-aware access context, not just raw permission lists.
+
+### Execution plan
+- [x] Collapse duplicate access-review implementations onto one shared service:
+  - [x] keep one identity review service as the durable workflow entry point
+  - [x] route graph access-review endpoints through that same service instead of a local map
+  - [x] move campaign persistence to the shared execution store namespace
+- [x] Deepen review campaign data model:
+  - [x] add scope mode support for `all`, `account`, `principal`, `resource`, `high_risk`, `cross_account`, and `privilege_creep`
+  - [x] persist review events for `created`, `started`, `item_decided`, and `completed`
+  - [x] add item-level recommendations, reviewer candidates, path context, and metadata
+- [x] Generate graph-powered review items from existing substrate:
+  - [x] reuse graph access-review generation and blast-radius caching
+  - [x] enrich items with effective-permission grants, last-activity signals, and resource owners
+  - [x] attach toxic-combination/attack-path context for risk-based prioritization
+- [x] Eliminate ephemeral tool/API seams:
+  - [x] make `/api/v1/graph/access-reviews/*` delegate to the shared identity service
+  - [x] make the `cerebro.access_review` tool create durable campaigns instead of ad hoc graph payloads
+- [x] Add regression coverage:
+  - [x] graph-generated campaign enrichment and recommendation tests
+  - [x] shared execution-store persistence tests for review state and events
+  - [x] API test proving graph access-review routes use the shared durable service
+- [ ] Next access-governance depth cuts after this slice:
+  - [ ] resource-owner auto-assignment and overdue escalation scheduling
+  - [ ] compliance evidence export from completed access reviews
+  - [ ] auto-remediation handoff for approved revocation/reduction actions
+  - [ ] provider-specific last-used evidence (AWS, GCP, Azure, SaaS) beyond principal-level activity
+
 ## Deep Review Cycle 75 - GCP Hierarchy and Inherited IAM Foundations (2026-03-13)
 
 ### Review findings
