@@ -343,6 +343,11 @@ func (e *GCPSyncEngine) getGCPTables() []GCPTableSpec {
 		e.gcpIAMServiceAccountKeyTable(),
 		e.gcpIAMPolicyTable(),
 		e.gcpIAMMemberTable(),
+		e.gcpResourceManagerProjectTable(),
+		e.gcpResourceManagerFolderTable(),
+		e.gcpResourceManagerOrganizationTable(),
+		e.gcpFolderIAMPolicyTable(),
+		e.gcpOrganizationIAMPolicyTable(),
 		// Database
 		e.gcpSQLInstanceTable(),
 		// Serverless

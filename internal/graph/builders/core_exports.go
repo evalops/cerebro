@@ -52,9 +52,11 @@ const (
 	NodeKindLocation           = graph.NodeKindLocation
 	NodeKindNamespace          = graph.NodeKindNamespace
 	NodeKindNetwork            = graph.NodeKindNetwork
+	NodeKindOrganization       = graph.NodeKindOrganization
 	NodeKindPersistentVolume   = graph.NodeKindPersistentVolume
 	NodeKindPerson             = graph.NodeKindPerson
 	NodeKindPod                = graph.NodeKindPod
+	NodeKindProject            = graph.NodeKindProject
 	NodeKindRepository         = graph.NodeKindRepository
 	NodeKindRole               = graph.NodeKindRole
 	NodeKindRoleBinding        = graph.NodeKindRoleBinding
@@ -62,6 +64,7 @@ const (
 	NodeKindService            = graph.NodeKindService
 	NodeKindServiceAccount     = graph.NodeKindServiceAccount
 	NodeKindUser               = graph.NodeKindUser
+	NodeKindFolder             = graph.NodeKindFolder
 
 	RiskNone     = graph.RiskNone
 	RiskMedium   = graph.RiskMedium
