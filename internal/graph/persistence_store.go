@@ -255,11 +255,20 @@ func (s *GraphPersistenceStore) syncReplica(ctx context.Context) error {
 	}
 	localBase := s.local.BasePath()
 	for _, manifest := range index.Snapshots {
+		artifactKey, err := normalizeReplicaKey(manifest.ArtifactPath)
+		if err != nil {
+			return fmt.Errorf("invalid snapshot artifact path for %s: %w", manifest.SnapshotID, err)
+		}
+		localArtifactPath, err := resolveReplicaLocalPath(localBase, artifactKey)
+		if err != nil {
+			return fmt.Errorf("resolve local snapshot artifact %s: %w", manifest.SnapshotID, err)
+		}
+		manifest.ArtifactPath = artifactKey
 		manifestKey := path.Join("manifests", sanitizeReportFileName(manifest.SnapshotID)+".json")
 		keep[manifestKey] = struct{}{}
-		keep[filepath.ToSlash(strings.TrimSpace(manifest.ArtifactPath))] = struct{}{}
+		keep[artifactKey] = struct{}{}
 
-		if err := s.replica.PutFile(ctx, filepath.ToSlash(strings.TrimSpace(manifest.ArtifactPath)), filepath.Join(localBase, manifest.ArtifactPath), "application/gzip"); err != nil {
+		if err := s.replica.PutFile(ctx, artifactKey, localArtifactPath, "application/gzip"); err != nil {
 			return fmt.Errorf("replicate snapshot artifact %s: %w", manifest.SnapshotID, err)
 		}
 		payload, err := json.MarshalIndent(manifest, "", "  ")
@@ -283,15 +292,15 @@ func (s *GraphPersistenceStore) syncReplica(ctx context.Context) error {
 	}
 	stale := make([]string, 0)
 	for _, key := range keys {
-		key = filepath.ToSlash(strings.TrimSpace(key))
-		if key == "" {
+		normalized, err := normalizeReplicaKey(key)
+		if err != nil {
 			continue
 		}
-		if _, ok := keep[key]; ok {
+		if _, ok := keep[normalized]; ok {
 			continue
 		}
-		if strings.HasSuffix(key, ".json.gz") || strings.HasPrefix(key, "manifests/") || key == "index.json" {
-			stale = append(stale, key)
+		if strings.HasSuffix(normalized, ".json.gz") || strings.HasPrefix(normalized, "manifests/") || normalized == "index.json" {
+			stale = append(stale, normalized)
 		}
 	}
 	if len(stale) > 0 {
@@ -400,7 +409,11 @@ func (s *GraphPersistenceStore) loadClosestSnapshotAtReplica(ctx context.Context
 }
 
 func (s *GraphPersistenceStore) loadSnapshotFromReplicaManifest(ctx context.Context, manifest GraphSnapshotManifest) (*Snapshot, *GraphSnapshotRecord, error) {
-	reader, err := s.replica.Open(ctx, filepath.ToSlash(strings.TrimSpace(manifest.ArtifactPath)))
+	artifactKey, err := normalizeReplicaKey(manifest.ArtifactPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("invalid replica snapshot artifact path for %s: %w", manifest.SnapshotID, err)
+	}
+	reader, err := s.replica.Open(ctx, artifactKey)
 	if err != nil {
 		return nil, nil, fmt.Errorf("open replica snapshot artifact %s: %w", manifest.SnapshotID, err)
 	}
@@ -425,6 +438,13 @@ func (s *GraphPersistenceStore) loadReplicaIndex(ctx context.Context) (*graphSna
 	}
 	if version := strings.TrimSpace(index.APIVersion); version != "" && version != graphSnapshotIndexAPIVersion {
 		return nil, fmt.Errorf("unsupported replica snapshot index version %q", version)
+	}
+	for i := range index.Snapshots {
+		artifactKey, err := normalizeReplicaKey(index.Snapshots[i].ArtifactPath)
+		if err != nil {
+			return nil, fmt.Errorf("invalid replica snapshot artifact path for %s: %w", index.Snapshots[i].SnapshotID, err)
+		}
+		index.Snapshots[i].ArtifactPath = artifactKey
 	}
 	return &index, nil
 }
@@ -504,7 +524,10 @@ func newFileGraphSnapshotReplica(basePath string) *fileGraphSnapshotReplica {
 func (r *fileGraphSnapshotReplica) URI() string { return "file://" + r.basePath }
 
 func (r *fileGraphSnapshotReplica) PutFile(_ context.Context, key, localPath, _ string) error {
-	keyPath := r.keyPath(key)
+	keyPath, err := r.keyPath(key)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(keyPath), 0o750); err != nil {
 		return err
 	}
@@ -531,19 +554,26 @@ func (r *fileGraphSnapshotReplica) PutFile(_ context.Context, key, localPath, _ 
 }
 
 func (r *fileGraphSnapshotReplica) PutBytes(_ context.Context, key string, payload []byte, _ string) error {
-	keyPath := r.keyPath(key)
-	if err := os.MkdirAll(filepath.Dir(keyPath), 0o750); err != nil {
+	keyPath, err := r.keyPath(key)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(keyPath), 0o750); err != nil { // #nosec G301,G304,G703 -- replica path is validated and contained under the configured replica root.
 		return err
 	}
 	tmp := keyPath + ".tmp"
-	if err := os.WriteFile(tmp, payload, 0o600); err != nil {
+	if err := os.WriteFile(tmp, payload, 0o600); err != nil { // #nosec G304,G703 -- validated replica temp path stays within the configured replica root.
 		return err
 	}
-	return os.Rename(tmp, keyPath)
+	return os.Rename(tmp, keyPath) // #nosec G304,G703 -- validated replica destination path stays within the configured replica root.
 }
 
 func (r *fileGraphSnapshotReplica) Open(_ context.Context, key string) (io.ReadCloser, error) {
-	return os.Open(r.keyPath(key)) // #nosec G304 -- replica key is resolved under the configured replica root.
+	keyPath, err := r.keyPath(key)
+	if err != nil {
+		return nil, err
+	}
+	return os.Open(keyPath) // #nosec G304 -- replica key is resolved under the configured replica root.
 }
 
 func (r *fileGraphSnapshotReplica) ListKeys(_ context.Context, prefix string) ([]string, error) {
@@ -573,15 +603,19 @@ func (r *fileGraphSnapshotReplica) ListKeys(_ context.Context, prefix string) ([
 
 func (r *fileGraphSnapshotReplica) DeleteKeys(_ context.Context, keys ...string) error {
 	for _, key := range keys {
-		if err := os.Remove(r.keyPath(key)); err != nil && !os.IsNotExist(err) {
+		keyPath, err := r.keyPath(key)
+		if err != nil {
+			return err
+		}
+		if err := os.Remove(keyPath); err != nil && !os.IsNotExist(err) {
 			return err
 		}
 	}
 	return nil
 }
 
-func (r *fileGraphSnapshotReplica) keyPath(key string) string {
-	return filepath.Join(r.basePath, filepath.FromSlash(strings.TrimPrefix(filepath.ToSlash(strings.TrimSpace(key)), "/")))
+func (r *fileGraphSnapshotReplica) keyPath(key string) (string, error) {
+	return resolveReplicaLocalPath(r.basePath, key)
 }
 
 type s3GraphSnapshotReplica struct {
@@ -611,6 +645,10 @@ func newS3GraphSnapshotReplica(raw string) (*s3GraphSnapshotReplica, error) {
 func (r *s3GraphSnapshotReplica) URI() string { return r.uri }
 
 func (r *s3GraphSnapshotReplica) PutFile(ctx context.Context, key, localPath, contentType string) error {
+	objectKey, err := r.objectKey(key)
+	if err != nil {
+		return err
+	}
 	file, err := os.Open(localPath) // #nosec G304 -- local snapshot artifact path is store-owned.
 	if err != nil {
 		return err
@@ -618,7 +656,7 @@ func (r *s3GraphSnapshotReplica) PutFile(ctx context.Context, key, localPath, co
 	defer func() { _ = file.Close() }()
 	_, err = r.client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:      &r.bucket,
-		Key:         strPtr(r.objectKey(key)),
+		Key:         strPtr(objectKey),
 		Body:        file,
 		ContentType: strPtr(contentType),
 	})
@@ -626,9 +664,13 @@ func (r *s3GraphSnapshotReplica) PutFile(ctx context.Context, key, localPath, co
 }
 
 func (r *s3GraphSnapshotReplica) PutBytes(ctx context.Context, key string, payload []byte, contentType string) error {
-	_, err := r.client.PutObject(ctx, &s3.PutObjectInput{
+	objectKey, err := r.objectKey(key)
+	if err != nil {
+		return err
+	}
+	_, err = r.client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:      &r.bucket,
-		Key:         strPtr(r.objectKey(key)),
+		Key:         strPtr(objectKey),
 		Body:        bytes.NewReader(payload),
 		ContentType: strPtr(contentType),
 	})
@@ -636,9 +678,13 @@ func (r *s3GraphSnapshotReplica) PutBytes(ctx context.Context, key string, paylo
 }
 
 func (r *s3GraphSnapshotReplica) Open(ctx context.Context, key string) (io.ReadCloser, error) {
+	objectKey, err := r.objectKey(key)
+	if err != nil {
+		return nil, err
+	}
 	out, err := r.client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: &r.bucket,
-		Key:    strPtr(r.objectKey(key)),
+		Key:    strPtr(objectKey),
 	})
 	if err != nil {
 		return nil, err
@@ -647,9 +693,13 @@ func (r *s3GraphSnapshotReplica) Open(ctx context.Context, key string) (io.ReadC
 }
 
 func (r *s3GraphSnapshotReplica) ListKeys(ctx context.Context, prefix string) ([]string, error) {
+	objectPrefix, err := r.objectKey(prefix)
+	if err != nil {
+		return nil, err
+	}
 	input := &s3.ListObjectsV2Input{
 		Bucket: &r.bucket,
-		Prefix: strPtr(r.objectKey(prefix)),
+		Prefix: strPtr(objectPrefix),
 	}
 	paginator := s3.NewListObjectsV2Paginator(r.client, input)
 	keys := make([]string, 0)
@@ -670,9 +720,13 @@ func (r *s3GraphSnapshotReplica) ListKeys(ctx context.Context, prefix string) ([
 
 func (r *s3GraphSnapshotReplica) DeleteKeys(ctx context.Context, keys ...string) error {
 	for _, key := range keys {
-		_, err := r.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		objectKey, err := r.objectKey(key)
+		if err != nil {
+			return err
+		}
+		_, err = r.client.DeleteObject(ctx, &s3.DeleteObjectInput{
 			Bucket: &r.bucket,
-			Key:    strPtr(r.objectKey(key)),
+			Key:    strPtr(objectKey),
 		})
 		if err != nil {
 			return err
@@ -681,12 +735,18 @@ func (r *s3GraphSnapshotReplica) DeleteKeys(ctx context.Context, keys ...string)
 	return nil
 }
 
-func (r *s3GraphSnapshotReplica) objectKey(key string) string {
-	key = strings.TrimPrefix(filepath.ToSlash(strings.TrimSpace(key)), "/")
-	if r.prefix == "" {
-		return key
+func (r *s3GraphSnapshotReplica) objectKey(key string) (string, error) {
+	if strings.TrimSpace(key) == "" {
+		return r.prefix, nil
 	}
-	return path.Join(r.prefix, key)
+	key, err := normalizeReplicaKey(key)
+	if err != nil {
+		return "", err
+	}
+	if r.prefix == "" {
+		return key, nil
+	}
+	return path.Join(r.prefix, key), nil
 }
 
 type gcsGraphSnapshotReplica struct {
@@ -716,12 +776,16 @@ func newGCSGraphSnapshotReplica(raw string) (*gcsGraphSnapshotReplica, error) {
 func (r *gcsGraphSnapshotReplica) URI() string { return r.uri }
 
 func (r *gcsGraphSnapshotReplica) PutFile(ctx context.Context, key, localPath, contentType string) error {
+	objectKey, err := r.objectKey(key)
+	if err != nil {
+		return err
+	}
 	file, err := os.Open(localPath) // #nosec G304 -- local snapshot artifact path is store-owned.
 	if err != nil {
 		return err
 	}
 	defer func() { _ = file.Close() }()
-	writer := r.client.Bucket(r.bucket).Object(r.objectKey(key)).NewWriter(ctx)
+	writer := r.client.Bucket(r.bucket).Object(objectKey).NewWriter(ctx)
 	writer.ContentType = contentType
 	if _, err := io.Copy(writer, file); err != nil {
 		_ = writer.Close()
@@ -731,7 +795,11 @@ func (r *gcsGraphSnapshotReplica) PutFile(ctx context.Context, key, localPath, c
 }
 
 func (r *gcsGraphSnapshotReplica) PutBytes(ctx context.Context, key string, payload []byte, contentType string) error {
-	writer := r.client.Bucket(r.bucket).Object(r.objectKey(key)).NewWriter(ctx)
+	objectKey, err := r.objectKey(key)
+	if err != nil {
+		return err
+	}
+	writer := r.client.Bucket(r.bucket).Object(objectKey).NewWriter(ctx)
 	writer.ContentType = contentType
 	if _, err := writer.Write(payload); err != nil {
 		_ = writer.Close()
@@ -741,11 +809,19 @@ func (r *gcsGraphSnapshotReplica) PutBytes(ctx context.Context, key string, payl
 }
 
 func (r *gcsGraphSnapshotReplica) Open(ctx context.Context, key string) (io.ReadCloser, error) {
-	return r.client.Bucket(r.bucket).Object(r.objectKey(key)).NewReader(ctx)
+	objectKey, err := r.objectKey(key)
+	if err != nil {
+		return nil, err
+	}
+	return r.client.Bucket(r.bucket).Object(objectKey).NewReader(ctx)
 }
 
 func (r *gcsGraphSnapshotReplica) ListKeys(ctx context.Context, prefix string) ([]string, error) {
-	query := &gcs.Query{Prefix: r.objectKey(prefix)}
+	objectPrefix, err := r.objectKey(prefix)
+	if err != nil {
+		return nil, err
+	}
+	query := &gcs.Query{Prefix: objectPrefix}
 	it := r.client.Bucket(r.bucket).Objects(ctx, query)
 	keys := make([]string, 0)
 	for {
@@ -762,19 +838,29 @@ func (r *gcsGraphSnapshotReplica) ListKeys(ctx context.Context, prefix string) (
 
 func (r *gcsGraphSnapshotReplica) DeleteKeys(ctx context.Context, keys ...string) error {
 	for _, key := range keys {
-		if err := r.client.Bucket(r.bucket).Object(r.objectKey(key)).Delete(ctx); err != nil && !errors.Is(err, gcs.ErrObjectNotExist) {
+		objectKey, err := r.objectKey(key)
+		if err != nil {
+			return err
+		}
+		if err := r.client.Bucket(r.bucket).Object(objectKey).Delete(ctx); err != nil && !errors.Is(err, gcs.ErrObjectNotExist) {
 			return err
 		}
 	}
 	return nil
 }
 
-func (r *gcsGraphSnapshotReplica) objectKey(key string) string {
-	key = strings.TrimPrefix(filepath.ToSlash(strings.TrimSpace(key)), "/")
-	if r.prefix == "" {
-		return key
+func (r *gcsGraphSnapshotReplica) objectKey(key string) (string, error) {
+	if strings.TrimSpace(key) == "" {
+		return r.prefix, nil
 	}
-	return path.Join(r.prefix, key)
+	key, err := normalizeReplicaKey(key)
+	if err != nil {
+		return "", err
+	}
+	if r.prefix == "" {
+		return key, nil
+	}
+	return path.Join(r.prefix, key), nil
 }
 
 func parseBucketURI(raw, prefix string) (string, string, error) {
@@ -787,8 +873,54 @@ func parseBucketURI(raw, prefix string) (string, string, error) {
 	objectPrefix := ""
 	if len(parts) == 2 {
 		objectPrefix = strings.Trim(strings.TrimSpace(parts[1]), "/")
+		var err error
+		objectPrefix, err = normalizeReplicaKey(objectPrefix)
+		if err != nil {
+			return "", "", fmt.Errorf("invalid replica prefix %q: %w", raw, err)
+		}
 	}
 	return bucket, objectPrefix, nil
+}
+
+func normalizeReplicaKey(key string) (string, error) {
+	key = filepath.ToSlash(strings.TrimSpace(key))
+	if key == "" {
+		return "", fmt.Errorf("replica key required")
+	}
+	if strings.ContainsRune(key, 0) {
+		return "", fmt.Errorf("replica key contains NUL byte")
+	}
+	if strings.HasPrefix(key, "/") || path.IsAbs(key) {
+		return "", fmt.Errorf("replica key must be relative")
+	}
+	clean := path.Clean(key)
+	if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {
+		return "", fmt.Errorf("replica key escapes configured prefix")
+	}
+	if strings.Contains(clean, ":") {
+		return "", fmt.Errorf("replica key contains invalid drive separator")
+	}
+	return clean, nil
+}
+
+func resolveReplicaLocalPath(basePath, key string) (string, error) {
+	normalized, err := normalizeReplicaKey(key)
+	if err != nil {
+		return "", err
+	}
+	baseAbs, err := filepath.Abs(strings.TrimSpace(basePath))
+	if err != nil {
+		return "", err
+	}
+	full := filepath.Join(baseAbs, filepath.FromSlash(normalized))
+	fullAbs, err := filepath.Abs(full)
+	if err != nil {
+		return "", err
+	}
+	if fullAbs != baseAbs && !strings.HasPrefix(fullAbs, baseAbs+string(os.PathSeparator)) {
+		return "", fmt.Errorf("replica key escapes configured base path")
+	}
+	return fullAbs, nil
 }
 
 func strPtr(value string) *string {

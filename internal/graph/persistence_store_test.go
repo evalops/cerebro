@@ -1,8 +1,11 @@
 package graph
 
 import (
+	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -125,5 +128,56 @@ func TestGraphPersistenceStoreSaveGraphReturnsRecordWhenReplicaSyncFails(t *test
 	}
 	if status.LastReplicationError == "" {
 		t.Fatalf("expected replication error in status, got %#v", status)
+	}
+}
+
+func TestGraphPersistenceStoreRejectsTraversalArtifactPathFromReplicaIndex(t *testing.T) {
+	localDir := t.TempDir()
+	replicaDir := t.TempDir()
+	index := graphSnapshotIndex{
+		APIVersion:  graphSnapshotIndexAPIVersion,
+		GeneratedAt: time.Now().UTC(),
+		Snapshots: []GraphSnapshotManifest{
+			{
+				APIVersion:   graphSnapshotManifestAPIVersion,
+				Kind:         graphSnapshotManifestKind,
+				SnapshotID:   "snap-1",
+				ArtifactPath: "../escape.json.gz",
+				Record: GraphSnapshotRecord{
+					ID: "snap-1",
+				},
+			},
+		},
+	}
+	payload, err := json.Marshal(index)
+	if err != nil {
+		t.Fatalf("marshal replica index: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(replicaDir, "index.json"), payload, 0o600); err != nil {
+		t.Fatalf("write replica index: %v", err)
+	}
+	store, err := NewGraphPersistenceStore(GraphPersistenceOptions{
+		LocalPath:    localDir,
+		MaxSnapshots: 4,
+		ReplicaURI:   replicaDir,
+	})
+	if err != nil {
+		t.Fatalf("new graph persistence store: %v", err)
+	}
+	if _, err := store.ListGraphSnapshotRecords(); err == nil || !strings.Contains(err.Error(), "invalid replica snapshot artifact path") {
+		t.Fatalf("expected invalid artifact path error, got %v", err)
+	}
+}
+
+func TestFileGraphSnapshotReplicaRejectsTraversalKeys(t *testing.T) {
+	replica := newFileGraphSnapshotReplica(t.TempDir())
+	if err := replica.PutBytes(context.Background(), "../escape", []byte("payload"), "application/octet-stream"); err == nil {
+		t.Fatal("expected traversal key rejection on put")
+	}
+	if _, err := replica.Open(context.Background(), "../escape"); err == nil {
+		t.Fatal("expected traversal key rejection on open")
+	}
+	if err := replica.DeleteKeys(context.Background(), "../escape"); err == nil {
+		t.Fatal("expected traversal key rejection on delete")
 	}
 }

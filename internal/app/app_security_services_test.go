@@ -211,8 +211,11 @@ func TestGraphPersistenceHealthDegradesOnReplicaSyncFailure(t *testing.T) {
 	if check.Status != health.StatusDegraded {
 		t.Fatalf("expected degraded graph persistence health, got %#v", check)
 	}
-	if !strings.Contains(check.Message, "replica sync") {
+	if check.Message != "local snapshot persistence healthy; replica sync failing" {
 		t.Fatalf("expected replica sync message, got %#v", check)
+	}
+	if strings.Contains(check.Message, badReplicaBase) || strings.Contains(strings.ToLower(check.Message), "not a directory") {
+		t.Fatalf("expected sanitized replica failure message, got %#v", check)
 	}
 }
 

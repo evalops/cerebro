@@ -259,7 +259,7 @@ func (a *App) initHealth() {
 		switch {
 		case status.ReplicaConfigured && status.LastReplicationError != "":
 			result.Status = health.StatusDegraded
-			result.Message = "local snapshot persistence healthy; replica sync failing: " + status.LastReplicationError
+			result.Message = "local snapshot persistence healthy; replica sync failing"
 		case status.ReplicaConfigured && status.LastReplicatedSnapshot == "":
 			records, err := a.GraphSnapshots.ListGraphSnapshotRecords()
 			switch {
