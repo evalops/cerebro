@@ -122,7 +122,7 @@ func (s *Server) decideGraphAccessReviewItem(w http.ResponseWriter, r *http.Requ
 		s.error(w, http.StatusBadRequest, "invalid request")
 		return
 	}
-	if err := s.app.Identity.RecordDecision(r.Context(), itemID, &identity.ReviewDecision{
+	if err := s.app.Identity.RecordDecision(r.Context(), reviewID, itemID, &identity.ReviewDecision{
 		Action:    decision.Action,
 		Reviewer:  decision.DecidedBy,
 		Comment:   decision.Reason,

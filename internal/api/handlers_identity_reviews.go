@@ -76,6 +76,7 @@ func (s *Server) addReviewItem(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) recordDecision(w http.ResponseWriter, r *http.Request) {
+	reviewID := chi.URLParam(r, "id")
 	itemID := chi.URLParam(r, "itemId")
 	var decision identity.ReviewDecision
 	if err := json.NewDecoder(r.Body).Decode(&decision); err != nil {
@@ -83,7 +84,7 @@ func (s *Server) recordDecision(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.app.Identity.RecordDecision(r.Context(), itemID, &decision); err != nil {
+	if err := s.app.Identity.RecordDecision(r.Context(), reviewID, itemID, &decision); err != nil {
 		s.errorFromErr(w, err)
 		return
 	}

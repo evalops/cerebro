@@ -165,7 +165,7 @@ func TestServiceRecordDecision(t *testing.T) {
 		Comment:  "Access verified",
 	}
 
-	err := svc.RecordDecision(context.Background(), itemID, decision)
+	err := svc.RecordDecision(context.Background(), review.ID, itemID, decision)
 	if err != nil {
 		t.Fatalf("RecordDecision failed: %v", err)
 	}
@@ -207,13 +207,47 @@ func TestServiceRecordDecisionRevoke(t *testing.T) {
 		Comment:  "Access no longer needed",
 	}
 
-	if err := svc.RecordDecision(context.Background(), itemID, decision); err != nil {
+	if err := svc.RecordDecision(context.Background(), review.ID, itemID, decision); err != nil {
 		t.Fatalf("RecordDecision failed: %v", err)
 	}
-
 	got, _ = svc.GetReview(context.Background(), review.ID)
 	if got.Stats.Revoked != 1 {
 		t.Errorf("expected 1 revoked, got %d", got.Stats.Revoked)
+	}
+}
+
+func TestServiceRecordDecisionRejectsForeignReviewItem(t *testing.T) {
+	svc := NewService()
+
+	reviewA, _ := svc.CreateReview(context.Background(), &AccessReview{Name: "Review A"})
+	reviewB, _ := svc.CreateReview(context.Background(), &AccessReview{Name: "Review B"})
+
+	if err := svc.AddReviewItem(context.Background(), reviewA.ID, &ReviewItem{
+		Type:      "user",
+		Principal: Principal{ID: "user-1"},
+	}); err != nil {
+		t.Fatalf("AddReviewItem failed: %v", err)
+	}
+
+	gotA, _ := svc.GetReview(context.Background(), reviewA.ID)
+	itemID := gotA.Items[0].ID
+
+	err := svc.RecordDecision(context.Background(), reviewB.ID, itemID, &ReviewDecision{
+		Action:   DecisionApprove,
+		Reviewer: "admin@company.com",
+	})
+	if err == nil {
+		t.Fatal("expected foreign review item decision to fail")
+	}
+
+	gotA, _ = svc.GetReview(context.Background(), reviewA.ID)
+	if gotA.Items[0].Decision != nil {
+		t.Fatal("expected foreign review item decision to leave source review unchanged")
+	}
+
+	gotB, _ := svc.GetReview(context.Background(), reviewB.ID)
+	if len(gotB.Items) != 0 {
+		t.Fatalf("expected target review to remain unchanged, got %d items", len(gotB.Items))
 	}
 }
 

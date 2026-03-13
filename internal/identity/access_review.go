@@ -331,57 +331,55 @@ func (s *Service) AddReviewItem(ctx context.Context, reviewID string, item *Revi
 	return nil
 }
 
-func (s *Service) RecordDecision(ctx context.Context, itemID string, decision *ReviewDecision) error {
+func (s *Service) RecordDecision(ctx context.Context, reviewID, itemID string, decision *ReviewDecision) error {
 	if decision == nil {
 		return cerrors.E(cerrors.Op("identity.RecordDecision"), cerrors.ErrInvalidInput, "review decision is required")
 	}
-	reviews, err := s.store.ListReviews(ctx, "")
+	review, err := s.loadRequiredReview(ctx, reviewID)
 	if err != nil {
-		return fmt.Errorf("list access reviews: %w", err)
+		return err
 	}
-	for _, review := range reviews {
-		full, err := s.store.LoadReview(ctx, review.ID)
+	normalizedItemID := strings.TrimSpace(itemID)
+	for i := range review.Items {
+		if review.Items[i].ID != normalizedItemID {
+			continue
+		}
+		if strings.TrimSpace(review.Items[i].ReviewID) != "" && strings.TrimSpace(review.Items[i].ReviewID) != strings.TrimSpace(review.ID) {
+			return cerrors.E(cerrors.Op("identity.RecordDecision"), cerrors.ErrInvalidInput, "review item does not belong to review")
+		}
+		decided := *decision
+		if decided.DecidedAt.IsZero() {
+			decided.DecidedAt = time.Now().UTC()
+		}
+		review.Items[i].Decision = &decided
+		review.recalculateStats()
+		if review.Stats.Pending == 0 {
+			completed := decided.DecidedAt.UTC()
+			review.Status = ReviewStatusCompleted
+			review.CompletedAt = &completed
+		}
+		if err := s.store.SaveReview(ctx, review); err != nil {
+			return fmt.Errorf("save access review decision: %w", err)
+		}
+		_, err = s.store.AppendEvent(ctx, review.ID, ReviewEvent{
+			Type:       "review.item_decided",
+			RecordedAt: decided.DecidedAt.UTC(),
+			Actor:      decided.Reviewer,
+			ItemID:     review.Items[i].ID,
+			Decision:   &decided,
+		})
 		if err != nil {
-			return fmt.Errorf("load access review %q: %w", review.ID, err)
+			return fmt.Errorf("append access review event: %w", err)
 		}
-		for i := range full.Items {
-			if full.Items[i].ID != strings.TrimSpace(itemID) {
-				continue
-			}
-			decided := *decision
-			if decided.DecidedAt.IsZero() {
-				decided.DecidedAt = time.Now().UTC()
-			}
-			full.Items[i].Decision = &decided
-			full.recalculateStats()
-			if full.Stats.Pending == 0 {
-				completed := decided.DecidedAt.UTC()
-				full.Status = ReviewStatusCompleted
-				full.CompletedAt = &completed
-			}
-			if err := s.store.SaveReview(ctx, full); err != nil {
-				return fmt.Errorf("save access review decision: %w", err)
-			}
-			_, err = s.store.AppendEvent(ctx, full.ID, ReviewEvent{
-				Type:       "review.item_decided",
-				RecordedAt: decided.DecidedAt.UTC(),
-				Actor:      decided.Reviewer,
-				ItemID:     full.Items[i].ID,
-				Decision:   &decided,
-			})
+		if review.Status == ReviewStatusCompleted {
+			_, err = s.store.AppendEvent(ctx, review.ID, ReviewEvent{Type: "review.completed", RecordedAt: decided.DecidedAt.UTC()})
 			if err != nil {
-				return fmt.Errorf("append access review event: %w", err)
+				return fmt.Errorf("append access review completion event: %w", err)
 			}
-			if full.Status == ReviewStatusCompleted {
-				_, err = s.store.AppendEvent(ctx, full.ID, ReviewEvent{Type: "review.completed", RecordedAt: decided.DecidedAt.UTC()})
-				if err != nil {
-					return fmt.Errorf("append access review completion event: %w", err)
-				}
-			}
-			return nil
 		}
+		return nil
 	}
-	return cerrors.E(cerrors.Op("identity.RecordDecision"), cerrors.ErrNotFound, "review item not found")
+	return cerrors.E(cerrors.Op("identity.RecordDecision"), cerrors.ErrNotFound, "review item not found in review")
 }
 
 func (s *Service) GetPendingItems(ctx context.Context, reviewerID string) []*ReviewItem {
