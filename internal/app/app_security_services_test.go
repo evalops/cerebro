@@ -216,6 +216,55 @@ func TestGraphPersistenceHealthDegradesOnReplicaSyncFailure(t *testing.T) {
 	}
 }
 
+func TestGraphPersistenceHealthDoesNotDegradeWhenReplicaAlreadySeeded(t *testing.T) {
+	localDir := t.TempDir()
+	replicaDir := t.TempDir()
+	seedStore, err := graph.NewGraphPersistenceStore(graph.GraphPersistenceOptions{
+		LocalPath:    localDir,
+		MaxSnapshots: 4,
+		ReplicaURI:   replicaDir,
+	})
+	if err != nil {
+		t.Fatalf("new seed graph persistence store: %v", err)
+	}
+	g := graph.New()
+	g.AddNode(&graph.Node{ID: "service:seeded", Kind: graph.NodeKindService, Name: "seeded"})
+	g.SetMetadata(graph.Metadata{
+		BuiltAt:       time.Date(2026, 3, 12, 23, 10, 0, 0, time.UTC),
+		NodeCount:     1,
+		EdgeCount:     0,
+		Providers:     []string{"aws"},
+		Accounts:      []string{"prod"},
+		BuildDuration: time.Second,
+	})
+	if _, err := seedStore.SaveGraph(g); err != nil {
+		t.Fatalf("seed graph snapshot: %v", err)
+	}
+
+	restartedStore, err := graph.NewGraphPersistenceStore(graph.GraphPersistenceOptions{
+		LocalPath:    localDir,
+		MaxSnapshots: 4,
+		ReplicaURI:   replicaDir,
+	})
+	if err != nil {
+		t.Fatalf("new restarted graph persistence store: %v", err)
+	}
+
+	application := &App{
+		Config:         &Config{},
+		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Warehouse:      &warehouse.MemoryWarehouse{},
+		GraphSnapshots: restartedStore,
+	}
+	application.initHealth()
+
+	results := application.Health.RunAll(context.Background())
+	check := results["graph_persistence"]
+	if check.Status != health.StatusHealthy {
+		t.Fatalf("expected healthy graph persistence health, got %#v", check)
+	}
+}
+
 func TestActivateBuiltSecurityGraphDoesNotReplaceLiveGraphWithNil(t *testing.T) {
 	liveGraph := graph.New()
 	liveGraph.AddNode(&graph.Node{ID: "service:payments", Kind: graph.NodeKindService, Name: "payments"})

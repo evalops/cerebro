@@ -261,8 +261,15 @@ func (a *App) initHealth() {
 			result.Status = health.StatusDegraded
 			result.Message = "local snapshot persistence healthy; replica sync failing: " + status.LastReplicationError
 		case status.ReplicaConfigured && status.LastReplicatedSnapshot == "":
-			result.Status = health.StatusDegraded
-			result.Message = "replica configured but not seeded yet"
+			records, err := a.GraphSnapshots.ListGraphSnapshotRecords()
+			switch {
+			case err == nil && len(records) > 0:
+				result.Status = health.StatusHealthy
+				result.Message = "replicated snapshot persistence active"
+			default:
+				result.Status = health.StatusDegraded
+				result.Message = "replica configured but not seeded yet"
+			}
 		default:
 			result.Status = health.StatusHealthy
 			message := "local snapshot persistence active"
