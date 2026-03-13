@@ -1,0 +1,83 @@
+package executionstore
+
+import (
+	"context"
+	"path/filepath"
+	"testing"
+	"time"
+)
+
+func TestSQLiteStoreProcessedEventsRoundTripAndTouch(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "executions.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	now := time.Date(2026, 3, 12, 2, 0, 0, 0, time.UTC)
+	err = store.RememberProcessedEvent(context.Background(), ProcessedEventRecord{
+		Namespace:   NamespaceProcessedCloudEvent,
+		EventKey:    "stream|durable|tenant|source|evt-1",
+		PayloadHash: "hash-a",
+		FirstSeenAt: now,
+		LastSeenAt:  now,
+		ProcessedAt: now,
+		ExpiresAt:   now.Add(24 * time.Hour),
+	}, 100)
+	if err != nil {
+		t.Fatalf("RememberProcessedEvent: %v", err)
+	}
+
+	record, err := store.LookupProcessedEvent(context.Background(), NamespaceProcessedCloudEvent, "stream|durable|tenant|source|evt-1", now.Add(time.Hour), 24*time.Hour)
+	if err != nil {
+		t.Fatalf("LookupProcessedEvent: %v", err)
+	}
+	if record == nil {
+		t.Fatal("expected processed event record")
+	}
+	if record.PayloadHash != "hash-a" {
+		t.Fatalf("expected payload hash hash-a, got %#v", record)
+	}
+	if record.DuplicateCount != 1 {
+		t.Fatalf("expected duplicate count increment to 1, got %#v", record)
+	}
+}
+
+func TestSQLiteStoreProcessedEventsTrimOldest(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "executions.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	base := time.Date(2026, 3, 12, 2, 0, 0, 0, time.UTC)
+	for i, key := range []string{"evt-1", "evt-2", "evt-3"} {
+		ts := base.Add(time.Duration(i) * time.Minute)
+		if err := store.RememberProcessedEvent(context.Background(), ProcessedEventRecord{
+			Namespace:   NamespaceProcessedCloudEvent,
+			EventKey:    key,
+			PayloadHash: key,
+			FirstSeenAt: ts,
+			LastSeenAt:  ts,
+			ProcessedAt: ts,
+			ExpiresAt:   ts.Add(24 * time.Hour),
+		}, 2); err != nil {
+			t.Fatalf("RememberProcessedEvent %s: %v", key, err)
+		}
+	}
+
+	first, err := store.LookupProcessedEvent(context.Background(), NamespaceProcessedCloudEvent, "evt-1", base.Add(2*time.Hour), 24*time.Hour)
+	if err != nil {
+		t.Fatalf("LookupProcessedEvent first: %v", err)
+	}
+	if first != nil {
+		t.Fatalf("expected oldest processed event to be trimmed, got %#v", first)
+	}
+	last, err := store.LookupProcessedEvent(context.Background(), NamespaceProcessedCloudEvent, "evt-3", base.Add(2*time.Hour), 24*time.Hour)
+	if err != nil {
+		t.Fatalf("LookupProcessedEvent last: %v", err)
+	}
+	if last == nil {
+		t.Fatal("expected newest processed event to remain after trim")
+	}
+}

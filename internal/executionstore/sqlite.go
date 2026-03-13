@@ -95,6 +95,21 @@ func initSQLiteStore(db *sql.DB) error {
 		payload JSON NOT NULL,
 		PRIMARY KEY (namespace, run_id, sequence)
 	);
+	CREATE TABLE IF NOT EXISTS processed_events (
+		namespace TEXT NOT NULL,
+		event_key TEXT NOT NULL,
+		payload_hash TEXT NOT NULL,
+		first_seen_at TIMESTAMP NOT NULL,
+		last_seen_at TIMESTAMP NOT NULL,
+		processed_at TIMESTAMP NOT NULL,
+		expires_at TIMESTAMP NOT NULL,
+		duplicate_count INTEGER NOT NULL DEFAULT 0,
+		PRIMARY KEY (namespace, event_key)
+	);
+	CREATE INDEX IF NOT EXISTS idx_processed_events_namespace_expires
+		ON processed_events(namespace, expires_at ASC);
+	CREATE INDEX IF NOT EXISTS idx_processed_events_namespace_processed
+		ON processed_events(namespace, processed_at DESC, event_key DESC);
 	`
 	if _, err := db.ExecContext(context.Background(), schema); err != nil {
 		return fmt.Errorf("init execution sqlite schema: %w", err)

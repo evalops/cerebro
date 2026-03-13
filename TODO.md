@@ -5,6 +5,48 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 65 - Durable CloudEvent Deduplication for NATS Consumer (2026-03-12)
+
+### Review findings
+- [x] Gap: issue `#248` was still materially open because the JetStream consumer acknowledged events after handler success but had no durable CloudEvent-ID suppression, so transient ack failures and consumer restarts could re-run the same mutation path.
+- [x] Gap: the issue proposal allowed an in-memory sliding window with periodic persistence, but that would still leave a correctness hole on restart and does not match the broader platform direction toward shared execution state.
+- [x] Gap: consumer observability exposed redeliveries and dropped messages, but not the actual successful-vs-deduplicated throughput split needed to prove the pipeline is suppressing duplicates instead of just retrying them.
+- [x] Gap: external references were directionally useful but not prescriptive here:
+  - [x] `argoproj/argo-events` reinforces durable event-processing state over process-local memory when workflows restart.
+  - [x] `OpenLineage/OpenLineage` reinforces treating event identity as a first-class contract surface instead of an incidental transport detail.
+  - [x] the Wiz schema dump in `/Users/jonathanhaas/Downloads/other/wiz.graphql` is a useful caution that very broad event/query surfaces become harder to reason about unless identity and processing contracts are explicit and inspectable.
+
+### Execution plan
+- [x] Add durable processed-event storage in the shared execution store:
+  - [x] add `processed_events` persistence + indexes in the SQLite execution store
+  - [x] add processed-event lookup/remember helpers with TTL and bounded retention
+- [x] Add consumer-level CloudEvent dedupe:
+  - [x] derive a deterministic dedupe key from tenant/source/event ID
+  - [x] skip handler execution when the CloudEvent is already recorded in the dedupe window
+  - [x] log payload-hash mismatches for duplicate IDs carrying different payloads
+- [x] Expose config and metrics:
+  - [x] add NATS consumer dedupe env/config fields with validation
+  - [x] add processed and deduplicated Prometheus counters
+  - [x] document the new config in `docs/CONFIG_ENV_VARS.md`
+- [x] Add regression coverage:
+  - [x] execution-store round trip + bounded retention tests
+  - [x] consumer duplicate suppression tests
+  - [x] metrics registration coverage
+
+### Detailed follow-on backlog
+- [ ] Track A - Stronger idempotency semantics
+  - Exit criteria:
+  - [ ] add durable in-flight / completed processing states instead of completed-event memory only
+  - [ ] thread idempotency keys into graph mutation write paths so handler replay becomes a true no-op
+- [ ] Track B - Dedupe lifecycle observability
+  - Exit criteria:
+  - [ ] add dedupe-store health metrics and storage-pressure telemetry
+  - [ ] expose dedupe hit/miss posture in consumer health/readiness reporting
+- [ ] Track C - Ordered entity-local sequencing
+  - Exit criteria:
+  - [ ] add per-entity ordering windows for create/update/delete event families that cannot tolerate reorder
+  - [ ] keep that sequencing logic separate from the generic dedupe window
+
 ## Deep Review Cycle 64 - Coverage Ratchet for Critical Packages: Sync + API (2026-03-12)
 
 ### Review findings

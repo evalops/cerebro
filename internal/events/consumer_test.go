@@ -41,6 +41,16 @@ func TestConsumerConfigWithDefaultsPreservesZeroDropHealthThreshold(t *testing.T
 	}
 }
 
+func TestConsumerConfigWithDefaultsSetsDedupDefaults(t *testing.T) {
+	cfg := (ConsumerConfig{DedupEnabled: true}).withDefaults()
+	if cfg.DedupTTL <= 0 {
+		t.Fatalf("expected positive dedupe ttl, got %s", cfg.DedupTTL)
+	}
+	if cfg.DedupMaxRecords <= 0 {
+		t.Fatalf("expected positive dedupe max records, got %d", cfg.DedupMaxRecords)
+	}
+}
+
 func TestConsumerConfigValidate(t *testing.T) {
 	valid := (ConsumerConfig{
 		URLs:           []string{"nats://127.0.0.1:4222"},
@@ -48,6 +58,7 @@ func TestConsumerConfigValidate(t *testing.T) {
 		Subject:        "ensemble.tap.>",
 		Durable:        "cerebro_graph_builder",
 		DeadLetterPath: t.TempDir() + "/consumer.dlq.jsonl",
+		DedupStateFile: t.TempDir() + "/executions.db",
 		BatchSize:      10,
 		AckWait:        5,
 		FetchTimeout:   5,
@@ -277,6 +288,77 @@ func TestConsumerStartBatchInProgressHeartbeatSkipsDeactivatedEntries(t *testing
 	}
 	if firstCount.Load() != firstBefore {
 		t.Fatalf("expected deactivated batch heartbeat to stop extending first message, got before=%d after=%d", firstBefore, firstCount.Load())
+	}
+}
+
+func TestConsumerHandleMessageSkipsAlreadyProcessedCloudEvent(t *testing.T) {
+	cfg := (ConsumerConfig{
+		Stream:         "ENSEMBLE_TAP",
+		Durable:        "cerebro_graph_builder",
+		DeadLetterPath: t.TempDir() + "/consumer.dlq.jsonl",
+		DedupStateFile: t.TempDir() + "/executions.db",
+	}).withDefaults()
+	deduper, err := newConsumerProcessedEventDeduper(cfg.DedupStateFile, cfg.Stream, cfg.Durable, cfg.DedupTTL, cfg.DedupMaxRecords)
+	if err != nil {
+		t.Fatalf("new deduper: %v", err)
+	}
+	defer func() { _ = deduper.Close() }()
+
+	consumer := &Consumer{
+		config:  cfg,
+		logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+		dlq:     &consumerDeadLetterSink{},
+		deduper: deduper,
+	}
+
+	evt := CloudEvent{
+		SpecVersion: cloudEventSpecVersion,
+		ID:          "evt-dedup-1",
+		Source:      "urn:cerebro:test",
+		Type:        "ensemble.tap.test",
+		Time:        time.Now().UTC(),
+		DataSchema:  "urn:cerebro:events:test",
+		TenantID:    "tenant-a",
+		Data:        map[string]any{"id": "1"},
+	}
+	payload, err := json.Marshal(evt)
+	if err != nil {
+		t.Fatalf("marshal event: %v", err)
+	}
+
+	var handlerCalls int
+	consumer.handler = func(context.Context, CloudEvent) error {
+		handlerCalls++
+		return nil
+	}
+	var ackCalls int
+	ack := func() error {
+		ackCalls++
+		return nil
+	}
+
+	first := consumer.handleMessage(context.Background(), "ensemble.tap.test", payload, ack, func() error { return nil }, func() error { return nil })
+	if !first.Processed {
+		t.Fatalf("expected first event to be processed, got %+v", first)
+	}
+	if handlerCalls != 1 {
+		t.Fatalf("expected handler call count 1, got %d", handlerCalls)
+	}
+
+	before := counterValue(t, metrics.NATSConsumerDeduplicatedTotal.WithLabelValues(cfg.Stream, cfg.Durable))
+	second := consumer.handleMessage(context.Background(), "ensemble.tap.test", payload, ack, func() error { return nil }, func() error { return nil })
+	if second.Processed {
+		t.Fatalf("expected duplicate event to be skipped, got %+v", second)
+	}
+	after := counterValue(t, metrics.NATSConsumerDeduplicatedTotal.WithLabelValues(cfg.Stream, cfg.Durable))
+	if after != before+1 {
+		t.Fatalf("expected deduplicated counter to increment from %v to %v", before, after)
+	}
+	if handlerCalls != 1 {
+		t.Fatalf("expected duplicate event to avoid handler, got %d calls", handlerCalls)
+	}
+	if ackCalls != 2 {
+		t.Fatalf("expected both events to ack, got %d", ackCalls)
 	}
 }
 
