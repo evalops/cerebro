@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -150,6 +152,9 @@ func newVaultSource(cfg Config) (Source, error) {
 	if address == "" {
 		return nil, fmt.Errorf("credential vault address is required")
 	}
+	if !vaultAddressAllowed(address) {
+		return nil, fmt.Errorf("credential vault address must use https unless it targets localhost or a loopback address")
+	}
 	if token == "" {
 		return nil, fmt.Errorf("credential vault token is required")
 	}
@@ -279,5 +284,29 @@ func renderVaultValue(value any) (string, bool) {
 			return "", false
 		}
 		return string(data), true
+	}
+}
+
+func vaultAddressAllowed(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return false
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(parsed.Scheme)) {
+	case "https":
+		return parsed.Hostname() != ""
+	case "http":
+		host := strings.TrimSpace(parsed.Hostname())
+		if host == "localhost" {
+			return true
+		}
+		ip := net.ParseIP(host)
+		return ip != nil && ip.IsLoopback()
+	default:
+		return false
 	}
 }

@@ -92,3 +92,19 @@ func TestVaultSourceLookupKV2(t *testing.T) {
 		t.Fatalf("expected JSON-encoded structured vault secret, got %q ok=%v", jsonValue, ok)
 	}
 }
+
+func TestVaultSourceRejectsNonHTTPSRemoteAddress(t *testing.T) {
+	_, err := New(Config{
+		Kind:           KindVault,
+		VaultAddress:   "http://vault.example.com",
+		VaultToken:     "vault-token",
+		VaultPath:      "secret/cerebro",
+		VaultKVVersion: 2,
+	})
+	if err == nil {
+		t.Fatal("expected non-https remote vault address to be rejected")
+	}
+	if !strings.Contains(err.Error(), "must use https unless it targets localhost or a loopback address") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
