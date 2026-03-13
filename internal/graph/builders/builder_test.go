@@ -967,6 +967,47 @@ func TestBuilder_GCPBucketIAMPolicyEdges(t *testing.T) {
 	}
 }
 
+func TestBuilder_GCPBucketIAMPolicyEdgesCreateAuthenticatedUsersPrincipalNode(t *testing.T) {
+	ctx := context.Background()
+	source := newMockDataSource()
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	source.setResult(`SELECT name, project_id, location, iam_policy, public_access_prevention, uniform_bucket_level_access FROM gcp_storage_buckets`, &DataQueryResult{
+		Rows: []map[string]any{{
+			"name":                        "bucket-auth-users",
+			"project_id":                  "proj-auth",
+			"location":                    "us-central1",
+			"iam_policy":                  `{"bindings":[{"role":"roles/storage.objectViewer","members":["allAuthenticatedUsers"]}]}`,
+			"public_access_prevention":    "inherited",
+			"uniform_bucket_level_access": true,
+		}},
+	})
+
+	builder := NewBuilder(source, logger)
+	if err := builder.Build(ctx); err != nil {
+		t.Fatalf("Build failed: %v", err)
+	}
+
+	node, ok := builder.Graph().GetNode("allAuthenticatedUsers")
+	if !ok {
+		t.Fatal("expected allAuthenticatedUsers principal node to exist")
+	}
+	if node.Kind != NodeKindGroup || node.Provider != "external" {
+		t.Fatalf("expected external group node for allAuthenticatedUsers, got %#v", node)
+	}
+
+	found := false
+	for _, edge := range builder.Graph().GetOutEdges("allAuthenticatedUsers") {
+		if edge.Target == "bucket-auth-users" && edge.Kind == EdgeKindCanRead && edge.Properties["mechanism"] == "resource_policy" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected bucket IAM edge from allAuthenticatedUsers principal node")
+	}
+}
+
 func TestGcpIAMBindingsFromPolicyRejectsOversizedJSON(t *testing.T) {
 	oversized := strings.Repeat("x", maxGCPIAMPolicyJSONBytes+1)
 	if bindings := gcpIAMBindingsFromPolicy(oversized); len(bindings) != 0 {

@@ -402,6 +402,7 @@ func (b *Builder) resolveGCPPrincipalID(projectID, member string) string {
 	case "allusers":
 		return "internet"
 	case "allauthenticatedusers":
+		b.ensureGCPAuthenticatedUsersNode()
 		return "allAuthenticatedUsers"
 	}
 
@@ -433,6 +434,21 @@ func (b *Builder) resolveGCPServiceAccountNodeID(projectID, email string) string
 	}
 
 	return email
+}
+
+func (b *Builder) ensureGCPAuthenticatedUsersNode() {
+	b.graph.AddNode(&Node{
+		ID:       "allAuthenticatedUsers",
+		Kind:     NodeKindGroup,
+		Name:     "All Authenticated Users",
+		Provider: "external",
+		Account:  "global",
+		Risk:     RiskHigh,
+		Properties: map[string]any{
+			"broad_principal": true,
+			"principal_scope": "authenticated_public",
+		},
+	})
 }
 
 func gcpIAMBindingsFromPolicy(policy any) []map[string]any {
