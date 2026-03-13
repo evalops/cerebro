@@ -91,7 +91,7 @@ func renderGraphScaleProfileReport(report *graph.ScaleProfileReport) error {
 			fmt.Sprintf("%.1f", measurement.SearchDurationMS),
 			fmt.Sprintf("%.1f", measurement.BlastRadiusColdDurationMS),
 			fmt.Sprintf("%.1f", measurement.CopyOnWriteDurationMS),
-			fmt.Sprintf("%.1f", bytesToMiB(uint64(measurement.SnapshotCompressedBytes))),
+			fmt.Sprintf("%.1f", int64BytesToMiB(measurement.SnapshotCompressedBytes)),
 		)
 	}
 	tw.Render()
@@ -105,5 +105,12 @@ func renderGraphScaleProfileReport(report *graph.ScaleProfileReport) error {
 }
 
 func bytesToMiB(size uint64) float64 {
+	return float64(size) / (1024.0 * 1024.0)
+}
+
+func int64BytesToMiB(size int64) float64 {
+	if size <= 0 {
+		return 0
+	}
 	return float64(size) / (1024.0 * 1024.0)
 }
