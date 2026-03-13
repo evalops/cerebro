@@ -491,6 +491,14 @@ var (
 		},
 	)
 
+	GraphCrossTenantReadsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "cerebro_graph_cross_tenant_reads_total",
+			Help: "Total number of allowed cross-tenant graph reads by operation and tenant pair",
+		},
+		[]string{"operation", "requesting_tenant", "target_tenant", "outcome"},
+	)
+
 	GraphStatePersistenceTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "cerebro_graph_state_persistence_total",
@@ -588,6 +596,7 @@ func Register() {
 			GraphCrossTenantIngestSamplesTotal,
 			GraphCrossTenantPatterns,
 			GraphCrossTenantMatches,
+			GraphCrossTenantReadsTotal,
 			GraphStatePersistenceTotal,
 			// Build
 			BuildInfo,
@@ -752,6 +761,26 @@ func RecordGraphCrossTenantMatches(count int) {
 		count = 0
 	}
 	GraphCrossTenantMatches.Set(float64(count))
+}
+
+func RecordGraphCrossTenantRead(operation, requestingTenant, targetTenant, outcome string) {
+	operation = strings.TrimSpace(strings.ToLower(operation))
+	if operation == "" {
+		operation = "unknown"
+	}
+	requestingTenant = strings.TrimSpace(requestingTenant)
+	if requestingTenant == "" {
+		requestingTenant = "unknown"
+	}
+	targetTenant = strings.TrimSpace(targetTenant)
+	if targetTenant == "" {
+		targetTenant = "unknown"
+	}
+	outcome = strings.TrimSpace(strings.ToLower(outcome))
+	if outcome == "" {
+		outcome = "unknown"
+	}
+	GraphCrossTenantReadsTotal.WithLabelValues(operation, requestingTenant, targetTenant, outcome).Inc()
 }
 
 func RecordGraphStatePersistence(result string) {
