@@ -51,6 +51,7 @@ import (
 	"github.com/evalops/cerebro/internal/compliance"
 	"github.com/evalops/cerebro/internal/dspm"
 	"github.com/evalops/cerebro/internal/events"
+	"github.com/evalops/cerebro/internal/executionstore"
 	"github.com/evalops/cerebro/internal/findings"
 	"github.com/evalops/cerebro/internal/graph"
 	"github.com/evalops/cerebro/internal/graph/builders"
@@ -90,13 +91,14 @@ type App struct {
 	Logger *slog.Logger
 
 	// Core services
-	Snowflake *snowflake.Client
-	Warehouse warehouse.DataWarehouse
-	Policy    *policy.Engine
-	Findings  findings.FindingStore
-	Scanner   *scanner.Scanner
-	DSPM      *dspm.Scanner
-	Cache     *cache.PolicyCache
+	Snowflake      *snowflake.Client
+	Warehouse      warehouse.DataWarehouse
+	Policy         *policy.Engine
+	Findings       findings.FindingStore
+	Scanner        *scanner.Scanner
+	DSPM           *dspm.Scanner
+	Cache          *cache.PolicyCache
+	ExecutionStore executionstore.Store
 
 	// Feature services
 	Agents         *agents.AgentRegistry
