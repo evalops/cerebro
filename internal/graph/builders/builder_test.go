@@ -755,6 +755,136 @@ func TestBuilder_GCPIAMEdgesFallbackToPolicies(t *testing.T) {
 	}
 }
 
+func TestBuilder_GCPIAMPoliciesPreferredOverMembersPreserveConditions(t *testing.T) {
+	ctx := context.Background()
+	source := newMockDataSource()
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	source.setResult(`SELECT id, name, project_id, zone, status, service_accounts FROM gcp_compute_instances`, &DataQueryResult{
+		Rows: []map[string]any{{
+			"id":               "instance-4",
+			"name":             "instance-4",
+			"project_id":       "proj-4",
+			"zone":             "us-central1-a",
+			"status":           "RUNNING",
+			"service_accounts": []any{},
+		}},
+	})
+
+	source.setResult(`SELECT project_id, member, roles FROM gcp_iam_members`, &DataQueryResult{
+		Rows: []map[string]any{{
+			"project_id": "proj-4",
+			"member":     "user:alice@example.com",
+			"roles": []any{
+				map[string]any{"name": "roles/owner"},
+			},
+		}},
+	})
+
+	source.setResult(`SELECT project_id, bindings FROM gcp_iam_policies`, &DataQueryResult{
+		Rows: []map[string]any{{
+			"project_id": "proj-4",
+			"bindings": []any{
+				map[string]any{
+					"role":    "roles/viewer",
+					"members": []any{"user:alice@example.com"},
+					"condition": map[string]any{
+						"title":      "expires-soon",
+						"expression": "request.time < timestamp('2026-04-01T00:00:00Z')",
+					},
+				},
+			},
+		}},
+	})
+
+	builder := NewBuilder(source, logger)
+	if err := builder.Build(ctx); err != nil {
+		t.Fatalf("Build failed: %v", err)
+	}
+
+	edges := builder.Graph().GetOutEdges("user:alice@example.com")
+	foundRead := false
+	foundAdmin := false
+	for _, edge := range edges {
+		if edge.Target != "instance-4" {
+			continue
+		}
+		switch edge.Kind {
+		case EdgeKindCanRead:
+			foundRead = true
+			if edge.Properties["scope"] != "project" {
+				t.Fatalf("expected project scope on policy edge, got %#v", edge.Properties)
+			}
+			condition, ok := edge.Properties["condition"].(map[string]any)
+			if !ok || condition["expression"] == "" {
+				t.Fatalf("expected preserved policy condition, got %#v", edge.Properties["condition"])
+			}
+		case EdgeKindCanAdmin:
+			foundAdmin = true
+		}
+	}
+	if !foundRead {
+		t.Fatal("expected read edge from project policy binding")
+	}
+	if foundAdmin {
+		t.Fatal("did not expect lossy member fallback edge when policy bindings are present")
+	}
+}
+
+func TestBuilder_GCPBucketIAMPolicyEdges(t *testing.T) {
+	ctx := context.Background()
+	source := newMockDataSource()
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	source.setResult(`SELECT name, project_id, location, iam_policy, public_access_prevention, uniform_bucket_level_access FROM gcp_storage_buckets`, &DataQueryResult{
+		Rows: []map[string]any{{
+			"name":                        "bucket-1",
+			"project_id":                  "proj-bucket",
+			"location":                    "us-central1",
+			"iam_policy":                  `{"bindings":[{"role":"roles/storage.objectViewer","members":["user:alice@example.com","allUsers"],"condition":{"title":"bucket-scope","expression":"resource.name.startsWith('projects/_/buckets/bucket-1')"}}]}`,
+			"public_access_prevention":    "inherited",
+			"uniform_bucket_level_access": true,
+		}},
+	})
+
+	builder := NewBuilder(source, logger)
+	if err := builder.Build(ctx); err != nil {
+		t.Fatalf("Build failed: %v", err)
+	}
+
+	foundUserEdge := false
+	for _, edge := range builder.Graph().GetOutEdges("user:alice@example.com") {
+		if edge.Target != "bucket-1" || edge.Kind != EdgeKindCanRead {
+			continue
+		}
+		foundUserEdge = true
+		if edge.Properties["mechanism"] != "resource_policy" {
+			t.Fatalf("expected resource_policy mechanism, got %#v", edge.Properties)
+		}
+		if edge.Properties["binding"] != "resource" || edge.Properties["scope"] != "resource" {
+			t.Fatalf("expected resource-scoped bucket IAM edge, got %#v", edge.Properties)
+		}
+		condition, ok := edge.Properties["condition"].(map[string]any)
+		if !ok || condition["expression"] == "" {
+			t.Fatalf("expected bucket IAM condition on explicit user edge, got %#v", edge.Properties["condition"])
+		}
+	}
+	if !foundUserEdge {
+		t.Fatal("expected bucket IAM edge from explicit user principal")
+	}
+
+	foundInternetEdge := false
+	for _, edge := range builder.Graph().GetOutEdges("internet") {
+		if edge.Target == "bucket-1" && edge.Kind == EdgeKindCanRead && edge.Properties["mechanism"] == "resource_policy" {
+			foundInternetEdge = true
+			break
+		}
+	}
+	if !foundInternetEdge {
+		t.Fatal("expected bucket IAM edge from internet for allUsers binding")
+	}
+}
+
 func TestBuilder_GCPIAMServiceAccountMemberResolvesToNodeID(t *testing.T) {
 	ctx := context.Background()
 	source := newMockDataSource()
