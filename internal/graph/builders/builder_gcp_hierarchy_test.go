@@ -134,11 +134,13 @@ func TestBuilder_GCPInheritedHierarchyIAMPolicyEdges(t *testing.T) {
 			"service_accounts": []any{},
 		}},
 	})
-	source.setResult(`SELECT project_id, resource_name, bindings, ancestor_path FROM gcp_folder_iam_policies`, &DataQueryResult{
+	source.setResult(`SELECT project_id, resource_name, bindings, ancestor_path, lineage_complete, lineage_error FROM gcp_folder_iam_policies`, &DataQueryResult{
 		Rows: []map[string]any{{
-			"project_id":    "proj-a",
-			"resource_name": "folders/456",
-			"ancestor_path": []any{"organizations/789", "folders/123", "folders/456"},
+			"project_id":       "proj-a",
+			"resource_name":    "folders/456",
+			"ancestor_path":    []any{"organizations/789", "folders/123", "folders/456"},
+			"lineage_complete": false,
+			"lineage_error":    "project proj-a lineage incomplete at folders/123: permission denied",
 			"bindings": []any{
 				map[string]any{
 					"role":    "roles/viewer",
@@ -151,11 +153,13 @@ func TestBuilder_GCPInheritedHierarchyIAMPolicyEdges(t *testing.T) {
 			},
 		}},
 	})
-	source.setResult(`SELECT project_id, resource_name, bindings, ancestor_path FROM gcp_organization_iam_policies`, &DataQueryResult{
+	source.setResult(`SELECT project_id, resource_name, bindings, ancestor_path, lineage_complete, lineage_error FROM gcp_organization_iam_policies`, &DataQueryResult{
 		Rows: []map[string]any{{
-			"project_id":    "proj-a",
-			"resource_name": "organizations/789",
-			"ancestor_path": []any{"organizations/789"},
+			"project_id":       "proj-a",
+			"resource_name":    "organizations/789",
+			"ancestor_path":    []any{"organizations/789"},
+			"lineage_complete": true,
+			"lineage_error":    "",
 			"bindings": []any{
 				map[string]any{
 					"role":    "roles/editor",
@@ -182,6 +186,9 @@ func TestBuilder_GCPInheritedHierarchyIAMPolicyEdges(t *testing.T) {
 		if edge.Properties["inherited"] != true || edge.Properties["mechanism"] != "hierarchy_policy" {
 			t.Fatalf("expected hierarchy inheritance markers, got %#v", edge.Properties)
 		}
+		if edge.Properties["lineage_complete"] != false {
+			t.Fatalf("expected inherited folder edge to preserve incomplete lineage, got %#v", edge.Properties)
+		}
 		condition, ok := edge.Properties["condition"].(map[string]any)
 		if !ok || condition["expression"] != "resource.matchTag('env','prod')" {
 			t.Fatalf("expected preserved folder condition, got %#v", edge.Properties["condition"])
@@ -199,6 +206,9 @@ func TestBuilder_GCPInheritedHierarchyIAMPolicyEdges(t *testing.T) {
 		foundOrgInherited = true
 		if edge.Properties["binding"] != "organization" || edge.Properties["scope_resource"] != "organizations/789" {
 			t.Fatalf("expected organization-scoped inherited edge, got %#v", edge.Properties)
+		}
+		if edge.Properties["lineage_complete"] != true {
+			t.Fatalf("expected organization inherited edge to preserve complete lineage, got %#v", edge.Properties)
 		}
 	}
 	if !foundOrgInherited {

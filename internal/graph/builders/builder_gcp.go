@@ -504,7 +504,7 @@ func (b *Builder) buildGCPHierarchyEdges(ctx context.Context) int {
 
 func (b *Builder) buildGCPInheritedHierarchyIAMPolicyEdges(ctx context.Context, tableName, scopeKind string) int {
 	rows, err := b.queryIfExists(ctx, tableName,
-		fmt.Sprintf(`SELECT project_id, resource_name, bindings, ancestor_path FROM %s`, tableName))
+		fmt.Sprintf(`SELECT project_id, resource_name, bindings, ancestor_path, lineage_complete, lineage_error FROM %s`, tableName))
 	if err != nil {
 		b.logger.Debug("failed to query GCP inherited IAM policies", "table", tableName, "error", err)
 		return 0
@@ -547,15 +547,17 @@ func (b *Builder) buildGCPInheritedHierarchyIAMPolicyEdges(ctx context.Context, 
 						Kind:   edgeKind,
 						Effect: EdgeEffectAllow,
 						Properties: map[string]any{
-							"role":           role,
-							"binding":        scopeKind,
-							"member":         member,
-							"scope":          scopeKind,
-							"scope_resource": scopeResource,
-							"condition":      condition,
-							"inherited":      true,
-							"mechanism":      "hierarchy_policy",
-							"ancestor_path":  row["ancestor_path"],
+							"role":             role,
+							"binding":          scopeKind,
+							"member":           member,
+							"scope":            scopeKind,
+							"scope_resource":   scopeResource,
+							"condition":        condition,
+							"inherited":        true,
+							"mechanism":        "hierarchy_policy",
+							"ancestor_path":    row["ancestor_path"],
+							"lineage_complete": row["lineage_complete"],
+							"lineage_error":    row["lineage_error"],
 						},
 					})
 					count++

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 
@@ -225,6 +226,8 @@ func (e *GCPSyncEngine) gcpFolderIAMPolicyTable() GCPTableSpec {
 			"etag",
 			"bindings",
 			"ancestor_path",
+			"lineage_complete",
+			"lineage_error",
 		},
 		Fetch: e.fetchGCPFolderIAMPolicies,
 	}
@@ -242,6 +245,8 @@ func (e *GCPSyncEngine) gcpOrganizationIAMPolicyTable() GCPTableSpec {
 			"etag",
 			"bindings",
 			"ancestor_path",
+			"lineage_complete",
+			"lineage_error",
 		},
 		Fetch: e.fetchGCPOrganizationIAMPolicies,
 	}
@@ -365,7 +370,8 @@ func (e *GCPSyncEngine) fetchGCPResourceManagerOrganizations(ctx context.Context
 
 func (e *GCPSyncEngine) fetchGCPFolderIAMPolicies(ctx context.Context, projectID string) ([]map[string]interface{}, error) {
 	lineage, err := e.fetchGCPProjectLineage(ctx, projectID)
-	if err != nil {
+	incomplete := (*gcpProjectLineageIncompleteError)(nil)
+	if err != nil && !errors.As(err, &incomplete) {
 		return nil, fmt.Errorf("resolve GCP project lineage for folder IAM policies: %w", err)
 	}
 
@@ -375,6 +381,21 @@ func (e *GCPSyncEngine) fetchGCPFolderIAMPolicies(ctx context.Context, projectID
 	}
 	defer func() { _ = foldersClient.Close() }()
 
+	return fetchGCPFolderIAMPoliciesFromLineage(ctx, projectID, lineage, err, foldersClient, e.logger)
+}
+
+func fetchGCPFolderIAMPoliciesFromLineage(
+	ctx context.Context,
+	projectID string,
+	lineage *gcpProjectLineage,
+	lineageErr error,
+	foldersClient gcpResourceManagerFolderClient,
+	logger *slog.Logger,
+) ([]map[string]interface{}, error) {
+	if lineage == nil {
+		return nil, nil
+	}
+	lineageComplete, lineageError := gcpLineageStatus(lineageErr)
 	rows := make([]map[string]interface{}, 0, len(lineage.Folders))
 	for _, folder := range lineage.Folders {
 		if folder == nil || strings.TrimSpace(folder.GetName()) == "" {
@@ -382,19 +403,21 @@ func (e *GCPSyncEngine) fetchGCPFolderIAMPolicies(ctx context.Context, projectID
 		}
 		policy, err := foldersClient.GetIAMPolicy(ctx, folder.GetName())
 		if err != nil {
-			e.logger.Warn("failed to fetch GCP folder IAM policy", "project_id", projectID, "folder", folder.GetName(), "error", err)
+			logger.Warn("failed to fetch GCP folder IAM policy", "project_id", projectID, "folder", folder.GetName(), "error", err)
 			continue
 		}
 		rows = append(rows, map[string]interface{}{
-			"_cq_id":        fmt.Sprintf("%s/%s/iam-policy", projectID, folder.GetName()),
-			"project_id":    projectID,
-			"id":            folder.GetName() + "/iam-policy",
-			"folder_id":     gcpResourceSegment(folder.GetName(), "folders"),
-			"resource_name": folder.GetName(),
-			"version":       policy.GetVersion(),
-			"etag":          string(policy.GetEtag()),
-			"bindings":      serializeGCPIAMBindings(policy.GetBindings()),
-			"ancestor_path": lineage.ancestorPath(),
+			"_cq_id":           fmt.Sprintf("%s/%s/iam-policy", projectID, folder.GetName()),
+			"project_id":       projectID,
+			"id":               folder.GetName() + "/iam-policy",
+			"folder_id":        gcpResourceSegment(folder.GetName(), "folders"),
+			"resource_name":    folder.GetName(),
+			"version":          policy.GetVersion(),
+			"etag":             string(policy.GetEtag()),
+			"bindings":         serializeGCPIAMBindings(policy.GetBindings()),
+			"ancestor_path":    lineage.ancestorPath(),
+			"lineage_complete": lineageComplete,
+			"lineage_error":    lineageError,
 		})
 	}
 
@@ -403,7 +426,8 @@ func (e *GCPSyncEngine) fetchGCPFolderIAMPolicies(ctx context.Context, projectID
 
 func (e *GCPSyncEngine) fetchGCPOrganizationIAMPolicies(ctx context.Context, projectID string) ([]map[string]interface{}, error) {
 	lineage, err := e.fetchGCPProjectLineage(ctx, projectID)
-	if err != nil {
+	incomplete := (*gcpProjectLineageIncompleteError)(nil)
+	if err != nil && !errors.As(err, &incomplete) {
 		return nil, fmt.Errorf("resolve GCP project lineage for organization IAM policies: %w", err)
 	}
 	if lineage.Organization == nil || strings.TrimSpace(lineage.Organization.GetName()) == "" {
@@ -416,22 +440,39 @@ func (e *GCPSyncEngine) fetchGCPOrganizationIAMPolicies(ctx context.Context, pro
 	}
 	defer func() { _ = orgsClient.Close() }()
 
+	return fetchGCPOrganizationIAMPoliciesFromLineage(ctx, projectID, lineage, err, orgsClient, e.logger)
+}
+
+func fetchGCPOrganizationIAMPoliciesFromLineage(
+	ctx context.Context,
+	projectID string,
+	lineage *gcpProjectLineage,
+	lineageErr error,
+	orgsClient gcpResourceManagerOrganizationClient,
+	logger *slog.Logger,
+) ([]map[string]interface{}, error) {
+	if lineage == nil || lineage.Organization == nil || strings.TrimSpace(lineage.Organization.GetName()) == "" {
+		return nil, nil
+	}
 	policy, err := orgsClient.GetIAMPolicy(ctx, lineage.Organization.GetName())
 	if err != nil {
-		e.logger.Warn("failed to fetch GCP organization IAM policy", "project_id", projectID, "organization", lineage.Organization.GetName(), "error", err)
+		logger.Warn("failed to fetch GCP organization IAM policy", "project_id", projectID, "organization", lineage.Organization.GetName(), "error", err)
 		return nil, nil
 	}
 
+	lineageComplete, lineageError := gcpLineageStatus(lineageErr)
 	row := map[string]interface{}{
-		"_cq_id":          fmt.Sprintf("%s/%s/iam-policy", projectID, lineage.Organization.GetName()),
-		"project_id":      projectID,
-		"id":              lineage.Organization.GetName() + "/iam-policy",
-		"organization_id": gcpResourceSegment(lineage.Organization.GetName(), "organizations"),
-		"resource_name":   lineage.Organization.GetName(),
-		"version":         policy.GetVersion(),
-		"etag":            string(policy.GetEtag()),
-		"bindings":        serializeGCPIAMBindings(policy.GetBindings()),
-		"ancestor_path":   lineage.ancestorPath(),
+		"_cq_id":           fmt.Sprintf("%s/%s/iam-policy", projectID, lineage.Organization.GetName()),
+		"project_id":       projectID,
+		"id":               lineage.Organization.GetName() + "/iam-policy",
+		"organization_id":  gcpResourceSegment(lineage.Organization.GetName(), "organizations"),
+		"resource_name":    lineage.Organization.GetName(),
+		"version":          policy.GetVersion(),
+		"etag":             string(policy.GetEtag()),
+		"bindings":         serializeGCPIAMBindings(policy.GetBindings()),
+		"ancestor_path":    lineage.ancestorPath(),
+		"lineage_complete": lineageComplete,
+		"lineage_error":    lineageError,
 	}
 
 	return []map[string]interface{}{row}, nil
