@@ -140,10 +140,14 @@ func TestCrossTenantReadOperationsEmitAuditAndMetrics(t *testing.T) {
 	if build.Code != http.StatusOK {
 		t.Fatalf("expected build response 200, got %d: %s", build.Code, build.Body.String())
 	}
+	list := doWithTenantContext(t, s, http.MethodGet, "/api/v1/graph/cross-tenant/patterns", nil, "tenant-admin")
+	if list.Code != http.StatusOK {
+		t.Fatalf("expected list response 200, got %d: %s", list.Code, list.Body.String())
+	}
 
 	logger := s.auditLogger.(*captureAuditLogger)
-	if len(logger.entries) != 1 {
-		t.Fatalf("expected one cross-tenant audit entry, got %d", len(logger.entries))
+	if len(logger.entries) != 2 {
+		t.Fatalf("expected two cross-tenant audit entries, got %d", len(logger.entries))
 	}
 	entry := logger.entries[0]
 	if entry.Action != "graph.cross_tenant.read" {
@@ -152,13 +156,25 @@ func TestCrossTenantReadOperationsEmitAuditAndMetrics(t *testing.T) {
 	if entry.Details["requesting_tenant"] != "tenant-admin" || entry.Details["target_tenant"] != "tenant-beta" {
 		t.Fatalf("unexpected audit details: %#v", entry.Details)
 	}
+	if logger.entries[1].Details["target_tenant"] != "aggregate_library" {
+		t.Fatalf("expected aggregate-library audit detail, got %#v", logger.entries[1].Details)
+	}
 
-	metric := metrics.GraphCrossTenantReadsTotal.WithLabelValues("build_samples", "tenant-admin", "tenant-beta", "allowed")
+	metric := metrics.GraphCrossTenantReadsTotal.WithLabelValues("build_samples", "tenant", "tenant", "allowed")
 	snapshot := &dto.Metric{}
 	if err := metric.Write(snapshot); err != nil {
 		t.Fatalf("read metric: %v", err)
 	}
 	if got := snapshot.GetCounter().GetValue(); got < 1 {
 		t.Fatalf("expected cross-tenant metric increment, got %f", got)
+	}
+
+	aggregateMetric := metrics.GraphCrossTenantReadsTotal.WithLabelValues("list_patterns", "tenant", "aggregate", "allowed")
+	aggregateSnapshot := &dto.Metric{}
+	if err := aggregateMetric.Write(aggregateSnapshot); err != nil {
+		t.Fatalf("read aggregate metric: %v", err)
+	}
+	if got := aggregateSnapshot.GetCounter().GetValue(); got < 1 {
+		t.Fatalf("expected aggregate cross-tenant metric increment, got %f", got)
 	}
 }

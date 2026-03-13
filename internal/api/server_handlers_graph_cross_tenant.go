@@ -182,23 +182,30 @@ func (s *Server) matchCrossTenantPatterns(w http.ResponseWriter, r *http.Request
 
 func (s *Server) logCrossTenantRead(ctx context.Context, r *http.Request, operation, targetTenant string, resultCount int, outcome string) {
 	requestingTenant := strings.TrimSpace(GetTenantID(ctx))
-	if requestingTenant == "" {
-		requestingTenant = "unknown"
+	auditRequestingTenant := requestingTenant
+	if auditRequestingTenant == "" {
+		auditRequestingTenant = "unknown"
 	}
 	targetTenant = strings.TrimSpace(targetTenant)
-	if targetTenant == "" {
-		targetTenant = "unknown"
+	auditTargetTenant := targetTenant
+	if auditTargetTenant == "" {
+		auditTargetTenant = "unknown"
 	}
 	outcome = strings.TrimSpace(strings.ToLower(outcome))
 	if outcome == "" {
 		outcome = "unknown"
 	}
 
-	metrics.RecordGraphCrossTenantRead(operation, requestingTenant, targetTenant, outcome)
+	metrics.RecordGraphCrossTenantRead(
+		operation,
+		crossTenantRequestScope(requestingTenant),
+		crossTenantTargetScope(targetTenant),
+		outcome,
+	)
 
 	details := map[string]any{
-		"requesting_tenant": requestingTenant,
-		"target_tenant":     targetTenant,
+		"requesting_tenant": auditRequestingTenant,
+		"target_tenant":     auditTargetTenant,
 		"operation":         strings.TrimSpace(operation),
 		"result_count":      resultCount,
 		"outcome":           outcome,
@@ -207,7 +214,7 @@ func (s *Server) logCrossTenantRead(ctx context.Context, r *http.Request, operat
 
 	if auditLoggerIsNil(s.auditLogger) {
 		if s.app != nil && s.app.Logger != nil {
-			s.app.Logger.Info("cross-tenant graph read", "requesting_tenant", requestingTenant, "target_tenant", targetTenant, "operation", operation, "result_count", resultCount, "outcome", outcome)
+			s.app.Logger.Info("cross-tenant graph read", "requesting_tenant", auditRequestingTenant, "target_tenant", auditTargetTenant, "operation", operation, "result_count", resultCount, "outcome", outcome)
 		}
 		return
 	}
@@ -221,12 +228,31 @@ func (s *Server) logCrossTenantRead(ctx context.Context, r *http.Request, operat
 		ActorID:      actorID,
 		ActorType:    "user",
 		ResourceType: "graph_cross_tenant",
-		ResourceID:   strings.TrimSpace(operation) + ":" + targetTenant,
+		ResourceID:   strings.TrimSpace(operation) + ":" + auditTargetTenant,
 		Details:      details,
 		IPAddress:    r.RemoteAddr,
 		UserAgent:    r.UserAgent(),
 	}
 	if err := s.auditLogger.Log(ctx, entry); err != nil && s.app != nil && s.app.Logger != nil {
-		s.app.Logger.Warn("failed to persist cross-tenant graph audit log", "error", err, "operation", operation, "requesting_tenant", requestingTenant, "target_tenant", targetTenant)
+		s.app.Logger.Warn("failed to persist cross-tenant graph audit log", "error", err, "operation", operation, "requesting_tenant", auditRequestingTenant, "target_tenant", auditTargetTenant)
+	}
+}
+
+func crossTenantRequestScope(requestingTenant string) string {
+	if strings.TrimSpace(requestingTenant) == "" {
+		return "global"
+	}
+	return "tenant"
+}
+
+func crossTenantTargetScope(targetTenant string) string {
+	targetTenant = strings.TrimSpace(targetTenant)
+	switch targetTenant {
+	case "":
+		return "unknown"
+	case "aggregate_library":
+		return "aggregate"
+	default:
+		return "tenant"
 	}
 }
