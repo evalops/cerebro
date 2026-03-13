@@ -357,7 +357,7 @@ func buildSyntheticScaleGraph(resourceCount int) (*Graph, scaleSyntheticFixture)
 				g.AddEdge(&Edge{ID: fmt.Sprintf("edge:%s:%s:dep", resourceID, previous), Source: resourceID, Target: previous, Kind: EdgeKindDependsOn, Effect: EdgeEffectAllow, Priority: 50, CreatedAt: now, Version: 1})
 			}
 			lastByService[serviceID] = resourceID
-			if publicFacing(props) {
+			if publicFacing(kind, props) {
 				g.AddEdge(&Edge{ID: fmt.Sprintf("edge:internet:%s:exposed", resourceID), Source: "internet", Target: resourceID, Kind: EdgeKindExposedTo, Effect: EdgeEffectAllow, Priority: 50, CreatedAt: now, Version: 1})
 			}
 		}
@@ -396,7 +396,9 @@ func syntheticResourceShape(globalIdx int, tenantID, serviceLabel string) (NodeK
 		props["contains_pii"] = globalIdx%3 == 0
 		return NodeKindDatabase, syntheticRisk(globalIdx, 11, 19), props
 	default:
-		props["function_url"] = fmt.Sprintf("https://%s-%06d.example.com", serviceLabel, globalIdx+1)
+		if globalIdx%5 == 0 {
+			props["function_url"] = fmt.Sprintf("https://%s-%06d.example.com", serviceLabel, globalIdx+1)
+		}
 		props["runtime"] = []string{"go1.x", "python3.12", "nodejs20.x"}[globalIdx%3]
 		return NodeKindFunction, syntheticRisk(globalIdx, 8, 23), props
 	}
@@ -415,12 +417,18 @@ func syntheticRisk(index, highMod, criticalMod int) RiskLevel {
 	}
 }
 
-func publicFacing(props map[string]any) bool {
+func publicFacing(kind NodeKind, props map[string]any) bool {
 	if exposed, ok := props["internet_exposed"].(bool); ok && exposed {
 		return true
 	}
 	if public, ok := props["public"].(bool); ok && public {
 		return true
+	}
+	if publicIP, ok := props["public_ip"].(string); ok && strings.TrimSpace(publicIP) != "" {
+		return true
+	}
+	if !NodeKindHasCapability(kind, NodeCapabilityInternetExposable) {
+		return false
 	}
 	if url, ok := props["function_url"].(string); ok && strings.TrimSpace(url) != "" {
 		return true

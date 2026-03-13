@@ -95,3 +95,30 @@ func TestBuildSyntheticScaleGraphFixture(t *testing.T) {
 		t.Fatalf("expected topology richer than raw resource count, got %d nodes", g.NodeCount())
 	}
 }
+
+func TestSyntheticFunctionsAreNotAllInternetFacing(t *testing.T) {
+	g, _ := buildSyntheticScaleGraph(128)
+	if g == nil {
+		t.Fatal("expected graph")
+	}
+	functionCount := 0
+	exposedFunctionCount := 0
+	for _, node := range g.Nodes() {
+		if node == nil || node.Kind != NodeKindFunction {
+			continue
+		}
+		functionCount++
+		if publicFacing(node.Kind, node.Properties) {
+			exposedFunctionCount++
+		}
+	}
+	if functionCount == 0 {
+		t.Fatal("expected synthetic functions")
+	}
+	if exposedFunctionCount == 0 {
+		t.Fatal("expected some exposed synthetic functions")
+	}
+	if exposedFunctionCount == functionCount {
+		t.Fatalf("expected only a subset of functions to be internet-facing, got %d/%d", exposedFunctionCount, functionCount)
+	}
+}

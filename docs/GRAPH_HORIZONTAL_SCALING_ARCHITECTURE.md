@@ -91,20 +91,20 @@ cerebro graph profile-scale --output json --query-iterations 1 --tiers 10000
 Observed results:
 
 - `1K` resources
-  - elapsed: `3.5s`
-  - heap alloc: `8.2 MiB`
-  - index build: `41.1 ms`
-  - search: `115.8 ms`
-  - blast radius (cold): `4.9 ms`
-  - copy-on-write: `43.8 ms`
+  - elapsed: `8.5s`
+  - heap alloc: `8.3 MiB`
+  - index build: `40.7 ms`
+  - search: `106.3 ms`
+  - blast radius (cold): `4.4 ms`
+  - copy-on-write: `41.0 ms`
   - recommendation: `single_node_with_replicated_snapshots`
 - `10K` resources
-  - elapsed: `15.5s`
-  - heap alloc: `80.0 MiB`
-  - index build: `570.0 ms`
-  - search: `12986.2 ms`
-  - blast radius (cold): `27.6 ms`
-  - copy-on-write: `553.6 ms`
+  - elapsed: `15.7s`
+  - heap alloc: `79.8 MiB`
+  - index build: `505.0 ms`
+  - search: `11331.8 ms`
+  - blast radius (cold): `23.9 ms`
+  - copy-on-write: `541.7 ms`
   - recommendation: `tenant_sharded_hot_graph`
 
 Higher-tier attempts are already enough to show the boundary:
