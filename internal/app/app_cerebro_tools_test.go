@@ -913,7 +913,7 @@ func TestCerebroAccessReviewTool(t *testing.T) {
 		t.Fatal("expected access_review tool")
 	}
 
-	result, err := tool.Handler(context.Background(), json.RawMessage(`{"identity_id":"user:alice","created_by":"ensemble-test"}`))
+	result, err := tool.Handler(context.Background(), json.RawMessage(`{"identity_id":"user:alice"}`))
 	if err != nil {
 		t.Fatalf("tool returned error: %v", err)
 	}
@@ -925,8 +925,8 @@ func TestCerebroAccessReviewTool(t *testing.T) {
 	if payload["status"] != "pending" {
 		t.Fatalf("expected pending review status, got %#v", payload["status"])
 	}
-	if payload["created_by"] != "ensemble-test" {
-		t.Fatalf("expected created_by ensemble-test, got %#v", payload["created_by"])
+	if payload["created_by"] != "ensemble" {
+		t.Fatalf("expected created_by ensemble, got %#v", payload["created_by"])
 	}
 }
 

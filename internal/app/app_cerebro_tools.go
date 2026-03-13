@@ -678,7 +678,6 @@ func (a *App) cerebroTools() []agents.Tool {
 					"identity_id": map[string]any{"type": "string"},
 					"name":        map[string]any{"type": "string"},
 					"description": map[string]any{"type": "string"},
-					"created_by":  map[string]any{"type": "string"},
 				},
 				"required": []string{"identity_id"},
 			},
@@ -1814,7 +1813,6 @@ func (a *App) toolCerebroAccessReview(ctx context.Context, args json.RawMessage)
 		IdentityID  string `json:"identity_id"`
 		Name        string `json:"name"`
 		Description string `json:"description"`
-		CreatedBy   string `json:"created_by"`
 	}
 	if err := decodeToolArgs(args, &req); err != nil {
 		return "", err
@@ -1831,10 +1829,6 @@ func (a *App) toolCerebroAccessReview(ctx context.Context, args json.RawMessage)
 	if name == "" {
 		name = "Identity access review: " + req.IdentityID
 	}
-	createdBy := strings.TrimSpace(req.CreatedBy)
-	if createdBy == "" {
-		createdBy = "ensemble"
-	}
 
 	reviewService := a.Identity
 	if reviewService == nil {
@@ -1845,7 +1839,7 @@ func (a *App) toolCerebroAccessReview(ctx context.Context, args json.RawMessage)
 		Name:        name,
 		Description: strings.TrimSpace(req.Description),
 		Type:        identity.ReviewTypeUserAccess,
-		CreatedBy:   createdBy,
+		CreatedBy:   toolDurableActorID(ctx),
 		Scope: identity.ReviewScope{
 			Mode:  identity.ReviewScopeModePrincipal,
 			Users: []string{req.IdentityID},
@@ -1876,6 +1870,12 @@ func (a *App) toolCerebroAccessReview(ctx context.Context, args json.RawMessage)
 		payload["status"] = "pending"
 	}
 	return marshalToolResponse(payload)
+}
+
+func toolDurableActorID(_ context.Context) string {
+	// Tool arguments are untrusted input. Until the app surface exposes an authenticated
+	// caller identity contract, durable tool writes must use a fixed system actor.
+	return "ensemble"
 }
 
 func findingMatchesQuery(f *findings.Finding, query string) bool {
