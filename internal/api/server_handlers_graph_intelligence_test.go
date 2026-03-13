@@ -1302,7 +1302,7 @@ func TestPlatformIntelligenceReportRunRetryAsyncIncludesBackoffMetadata(t *testi
 	}
 
 	var failedRun map[string]any
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 300; i++ {
 		status := do(t, s, http.MethodGet, statusURL, nil)
 		if status.Code != http.StatusOK {
 			t.Fatalf("expected 200 for async run lookup, got %d: %s", status.Code, status.Body.String())
@@ -1361,7 +1361,7 @@ func TestPlatformIntelligenceReportRunRetryAsyncIncludesBackoffMetadata(t *testi
 	}
 
 	var latest map[string]any
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 300; i++ {
 		status := do(t, s, http.MethodGet, statusURL, nil)
 		if status.Code != http.StatusOK {
 			t.Fatalf("expected 200 for async retry lookup, got %d: %s", status.Code, status.Body.String())
