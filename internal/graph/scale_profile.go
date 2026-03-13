@@ -384,8 +384,11 @@ func syntheticResourceShape(globalIdx int, tenantID, serviceLabel string) (NodeK
 	}
 	switch globalIdx % 4 {
 	case 0:
-		props["public_ip"] = fmt.Sprintf("203.0.113.%d", (globalIdx%200)+1)
-		props["internet_exposed"] = globalIdx%7 == 0
+		internetExposed := globalIdx%7 == 0
+		props["internet_exposed"] = internetExposed
+		if internetExposed {
+			props["public_ip"] = fmt.Sprintf("203.0.113.%d", (globalIdx%200)+1)
+		}
 		return NodeKindWorkload, syntheticRisk(globalIdx, 7, 13), props
 	case 1:
 		props["public"] = globalIdx%9 == 0

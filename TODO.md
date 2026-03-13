@@ -34,8 +34,8 @@ Status: executed end-to-end via PR workflow
   - [x] recommend hybrid hot-graph + durable backing storage
   - [x] make `#246` and `#247` explicitly follow this decision gate instead of guessing
   - [x] capture the first local breakpoint:
-    - [x] `1K` stays comfortably single-node (`8.5s` total run, `41.0ms` copy-on-write)
-    - [x] `10K` already crosses into uncomfortable latency (`15.7s` total run, `11.3s` search, `541.7ms` copy-on-write)
+    - [x] `1K` stays comfortably single-node (`8.5s` total run, `43.6ms` copy-on-write)
+    - [x] `10K` already crosses into uncomfortable latency (`15.5s` total run, `11.3s` search, `533.6ms` copy-on-write)
     - [x] `50K+` exceeds sane single-node local profiling budgets and pushes resident memory into `~1.6-1.7 GiB`
 
 ### Detailed follow-on backlog

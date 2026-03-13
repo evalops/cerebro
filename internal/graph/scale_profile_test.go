@@ -122,3 +122,35 @@ func TestSyntheticFunctionsAreNotAllInternetFacing(t *testing.T) {
 		t.Fatalf("expected only a subset of functions to be internet-facing, got %d/%d", exposedFunctionCount, functionCount)
 	}
 }
+
+func TestSyntheticWorkloadsDoNotAllLookInternetFacing(t *testing.T) {
+	g, _ := buildSyntheticScaleGraph(128)
+	if g == nil {
+		t.Fatal("expected graph")
+	}
+	workloadCount := 0
+	exposedWorkloadCount := 0
+	for _, node := range g.Nodes() {
+		if node == nil || node.Kind != NodeKindWorkload {
+			continue
+		}
+		workloadCount++
+		if publicFacing(node.Kind, node.Properties) {
+			exposedWorkloadCount++
+		}
+		if exposed, ok := node.Properties["internet_exposed"].(bool); ok && !exposed {
+			if publicIP, ok := node.Properties["public_ip"].(string); ok && publicIP != "" {
+				t.Fatalf("expected non-exposed synthetic workload %s to omit public_ip, got %s", node.ID, publicIP)
+			}
+		}
+	}
+	if workloadCount == 0 {
+		t.Fatal("expected synthetic workloads")
+	}
+	if exposedWorkloadCount == 0 {
+		t.Fatal("expected some exposed synthetic workloads")
+	}
+	if exposedWorkloadCount == workloadCount {
+		t.Fatalf("expected only a subset of workloads to be internet-facing, got %d/%d", exposedWorkloadCount, workloadCount)
+	}
+}
