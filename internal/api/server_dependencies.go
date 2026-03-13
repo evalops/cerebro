@@ -13,6 +13,7 @@ import (
 	"github.com/evalops/cerebro/internal/attackpath"
 	"github.com/evalops/cerebro/internal/auth"
 	"github.com/evalops/cerebro/internal/cache"
+	"github.com/evalops/cerebro/internal/executionstore"
 	"github.com/evalops/cerebro/internal/findings"
 	"github.com/evalops/cerebro/internal/graph"
 	"github.com/evalops/cerebro/internal/graph/builders"
@@ -69,12 +70,13 @@ type serverDependencies struct {
 	Config *app.Config
 	Logger *slog.Logger
 
-	Snowflake *snowflake.Client
-	Warehouse warehouse.DataWarehouse
-	Policy    *policy.Engine
-	Findings  findings.FindingStore
-	Scanner   *scanner.Scanner
-	Cache     *cache.PolicyCache
+	Snowflake      *snowflake.Client
+	Warehouse      warehouse.DataWarehouse
+	Policy         *policy.Engine
+	Findings       findings.FindingStore
+	Scanner        *scanner.Scanner
+	Cache          *cache.PolicyCache
+	ExecutionStore executionstore.Store
 
 	Agents         *agents.AgentRegistry
 	Ticketing      *ticketing.Service
@@ -135,6 +137,7 @@ func newServerDependenciesFromApp(application *app.App) serverDependencies {
 		Findings:             application.Findings,
 		Scanner:              application.Scanner,
 		Cache:                application.Cache,
+		ExecutionStore:       application.ExecutionStore,
 		Agents:               application.Agents,
 		Ticketing:            application.Ticketing,
 		Identity:             application.Identity,
