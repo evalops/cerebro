@@ -250,6 +250,10 @@ func (s *GraphPersistenceStore) syncReplica(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	previousIndex, err := s.loadReplicaIndexIfPresent(ctx)
+	if err != nil {
+		return err
+	}
 	keep := map[string]struct{}{
 		"index.json": {},
 	}
@@ -286,21 +290,12 @@ func (s *GraphPersistenceStore) syncReplica(ctx context.Context) error {
 	if err := s.replica.PutBytes(ctx, "index.json", indexPayload, "application/json"); err != nil {
 		return fmt.Errorf("replicate snapshot index: %w", err)
 	}
-	keys, err := s.replica.ListKeys(ctx, "")
-	if err != nil {
-		return fmt.Errorf("list replica keys: %w", err)
-	}
 	stale := make([]string, 0)
-	for _, key := range keys {
-		normalized, err := normalizeReplicaKey(key)
-		if err != nil {
-			continue
-		}
-		if _, ok := keep[normalized]; ok {
-			continue
-		}
-		if strings.HasSuffix(normalized, ".json.gz") || strings.HasPrefix(normalized, "manifests/") || normalized == "index.json" {
-			stale = append(stale, normalized)
+	if previousIndex != nil {
+		for _, key := range replicaTrackedKeysFromIndex(*previousIndex) {
+			if _, ok := keep[key]; !ok {
+				stale = append(stale, key)
+			}
 		}
 	}
 	if len(stale) > 0 {
@@ -447,6 +442,42 @@ func (s *GraphPersistenceStore) loadReplicaIndex(ctx context.Context) (*graphSna
 		index.Snapshots[i].ArtifactPath = artifactKey
 	}
 	return &index, nil
+}
+
+func (s *GraphPersistenceStore) loadReplicaIndexIfPresent(ctx context.Context) (*graphSnapshotIndex, error) {
+	keys, err := s.replica.ListKeys(ctx, "index.json")
+	if err != nil {
+		return nil, fmt.Errorf("list replica snapshot index: %w", err)
+	}
+	for _, key := range keys {
+		normalized, err := normalizeReplicaKey(key)
+		if err != nil {
+			continue
+		}
+		if normalized == "index.json" {
+			return s.loadReplicaIndex(ctx)
+		}
+	}
+	return nil, nil
+}
+
+func replicaTrackedKeysFromIndex(index graphSnapshotIndex) []string {
+	tracked := map[string]struct{}{
+		"index.json": {},
+	}
+	for _, manifest := range index.Snapshots {
+		artifactKey, err := normalizeReplicaKey(manifest.ArtifactPath)
+		if err != nil {
+			continue
+		}
+		tracked[artifactKey] = struct{}{}
+		tracked[path.Join("manifests", sanitizeReportFileName(manifest.SnapshotID)+".json")] = struct{}{}
+	}
+	keys := make([]string, 0, len(tracked))
+	for key := range tracked {
+		keys = append(keys, key)
+	}
+	return keys
 }
 
 func (s *GraphPersistenceStore) recordPersisted(record *GraphSnapshotRecord) {

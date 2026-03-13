@@ -3,6 +3,7 @@ package graph
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -206,5 +207,100 @@ func TestParseBucketURIAllowsBucketRootTrailingSlash(t *testing.T) {
 				t.Fatalf("expected object prefix %q, got %q", tt.wantObjPrfix, objectPrefix)
 			}
 		})
+	}
+}
+
+func TestGraphPersistenceStoreSyncReplicaDeletesOnlyPreviouslyTrackedKeys(t *testing.T) {
+	localDir := t.TempDir()
+	replicaDir := t.TempDir()
+
+	previousIndex := graphSnapshotIndex{
+		APIVersion:  graphSnapshotIndexAPIVersion,
+		GeneratedAt: time.Now().UTC(),
+		Snapshots: []GraphSnapshotManifest{
+			{
+				APIVersion:   graphSnapshotManifestAPIVersion,
+				Kind:         graphSnapshotManifestKind,
+				SnapshotID:   "old-snap",
+				ArtifactPath: "graph-old.json.gz",
+				Record: GraphSnapshotRecord{
+					ID: "old-snap",
+				},
+			},
+		},
+	}
+	indexPayload, err := json.Marshal(previousIndex)
+	if err != nil {
+		t.Fatalf("marshal previous index: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(replicaDir, "index.json"), indexPayload, 0o600); err != nil {
+		t.Fatalf("write previous replica index: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(replicaDir, "manifests"), 0o750); err != nil {
+		t.Fatalf("create replica manifests dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(replicaDir, "graph-old.json.gz"), []byte("old"), 0o600); err != nil {
+		t.Fatalf("write previous snapshot artifact: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(replicaDir, "manifests", "old-snap.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatalf("write previous manifest: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(replicaDir, "shared.json.gz"), []byte("keep"), 0o600); err != nil {
+		t.Fatalf("write unrelated shared object: %v", err)
+	}
+
+	store, err := NewGraphPersistenceStore(GraphPersistenceOptions{
+		LocalPath:    localDir,
+		MaxSnapshots: 4,
+		ReplicaURI:   replicaDir,
+	})
+	if err != nil {
+		t.Fatalf("new graph persistence store: %v", err)
+	}
+
+	g := New()
+	g.AddNode(&Node{ID: "service:payments", Kind: NodeKindService, Name: "payments"})
+	g.SetMetadata(Metadata{
+		BuiltAt:   time.Now().UTC(),
+		NodeCount: 1,
+	})
+	if _, err := store.SaveGraph(g); err != nil {
+		t.Fatalf("save graph with replica sync: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(replicaDir, "shared.json.gz")); err != nil {
+		t.Fatalf("expected unrelated shared object to remain: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(replicaDir, "graph-old.json.gz")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected previously tracked stale artifact to be removed, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(replicaDir, "manifests", "old-snap.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected previously tracked stale manifest to be removed, got %v", err)
+	}
+}
+
+type failOnSecondWriteWriter struct {
+	writes int
+}
+
+func (w *failOnSecondWriteWriter) Write(p []byte) (int, error) {
+	w.writes++
+	if w.writes >= 2 {
+		return 0, errors.New("flush failed")
+	}
+	return len(p), nil
+}
+
+func TestSnapshotWriteCompressedPropagatesCloseError(t *testing.T) {
+	snapshot := &Snapshot{
+		Version:   snapshotVersion,
+		CreatedAt: time.Unix(0, 0).UTC(),
+	}
+	err := snapshot.writeCompressed(&failOnSecondWriteWriter{})
+	if err == nil {
+		t.Fatal("expected close error from compressed writer")
+	}
+	if !strings.Contains(err.Error(), "close compressed snapshot") {
+		t.Fatalf("expected close compressed snapshot error, got %v", err)
 	}
 }

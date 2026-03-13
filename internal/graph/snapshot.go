@@ -116,21 +116,26 @@ func (s *Snapshot) SaveToFile(path string) error {
 	if err != nil {
 		return fmt.Errorf("create file: %w", err)
 	}
-	defer func() { _ = f.Close() }()
 
 	if err := s.writeCompressed(f); err != nil {
+		_ = f.Close()
 		return err
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close snapshot file: %w", err)
 	}
 	return nil
 }
 
 func (s *Snapshot) writeCompressed(w io.Writer) error {
 	gw := gzip.NewWriter(w)
-	defer func() { _ = gw.Close() }()
-
 	encoder := json.NewEncoder(gw)
 	if err := encoder.Encode(s); err != nil {
+		_ = gw.Close()
 		return fmt.Errorf("encode snapshot: %w", err)
+	}
+	if err := gw.Close(); err != nil {
+		return fmt.Errorf("close compressed snapshot: %w", err)
 	}
 	return nil
 }
