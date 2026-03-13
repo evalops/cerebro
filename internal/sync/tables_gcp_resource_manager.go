@@ -369,19 +369,19 @@ func (e *GCPSyncEngine) fetchGCPResourceManagerOrganizations(ctx context.Context
 }
 
 func (e *GCPSyncEngine) fetchGCPFolderIAMPolicies(ctx context.Context, projectID string) ([]map[string]interface{}, error) {
-	lineage, err := e.fetchGCPProjectLineage(ctx, projectID)
+	lineage, lineageErr := e.fetchGCPProjectLineage(ctx, projectID)
 	incomplete := (*gcpProjectLineageIncompleteError)(nil)
-	if err != nil && !errors.As(err, &incomplete) {
-		return nil, fmt.Errorf("resolve GCP project lineage for folder IAM policies: %w", err)
+	if lineageErr != nil && !errors.As(lineageErr, &incomplete) {
+		return nil, fmt.Errorf("resolve GCP project lineage for folder IAM policies: %w", lineageErr)
 	}
 
-	foldersClient, err := e.newGCPFoldersClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("create folders client: %w", err)
+	foldersClient, clientErr := e.newGCPFoldersClient(ctx)
+	if clientErr != nil {
+		return nil, fmt.Errorf("create folders client: %w", clientErr)
 	}
 	defer func() { _ = foldersClient.Close() }()
 
-	return fetchGCPFolderIAMPoliciesFromLineage(ctx, projectID, lineage, err, foldersClient, e.logger)
+	return fetchGCPFolderIAMPoliciesFromLineage(ctx, projectID, lineage, lineageErr, foldersClient, e.logger)
 }
 
 func fetchGCPFolderIAMPoliciesFromLineage(
@@ -425,22 +425,22 @@ func fetchGCPFolderIAMPoliciesFromLineage(
 }
 
 func (e *GCPSyncEngine) fetchGCPOrganizationIAMPolicies(ctx context.Context, projectID string) ([]map[string]interface{}, error) {
-	lineage, err := e.fetchGCPProjectLineage(ctx, projectID)
+	lineage, lineageErr := e.fetchGCPProjectLineage(ctx, projectID)
 	incomplete := (*gcpProjectLineageIncompleteError)(nil)
-	if err != nil && !errors.As(err, &incomplete) {
-		return nil, fmt.Errorf("resolve GCP project lineage for organization IAM policies: %w", err)
+	if lineageErr != nil && !errors.As(lineageErr, &incomplete) {
+		return nil, fmt.Errorf("resolve GCP project lineage for organization IAM policies: %w", lineageErr)
 	}
 	if lineage.Organization == nil || strings.TrimSpace(lineage.Organization.GetName()) == "" {
 		return nil, nil
 	}
 
-	orgsClient, err := e.newGCPOrganizationsClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("create organizations client: %w", err)
+	orgsClient, clientErr := e.newGCPOrganizationsClient(ctx)
+	if clientErr != nil {
+		return nil, fmt.Errorf("create organizations client: %w", clientErr)
 	}
 	defer func() { _ = orgsClient.Close() }()
 
-	return fetchGCPOrganizationIAMPoliciesFromLineage(ctx, projectID, lineage, err, orgsClient, e.logger)
+	return fetchGCPOrganizationIAMPoliciesFromLineage(ctx, projectID, lineage, lineageErr, orgsClient, e.logger)
 }
 
 func fetchGCPOrganizationIAMPoliciesFromLineage(
