@@ -140,6 +140,33 @@ func TestInitHealthRegistersGraphBuildCheck(t *testing.T) {
 	}
 }
 
+func TestInitHealthRegistersGraphPersistenceCheck(t *testing.T) {
+	dir := t.TempDir()
+	store, err := graph.NewGraphPersistenceStore(graph.GraphPersistenceOptions{
+		LocalPath: dir,
+	})
+	if err != nil {
+		t.Fatalf("new graph persistence store: %v", err)
+	}
+
+	application := &App{
+		Config:         &Config{},
+		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Warehouse:      &warehouse.MemoryWarehouse{},
+		GraphSnapshots: store,
+	}
+	application.initHealth()
+
+	results := application.Health.RunAll(context.Background())
+	check, ok := results["graph_persistence"]
+	if !ok {
+		t.Fatal("expected graph_persistence health check to be registered")
+	}
+	if check.Status != health.StatusHealthy {
+		t.Fatalf("expected graph_persistence health to be healthy, got %#v", check)
+	}
+}
+
 func TestActivateBuiltSecurityGraphDoesNotReplaceLiveGraphWithNil(t *testing.T) {
 	liveGraph := graph.New()
 	liveGraph.AddNode(&graph.Node{ID: "service:payments", Kind: graph.NodeKindService, Name: "payments"})
@@ -157,6 +184,52 @@ func TestActivateBuiltSecurityGraphDoesNotReplaceLiveGraphWithNil(t *testing.T) 
 	}
 	if snapshot := application.GraphBuildSnapshot(); snapshot.State != GraphBuildFailed {
 		t.Fatalf("expected graph build state failed, got %#v", snapshot)
+	}
+}
+
+func TestActivateBuiltSecurityGraphPersistsSnapshot(t *testing.T) {
+	dir := t.TempDir()
+	store, err := graph.NewGraphPersistenceStore(graph.GraphPersistenceOptions{
+		LocalPath:    dir,
+		MaxSnapshots: 4,
+	})
+	if err != nil {
+		t.Fatalf("new graph persistence store: %v", err)
+	}
+
+	builtGraph := graph.New()
+	builtGraph.AddNode(&graph.Node{ID: "service:payments", Kind: graph.NodeKindService, Name: "payments"})
+	builtGraph.SetMetadata(graph.Metadata{
+		BuiltAt:       time.Date(2026, 3, 12, 22, 5, 0, 0, time.UTC),
+		NodeCount:     1,
+		EdgeCount:     0,
+		Providers:     []string{"aws"},
+		Accounts:      []string{"prod"},
+		BuildDuration: 1500 * time.Millisecond,
+	})
+
+	application := &App{
+		Config:         &Config{GraphSnapshotPath: dir, GraphSnapshotMaxRetained: 4},
+		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		GraphSnapshots: store,
+	}
+
+	if _, err := application.activateBuiltSecurityGraph(context.Background(), builtGraph); err != nil {
+		t.Fatalf("activateBuiltSecurityGraph failed: %v", err)
+	}
+
+	records, err := store.ListGraphSnapshotRecords()
+	if err != nil {
+		t.Fatalf("list persisted graph snapshots: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("expected one persisted graph snapshot, got %#v", records)
+	}
+	if records[0].ID == "" {
+		t.Fatalf("expected persisted graph snapshot id, got %#v", records[0])
+	}
+	if status := store.Status(); status.LastPersistedSnapshot == "" {
+		t.Fatalf("expected persistence status to track last persisted snapshot, got %#v", status)
 	}
 }
 
