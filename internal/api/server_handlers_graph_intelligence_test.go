@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -1979,6 +1978,9 @@ func TestPlatformIntelligenceReportRunLifecycleEvents(t *testing.T) {
 func TestPlatformReportRunUpdateRollsBackOnPersistenceFailure(t *testing.T) {
 	application := newTestApp(t)
 	s := NewServer(application)
+	if s.platformReportStore == nil {
+		t.Fatal("expected platformReportStore to be configured")
+	}
 	run := &reports.ReportRun{
 		ID:            "report_run:test-rollback",
 		ReportID:      "quality",
@@ -1991,13 +1993,12 @@ func TestPlatformReportRunUpdateRollsBackOnPersistenceFailure(t *testing.T) {
 		t.Fatalf("storePlatformReportRun() failed: %v", err)
 	}
 
-	stateDir := filepath.Dir(application.Config.ExecutionStoreFile)
-	if err := os.Chmod(stateDir, 0o500); err != nil {
-		t.Fatalf("chmod state dir read-only: %v", err)
+	// Force a deterministic persistence failure by making the underlying shared
+	// execution store unavailable, while leaving the in-memory cache intact so we
+	// can verify the update path does not partially mutate durable state.
+	if err := s.platformReportStore.Close(); err != nil {
+		t.Fatalf("platformReportStore.Close(): %v", err)
 	}
-	defer func() {
-		_ = os.Chmod(stateDir, 0o700)
-	}()
 
 	err := s.updatePlatformReportRun(run.ID, func(run *reports.ReportRun) {
 		run.Status = reports.ReportRunStatusRunning
