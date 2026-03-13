@@ -62,6 +62,12 @@ func TestLoadConfigCredentialFileSourceOverridesSecretsOnly(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "API_AUTH_ENABLED"), []byte("false\n"), 0o600); err != nil {
 		t.Fatalf("write api auth attempt: %v", err)
 	}
+	if err := os.WriteFile(filepath.Join(dir, "GRAPH_CROSS_TENANT_SIGNING_KEY"), []byte("file-graph-signing-key\n"), 0o600); err != nil {
+		t.Fatalf("write graph signing key attempt: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "FINDING_ATTESTATION_SIGNING_KEY"), []byte("file-attestation-signing-key\n"), 0o600); err != nil {
+		t.Fatalf("write finding signing key attempt: %v", err)
+	}
 
 	t.Setenv("CEREBRO_CREDENTIAL_SOURCE", "file")
 	t.Setenv("CEREBRO_CREDENTIAL_FILE_DIR", dir)
@@ -69,6 +75,8 @@ func TestLoadConfigCredentialFileSourceOverridesSecretsOnly(t *testing.T) {
 	t.Setenv("API_KEYS", "env-key:env-user")
 	t.Setenv("LOG_LEVEL", "warn")
 	t.Setenv("API_AUTH_ENABLED", "true")
+	t.Setenv("GRAPH_CROSS_TENANT_SIGNING_KEY", "env-graph-signing-key")
+	t.Setenv("FINDING_ATTESTATION_SIGNING_KEY", "env-finding-signing-key")
 
 	cfg := LoadConfig()
 	if cfg.CredentialSource != "file" {
@@ -85,6 +93,12 @@ func TestLoadConfigCredentialFileSourceOverridesSecretsOnly(t *testing.T) {
 	}
 	if !cfg.APIAuthEnabled {
 		t.Fatal("expected credential file source to be unable to disable API auth")
+	}
+	if cfg.GraphCrossTenantSigningKey != "env-graph-signing-key" {
+		t.Fatalf("expected graph signing key to remain on raw env/config path, got %q", cfg.GraphCrossTenantSigningKey)
+	}
+	if cfg.FindingAttestationSigningKey != "env-finding-signing-key" {
+		t.Fatalf("expected finding attestation signing key to remain on raw env/config path, got %q", cfg.FindingAttestationSigningKey)
 	}
 }
 

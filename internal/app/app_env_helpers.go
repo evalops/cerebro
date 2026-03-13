@@ -19,26 +19,80 @@ var configValueSourceState struct {
 	source secretsource.Source
 }
 
-var credentialSourceExactKeys = map[string]struct{}{
-	"API_KEYS":              {},
-	"API_CREDENTIALS_JSON":  {},
-	"PAGERDUTY_ROUTING_KEY": {},
-}
-
-var credentialSourceKeySuffixes = []string{
-	"_API_KEY",
-	"_API_TOKEN",
-	"_TOKEN",
-	"_SECRET",
-	"_SECRET_KEY",
-	"_PASSWORD",
-	"_PRIVATE_KEY",
-	"_SIGNING_KEY",
-	"_NKEY_SEED",
-	"_USER_JWT",
-	"_WEBHOOK_URL",
-	"_ROUTING_KEY",
-	"_CREDENTIALS_JSON",
+// Only explicit credential/auth material is overrideable via file/Vault-backed
+// credential sources. This intentionally excludes runtime policy and platform
+// integrity controls such as graph or attestation signing keys.
+var credentialSourceAllowedKeys = map[string]struct{}{
+	"ANTHROPIC_API_KEY":                  {},
+	"API_CREDENTIALS_JSON":               {},
+	"API_KEYS":                           {},
+	"AUTH0_CLIENT_SECRET":                {},
+	"AZURE_CLIENT_SECRET":                {},
+	"BAMBOOHR_API_TOKEN":                 {},
+	"CEREBRO_OTEL_EXPORTER_OTLP_HEADERS": {},
+	"CLOUDFLARE_API_TOKEN":               {},
+	"CROWDSTRIKE_CLIENT_SECRET":          {},
+	"CYBERARK_API_TOKEN":                 {},
+	"DATADOG_API_KEY":                    {},
+	"DATADOG_APP_KEY":                    {},
+	"DUO_SECRET_KEY":                     {},
+	"DUO_SKEY":                           {},
+	"ENTRA_CLIENT_SECRET":                {},
+	"FIGMA_API_TOKEN":                    {},
+	"FORGEROCK_API_TOKEN":                {},
+	"GITHUB_TOKEN":                       {},
+	"GITLAB_TOKEN":                       {},
+	"GONG_ACCESS_KEY":                    {},
+	"GONG_ACCESS_SECRET":                 {},
+	"GOOGLE_WORKSPACE_CREDENTIALS_JSON":  {},
+	"INTUNE_CLIENT_SECRET":               {},
+	"JAMF_CLIENT_SECRET":                 {},
+	"JIRA_API_TOKEN":                     {},
+	"JUMPCLOUD_API_TOKEN":                {},
+	"KANDJI_API_TOKEN":                   {},
+	"KOLIDE_API_TOKEN":                   {},
+	"LINEAR_API_KEY":                     {},
+	"NATS_JETSTREAM_NKEY_SEED":           {},
+	"NATS_JETSTREAM_PASSWORD":            {},
+	"NATS_JETSTREAM_USERNAME":            {},
+	"NATS_JETSTREAM_USER_JWT":            {},
+	"OKTA_API_TOKEN":                     {},
+	"ONELOGIN_CLIENT_SECRET":             {},
+	"OPENAI_API_KEY":                     {},
+	"ORACLE_IDCS_API_TOKEN":              {},
+	"OTEL_EXPORTER_OTLP_HEADERS":         {},
+	"PAGERDUTY_ROUTING_KEY":              {},
+	"PANTHER_API_TOKEN":                  {},
+	"PINGIDENTITY_CLIENT_SECRET":         {},
+	"PINGONE_CLIENT_SECRET":              {},
+	"QUALYS_PASSWORD":                    {},
+	"RAMP_CLIENT_SECRET":                 {},
+	"RIPPLING_API_TOKEN":                 {},
+	"SAILPOINT_API_TOKEN":                {},
+	"SALESFORCE_CLIENT_SECRET":           {},
+	"SALESFORCE_PASSWORD":                {},
+	"SALESFORCE_SECURITY_TOKEN":          {},
+	"SAVIYNT_API_TOKEN":                  {},
+	"SEMGREP_API_TOKEN":                  {},
+	"SENTINELONE_API_TOKEN":              {},
+	"SERVICENOW_API_TOKEN":               {},
+	"SERVICENOW_PASSWORD":                {},
+	"SLACK_API_TOKEN":                    {},
+	"SLACK_SIGNING_SECRET":               {},
+	"SLACK_WEBHOOK_URL":                  {},
+	"SNOWFLAKE_PRIVATE_KEY":              {},
+	"SNYK_API_TOKEN":                     {},
+	"SOCKET_API_TOKEN":                   {},
+	"SPLUNK_TOKEN":                       {},
+	"TAILSCALE_API_KEY":                  {},
+	"TENABLE_ACCESS_KEY":                 {},
+	"TENABLE_SECRET_KEY":                 {},
+	"TFC_TOKEN":                          {},
+	"VAULT_TOKEN":                        {},
+	"VANTA_API_TOKEN":                    {},
+	"WIZ_CLIENT_SECRET":                  {},
+	"WORKDAY_API_TOKEN":                  {},
+	"ZOOM_CLIENT_SECRET":                 {},
 }
 
 func getEnv(key, fallback string) string {
@@ -58,15 +112,8 @@ func credentialSourceEligibleKey(key string) bool {
 	if key == "" {
 		return false
 	}
-	if _, ok := credentialSourceExactKeys[key]; ok {
-		return true
-	}
-	for _, suffix := range credentialSourceKeySuffixes {
-		if strings.HasSuffix(key, suffix) {
-			return true
-		}
-	}
-	return false
+	_, ok := credentialSourceAllowedKeys[key]
+	return ok
 }
 
 func withConfigValueSource(source secretsource.Source, fn func()) {

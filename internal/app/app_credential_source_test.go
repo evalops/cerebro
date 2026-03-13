@@ -42,3 +42,25 @@ func TestLoadConfigCredentialVaultAddressValidation(t *testing.T) {
 		t.Fatalf("unexpected validation error: %v", err)
 	}
 }
+
+func TestCredentialSourceEligibleKeyUsesExplicitAllowlist(t *testing.T) {
+	cases := []struct {
+		key  string
+		want bool
+	}{
+		{key: "OPENAI_API_KEY", want: true},
+		{key: "API_KEYS", want: true},
+		{key: "GRAPH_CROSS_TENANT_SIGNING_KEY", want: false},
+		{key: "FINDING_ATTESTATION_SIGNING_KEY", want: false},
+		{key: "API_AUTH_ENABLED", want: false},
+		{key: "LOG_LEVEL", want: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.key, func(t *testing.T) {
+			if got := credentialSourceEligibleKey(tc.key); got != tc.want {
+				t.Fatalf("credentialSourceEligibleKey(%q) = %v, want %v", tc.key, got, tc.want)
+			}
+		})
+	}
+}
