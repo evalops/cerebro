@@ -2,7 +2,7 @@
 
 Generated from `internal/app/app_config.go` (`LoadConfig`) via `go run ./scripts/generate_config_docs/main.go`.
 
-Total variables: **317**
+Total variables: **324**
 
 | Variable | Reader(s) | Default(s) | Config Field(s) | Validation rule(s) |
 |---|---|---|---|---|
@@ -40,6 +40,13 @@ Total variables: **317**
 | `BAMBOOHR_URL` | `getEnv` | `""` | `BambooHRURL` | `-` |
 | `CEREBRO_ACCESS_REVIEW_RETENTION_DAYS` | `getEnvInt` | `365` | `AccessReviewRetentionDays` | `-` |
 | `CEREBRO_AUDIT_RETENTION_DAYS` | `getEnvInt` | `90` | `AuditRetentionDays` | `-` |
+| `CEREBRO_CREDENTIAL_FILE_DIR` | `bootstrapConfigValue` | `""` | `CredentialFileDir` | `credential-source settings must be present and valid for the selected source backend` |
+| `CEREBRO_CREDENTIAL_SOURCE` | `bootstrapConfigValue` | `secretsource.KindEnv` | `CredentialSource` | `credential-source settings must be present and valid for the selected source backend`, `must be one of env, file, vault` |
+| `CEREBRO_CREDENTIAL_VAULT_ADDRESS` | `bootstrapConfigValue` | `""` | `CredentialVaultAddress` | `credential-source settings must be present and valid for the selected source backend` |
+| `CEREBRO_CREDENTIAL_VAULT_KV_VERSION` | `bootstrapConfigInt` | `2` | `CredentialVaultKVVersion` | `credential-source settings must be present and valid for the selected source backend` |
+| `CEREBRO_CREDENTIAL_VAULT_NAMESPACE` | `bootstrapConfigValue` | `""` | `CredentialVaultNamespace` | `credential-source settings must be present and valid for the selected source backend` |
+| `CEREBRO_CREDENTIAL_VAULT_PATH` | `bootstrapConfigValue` | `""` | `CredentialVaultPath` | `credential-source settings must be present and valid for the selected source backend` |
+| `CEREBRO_CREDENTIAL_VAULT_TOKEN` | `bootstrapConfigValue` | `""` | `CredentialVaultToken` | `credential-source settings must be present and valid for the selected source backend` |
 | `CEREBRO_GRAPH_FRESHNESS_DEFAULT_SLA` | `getEnvDuration` | `6 * time.Hour` | `GraphFreshnessDefaultSLA` | `-` |
 | `CEREBRO_GRAPH_RETENTION_DAYS` | `getEnvInt` | `180` | `GraphRetentionDays` | `-` |
 | `CEREBRO_INIT_TIMEOUT` | `getEnvDuration` | `2 * time.Minute` | `InitTimeout` | `must be greater than or equal to 0` |
