@@ -362,6 +362,114 @@ func TestConsumerHandleMessageSkipsAlreadyProcessedCloudEvent(t *testing.T) {
 	}
 }
 
+func TestConsumerHandleMessageDeadLettersDuplicateKeyPayloadMismatch(t *testing.T) {
+	cfg := (ConsumerConfig{
+		Stream:         "ENSEMBLE_TAP",
+		Durable:        "cerebro_graph_builder",
+		DeadLetterPath: t.TempDir() + "/consumer.dlq.jsonl",
+		DedupStateFile: t.TempDir() + "/executions.db",
+	}).withDefaults()
+	deduper, err := newConsumerProcessedEventDeduper(cfg.DedupStateFile, cfg.Stream, cfg.Durable, cfg.DedupTTL, cfg.DedupMaxRecords)
+	if err != nil {
+		t.Fatalf("new deduper: %v", err)
+	}
+	defer func() { _ = deduper.Close() }()
+
+	dlq, err := newConsumerDeadLetterSink(cfg.DeadLetterPath)
+	if err != nil {
+		t.Fatalf("new consumer dead-letter sink: %v", err)
+	}
+
+	consumer := &Consumer{
+		config:  cfg,
+		logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+		dlq:     dlq,
+		deduper: deduper,
+	}
+
+	firstEvent := CloudEvent{
+		SpecVersion: cloudEventSpecVersion,
+		ID:          "evt-dedup-collision-1",
+		Source:      "urn:cerebro:test",
+		Type:        "ensemble.tap.test",
+		Time:        time.Now().UTC(),
+		DataSchema:  "urn:cerebro:events:test",
+		TenantID:    "tenant-a",
+		Data:        map[string]any{"id": "1", "value": "first"},
+	}
+	firstPayload, err := json.Marshal(firstEvent)
+	if err != nil {
+		t.Fatalf("marshal first event: %v", err)
+	}
+
+	secondEvent := firstEvent
+	secondEvent.Type = "ensemble.tap.test.updated"
+	secondEvent.Data = map[string]any{"id": "1", "value": "second"}
+	secondPayload, err := json.Marshal(secondEvent)
+	if err != nil {
+		t.Fatalf("marshal second event: %v", err)
+	}
+
+	var handlerCalls int
+	consumer.handler = func(context.Context, CloudEvent) error {
+		handlerCalls++
+		return nil
+	}
+	var ackCalls int
+	var nakCalls int
+	ack := func() error {
+		ackCalls++
+		return nil
+	}
+	nak := func() error {
+		nakCalls++
+		return nil
+	}
+
+	first := consumer.handleMessage(context.Background(), "ensemble.tap.test", firstPayload, ack, nak, func() error { return nil })
+	if !first.Processed {
+		t.Fatalf("expected first event to be processed, got %+v", first)
+	}
+
+	beforeDedup := counterValue(t, metrics.NATSConsumerDeduplicatedTotal.WithLabelValues(cfg.Stream, cfg.Durable))
+	beforeDropped := counterValue(t, metrics.NATSConsumerDroppedTotal.WithLabelValues(cfg.Stream, cfg.Durable, "dedupe_hash_mismatch"))
+	second := consumer.handleMessage(context.Background(), "ensemble.tap.test", secondPayload, ack, nak, func() error { return nil })
+	if second.Processed {
+		t.Fatalf("expected hash-mismatch duplicate to avoid normal processing, got %+v", second)
+	}
+
+	afterDedup := counterValue(t, metrics.NATSConsumerDeduplicatedTotal.WithLabelValues(cfg.Stream, cfg.Durable))
+	if afterDedup != beforeDedup {
+		t.Fatalf("expected deduplicated counter unchanged on hash mismatch, before=%v after=%v", beforeDedup, afterDedup)
+	}
+	afterDropped := counterValue(t, metrics.NATSConsumerDroppedTotal.WithLabelValues(cfg.Stream, cfg.Durable, "dedupe_hash_mismatch"))
+	if afterDropped != beforeDropped+1 {
+		t.Fatalf("expected dropped counter to increment for hash mismatch, before=%v after=%v", beforeDropped, afterDropped)
+	}
+	if handlerCalls != 1 {
+		t.Fatalf("expected handler to run only for first event, got %d calls", handlerCalls)
+	}
+	if ackCalls != 2 {
+		t.Fatalf("expected first event and dead-lettered mismatch to ack, got %d", ackCalls)
+	}
+	if nakCalls != 0 {
+		t.Fatalf("expected no nacks when dead-lettering hash mismatch succeeds, got %d", nakCalls)
+	}
+
+	payload, err := os.ReadFile(cfg.DeadLetterPath)
+	if err != nil {
+		t.Fatalf("read consumer dead-letter file: %v", err)
+	}
+	if got := string(payload); !containsAll(got, "\"reason\":\"dedupe_hash_mismatch\"", "\"subject\":\"ensemble.tap.test\"", "ensemble.tap.test.updated", "\\\"value\\\":\\\"second\\\"") {
+		t.Fatalf("expected hash mismatch payload to be written to dead-letter file, got %s", got)
+	}
+
+	snapshot := consumer.HealthSnapshot(time.Now().UTC())
+	if snapshot.LastDropReason != "dedupe_hash_mismatch" {
+		t.Fatalf("expected last drop reason dedupe_hash_mismatch, got %q", snapshot.LastDropReason)
+	}
+}
+
 func TestSaturatingUint64ToInt(t *testing.T) {
 	if got := saturatingUint64ToInt(uint64(math.MaxInt) + 1); got != math.MaxInt {
 		t.Fatalf("expected saturation to MaxInt, got %d", got)

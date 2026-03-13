@@ -381,11 +381,37 @@ func (c *Consumer) handleMessage(ctx context.Context, subject string, payload []
 			)
 		} else if record != nil {
 			if hashMismatch {
-				c.logger.Warn("tap consumer duplicate event key matched different payload hash",
+				if dlqErr := c.dlq.Write(consumerDeadLetterRecord{
+					RecordedAt: time.Now().UTC(),
+					Stream:     c.config.Stream,
+					Durable:    c.config.Durable,
+					Subject:    subject,
+					Reason:     "dedupe_hash_mismatch",
+					Error:      fmt.Sprintf("duplicate event key matched different payload hash: processed_at=%s", record.ProcessedAt.UTC().Format(time.RFC3339Nano)),
+					Payload:    string(payload),
+				}); dlqErr != nil {
+					c.logger.Error("tap consumer failed to dead-letter duplicate hash mismatch; message requeued",
+						"error", dlqErr,
+						"event_id", evt.ID,
+						"event_type", evt.Type,
+						"source", evt.Source,
+					)
+					if nakErr := nak(); nakErr != nil {
+						c.logger.Warn("tap consumer nak failed after dedupe hash mismatch dead-letter error", "error", nakErr, "event_type", evt.Type)
+					}
+					return consumerMessageResult{}
+				}
+				c.logger.Error("tap consumer dead-lettered duplicate event key with different payload hash",
 					"event_id", evt.ID,
 					"event_type", evt.Type,
 					"source", evt.Source,
+					"processed_at", record.ProcessedAt.UTC().Format(time.RFC3339Nano),
 				)
+				c.recordDropped("dedupe_hash_mismatch", time.Now().UTC())
+				if err := ack(); err != nil {
+					c.logger.Warn("tap consumer ack failed after dead-lettering dedupe hash mismatch", "error", err, "event_type", evt.Type)
+				}
+				return consumerMessageResult{}
 			}
 			metrics.RecordNATSConsumerDeduplicated(c.config.Stream, c.config.Durable)
 			if err := ack(); err != nil {
