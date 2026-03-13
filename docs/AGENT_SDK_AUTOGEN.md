@@ -5,7 +5,7 @@ Generated from the shared `App.AgentSDKTools()` registry and `internal/agentsdk`
 - Catalog API version: **cerebro.agent-sdk.contracts/v1alpha1**
 - Catalog kind: **AgentSDKCatalog**
 - MCP protocol version: **2025-06-18**
-- Tools: **27**
+- Tools: **30**
 - Resources: **5**
 - MCP methods + notifications: **7**
 
@@ -16,6 +16,9 @@ Generated from the shared `App.AgentSDKTools()` registry and `internal/agentsdk`
 | `cerebro_access_review` | `1.0.0` | `cerebro.access_review` | `access_review` | `query` | `direct_tool` | false | false | ` ` | `sdk.enforcement.run` |
 | `cerebro_actuate_recommendation` | `1.0.0` | `cerebro.actuate_recommendation` | `actuate_recommendation` | `query` | `direct_tool` | false | false | ` ` | `sdk.worldmodel.write` |
 | `cerebro_annotate` | `1.0.0` | `cerebro.annotate_entity` | `annotate` | `writeback` | `direct_tool` | false | false | `POST /api/v1/agent-sdk/annotations` | `sdk.worldmodel.write` |
+| `cerebro_autonomous_credential_response` | `1.0.0` | `cerebro.autonomous_credential_response` | `autonomous_credential_response` | `query` | `direct_tool` | false | false | ` ` | `sdk.context.read` |
+| `cerebro_autonomous_workflow_approve` | `1.0.0` | `cerebro.autonomous_workflow_approve` | `autonomous_workflow_approve` | `query` | `direct_tool` | false | false | ` ` | `sdk.context.read` |
+| `cerebro_autonomous_workflow_status` | `1.0.0` | `cerebro.autonomous_workflow_status` | `autonomous_workflow_status` | `query` | `direct_tool` | false | false | ` ` | `sdk.context.read` |
 | `cerebro_blast_radius` | `1.0.0` | `cerebro.blast_radius` | `blast_radius` | `query` | `direct_tool` | false | false | ` ` | `sdk.context.read` |
 | `cerebro_check` | `1.0.0` | `evaluate_policy` | `check` | `enforcement` | `direct_tool` | false | false | `POST /api/v1/agent-sdk/check` | `sdk.enforcement.run` |
 | `cerebro_claim` | `1.0.0` | `cerebro.write_claim` | `claim` | `writeback` | `direct_tool` | false | false | `POST /api/v1/agent-sdk/claims` | `sdk.worldmodel.write` |
@@ -116,6 +119,35 @@ Generated from the shared `App.AgentSDKTools()` registry and `internal/agentsdk`
   "tags": [],
   "valid_from": "valid_from",
   "valid_to": "valid_to"
+}
+```
+
+### `cerebro_autonomous_credential_response`
+
+```json
+{
+  "requested_by": "requested_by",
+  "require_approval": true,
+  "secret_node_id": "secret_node_id"
+}
+```
+
+### `cerebro_autonomous_workflow_approve`
+
+```json
+{
+  "approve": true,
+  "approved_by": "approved_by",
+  "reason": "reason",
+  "run_id": "run_id"
+}
+```
+
+### `cerebro_autonomous_workflow_status`
+
+```json
+{
+  "run_id": "run_id"
 }
 ```
 

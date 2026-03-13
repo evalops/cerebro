@@ -187,6 +187,13 @@ func (e *ResponseEngine) SetActionHandler(handler ActionHandler) {
 	e.actionHandler = handler
 }
 
+func (e *ResponseEngine) ActionHandler() ActionHandler {
+	if e == nil {
+		return nil
+	}
+	return e.actionHandler
+}
+
 func (e *ResponseEngine) SetRemoteCaller(caller RemoteActionCaller) {
 	if e == nil || e.actionHandler == nil {
 		return
