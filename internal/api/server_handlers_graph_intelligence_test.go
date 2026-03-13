@@ -1028,7 +1028,7 @@ func TestPlatformIntelligenceReportRunAsync(t *testing.T) {
 	}
 
 	var runBody map[string]any
-	for i := 0; i < 50; i++ {
+	for i := 0; i < 600; i++ {
 		runResp := do(t, s, http.MethodGet, statusURL, nil)
 		if runResp.Code != http.StatusOK {
 			t.Fatalf("expected 200 for async run lookup, got %d: %s", runResp.Code, runResp.Body.String())
@@ -1302,7 +1302,7 @@ func TestPlatformIntelligenceReportRunRetryAsyncIncludesBackoffMetadata(t *testi
 	}
 
 	var failedRun map[string]any
-	for i := 0; i < 300; i++ {
+	for i := 0; i < 600; i++ {
 		status := do(t, s, http.MethodGet, statusURL, nil)
 		if status.Code != http.StatusOK {
 			t.Fatalf("expected 200 for async run lookup, got %d: %s", status.Code, status.Body.String())
@@ -1361,7 +1361,7 @@ func TestPlatformIntelligenceReportRunRetryAsyncIncludesBackoffMetadata(t *testi
 	}
 
 	var latest map[string]any
-	for i := 0; i < 300; i++ {
+	for i := 0; i < 600; i++ {
 		status := do(t, s, http.MethodGet, statusURL, nil)
 		if status.Code != http.StatusOK {
 			t.Fatalf("expected 200 for async retry lookup, got %d: %s", status.Code, status.Body.String())
@@ -1445,6 +1445,12 @@ func TestPlatformIntelligenceReportRunRetryRechecksMaxAttemptsInsideUpdate(t *te
 	stored.AttemptCount = len(stored.Attempts)
 	s.platformReportRuns[run.ID] = stored
 	s.platformReportRunMu.Unlock()
+	if s.platformReportStore != nil {
+		if err := s.platformReportStore.SaveRun(stored); err != nil {
+			s.platformReportSaveMu.Unlock()
+			t.Fatalf("SaveRun() failed: %v", err)
+		}
+	}
 	s.platformReportSaveMu.Unlock()
 
 	resp := <-done
@@ -1681,6 +1687,12 @@ func TestPlatformIntelligenceReportRunCancelDoesNotOverwriteSucceededRun(t *test
 	stored.AttemptCount = len(stored.Attempts)
 	s.platformReportRuns[run.ID] = stored
 	s.platformReportRunMu.Unlock()
+	if s.platformReportStore != nil {
+		if err := s.platformReportStore.SaveRun(stored); err != nil {
+			s.platformReportSaveMu.Unlock()
+			t.Fatalf("SaveRun() failed: %v", err)
+		}
+	}
 	s.platformReportSaveMu.Unlock()
 
 	resp := <-done

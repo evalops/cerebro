@@ -1465,14 +1465,16 @@ func (s *Server) updatePlatformReportRunSnapshot(runID string, apply func(*repor
 		run *reports.ReportRun
 		err error
 	)
-	s.platformReportRunMu.RLock()
-	run = reports.CloneReportRun(s.platformReportRuns[runID])
-	s.platformReportRunMu.RUnlock()
-	if run == nil && s.platformReportStore != nil {
+	if s.platformReportStore != nil {
 		run, err = s.platformReportStore.LoadRun(runID)
 		if err != nil {
 			return nil, fmt.Errorf("load report run %q: %w", runID, err)
 		}
+	}
+	if run == nil {
+		s.platformReportRunMu.RLock()
+		run = reports.CloneReportRun(s.platformReportRuns[runID])
+		s.platformReportRunMu.RUnlock()
 	}
 	if run == nil {
 		return nil, fmt.Errorf("report run not found: %s", runID)
