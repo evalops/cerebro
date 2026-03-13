@@ -5,6 +5,55 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 77 - Autonomous Credential Exposure Workflow Demo (2026-03-13)
+
+### Review findings
+- [x] Gap: issue `#219` did not need a speculative orchestration framework first; Cerebro already had the core substrate pieces for one real autonomous loop:
+  - [x] workload-secret detection and credential pivot edges
+  - [x] first-class observation / claim / decision / outcome writes
+  - [x] durable action execution with approval gates
+  - [x] shared execution-store infrastructure
+- [x] Gap: there was still no durable autonomous workflow resource tying those pieces together into one inspectable run with status, events, and approval continuation.
+- [x] Gap: the first workflow should prove graph leverage, not just generic automation. Credential exposure response was the right entry cut because the graph can already trace secret -> principal -> impacted targets.
+- [x] Gap: upstream patterns reinforce the same shape:
+  - [x] `argoproj/argo-workflows` keeps workflow state and approval continuation as durable execution resources rather than implicit handler-local state.
+  - [x] `StackStorm/st2` shows the value of explicit execution records and audit trails around automated action chains.
+  - [x] `smithy-security/smithy` and `turbot/flowpipe` reinforce that security workflows get differentiated by graph/context-rich decisioning, not just generic task runners.
+
+### Execution plan
+- [x] Add a durable autonomous workflow substrate:
+  - [x] add `autonomous_workflow` execution-store namespace
+  - [x] add typed run + event records for autonomous workflows
+  - [x] add durable run store on top of the shared execution store
+- [x] Implement the first end-to-end workflow:
+  - [x] add `credential_exposure_response` workflow ID
+  - [x] analyze discovered secret nodes through `has_credential_for` pivots
+  - [x] persist workflow run summary, impacted targets, and linked action execution
+- [x] Stitch graph evidence trail into the workflow:
+  - [x] write detection observation
+  - [x] write detection claim
+  - [x] write decision node
+  - [x] on success, write remediation claim + outcome
+- [x] Add tool surfaces for the demo loop:
+  - [x] `cerebro.autonomous_credential_response`
+  - [x] `cerebro.autonomous_workflow_approve`
+  - [x] `cerebro.autonomous_workflow_status`
+- [x] Reuse the configured runtime action handler when present:
+  - [x] add `ResponseEngine.ActionHandler()` getter
+  - [x] make autonomous workflow execution use the app-configured runtime handler before falling back to a default handler
+  - [x] keep approval/execution durable under the shared action engine
+- [x] Add regression coverage:
+  - [x] start workflow -> awaiting approval -> durable run/action persistence
+  - [x] approve workflow -> revoke credentials -> remediation claim/outcome persistence
+  - [x] status tool returns workflow and action events
+- [x] Keep generated SDK contracts in sync:
+  - [x] regenerate Agent SDK docs/contracts/packages for the three new autonomous tools
+- [ ] Next autonomous depth cuts after this slice:
+  - [ ] add the second demo workflow: CVE response with blast-radius prioritization
+  - [ ] add Slack/notification approval routing instead of tool-only approval continuation
+  - [ ] add post-remediation validation step and explicit validation-stage run semantics
+  - [ ] surface autonomous workflow runs through platform execution/report APIs, not only tools
+
 ## Deep Review Cycle 76 - Durable Graph-Powered Access Review Campaigns (2026-03-13)
 
 ### Review findings

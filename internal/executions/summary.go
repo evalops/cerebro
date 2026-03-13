@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/evalops/cerebro/internal/actionengine"
+	"github.com/evalops/cerebro/internal/autonomous"
 	"github.com/evalops/cerebro/internal/executionstore"
 	"github.com/evalops/cerebro/internal/functionscan"
 	reports "github.com/evalops/cerebro/internal/graph/reports"
@@ -100,6 +101,8 @@ func summarizeEnvelope(env executionstore.RunEnvelope, opts ListOptions) (Summar
 		return summarizeFunctionRun(env)
 	case executionstore.NamespaceActionEngine:
 		return summarizeActionExecution(env)
+	case executionstore.NamespaceAutonomousWorkflow:
+		return summarizeAutonomousWorkflowRun(env)
 	default:
 		return Summary{
 			Namespace:   env.Namespace,
@@ -147,6 +150,35 @@ func summarizeReportRun(env executionstore.RunEnvelope, opts ListOptions) (Summa
 		StatusURL:     strings.TrimSpace(payload.Run.StatusURL),
 		JobID:         strings.TrimSpace(payload.Run.JobID),
 		Error:         strings.TrimSpace(payload.Run.Error),
+	}, true, nil
+}
+
+func summarizeAutonomousWorkflowRun(env executionstore.RunEnvelope) (Summary, bool, error) {
+	var run autonomous.RunRecord
+	if err := json.Unmarshal(env.Payload, &run); err != nil {
+		return Summary{}, false, fmt.Errorf("decode autonomous workflow execution %q: %w", env.RunID, err)
+	}
+	scopeID := firstNonEmpty(strings.TrimSpace(run.SecretNodeID), strings.TrimSpace(run.WorkloadID), strings.TrimSpace(run.PrincipalID))
+	displayName := "workflow:" + firstNonEmpty(string(run.WorkflowID), env.RunID)
+	if scopeID != "" {
+		displayName += ":" + scopeID
+	}
+	return Summary{
+		Namespace:   env.Namespace,
+		RunID:       env.RunID,
+		Kind:        env.Kind,
+		Status:      env.Status,
+		Stage:       env.Stage,
+		SubmittedAt: env.SubmittedAt,
+		StartedAt:   env.StartedAt,
+		CompletedAt: env.CompletedAt,
+		UpdatedAt:   env.UpdatedAt,
+		DisplayName: displayName,
+		ScopeID:     scopeID,
+		RequestedBy: strings.TrimSpace(run.RequestedBy),
+		Error:       strings.TrimSpace(run.Error),
+		Provider:    strings.TrimSpace(run.Provider),
+		Target:      scopeID,
 	}, true, nil
 }
 

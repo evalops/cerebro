@@ -6,16 +6,136 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/evalops/cerebro/internal/actionengine"
 	"github.com/evalops/cerebro/internal/agents"
+	"github.com/evalops/cerebro/internal/autonomous"
 	"github.com/evalops/cerebro/internal/executionstore"
 	"github.com/evalops/cerebro/internal/findings"
 	"github.com/evalops/cerebro/internal/graph"
 	"github.com/evalops/cerebro/internal/imagescan"
 	"github.com/evalops/cerebro/internal/policy"
+	"github.com/evalops/cerebro/internal/runtime"
 )
+
+type recordingAutonomousActionHandler struct {
+	principalID string
+	provider    string
+	calls       int
+}
+
+type blockingAutonomousActionHandler struct {
+	started chan struct{}
+	release chan struct{}
+	calls   atomic.Int32
+	once    sync.Once
+}
+
+func (h *recordingAutonomousActionHandler) KillProcess(context.Context, string, int) error {
+	return nil
+}
+
+func (h *recordingAutonomousActionHandler) IsolateContainer(context.Context, string, string) error {
+	return nil
+}
+
+func (h *recordingAutonomousActionHandler) IsolateHost(context.Context, string, string) error {
+	return nil
+}
+
+func (h *recordingAutonomousActionHandler) QuarantineFile(context.Context, string, string) error {
+	return nil
+}
+
+func (h *recordingAutonomousActionHandler) BlockIP(context.Context, string) error {
+	return nil
+}
+
+func (h *recordingAutonomousActionHandler) BlockDomain(context.Context, string) error {
+	return nil
+}
+
+func (h *recordingAutonomousActionHandler) RevokeCredentials(_ context.Context, principalID, provider string) error {
+	h.principalID = principalID
+	h.provider = provider
+	h.calls++
+	return nil
+}
+
+func (h *recordingAutonomousActionHandler) ScaleDown(context.Context, string, int) error {
+	return nil
+}
+
+func (h *blockingAutonomousActionHandler) KillProcess(context.Context, string, int) error {
+	return nil
+}
+
+func (h *blockingAutonomousActionHandler) IsolateContainer(context.Context, string, string) error {
+	return nil
+}
+
+func (h *blockingAutonomousActionHandler) IsolateHost(context.Context, string, string) error {
+	return nil
+}
+
+func (h *blockingAutonomousActionHandler) QuarantineFile(context.Context, string, string) error {
+	return nil
+}
+
+func (h *blockingAutonomousActionHandler) BlockIP(context.Context, string) error {
+	return nil
+}
+
+func (h *blockingAutonomousActionHandler) BlockDomain(context.Context, string) error {
+	return nil
+}
+
+func (h *blockingAutonomousActionHandler) RevokeCredentials(context.Context, string, string) error {
+	h.calls.Add(1)
+	h.once.Do(func() {
+		close(h.started)
+	})
+	<-h.release
+	return nil
+}
+
+func (h *blockingAutonomousActionHandler) ScaleDown(context.Context, string, int) error {
+	return nil
+}
+
+func autonomousCredentialWorkflowGraph() *graph.Graph {
+	g := graph.New()
+	g.AddNode(&graph.Node{
+		ID:   "secret:public-repo:1",
+		Kind: graph.NodeKindSecret,
+		Name: "exposed-secret",
+		Properties: map[string]any{
+			"provider":           "aws",
+			"workload_target_id": "workload:payments-api",
+			"finding_id":         "finding:secret:1",
+		},
+	})
+	g.AddNode(&graph.Node{ID: "workload:payments-api", Kind: graph.NodeKindWorkload, Name: "payments-api", Provider: "aws"})
+	g.AddNode(&graph.Node{ID: "service_account:payments-prod", Kind: graph.NodeKindServiceAccount, Name: "payments-prod", Provider: "aws"})
+	g.AddNode(&graph.Node{ID: "bucket:payments-prod", Kind: graph.NodeKindBucket, Name: "payments-prod", Provider: "aws"})
+	g.AddEdge(&graph.Edge{
+		ID:     "workload:payments-api->bucket:payments-prod:has_credential_for",
+		Source: "workload:payments-api",
+		Target: "bucket:payments-prod",
+		Kind:   graph.EdgeKindHasCredentialFor,
+		Effect: graph.EdgeEffectAllow,
+		Properties: map[string]any{
+			"secret_node_id":   "secret:public-repo:1",
+			"via_principal_id": "service_account:payments-prod",
+		},
+	})
+	g.BuildIndex()
+	return g
+}
 
 func TestCerebroToolsApprovalFlags(t *testing.T) {
 	application := &App{Config: &Config{
@@ -49,6 +169,14 @@ func TestCerebroToolsApprovalFlags(t *testing.T) {
 	}
 	if !accessReview.RequiresApproval {
 		t.Fatal("access_review should require approval with current config")
+	}
+
+	autonomousApprove := findCerebroTool(tools, "cerebro.autonomous_workflow_approve")
+	if autonomousApprove == nil {
+		t.Fatal("expected cerebro.autonomous_workflow_approve tool")
+	}
+	if !autonomousApprove.RequiresApproval {
+		t.Fatal("autonomous_workflow_approve should require approval")
 	}
 }
 
@@ -927,6 +1055,363 @@ func TestCerebroAccessReviewTool(t *testing.T) {
 	}
 	if payload["created_by"] != "ensemble" {
 		t.Fatalf("expected created_by ensemble, got %#v", payload["created_by"])
+	}
+}
+
+func TestCerebroAutonomousCredentialResponseTool_AwaitingApproval(t *testing.T) {
+	dir := t.TempDir()
+	store, err := executionstore.NewSQLiteStore(filepath.Join(dir, "executions.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	application := &App{
+		Config:         &Config{ExecutionStoreFile: filepath.Join(dir, "executions.db")},
+		ExecutionStore: store,
+		SecurityGraph:  autonomousCredentialWorkflowGraph(),
+	}
+	tool := findCerebroTool(application.cerebroTools(), "cerebro.autonomous_credential_response")
+	if tool == nil {
+		t.Fatal("expected autonomous credential response tool")
+	}
+
+	result, err := tool.Handler(context.Background(), json.RawMessage(`{
+		"secret_node_id":"secret:public-repo:1",
+		"require_approval":true,
+		"requested_by":"analyst@example.com"
+	}`))
+	if err != nil {
+		t.Fatalf("tool returned error: %v", err)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal([]byte(result), &body); err != nil {
+		t.Fatalf("decode tool payload: %v", err)
+	}
+	if body["status"] != string(autonomous.RunStatusAwaitingApproval) {
+		t.Fatalf("expected awaiting approval status, got %#v", body["status"])
+	}
+	if body["stage"] != string(autonomous.RunStageAwaitingApproval) {
+		t.Fatalf("expected approval stage, got %#v", body["stage"])
+	}
+	runID, ok := body["run_id"].(string)
+	if !ok || strings.TrimSpace(runID) == "" {
+		t.Fatalf("expected run_id, got %#v", body["run_id"])
+	}
+
+	runStore := autonomous.NewSQLiteRunStoreWithExecutionStore(store)
+	run, err := runStore.LoadRun(context.Background(), runID)
+	if err != nil {
+		t.Fatalf("LoadRun: %v", err)
+	}
+	if run == nil {
+		t.Fatal("expected persisted autonomous run")
+	}
+	if run.RequestedBy != "ensemble" {
+		t.Fatalf("expected durable actor ensemble, got %q", run.RequestedBy)
+	}
+	if got := fmt.Sprintf("%v", run.Metadata["requested_by_hint"]); got != "analyst@example.com" {
+		t.Fatalf("expected requested_by_hint analyst@example.com, got %#v", run.Metadata["requested_by_hint"])
+	}
+	if run.ActionExecutionID == "" || run.ObservationID == "" || run.DetectionClaimID == "" || run.DecisionID == "" {
+		t.Fatalf("expected workflow artifacts to be persisted, got %#v", run)
+	}
+
+	actionStore := actionengine.NewSQLiteStoreWithExecutionStore(store, actionengine.DefaultNamespace)
+	execution, err := actionStore.LoadExecution(context.Background(), run.ActionExecutionID)
+	if err != nil {
+		t.Fatalf("LoadExecution: %v", err)
+	}
+	if execution == nil {
+		t.Fatal("expected persisted action execution")
+	}
+	if execution.Status != actionengine.StatusAwaitingApproval {
+		t.Fatalf("expected awaiting approval action execution, got %q", execution.Status)
+	}
+
+	current := application.CurrentSecurityGraph()
+	if _, ok := current.GetNode(run.ObservationID); !ok {
+		t.Fatalf("expected observation node %q", run.ObservationID)
+	}
+	if _, ok := current.GetNode(run.DetectionClaimID); !ok {
+		t.Fatalf("expected detection claim node %q", run.DetectionClaimID)
+	}
+	if _, ok := current.GetNode(run.DecisionID); !ok {
+		t.Fatalf("expected decision node %q", run.DecisionID)
+	}
+}
+
+func TestCerebroAutonomousCredentialResponseTool_IgnoresCallerApprovalPreference(t *testing.T) {
+	dir := t.TempDir()
+	store, err := executionstore.NewSQLiteStore(filepath.Join(dir, "executions.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	application := &App{
+		Config:         &Config{ExecutionStoreFile: filepath.Join(dir, "executions.db")},
+		ExecutionStore: store,
+		SecurityGraph:  autonomousCredentialWorkflowGraph(),
+	}
+	tool := findCerebroTool(application.cerebroTools(), "cerebro.autonomous_credential_response")
+	if tool == nil {
+		t.Fatal("expected autonomous credential response tool")
+	}
+
+	result, err := tool.Handler(context.Background(), json.RawMessage(`{
+		"secret_node_id":"secret:public-repo:1",
+		"require_approval":false
+	}`))
+	if err != nil {
+		t.Fatalf("tool returned error: %v", err)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal([]byte(result), &body); err != nil {
+		t.Fatalf("decode tool payload: %v", err)
+	}
+	if body["status"] != string(autonomous.RunStatusAwaitingApproval) {
+		t.Fatalf("expected awaiting approval status, got %#v", body["status"])
+	}
+	if value, ok := body["require_approval"].(bool); !ok || !value {
+		t.Fatalf("expected server-owned require_approval=true, got %#v", body["require_approval"])
+	}
+}
+
+func TestCerebroAutonomousWorkflowApproveTool_CompletesRun(t *testing.T) {
+	dir := t.TempDir()
+	store, err := executionstore.NewSQLiteStore(filepath.Join(dir, "executions.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	handler := &recordingAutonomousActionHandler{}
+	responseEngine := runtime.NewResponseEngine()
+	responseEngine.SetActionHandler(handler)
+
+	application := &App{
+		Config:         &Config{ExecutionStoreFile: filepath.Join(dir, "executions.db")},
+		ExecutionStore: store,
+		SecurityGraph:  autonomousCredentialWorkflowGraph(),
+		RuntimeRespond: responseEngine,
+	}
+
+	startTool := findCerebroTool(application.cerebroTools(), "cerebro.autonomous_credential_response")
+	if startTool == nil {
+		t.Fatal("expected autonomous credential response tool")
+	}
+	startResult, err := startTool.Handler(context.Background(), json.RawMessage(`{
+		"secret_node_id":"secret:public-repo:1",
+		"require_approval":true
+	}`))
+	if err != nil {
+		t.Fatalf("start tool returned error: %v", err)
+	}
+	var startBody map[string]any
+	if err := json.Unmarshal([]byte(startResult), &startBody); err != nil {
+		t.Fatalf("decode start payload: %v", err)
+	}
+	runID, ok := startBody["run_id"].(string)
+	if !ok || strings.TrimSpace(runID) == "" {
+		t.Fatalf("expected run_id, got %#v", startBody["run_id"])
+	}
+
+	approveTool := findCerebroTool(application.cerebroTools(), "cerebro.autonomous_workflow_approve")
+	if approveTool == nil {
+		t.Fatal("expected autonomous workflow approve tool")
+	}
+	approveResult, err := approveTool.Handler(context.Background(), json.RawMessage(fmt.Sprintf(`{
+		"run_id":%q,
+		"approve":true,
+		"approved_by":"manager@example.com"
+	}`, runID)))
+	if err != nil {
+		t.Fatalf("approve tool returned error: %v", err)
+	}
+
+	var approveBody map[string]any
+	if err := json.Unmarshal([]byte(approveResult), &approveBody); err != nil {
+		t.Fatalf("decode approve payload: %v", err)
+	}
+	if approveBody["status"] != string(autonomous.RunStatusCompleted) {
+		t.Fatalf("expected completed run status, got %#v", approveBody["status"])
+	}
+	if approveBody["stage"] != string(autonomous.RunStageClosed) {
+		t.Fatalf("expected closed stage, got %#v", approveBody["stage"])
+	}
+	if handler.calls != 1 {
+		t.Fatalf("expected one revoke call, got %d", handler.calls)
+	}
+	if handler.principalID != "service_account:payments-prod" {
+		t.Fatalf("expected principal service_account:payments-prod, got %q", handler.principalID)
+	}
+	if handler.provider != "aws" {
+		t.Fatalf("expected provider aws, got %q", handler.provider)
+	}
+
+	runStore := autonomous.NewSQLiteRunStoreWithExecutionStore(store)
+	run, err := runStore.LoadRun(context.Background(), runID)
+	if err != nil {
+		t.Fatalf("LoadRun: %v", err)
+	}
+	if run == nil {
+		t.Fatal("expected persisted autonomous run")
+	}
+	if run.Status != autonomous.RunStatusCompleted || run.RemediationClaimID == "" || run.OutcomeID == "" {
+		t.Fatalf("expected completed workflow with remediation artifacts, got %#v", run)
+	}
+
+	actionStore := actionengine.NewSQLiteStoreWithExecutionStore(store, actionengine.DefaultNamespace)
+	execution, err := actionStore.LoadExecution(context.Background(), run.ActionExecutionID)
+	if err != nil {
+		t.Fatalf("LoadExecution: %v", err)
+	}
+	if execution == nil {
+		t.Fatal("expected persisted action execution")
+	}
+	if execution.Status != actionengine.StatusCompleted {
+		t.Fatalf("expected completed action execution, got %q", execution.Status)
+	}
+	if execution.ApprovedBy != "ensemble" {
+		t.Fatalf("expected approved_by ensemble, got %q", execution.ApprovedBy)
+	}
+
+	statusTool := findCerebroTool(application.cerebroTools(), "cerebro.autonomous_workflow_status")
+	if statusTool == nil {
+		t.Fatal("expected autonomous workflow status tool")
+	}
+	statusResult, err := statusTool.Handler(context.Background(), json.RawMessage(fmt.Sprintf(`{"run_id":%q}`, runID)))
+	if err != nil {
+		t.Fatalf("status tool returned error: %v", err)
+	}
+	var statusBody map[string]any
+	if err := json.Unmarshal([]byte(statusResult), &statusBody); err != nil {
+		t.Fatalf("decode status payload: %v", err)
+	}
+	if _, ok := statusBody["events"].([]any); !ok {
+		t.Fatalf("expected workflow events, got %#v", statusBody["events"])
+	}
+	if _, ok := statusBody["action_events"].([]any); !ok {
+		t.Fatalf("expected action events, got %#v", statusBody["action_events"])
+	}
+
+	current := application.CurrentSecurityGraph()
+	if _, ok := current.GetNode(run.RemediationClaimID); !ok {
+		t.Fatalf("expected remediation claim node %q", run.RemediationClaimID)
+	}
+	if _, ok := current.GetNode(run.OutcomeID); !ok {
+		t.Fatalf("expected outcome node %q", run.OutcomeID)
+	}
+
+	_, err = approveTool.Handler(context.Background(), json.RawMessage(fmt.Sprintf(`{
+		"run_id":%q,
+		"approve":true,
+		"approved_by":"manager@example.com"
+	}`, runID)))
+	if err == nil {
+		t.Fatal("expected second approval attempt to fail")
+	}
+	if !strings.Contains(err.Error(), "not awaiting approval") {
+		t.Fatalf("expected awaiting approval error, got %v", err)
+	}
+	if handler.calls != 1 {
+		t.Fatalf("expected one revoke call after replay attempt, got %d", handler.calls)
+	}
+}
+
+func TestCerebroAutonomousWorkflowApproveTool_ConcurrentApprovalClaimsOnce(t *testing.T) {
+	dir := t.TempDir()
+	store, err := executionstore.NewSQLiteStore(filepath.Join(dir, "executions.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	handler := &blockingAutonomousActionHandler{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	responseEngine := runtime.NewResponseEngine()
+	responseEngine.SetActionHandler(handler)
+
+	application := &App{
+		Config:         &Config{ExecutionStoreFile: filepath.Join(dir, "executions.db")},
+		ExecutionStore: store,
+		SecurityGraph:  autonomousCredentialWorkflowGraph(),
+		RuntimeRespond: responseEngine,
+	}
+
+	startTool := findCerebroTool(application.cerebroTools(), "cerebro.autonomous_credential_response")
+	if startTool == nil {
+		t.Fatal("expected autonomous credential response tool")
+	}
+	startResult, err := startTool.Handler(context.Background(), json.RawMessage(`{
+		"secret_node_id":"secret:public-repo:1",
+		"require_approval":true
+	}`))
+	if err != nil {
+		t.Fatalf("start tool returned error: %v", err)
+	}
+	var startBody map[string]any
+	if err := json.Unmarshal([]byte(startResult), &startBody); err != nil {
+		t.Fatalf("decode start payload: %v", err)
+	}
+	runID, ok := startBody["run_id"].(string)
+	if !ok || strings.TrimSpace(runID) == "" {
+		t.Fatalf("expected run_id, got %#v", startBody["run_id"])
+	}
+
+	approveTool := findCerebroTool(application.cerebroTools(), "cerebro.autonomous_workflow_approve")
+	if approveTool == nil {
+		t.Fatal("expected autonomous workflow approve tool")
+	}
+
+	type approveResult struct {
+		body string
+		err  error
+	}
+	results := make(chan approveResult, 2)
+	approveCall := func() {
+		body, err := approveTool.Handler(context.Background(), json.RawMessage(fmt.Sprintf(`{
+			"run_id":%q,
+			"approve":true,
+			"approved_by":"manager@example.com"
+		}`, runID)))
+		results <- approveResult{body: body, err: err}
+	}
+
+	go approveCall()
+	<-handler.started
+	go approveCall()
+
+	firstResult := <-results
+	if firstResult.err == nil {
+		t.Fatal("expected one concurrent approval to fail before release")
+	}
+	if !strings.Contains(firstResult.err.Error(), "not awaiting approval") {
+		t.Fatalf("expected awaiting approval error, got %v", firstResult.err)
+	}
+
+	close(handler.release)
+
+	secondResult := <-results
+	if secondResult.err != nil {
+		t.Fatalf("expected claimed approval to complete, got %v", secondResult.err)
+	}
+
+	if got := handler.calls.Load(); got != 1 {
+		t.Fatalf("expected exactly one revoke call, got %d", got)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal([]byte(secondResult.body), &body); err != nil {
+		t.Fatalf("decode approve payload: %v", err)
+	}
+	if body["status"] != string(autonomous.RunStatusCompleted) {
+		t.Fatalf("expected completed status, got %#v", body["status"])
 	}
 }
 

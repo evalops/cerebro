@@ -684,6 +684,47 @@ func (a *App) cerebroTools() []agents.Tool {
 			},
 			Handler: a.toolCerebroAccessReview,
 		},
+		{
+			Name:        "cerebro.autonomous_credential_response",
+			Description: "Start an autonomous credential exposure response workflow from a discovered secret or credential pivot",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"secret_node_id": map[string]any{"type": "string"},
+					"requested_by":   map[string]any{"type": "string"},
+				},
+				"required": []string{"secret_node_id"},
+			},
+			Handler: a.toolCerebroAutonomousCredentialResponse,
+		},
+		{
+			Name:             "cerebro.autonomous_workflow_approve",
+			Description:      "Approve or reject a pending autonomous workflow and continue execution",
+			RequiresApproval: true,
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"run_id":      map[string]any{"type": "string"},
+					"approved_by": map[string]any{"type": "string"},
+					"approve":     map[string]any{"type": "boolean", "default": true},
+					"reason":      map[string]any{"type": "string"},
+				},
+				"required": []string{"run_id"},
+			},
+			Handler: a.toolCerebroAutonomousWorkflowApprove,
+		},
+		{
+			Name:        "cerebro.autonomous_workflow_status",
+			Description: "Inspect an autonomous workflow run, its events, and any linked action execution",
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"run_id": map[string]any{"type": "string"},
+				},
+				"required": []string{"run_id"},
+			},
+			Handler: a.toolCerebroAutonomousWorkflowStatus,
+		},
 	}
 }
 
