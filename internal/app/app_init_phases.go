@@ -54,8 +54,9 @@ func (a *App) initPhase1(ctx context.Context) error {
 }
 
 func (a *App) initPhase2a(ctx context.Context) error {
+	a.initExecutionStore()
+
 	if err := runInitTasksConcurrently(ctx, []concurrentInitTask{
-		{name: "execution_store", run: func(context.Context) { a.initExecutionStore() }},
 		{name: "cache", run: func(context.Context) { a.initCache() }},
 		{name: "ticketing", run: func(taskCtx context.Context) { a.initTicketing(taskCtx) }},
 		{name: "identity", run: func(context.Context) { a.initIdentity() }},
