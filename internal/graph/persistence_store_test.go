@@ -181,3 +181,30 @@ func TestFileGraphSnapshotReplicaRejectsTraversalKeys(t *testing.T) {
 		t.Fatal("expected traversal key rejection on delete")
 	}
 }
+
+func TestParseBucketURIAllowsBucketRootTrailingSlash(t *testing.T) {
+	tests := []struct {
+		raw          string
+		prefix       string
+		wantBucket   string
+		wantObjPrfix string
+	}{
+		{raw: "s3://bucket/", prefix: "s3://", wantBucket: "bucket", wantObjPrfix: ""},
+		{raw: "gcs://bucket/", prefix: "gcs://", wantBucket: "bucket", wantObjPrfix: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.raw, func(t *testing.T) {
+			bucket, objectPrefix, err := parseBucketURI(tt.raw, tt.prefix)
+			if err != nil {
+				t.Fatalf("parseBucketURI(%q): %v", tt.raw, err)
+			}
+			if bucket != tt.wantBucket {
+				t.Fatalf("expected bucket %q, got %q", tt.wantBucket, bucket)
+			}
+			if objectPrefix != tt.wantObjPrfix {
+				t.Fatalf("expected object prefix %q, got %q", tt.wantObjPrfix, objectPrefix)
+			}
+		})
+	}
+}

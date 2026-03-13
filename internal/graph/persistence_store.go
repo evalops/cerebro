@@ -873,10 +873,12 @@ func parseBucketURI(raw, prefix string) (string, string, error) {
 	objectPrefix := ""
 	if len(parts) == 2 {
 		objectPrefix = strings.Trim(strings.TrimSpace(parts[1]), "/")
-		var err error
-		objectPrefix, err = normalizeReplicaKey(objectPrefix)
-		if err != nil {
-			return "", "", fmt.Errorf("invalid replica prefix %q: %w", raw, err)
+		if objectPrefix != "" {
+			var err error
+			objectPrefix, err = normalizeReplicaKey(objectPrefix)
+			if err != nil {
+				return "", "", fmt.Errorf("invalid replica prefix %q: %w", raw, err)
+			}
 		}
 	}
 	return bucket, objectPrefix, nil
