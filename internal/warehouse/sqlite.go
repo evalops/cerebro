@@ -61,6 +61,15 @@ func NewSQLiteWarehouse(config SQLiteWarehouseConfig) (*SQLiteWarehouse, error) 
 		_ = db.Close()
 		return nil, fmt.Errorf("ping sqlite warehouse: %w", err)
 	}
+	if info, err := os.Stat(path); err == nil && !info.IsDir() {
+		if err := os.Chmod(path, 0o600); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("restrict sqlite warehouse file: %w", err)
+		}
+	} else if err != nil && !os.IsNotExist(err) {
+		_ = db.Close()
+		return nil, fmt.Errorf("inspect sqlite warehouse file: %w", err)
+	}
 
 	databaseName := strings.TrimSpace(config.Database)
 	if databaseName == "" {
@@ -192,7 +201,7 @@ func (w *SQLiteWarehouse) GetAssets(ctx context.Context, table string, filter sn
 	if w == nil {
 		return nil, fmt.Errorf("sqlite warehouse is not initialized")
 	}
-	table, err := normalizeSQLiteIdentifier(table)
+	table, err := normalizeAssetTableName(table)
 	if err != nil {
 		return nil, err
 	}
@@ -248,7 +257,7 @@ func (w *SQLiteWarehouse) GetAssetByID(ctx context.Context, table, id string) (m
 	if w == nil {
 		return nil, fmt.Errorf("sqlite warehouse is not initialized")
 	}
-	table, err := normalizeSQLiteIdentifier(table)
+	table, err := normalizeAssetTableName(table)
 	if err != nil {
 		return nil, err
 	}

@@ -188,7 +188,7 @@ func (w *PostgresWarehouse) GetAssets(ctx context.Context, table string, filter 
 	if w == nil {
 		return nil, fmt.Errorf("postgres warehouse is not initialized")
 	}
-	table, err := normalizeSQLiteIdentifier(table)
+	table, err := normalizeAssetTableName(table)
 	if err != nil {
 		return nil, err
 	}
@@ -246,7 +246,7 @@ func (w *PostgresWarehouse) GetAssetByID(ctx context.Context, table, id string) 
 	if w == nil {
 		return nil, fmt.Errorf("postgres warehouse is not initialized")
 	}
-	table, err := normalizeSQLiteIdentifier(table)
+	table, err := normalizeAssetTableName(table)
 	if err != nil {
 		return nil, err
 	}

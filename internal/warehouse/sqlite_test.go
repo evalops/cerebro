@@ -2,6 +2,7 @@ package warehouse
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -80,5 +81,40 @@ func TestSQLiteWarehouseInsertCDCEvents(t *testing.T) {
 	}
 	if result.Count != 1 {
 		t.Fatalf("expected idempotent cdc insert, got %#v", result.Rows)
+	}
+}
+
+func TestSQLiteWarehouseRestrictsFilePermissions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "warehouse.db")
+	store, err := NewSQLiteWarehouse(SQLiteWarehouseConfig{Path: path})
+	if err != nil {
+		t.Fatalf("new sqlite warehouse: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat sqlite warehouse file: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("expected sqlite warehouse mode 0600, got %04o", got)
+	}
+}
+
+func TestSQLiteWarehouseRejectsNonAssetTables(t *testing.T) {
+	store, err := NewSQLiteWarehouse(SQLiteWarehouseConfig{
+		Path: filepath.Join(t.TempDir(), "warehouse.db"),
+	})
+	if err != nil {
+		t.Fatalf("new sqlite warehouse: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	ctx := context.Background()
+	if _, err := store.Exec(ctx, `CREATE TABLE cdc_events (id TEXT)`); err != nil {
+		t.Fatalf("create internal table: %v", err)
+	}
+	if _, err := store.GetAssets(ctx, "cdc_events", snowflake.AssetFilter{Limit: 1}); err == nil {
+		t.Fatal("expected non-asset table to be rejected")
 	}
 }
