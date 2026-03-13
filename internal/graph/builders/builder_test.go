@@ -831,6 +831,56 @@ func TestBuilder_GCPIAMPoliciesPreferredOverMembersPreserveConditions(t *testing
 	}
 }
 
+func TestBuilder_GCPIAMPoliciesDisableMemberFallbackWithoutMaterializedEdges(t *testing.T) {
+	ctx := context.Background()
+	source := newMockDataSource()
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	source.setResult(`SELECT id, name, project_id, zone, status, service_accounts FROM gcp_compute_instances`, &DataQueryResult{
+		Rows: []map[string]any{{
+			"id":               "instance-5",
+			"name":             "instance-5",
+			"project_id":       "proj-5",
+			"zone":             "us-central1-a",
+			"status":           "RUNNING",
+			"service_accounts": []any{},
+		}},
+	})
+
+	source.setResult(`SELECT project_id, member, roles FROM gcp_iam_members`, &DataQueryResult{
+		Rows: []map[string]any{{
+			"project_id": "proj-5",
+			"member":     "user:carol@example.com",
+			"roles": []any{
+				map[string]any{"name": "roles/owner"},
+			},
+		}},
+	})
+
+	source.setResult(`SELECT project_id, bindings FROM gcp_iam_policies`, &DataQueryResult{
+		Rows: []map[string]any{{
+			"project_id": "proj-without-resources",
+			"bindings": []any{
+				map[string]any{
+					"role":    "roles/viewer",
+					"members": []any{"user:bob@example.com"},
+				},
+			},
+		}},
+	})
+
+	builder := NewBuilder(source, logger)
+	if err := builder.Build(ctx); err != nil {
+		t.Fatalf("Build failed: %v", err)
+	}
+
+	for _, edge := range builder.Graph().GetOutEdges("user:carol@example.com") {
+		if edge.Target == "instance-5" {
+			t.Fatalf("did not expect member fallback edge when policy bindings are present elsewhere: %#v", edge)
+		}
+	}
+}
+
 func TestBuilder_GCPBucketIAMPolicyEdges(t *testing.T) {
 	ctx := context.Background()
 	source := newMockDataSource()

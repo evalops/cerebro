@@ -146,8 +146,8 @@ func (b *Builder) buildGCPNodes(ctx context.Context) {
 }
 
 func (b *Builder) buildGCPEdges(ctx context.Context) {
-	edgeCount := b.buildGCPEdgesFromPolicies(ctx)
-	if edgeCount == 0 {
+	edgeCount, usedPolicies := b.buildGCPEdgesFromPolicies(ctx)
+	if !usedPolicies {
 		edgeCount = b.buildGCPEdgesFromMembers(ctx)
 	}
 	edgeCount += b.buildGCPBucketIAMPolicyEdges(ctx)
@@ -207,15 +207,16 @@ func (b *Builder) buildGCPEdgesFromMembers(ctx context.Context) int {
 	return count
 }
 
-func (b *Builder) buildGCPEdgesFromPolicies(ctx context.Context) int {
+func (b *Builder) buildGCPEdgesFromPolicies(ctx context.Context) (int, bool) {
 	policies, err := b.queryIfExists(ctx, "gcp_iam_policies",
 		`SELECT project_id, bindings FROM gcp_iam_policies`)
 	if err != nil {
 		b.logger.Debug("failed to query GCP IAM policies", "error", err)
-		return 0
+		return 0, false
 	}
 
 	count := 0
+	hasPolicyBindings := false
 	for _, policy := range policies.Rows {
 		projectID := toString(policy["project_id"])
 		if projectID == "" {
@@ -230,6 +231,10 @@ func (b *Builder) buildGCPEdgesFromPolicies(ctx context.Context) int {
 			}
 
 			members := toAnySlice(bindingMap["members"])
+			if len(members) == 0 {
+				continue
+			}
+			hasPolicyBindings = true
 			edgeKind := gcpRoleToEdgeKind(role)
 			condition := gcpIAMBindingCondition(bindingMap)
 			for _, memberValue := range members {
@@ -262,7 +267,7 @@ func (b *Builder) buildGCPEdgesFromPolicies(ctx context.Context) int {
 		}
 	}
 
-	return count
+	return count, hasPolicyBindings
 }
 
 func (b *Builder) buildGCPBucketIAMPolicyEdges(ctx context.Context) int {
