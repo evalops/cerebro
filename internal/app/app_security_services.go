@@ -258,8 +258,8 @@ func (a *App) initHealth() {
 		status := a.GraphSnapshots.Status()
 		switch {
 		case status.ReplicaConfigured && status.LastReplicationError != "":
-			result.Status = health.StatusUnhealthy
-			result.Message = "snapshot replication failed: " + status.LastReplicationError
+			result.Status = health.StatusDegraded
+			result.Message = "local snapshot persistence healthy; replica sync failing: " + status.LastReplicationError
 		case status.ReplicaConfigured && status.LastReplicatedSnapshot == "":
 			result.Status = health.StatusDegraded
 			result.Message = "replica configured but not seeded yet"
@@ -682,7 +682,11 @@ func (a *App) activateBuiltSecurityGraph(ctx context.Context, securityGraph *gra
 	a.setSecurityGraph(securityGraph)
 	if a.GraphSnapshots != nil {
 		if record, err := a.GraphSnapshots.SaveGraph(securityGraph); err != nil {
-			a.Logger.Warn("failed to persist security graph snapshot", "error", err)
+			if record != nil {
+				a.Logger.Warn("replicated security graph snapshot failed after local persist", "snapshot_id", record.ID, "error", err)
+			} else {
+				a.Logger.Warn("failed to persist security graph snapshot", "error", err)
+			}
 		} else if record != nil {
 			a.Logger.Info("persisted security graph snapshot", "snapshot_id", record.ID)
 		}

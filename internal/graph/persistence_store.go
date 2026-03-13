@@ -131,7 +131,7 @@ func (s *GraphPersistenceStore) SaveGraph(g *Graph) (*GraphSnapshotRecord, error
 	}
 	if err := s.syncReplica(context.Background()); err != nil {
 		s.recordReplicationError(err)
-		return nil, err
+		return record, err
 	}
 	s.recordReplicated(record)
 	return record, nil
