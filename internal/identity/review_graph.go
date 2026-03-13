@@ -280,11 +280,11 @@ func (s *Service) calculateGraphRisk(item *ReviewItem, resourceNode *graph.Node,
 }
 
 func buildRecommendation(item ReviewItem, resourceNode *graph.Node, toxic toxicReviewContext) *ReviewRecommendation {
-	if item.LastActivity != nil && time.Since(*item.LastActivity) > 90*24*time.Hour {
-		return &ReviewRecommendation{Action: DecisionRevoke, Reason: "Access appears unused for more than 90 days", Confidence: "high"}
-	}
 	if len(toxic.IDs) > 0 || item.RiskScore >= 85 {
 		return &ReviewRecommendation{Action: DecisionEscalate, Reason: "Access participates in a high-risk graph pattern and needs owner review", Confidence: "high"}
+	}
+	if item.LastActivity != nil && time.Since(*item.LastActivity) > 90*24*time.Hour {
+		return &ReviewRecommendation{Action: DecisionRevoke, Reason: "Access appears unused for more than 90 days", Confidence: "high"}
 	}
 	if resourceNode != nil && resourceNode.Risk == graph.RiskCritical && item.RiskScore >= 60 {
 		return &ReviewRecommendation{Action: DecisionModify, Reason: "Critical-resource access should be reduced to least privilege", Confidence: "medium"}

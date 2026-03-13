@@ -428,8 +428,8 @@ func TestServiceCreateReviewGeneratesGraphCampaignItems(t *testing.T) {
 		t.Fatalf("expected 1 generated item, got %d", len(review.Items))
 	}
 	item := review.Items[0]
-	if item.Recommendation == nil || item.Recommendation.Action != DecisionRevoke {
-		t.Fatalf("expected revoke recommendation, got %#v", item.Recommendation)
+	if item.Recommendation == nil || item.Recommendation.Action != DecisionEscalate {
+		t.Fatalf("expected escalate recommendation, got %#v", item.Recommendation)
 	}
 	if !containsString(item.ReviewerCandidates, "person:bob") {
 		t.Fatalf("expected owner in reviewer candidates, got %#v", item.ReviewerCandidates)
@@ -532,5 +532,25 @@ func TestServiceCreateReviewDoesNotAutoGenerateManualGraphCampaigns(t *testing.T
 	}
 	if len(review.Items) != 0 {
 		t.Fatalf("expected no auto-generated items for manual review, got %d", len(review.Items))
+	}
+}
+
+func TestBuildRecommendationEscalatesToxicStaleAccess(t *testing.T) {
+	stale := time.Now().Add(-120 * 24 * time.Hour).UTC()
+	recommendation := buildRecommendation(ReviewItem{
+		RiskScore:    90,
+		LastActivity: &stale,
+	}, &graph.Node{
+		ID:   "bucket:prod-data",
+		Kind: graph.NodeKindBucket,
+		Risk: graph.RiskCritical,
+	}, toxicReviewContext{
+		IDs: []string{"toxic:1"},
+	})
+	if recommendation == nil {
+		t.Fatal("expected recommendation")
+	}
+	if recommendation.Action != DecisionEscalate {
+		t.Fatalf("expected escalate recommendation, got %#v", recommendation)
 	}
 }
