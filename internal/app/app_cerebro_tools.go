@@ -678,6 +678,7 @@ func (a *App) cerebroTools() []agents.Tool {
 					"identity_id": map[string]any{"type": "string"},
 					"name":        map[string]any{"type": "string"},
 					"description": map[string]any{"type": "string"},
+					"created_by":  map[string]any{"type": "string"},
 				},
 				"required": []string{"identity_id"},
 			},
