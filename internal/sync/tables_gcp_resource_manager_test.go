@@ -2,6 +2,7 @@ package sync
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -134,5 +135,33 @@ func TestFetchGCPProjectLineageWithClients(t *testing.T) {
 	}
 	if got := lineage.folderIDs(); len(got) != 2 || got[0] != "123" || got[1] != "456" {
 		t.Fatalf("unexpected folder ids: %#v", got)
+	}
+}
+
+func TestFetchGCPProjectLineageWithClientsReturnsIncompleteError(t *testing.T) {
+	lineage, err := fetchGCPProjectLineageWithClients(
+		context.Background(),
+		"proj-a",
+		fakeResourceManagerProjectsClient{
+			projects: []*resourcemanagerpb.Project{{
+				Name:      "projects/123456789",
+				ProjectId: "proj-a",
+				Parent:    "folders/456",
+			}},
+		},
+		fakeResourceManagerFoldersClient{
+			folders: map[string]*resourcemanagerpb.Folder{},
+		},
+		fakeResourceManagerOrganizationsClient{},
+	)
+	incomplete := (*gcpProjectLineageIncompleteError)(nil)
+	if !errors.As(err, &incomplete) {
+		t.Fatalf("expected incomplete lineage error, got %v", err)
+	}
+	if lineage == nil || lineage.Project == nil || lineage.Project.GetProjectId() != "proj-a" {
+		t.Fatalf("expected partial lineage with project, got %#v", lineage)
+	}
+	if incomplete.Resource != "folders/456" {
+		t.Fatalf("expected missing folder resource, got %#v", incomplete)
 	}
 }

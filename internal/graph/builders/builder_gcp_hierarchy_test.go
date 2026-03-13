@@ -12,47 +12,55 @@ func TestBuilder_GCPHierarchyNodesAndEdges(t *testing.T) {
 	source := newMockDataSource()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 
-	source.setResult(`SELECT DISTINCT resource_name, organization_id, display_name, state FROM gcp_resource_manager_organizations`, &DataQueryResult{
+	source.setResult(`SELECT DISTINCT resource_name, organization_id, display_name, state, lineage_complete, lineage_error FROM gcp_resource_manager_organizations`, &DataQueryResult{
 		Rows: []map[string]any{{
-			"resource_name":   "organizations/789",
-			"organization_id": "789",
-			"display_name":    "example.com",
-			"state":           "ACTIVE",
+			"resource_name":    "organizations/789",
+			"organization_id":  "789",
+			"display_name":     "example.com",
+			"state":            "ACTIVE",
+			"lineage_complete": true,
+			"lineage_error":    "",
 		}},
 	})
-	source.setResult(`SELECT DISTINCT resource_name, folder_id, display_name, parent, state, organization_id, depth FROM gcp_resource_manager_folders`, &DataQueryResult{
+	source.setResult(`SELECT DISTINCT resource_name, folder_id, display_name, parent, state, organization_id, depth, lineage_complete, lineage_error FROM gcp_resource_manager_folders`, &DataQueryResult{
 		Rows: []map[string]any{
 			{
-				"resource_name":   "folders/123",
-				"folder_id":       "123",
-				"display_name":    "Platform",
-				"parent":          "organizations/789",
-				"state":           "ACTIVE",
-				"organization_id": "789",
-				"depth":           1,
+				"resource_name":    "folders/123",
+				"folder_id":        "123",
+				"display_name":     "Platform",
+				"parent":           "organizations/789",
+				"state":            "ACTIVE",
+				"organization_id":  "789",
+				"depth":            1,
+				"lineage_complete": true,
+				"lineage_error":    "",
 			},
 			{
-				"resource_name":   "folders/456",
-				"folder_id":       "456",
-				"display_name":    "Engineering",
-				"parent":          "folders/123",
-				"state":           "ACTIVE",
-				"organization_id": "789",
-				"depth":           2,
+				"resource_name":    "folders/456",
+				"folder_id":        "456",
+				"display_name":     "Engineering",
+				"parent":           "folders/123",
+				"state":            "ACTIVE",
+				"organization_id":  "789",
+				"depth":            2,
+				"lineage_complete": true,
+				"lineage_error":    "",
 			},
 		},
 	})
-	source.setResult(`SELECT resource_name, project_id, project_number, display_name, parent, state, labels, organization_id, folder_ids FROM gcp_resource_manager_projects`, &DataQueryResult{
+	source.setResult(`SELECT resource_name, project_id, project_number, display_name, parent, state, labels, organization_id, folder_ids, lineage_complete, lineage_error FROM gcp_resource_manager_projects`, &DataQueryResult{
 		Rows: []map[string]any{{
-			"resource_name":   "projects/123456789",
-			"project_id":      "proj-a",
-			"project_number":  "123456789",
-			"display_name":    "Project A",
-			"parent":          "folders/456",
-			"state":           "ACTIVE",
-			"labels":          map[string]any{"env": "prod"},
-			"organization_id": "789",
-			"folder_ids":      []any{"123", "456"},
+			"resource_name":    "projects/123456789",
+			"project_id":       "proj-a",
+			"project_number":   "123456789",
+			"display_name":     "Project A",
+			"parent":           "folders/456",
+			"state":            "ACTIVE",
+			"labels":           map[string]any{"env": "prod"},
+			"organization_id":  "789",
+			"folder_ids":       []any{"123", "456"},
+			"lineage_complete": true,
+			"lineage_error":    "",
 		}},
 	})
 	source.setResult(`SELECT resource_name, parent FROM gcp_resource_manager_projects`, &DataQueryResult{
@@ -102,16 +110,18 @@ func TestBuilder_GCPInheritedHierarchyIAMPolicyEdges(t *testing.T) {
 	source := newMockDataSource()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 
-	source.setResult(`SELECT resource_name, project_id, project_number, display_name, parent, state, labels, organization_id, folder_ids FROM gcp_resource_manager_projects`, &DataQueryResult{
+	source.setResult(`SELECT resource_name, project_id, project_number, display_name, parent, state, labels, organization_id, folder_ids, lineage_complete, lineage_error FROM gcp_resource_manager_projects`, &DataQueryResult{
 		Rows: []map[string]any{{
-			"resource_name":   "projects/123456789",
-			"project_id":      "proj-a",
-			"project_number":  "123456789",
-			"display_name":    "Project A",
-			"parent":          "folders/456",
-			"state":           "ACTIVE",
-			"organization_id": "789",
-			"folder_ids":      []any{"123", "456"},
+			"resource_name":    "projects/123456789",
+			"project_id":       "proj-a",
+			"project_number":   "123456789",
+			"display_name":     "Project A",
+			"parent":           "folders/456",
+			"state":            "ACTIVE",
+			"organization_id":  "789",
+			"folder_ids":       []any{"123", "456"},
+			"lineage_complete": true,
+			"lineage_error":    "",
 		}},
 	})
 	source.setResult(`SELECT id, name, project_id, zone, status, service_accounts FROM gcp_compute_instances`, &DataQueryResult{

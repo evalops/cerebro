@@ -83,6 +83,26 @@ type gcpProjectLineage struct {
 	Organization *resourcemanagerpb.Organization
 }
 
+type gcpProjectLineageIncompleteError struct {
+	ProjectID string
+	Resource  string
+	Cause     error
+}
+
+func (e *gcpProjectLineageIncompleteError) Error() string {
+	if e == nil {
+		return ""
+	}
+	return fmt.Sprintf("project %s lineage incomplete at %s: %v", e.ProjectID, e.Resource, e.Cause)
+}
+
+func (e *gcpProjectLineageIncompleteError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Cause
+}
+
 func (l *gcpProjectLineage) ancestorPath() []string {
 	if l == nil {
 		return nil
@@ -138,6 +158,8 @@ func (e *GCPSyncEngine) gcpResourceManagerProjectTable() GCPTableSpec {
 			"organization_id",
 			"folder_ids",
 			"ancestor_path",
+			"lineage_complete",
+			"lineage_error",
 			"create_time",
 			"update_time",
 			"etag",
@@ -160,6 +182,8 @@ func (e *GCPSyncEngine) gcpResourceManagerFolderTable() GCPTableSpec {
 			"organization_id",
 			"depth",
 			"ancestor_path",
+			"lineage_complete",
+			"lineage_error",
 			"create_time",
 			"update_time",
 			"etag",
@@ -179,6 +203,8 @@ func (e *GCPSyncEngine) gcpResourceManagerOrganizationTable() GCPTableSpec {
 			"display_name",
 			"state",
 			"ancestor_path",
+			"lineage_complete",
+			"lineage_error",
 			"create_time",
 			"update_time",
 			"etag",
@@ -223,28 +249,32 @@ func (e *GCPSyncEngine) gcpOrganizationIAMPolicyTable() GCPTableSpec {
 
 func (e *GCPSyncEngine) fetchGCPResourceManagerProjects(ctx context.Context, projectID string) ([]map[string]interface{}, error) {
 	lineage, err := e.fetchGCPProjectLineage(ctx, projectID)
-	if err != nil {
+	incomplete := (*gcpProjectLineageIncompleteError)(nil)
+	if err != nil && !errors.As(err, &incomplete) {
 		return nil, err
 	}
 	project := lineage.Project
 	if project == nil {
 		return nil, fmt.Errorf("project %s not found", projectID)
 	}
+	lineageComplete, lineageError := gcpLineageStatus(err)
 
 	row := map[string]interface{}{
-		"_cq_id":          fmt.Sprintf("%s/%s", projectID, project.GetName()),
-		"project_id":      project.GetProjectId(),
-		"id":              project.GetName(),
-		"resource_name":   project.GetName(),
-		"project_number":  gcpResourceSegment(project.GetName(), "projects"),
-		"display_name":    firstNonEmpty(project.GetDisplayName(), project.GetProjectId()),
-		"parent":          project.GetParent(),
-		"state":           project.GetState().String(),
-		"labels":          project.GetLabels(),
-		"organization_id": lineage.organizationID(),
-		"folder_ids":      lineage.folderIDs(),
-		"ancestor_path":   lineage.ancestorPath(),
-		"etag":            project.GetEtag(),
+		"_cq_id":           fmt.Sprintf("%s/%s", projectID, project.GetName()),
+		"project_id":       project.GetProjectId(),
+		"id":               project.GetName(),
+		"resource_name":    project.GetName(),
+		"project_number":   gcpResourceSegment(project.GetName(), "projects"),
+		"display_name":     firstNonEmpty(project.GetDisplayName(), project.GetProjectId()),
+		"parent":           project.GetParent(),
+		"state":            project.GetState().String(),
+		"labels":           project.GetLabels(),
+		"organization_id":  lineage.organizationID(),
+		"folder_ids":       lineage.folderIDs(),
+		"ancestor_path":    lineage.ancestorPath(),
+		"lineage_complete": lineageComplete,
+		"lineage_error":    lineageError,
+		"etag":             project.GetEtag(),
 	}
 	if project.GetCreateTime() != nil {
 		row["create_time"] = project.GetCreateTime().AsTime()
@@ -258,9 +288,11 @@ func (e *GCPSyncEngine) fetchGCPResourceManagerProjects(ctx context.Context, pro
 
 func (e *GCPSyncEngine) fetchGCPResourceManagerFolders(ctx context.Context, projectID string) ([]map[string]interface{}, error) {
 	lineage, err := e.fetchGCPProjectLineage(ctx, projectID)
-	if err != nil {
+	incomplete := (*gcpProjectLineageIncompleteError)(nil)
+	if err != nil && !errors.As(err, &incomplete) {
 		return nil, err
 	}
+	lineageComplete, lineageError := gcpLineageStatus(err)
 
 	path := lineage.ancestorPath()
 	rows := make([]map[string]interface{}, 0, len(lineage.Folders))
@@ -269,18 +301,20 @@ func (e *GCPSyncEngine) fetchGCPResourceManagerFolders(ctx context.Context, proj
 			continue
 		}
 		row := map[string]interface{}{
-			"_cq_id":          fmt.Sprintf("%s/%s", projectID, folder.GetName()),
-			"project_id":      projectID,
-			"id":              folder.GetName(),
-			"folder_id":       gcpResourceSegment(folder.GetName(), "folders"),
-			"resource_name":   folder.GetName(),
-			"display_name":    firstNonEmpty(folder.GetDisplayName(), folder.GetName()),
-			"parent":          folder.GetParent(),
-			"state":           folder.GetState().String(),
-			"organization_id": lineage.organizationID(),
-			"depth":           idx + 1,
-			"ancestor_path":   path,
-			"etag":            folder.GetEtag(),
+			"_cq_id":           fmt.Sprintf("%s/%s", projectID, folder.GetName()),
+			"project_id":       projectID,
+			"id":               folder.GetName(),
+			"folder_id":        gcpResourceSegment(folder.GetName(), "folders"),
+			"resource_name":    folder.GetName(),
+			"display_name":     firstNonEmpty(folder.GetDisplayName(), folder.GetName()),
+			"parent":           folder.GetParent(),
+			"state":            folder.GetState().String(),
+			"organization_id":  lineage.organizationID(),
+			"depth":            idx + 1,
+			"ancestor_path":    path,
+			"lineage_complete": lineageComplete,
+			"lineage_error":    lineageError,
+			"etag":             folder.GetEtag(),
 		}
 		if folder.GetCreateTime() != nil {
 			row["create_time"] = folder.GetCreateTime().AsTime()
@@ -296,24 +330,28 @@ func (e *GCPSyncEngine) fetchGCPResourceManagerFolders(ctx context.Context, proj
 
 func (e *GCPSyncEngine) fetchGCPResourceManagerOrganizations(ctx context.Context, projectID string) ([]map[string]interface{}, error) {
 	lineage, err := e.fetchGCPProjectLineage(ctx, projectID)
-	if err != nil {
+	incomplete := (*gcpProjectLineageIncompleteError)(nil)
+	if err != nil && !errors.As(err, &incomplete) {
 		return nil, err
 	}
 	if lineage.Organization == nil || strings.TrimSpace(lineage.Organization.GetName()) == "" {
 		return nil, nil
 	}
+	lineageComplete, lineageError := gcpLineageStatus(err)
 
 	org := lineage.Organization
 	row := map[string]interface{}{
-		"_cq_id":          fmt.Sprintf("%s/%s", projectID, org.GetName()),
-		"project_id":      projectID,
-		"id":              org.GetName(),
-		"organization_id": gcpResourceSegment(org.GetName(), "organizations"),
-		"resource_name":   org.GetName(),
-		"display_name":    firstNonEmpty(org.GetDisplayName(), org.GetName()),
-		"state":           org.GetState().String(),
-		"ancestor_path":   lineage.ancestorPath(),
-		"etag":            org.GetEtag(),
+		"_cq_id":           fmt.Sprintf("%s/%s", projectID, org.GetName()),
+		"project_id":       projectID,
+		"id":               org.GetName(),
+		"organization_id":  gcpResourceSegment(org.GetName(), "organizations"),
+		"resource_name":    org.GetName(),
+		"display_name":     firstNonEmpty(org.GetDisplayName(), org.GetName()),
+		"state":            org.GetState().String(),
+		"ancestor_path":    lineage.ancestorPath(),
+		"lineage_complete": lineageComplete,
+		"lineage_error":    lineageError,
+		"etag":             org.GetEtag(),
 	}
 	if org.GetCreateTime() != nil {
 		row["create_time"] = org.GetCreateTime().AsTime()
@@ -328,7 +366,7 @@ func (e *GCPSyncEngine) fetchGCPResourceManagerOrganizations(ctx context.Context
 func (e *GCPSyncEngine) fetchGCPFolderIAMPolicies(ctx context.Context, projectID string) ([]map[string]interface{}, error) {
 	lineage, err := e.fetchGCPProjectLineage(ctx, projectID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("resolve GCP project lineage for folder IAM policies: %w", err)
 	}
 
 	foldersClient, err := e.newGCPFoldersClient(ctx)
@@ -366,7 +404,7 @@ func (e *GCPSyncEngine) fetchGCPFolderIAMPolicies(ctx context.Context, projectID
 func (e *GCPSyncEngine) fetchGCPOrganizationIAMPolicies(ctx context.Context, projectID string) ([]map[string]interface{}, error) {
 	lineage, err := e.fetchGCPProjectLineage(ctx, projectID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("resolve GCP project lineage for organization IAM policies: %w", err)
 	}
 	if lineage.Organization == nil || strings.TrimSpace(lineage.Organization.GetName()) == "" {
 		return nil, nil
@@ -467,7 +505,7 @@ func fetchGCPProjectLineageWithClients(
 	for strings.HasPrefix(parent, "folders/") {
 		folder, err := foldersClient.GetFolder(ctx, parent)
 		if err != nil {
-			return lineage, nil
+			return lineage, &gcpProjectLineageIncompleteError{ProjectID: projectID, Resource: parent, Cause: err}
 		}
 		leafToRoot = append(leafToRoot, folder)
 		parent = strings.TrimSpace(folder.GetParent())
@@ -478,12 +516,24 @@ func fetchGCPProjectLineageWithClients(
 
 	if strings.HasPrefix(parent, "organizations/") {
 		org, err := orgsClient.GetOrganization(ctx, parent)
-		if err == nil {
-			lineage.Organization = org
+		if err != nil {
+			return lineage, &gcpProjectLineageIncompleteError{ProjectID: projectID, Resource: parent, Cause: err}
 		}
+		lineage.Organization = org
 	}
 
 	return lineage, nil
+}
+
+func gcpLineageStatus(err error) (bool, string) {
+	if err == nil {
+		return true, ""
+	}
+	incomplete := (*gcpProjectLineageIncompleteError)(nil)
+	if errors.As(err, &incomplete) {
+		return false, err.Error()
+	}
+	return false, err.Error()
 }
 
 func fetchGCPProjectByID(ctx context.Context, projectID string, projectsClient gcpResourceManagerProjectClient) (*resourcemanagerpb.Project, error) {

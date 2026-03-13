@@ -15,7 +15,7 @@ func (b *Builder) buildGCPNodes(ctx context.Context) {
 	queries := []nodeQuery{
 		{
 			table: "gcp_resource_manager_organizations",
-			query: `SELECT DISTINCT resource_name, organization_id, display_name, state FROM gcp_resource_manager_organizations`,
+			query: `SELECT DISTINCT resource_name, organization_id, display_name, state, lineage_complete, lineage_error FROM gcp_resource_manager_organizations`,
 			parse: func(rows []map[string]any) []*Node {
 				nodes := make([]*Node, 0, len(rows))
 				for _, org := range rows {
@@ -31,9 +31,11 @@ func (b *Builder) buildGCPNodes(ctx context.Context) {
 						Provider: "gcp",
 						Account:  orgID,
 						Properties: map[string]any{
-							"resource_name":   resourceName,
-							"organization_id": orgID,
-							"state":           org["state"],
+							"resource_name":    resourceName,
+							"organization_id":  orgID,
+							"state":            org["state"],
+							"lineage_complete": org["lineage_complete"],
+							"lineage_error":    org["lineage_error"],
 						},
 					})
 				}
@@ -42,7 +44,7 @@ func (b *Builder) buildGCPNodes(ctx context.Context) {
 		},
 		{
 			table: "gcp_resource_manager_folders",
-			query: `SELECT DISTINCT resource_name, folder_id, display_name, parent, state, organization_id, depth FROM gcp_resource_manager_folders`,
+			query: `SELECT DISTINCT resource_name, folder_id, display_name, parent, state, organization_id, depth, lineage_complete, lineage_error FROM gcp_resource_manager_folders`,
 			parse: func(rows []map[string]any) []*Node {
 				nodes := make([]*Node, 0, len(rows))
 				for _, folder := range rows {
@@ -59,12 +61,14 @@ func (b *Builder) buildGCPNodes(ctx context.Context) {
 						Provider: "gcp",
 						Account:  firstNonEmptyString(orgID, folderID),
 						Properties: map[string]any{
-							"resource_name":   resourceName,
-							"folder_id":       folderID,
-							"parent":          folder["parent"],
-							"state":           folder["state"],
-							"organization_id": orgID,
-							"depth":           folder["depth"],
+							"resource_name":    resourceName,
+							"folder_id":        folderID,
+							"parent":           folder["parent"],
+							"state":            folder["state"],
+							"organization_id":  orgID,
+							"depth":            folder["depth"],
+							"lineage_complete": folder["lineage_complete"],
+							"lineage_error":    folder["lineage_error"],
 						},
 					})
 				}
@@ -73,7 +77,7 @@ func (b *Builder) buildGCPNodes(ctx context.Context) {
 		},
 		{
 			table: "gcp_resource_manager_projects",
-			query: `SELECT resource_name, project_id, project_number, display_name, parent, state, labels, organization_id, folder_ids FROM gcp_resource_manager_projects`,
+			query: `SELECT resource_name, project_id, project_number, display_name, parent, state, labels, organization_id, folder_ids, lineage_complete, lineage_error FROM gcp_resource_manager_projects`,
 			parse: func(rows []map[string]any) []*Node {
 				nodes := make([]*Node, 0, len(rows))
 				for _, project := range rows {
@@ -89,14 +93,16 @@ func (b *Builder) buildGCPNodes(ctx context.Context) {
 						Provider: "gcp",
 						Account:  projectID,
 						Properties: map[string]any{
-							"resource_name":   resourceName,
-							"project_id":      projectID,
-							"project_number":  project["project_number"],
-							"parent":          project["parent"],
-							"state":           project["state"],
-							"labels":          project["labels"],
-							"organization_id": project["organization_id"],
-							"folder_ids":      project["folder_ids"],
+							"resource_name":    resourceName,
+							"project_id":       projectID,
+							"project_number":   project["project_number"],
+							"parent":           project["parent"],
+							"state":            project["state"],
+							"labels":           project["labels"],
+							"organization_id":  project["organization_id"],
+							"folder_ids":       project["folder_ids"],
+							"lineage_complete": project["lineage_complete"],
+							"lineage_error":    project["lineage_error"],
 						},
 					})
 				}
