@@ -5,6 +5,39 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 71 - Credential Source Abstraction and Vault/File-Backed Secret Reload (2026-03-13)
+
+### Review findings
+- [x] Gap: issue `#249` still had one giant configuration assumption: every secret had to arrive as a process env var even though the app already had a periodic secret-reload path.
+- [x] Gap: reusing provider-facing `VAULT_*` fields as bootstrap config for secret loading would have leaked secret-source concerns into the provider registry and implicitly enabled the Vault provider whenever Vault-backed config was used.
+- [x] Gap: the right upstream patterns are consistent:
+  - [x] `hashicorp/vault` keeps one explicit client path for point-in-time secret reads and lease-aware rotation instead of smearing Vault logic across unrelated config code.
+  - [x] `external-secrets/external-secrets` treats mounted/file-backed secrets as first-class sync targets, which matches Cerebro's existing periodic reload loop better than inventing a second watch subsystem immediately.
+  - [x] `dagster-io/dagster` keeps storage/config backends behind typed seams so runtime code consumes contracts, not one-off env lookups.
+  - [x] the local Wiz schema dump in `/Users/jonathanhaas/Downloads/other/wiz.graphql` reinforces the same architectural lesson as the graph work: large query surfaces stay manageable only when source state is typed, inspectable, and decoupled from one bootstrap path.
+
+### Execution plan
+- [x] Add a standalone credential-source seam behind config loading:
+  - [x] add `internal/secretsource` with `env`, `file`, and Vault KV implementations
+  - [x] keep the source as a point-in-time snapshot per `LoadConfig()` pass so reload semantics remain deterministic
+- [x] Wire `LoadConfig()` through the source seam without creating a second config system:
+  - [x] keep existing `getEnv(...)` call sites
+  - [x] add bootstrap-only raw config reads for credential-source settings
+  - [x] make non-env credential sources override matching secret keys while normal config still falls back to env/config-file values
+- [x] Keep provider/bootstrap boundaries explicit:
+  - [x] add dedicated `CEREBRO_CREDENTIAL_VAULT_*` settings instead of reusing provider `VAULT_*` fields
+  - [x] keep Vault provider enablement tied to provider config, not secret-source bootstrap
+- [x] Reuse the existing reload path for rotation:
+  - [x] file-backed secret updates are picked up by `ReloadSecrets()`
+  - [x] provider/API credential rotation continues to flow through the existing rebuild path
+  - [x] leave lease renewal and API-key grace-period semantics as explicit follow-on work instead of hand-wavy half-implementation
+- [x] Add regression coverage and docs:
+  - [x] credential file source tests
+  - [x] Vault KV source tests
+  - [x] `LoadConfig()` file/vault source tests
+  - [x] reload test for updated file-backed API keys
+  - [x] config docs update for new credential-source env vars
+
 ## Deep Review Cycle 70 - Pluggable Warehouse Backends and Local Zero-Dependency Graph Startup (2026-03-13)
 
 ### Review findings

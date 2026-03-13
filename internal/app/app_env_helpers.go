@@ -11,16 +11,75 @@ import (
 
 	"github.com/evalops/cerebro/internal/apiauth"
 	"github.com/evalops/cerebro/internal/envutil"
+	"github.com/evalops/cerebro/internal/secretsource"
 )
 
+var configValueSourceState struct {
+	mu     sync.RWMutex
+	source secretsource.Source
+}
+
 func getEnv(key, fallback string) string {
-	if value := strings.TrimSpace(envutil.Get(key, "")); value != "" {
+	if value, ok := lookupActiveConfigSourceValue(key); ok && strings.TrimSpace(value) != "" {
 		return value
 	}
-	if value, ok := lookupConfigFileValue(key); ok {
+	if value, ok := lookupRawConfigValue(key); ok {
 		return value
 	}
 	return fallback
+}
+
+func withConfigValueSource(source secretsource.Source, fn func()) {
+	configValueSourceState.mu.Lock()
+	previous := configValueSourceState.source
+	configValueSourceState.source = source
+	configValueSourceState.mu.Unlock()
+	defer func() {
+		configValueSourceState.mu.Lock()
+		configValueSourceState.source = previous
+		configValueSourceState.mu.Unlock()
+	}()
+	fn()
+}
+
+func lookupActiveConfigSourceValue(key string) (string, bool) {
+	configValueSourceState.mu.RLock()
+	source := configValueSourceState.source
+	configValueSourceState.mu.RUnlock()
+	if source == nil {
+		return "", false
+	}
+	return source.Lookup(key)
+}
+
+func lookupRawConfigValue(key string) (string, bool) {
+	if value := strings.TrimSpace(envutil.Get(key, "")); value != "" {
+		return value, true
+	}
+	if value, ok := lookupConfigFileValue(key); ok {
+		return value, true
+	}
+	return "", false
+}
+
+func bootstrapConfigValue(key, fallback string) string {
+	if value, ok := lookupRawConfigValue(key); ok {
+		return value
+	}
+	return fallback
+}
+
+func bootstrapConfigInt(key string, fallback int) int {
+	value := strings.TrimSpace(bootstrapConfigValue(key, ""))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		recordConfigProblem("%s must be a valid integer", key)
+		return fallback
+	}
+	return parsed
 }
 
 var configParseRecorder struct {

@@ -3,8 +3,11 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -42,6 +45,84 @@ func TestLoadConfig(t *testing.T) {
 
 	if cfg.SecurityDigestInterval != "24h" {
 		t.Errorf("expected security digest interval 24h, got %s", cfg.SecurityDigestInterval)
+	}
+}
+
+func TestLoadConfigCredentialFileSourceOverridesSecretsOnly(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "OPENAI_API_KEY"), []byte("file-openai-key\n"), 0o600); err != nil {
+		t.Fatalf("write openai secret: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "API_KEYS"), []byte("file-key:file-user\n"), 0o600); err != nil {
+		t.Fatalf("write api keys secret: %v", err)
+	}
+
+	t.Setenv("CEREBRO_CREDENTIAL_SOURCE", "file")
+	t.Setenv("CEREBRO_CREDENTIAL_FILE_DIR", dir)
+	t.Setenv("OPENAI_API_KEY", "env-openai-key")
+	t.Setenv("API_KEYS", "env-key:env-user")
+	t.Setenv("LOG_LEVEL", "warn")
+
+	cfg := LoadConfig()
+	if cfg.CredentialSource != "file" {
+		t.Fatalf("expected credential source file, got %q", cfg.CredentialSource)
+	}
+	if cfg.OpenAIAPIKey != "file-openai-key" {
+		t.Fatalf("expected file-backed openai key, got %q", cfg.OpenAIAPIKey)
+	}
+	if cfg.APIKeys["file-key"] != "file-user" || len(cfg.APIKeys) != 1 {
+		t.Fatalf("expected file-backed api key map, got %#v", cfg.APIKeys)
+	}
+	if cfg.LogLevel != "warn" {
+		t.Fatalf("expected non-secret config to continue using env/config, got %q", cfg.LogLevel)
+	}
+}
+
+func TestLoadConfigCredentialVaultSource(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/secret/data/cerebro" {
+			t.Fatalf("unexpected vault path %q", r.URL.Path)
+		}
+		if got := r.Header.Get("X-Vault-Token"); got != "bootstrap-token" {
+			t.Fatalf("unexpected vault token %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"data":{"data":{"OPENAI_API_KEY":"vault-openai-key","API_CREDENTIALS_JSON":[{"key":"vault-key","user_id":"vault-user"}]}}}`)
+	}))
+	defer server.Close()
+
+	t.Setenv("CEREBRO_CREDENTIAL_SOURCE", "vault")
+	t.Setenv("CEREBRO_CREDENTIAL_VAULT_ADDRESS", server.URL)
+	t.Setenv("CEREBRO_CREDENTIAL_VAULT_TOKEN", "bootstrap-token")
+	t.Setenv("CEREBRO_CREDENTIAL_VAULT_PATH", "secret/cerebro")
+	t.Setenv("CEREBRO_CREDENTIAL_VAULT_KV_VERSION", "2")
+	t.Setenv("LOG_LEVEL", "error")
+
+	cfg := LoadConfig()
+	if cfg.CredentialSource != "vault" {
+		t.Fatalf("expected credential source vault, got %q", cfg.CredentialSource)
+	}
+	if cfg.OpenAIAPIKey != "vault-openai-key" {
+		t.Fatalf("expected vault-backed openai key, got %q", cfg.OpenAIAPIKey)
+	}
+	if cfg.APIKeys["vault-key"] != "vault-user" || len(cfg.APIKeys) != 1 {
+		t.Fatalf("expected vault-backed api credentials, got %#v", cfg.APIKeys)
+	}
+	if cfg.LogLevel != "error" {
+		t.Fatalf("expected non-secret env config to survive vault credential source, got %q", cfg.LogLevel)
+	}
+}
+
+func TestLoadConfigCredentialSourceValidation(t *testing.T) {
+	t.Setenv("CEREBRO_CREDENTIAL_SOURCE", "vault")
+	cfg := LoadConfig()
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation error for incomplete vault credential source")
+	}
+	if !strings.Contains(err.Error(), "CEREBRO_CREDENTIAL_VAULT_ADDRESS is required") {
+		t.Fatalf("expected vault address validation failure, got %v", err)
 	}
 }
 

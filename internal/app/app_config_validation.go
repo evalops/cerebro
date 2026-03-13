@@ -69,6 +69,24 @@ func ConfigValidationRules() []ConfigValidationRule {
 			Category: "enum",
 		},
 		{
+			EnvVars:  []string{"CEREBRO_CREDENTIAL_SOURCE"},
+			Summary:  "must be one of env, file, vault",
+			Category: "enum",
+		},
+		{
+			EnvVars: []string{
+				"CEREBRO_CREDENTIAL_SOURCE",
+				"CEREBRO_CREDENTIAL_FILE_DIR",
+				"CEREBRO_CREDENTIAL_VAULT_ADDRESS",
+				"CEREBRO_CREDENTIAL_VAULT_TOKEN",
+				"CEREBRO_CREDENTIAL_VAULT_NAMESPACE",
+				"CEREBRO_CREDENTIAL_VAULT_PATH",
+				"CEREBRO_CREDENTIAL_VAULT_KV_VERSION",
+			},
+			Summary:  "credential-source settings must be present and valid for the selected source backend",
+			Category: "dependency",
+		},
+		{
 			EnvVars:  []string{"WAREHOUSE_BACKEND", "WAREHOUSE_SQLITE_PATH", "WAREHOUSE_POSTGRES_DSN"},
 			Summary:  "backend-specific connection settings must be present when an alternative warehouse backend is selected",
 			Category: "dependency",
@@ -177,6 +195,32 @@ func (c *Config) Validate() error {
 	case "", "snowflake", "sqlite", "postgres":
 	default:
 		problems = addConfigProblem(problems, "WAREHOUSE_BACKEND must be one of snowflake, sqlite, postgres")
+	}
+
+	switch strings.ToLower(strings.TrimSpace(c.CredentialSource)) {
+	case "", "env", "file", "vault":
+	default:
+		problems = addConfigProblem(problems, "CEREBRO_CREDENTIAL_SOURCE must be one of env, file, vault")
+	}
+
+	switch strings.ToLower(strings.TrimSpace(c.CredentialSource)) {
+	case "file":
+		if strings.TrimSpace(c.CredentialFileDir) == "" {
+			problems = addConfigProblem(problems, "CEREBRO_CREDENTIAL_FILE_DIR is required when CEREBRO_CREDENTIAL_SOURCE=file")
+		}
+	case "vault":
+		if strings.TrimSpace(c.CredentialVaultAddress) == "" {
+			problems = addConfigProblem(problems, "CEREBRO_CREDENTIAL_VAULT_ADDRESS is required when CEREBRO_CREDENTIAL_SOURCE=vault")
+		}
+		if strings.TrimSpace(c.CredentialVaultToken) == "" {
+			problems = addConfigProblem(problems, "CEREBRO_CREDENTIAL_VAULT_TOKEN is required when CEREBRO_CREDENTIAL_SOURCE=vault")
+		}
+		if strings.TrimSpace(c.CredentialVaultPath) == "" {
+			problems = addConfigProblem(problems, "CEREBRO_CREDENTIAL_VAULT_PATH is required when CEREBRO_CREDENTIAL_SOURCE=vault")
+		}
+		if c.CredentialVaultKVVersion != 1 && c.CredentialVaultKVVersion != 2 {
+			problems = addConfigProblem(problems, "CEREBRO_CREDENTIAL_VAULT_KV_VERSION must be 1 or 2 when CEREBRO_CREDENTIAL_SOURCE=vault")
+		}
 	}
 
 	hasSnowflakeAuth := strings.TrimSpace(c.SnowflakeAccount) != "" ||
