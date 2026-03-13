@@ -21,13 +21,16 @@ type AuditManifest struct {
 
 // AuditControlEvidence describes control-level evidence included in an export.
 type AuditControlEvidence struct {
-	ControlID    string   `json:"control_id"`
-	Title        string   `json:"title"`
-	Description  string   `json:"description"`
-	Status       string   `json:"status"`
-	Policies     []string `json:"policies"`
-	Findings     []string `json:"findings"`
-	FindingCount int      `json:"finding_count"`
+	ControlID        string            `json:"control_id"`
+	Title            string            `json:"title"`
+	Description      string            `json:"description"`
+	Status           string            `json:"status"`
+	Policies         []string          `json:"policies"`
+	Findings         []string          `json:"findings"`
+	FindingCount     int               `json:"finding_count"`
+	EvaluationSource string            `json:"evaluation_source,omitempty"`
+	LastEvaluated    string            `json:"last_evaluated,omitempty"`
+	Evidence         []ControlEvidence `json:"evidence,omitempty"`
 }
 
 // AuditSummary contains aggregate control pass/fail information.
@@ -88,6 +91,47 @@ func BuildAuditPackage(framework *Framework, findingsByPolicy map[string]int, ge
 	}
 
 	pkg.Summary.TotalControls = len(pkg.Controls)
+	return pkg
+}
+
+// BuildAuditPackageFromReport builds an audit package from a graph- or findings-derived compliance report.
+func BuildAuditPackageFromReport(framework *Framework, report ComplianceReport) AuditPackage {
+	pkg := AuditPackage{
+		Manifest: AuditManifest{
+			FrameworkID:   framework.ID,
+			FrameworkName: framework.Name,
+			Version:       framework.Version,
+			GeneratedAt:   report.GeneratedAt,
+			GeneratedBy:   "cerebro",
+		},
+		Controls: make([]AuditControlEvidence, 0, len(report.Controls)),
+		Summary: AuditSummary{
+			TotalControls:   report.Summary.TotalControls,
+			PassingControls: report.Summary.PassingControls,
+			FailingControls: report.Summary.FailingControls,
+		},
+	}
+	for _, ctrl := range report.Controls {
+		evidence := AuditControlEvidence{
+			ControlID:        ctrl.ControlID,
+			Title:            ctrl.Title,
+			Description:      ctrl.Description,
+			Status:           ctrl.Status,
+			Policies:         append([]string(nil), ctrl.PolicyIDs...),
+			EvaluationSource: ctrl.EvaluationSource,
+			LastEvaluated:    ctrl.LastEvaluated,
+			Evidence:         append([]ControlEvidence(nil), ctrl.Evidence...),
+			Findings:         make([]string, 0, len(ctrl.PolicyIDs)),
+			FindingCount:     ctrl.FailCount,
+		}
+		for _, item := range ctrl.Evidence {
+			if item.PolicyID == "" || item.Status != ControlStateFailing {
+				continue
+			}
+			evidence.Findings = append(evidence.Findings, item.PolicyID)
+		}
+		pkg.Controls = append(pkg.Controls, evidence)
+	}
 	return pkg
 }
 

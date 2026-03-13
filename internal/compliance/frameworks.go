@@ -49,13 +49,45 @@ type Control struct {
 	PolicyIDs   []string        `json:"policy_ids"`         // Cerebro policy IDs that implement this control
 }
 
+const (
+	ControlStatePassing       = "passing"
+	ControlStateFailing       = "failing"
+	ControlStatePartial       = "partial"
+	ControlStateNotApplicable = "not_applicable"
+	ControlStateUnknown       = "unknown"
+)
+
+const (
+	ControlEvaluationSourceGraph            = "graph"
+	ControlEvaluationSourceFindingsFallback = "findings_fallback"
+	ControlEvaluationSourceHybrid           = "hybrid"
+)
+
+// ControlEvidence describes one graph-backed or findings-backed proof point for a control status.
+type ControlEvidence struct {
+	EntityID   string `json:"entity_id,omitempty"`
+	EntityKind string `json:"entity_kind,omitempty"`
+	EntityName string `json:"entity_name,omitempty"`
+	FacetID    string `json:"facet_id,omitempty"`
+	PolicyID   string `json:"policy_id,omitempty"`
+	Status     string `json:"status,omitempty"`
+	Reason     string `json:"reason,omitempty"`
+}
+
 // ControlStatus represents the evaluation status of a control
 type ControlStatus struct {
-	ControlID   string `json:"control_id"`
-	Status      string `json:"status"` // passing, failing, unknown
-	PassCount   int    `json:"pass_count"`
-	FailCount   int    `json:"fail_count"`
-	TotalAssets int    `json:"total_assets"`
+	ControlID        string            `json:"control_id"`
+	Title            string            `json:"title,omitempty"`
+	Description      string            `json:"description,omitempty"`
+	Severity         ControlSeverity   `json:"severity,omitempty"`
+	Status           string            `json:"status"` // passing, failing, partial, not_applicable, unknown
+	PassCount        int               `json:"pass_count"`
+	FailCount        int               `json:"fail_count"`
+	TotalAssets      int               `json:"total_assets"`
+	EvaluationSource string            `json:"evaluation_source,omitempty"`
+	LastEvaluated    string            `json:"last_evaluated,omitempty"`
+	PolicyIDs        []string          `json:"policy_ids,omitempty"`
+	Evidence         []ControlEvidence `json:"evidence,omitempty"`
 }
 
 // ComplianceReport represents a generated compliance report
@@ -69,11 +101,15 @@ type ComplianceReport struct {
 
 // ComplianceSummary provides aggregate compliance metrics
 type ComplianceSummary struct {
-	TotalControls   int     `json:"total_controls"`
-	PassingControls int     `json:"passing_controls"`
-	FailingControls int     `json:"failing_controls"`
-	ComplianceScore float64 `json:"compliance_score"`         // Simple percentage
-	WeightedScore   float64 `json:"weighted_score,omitempty"` // Severity-weighted score
+	TotalControls          int     `json:"total_controls"`
+	PassingControls        int     `json:"passing_controls"`
+	FailingControls        int     `json:"failing_controls"`
+	PartialControls        int     `json:"partial_controls,omitempty"`
+	NotApplicableControls  int     `json:"not_applicable_controls,omitempty"`
+	ComplianceScore        float64 `json:"compliance_score"`         // Simple percentage
+	WeightedScore          float64 `json:"weighted_score,omitempty"` // Severity-weighted score
+	GraphEvaluatedControls int     `json:"graph_evaluated_controls,omitempty"`
+	FallbackControls       int     `json:"fallback_controls,omitempty"`
 }
 
 // =============================================================================

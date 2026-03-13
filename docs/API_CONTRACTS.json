@@ -2941,7 +2941,91 @@
               "type": "object"
             },
             {
+              "path": "controls[].control_id",
+              "type": "string"
+            },
+            {
+              "path": "controls[].description",
+              "type": "string"
+            },
+            {
+              "path": "controls[].evaluation_source",
+              "type": "string"
+            },
+            {
+              "path": "controls[].evidence",
+              "type": "array"
+            },
+            {
+              "path": "controls[].evidence[]",
+              "type": "object"
+            },
+            {
+              "path": "controls[].evidence[].entity_id",
+              "type": "string"
+            },
+            {
+              "path": "controls[].evidence[].entity_kind",
+              "type": "string"
+            },
+            {
+              "path": "controls[].evidence[].entity_name",
+              "type": "string"
+            },
+            {
+              "path": "controls[].evidence[].facet_id",
+              "type": "string"
+            },
+            {
+              "path": "controls[].evidence[].policy_id",
+              "type": "string"
+            },
+            {
+              "path": "controls[].evidence[].reason",
+              "type": "string"
+            },
+            {
+              "path": "controls[].evidence[].status",
+              "type": "string"
+            },
+            {
+              "path": "controls[].finding_count",
+              "type": "integer"
+            },
+            {
+              "path": "controls[].findings",
+              "type": "array"
+            },
+            {
+              "path": "controls[].findings[]",
+              "type": "string"
+            },
+            {
+              "path": "controls[].last_evaluated",
+              "type": "string"
+            },
+            {
+              "path": "controls[].policies",
+              "type": "array"
+            },
+            {
+              "path": "controls[].policies[]",
+              "type": "string"
+            },
+            {
+              "path": "controls[].status",
+              "type": "string"
+            },
+            {
+              "path": "controls[].title",
+              "type": "string"
+            },
+            {
               "path": "manifest",
+              "type": "object"
+            },
+            {
+              "path": "summary",
               "type": "object"
             }
           ]
@@ -3015,8 +3099,84 @@
               "type": "string"
             },
             {
+              "path": "controls[].description",
+              "type": "string"
+            },
+            {
+              "path": "controls[].evaluation_source",
+              "type": "string"
+            },
+            {
+              "path": "controls[].evidence",
+              "type": "array"
+            },
+            {
+              "path": "controls[].evidence[]",
+              "type": "object"
+            },
+            {
+              "path": "controls[].evidence[].entity_id",
+              "type": "string"
+            },
+            {
+              "path": "controls[].evidence[].entity_kind",
+              "type": "string"
+            },
+            {
+              "path": "controls[].evidence[].entity_name",
+              "type": "string"
+            },
+            {
+              "path": "controls[].evidence[].facet_id",
+              "type": "string"
+            },
+            {
+              "path": "controls[].evidence[].policy_id",
+              "type": "string"
+            },
+            {
+              "path": "controls[].evidence[].reason",
+              "type": "string"
+            },
+            {
+              "path": "controls[].evidence[].status",
+              "type": "string"
+            },
+            {
+              "path": "controls[].fail_count",
+              "type": "integer"
+            },
+            {
+              "path": "controls[].last_evaluated",
+              "type": "string"
+            },
+            {
+              "path": "controls[].pass_count",
+              "type": "integer"
+            },
+            {
+              "path": "controls[].policy_ids",
+              "type": "array"
+            },
+            {
+              "path": "controls[].policy_ids[]",
+              "type": "string"
+            },
+            {
+              "path": "controls[].severity",
+              "type": "string"
+            },
+            {
               "path": "controls[].status",
               "type": "string"
+            },
+            {
+              "path": "controls[].title",
+              "type": "string"
+            },
+            {
+              "path": "controls[].total_assets",
+              "type": "integer"
             },
             {
               "path": "framework_id",
@@ -3043,12 +3203,32 @@
               "type": "integer"
             },
             {
+              "path": "summary.fallback_controls",
+              "type": "integer"
+            },
+            {
+              "path": "summary.graph_evaluated_controls",
+              "type": "integer"
+            },
+            {
+              "path": "summary.not_applicable_controls",
+              "type": "integer"
+            },
+            {
+              "path": "summary.partial_controls",
+              "type": "integer"
+            },
+            {
               "path": "summary.passing_controls",
               "type": "integer"
             },
             {
               "path": "summary.total_controls",
               "type": "integer"
+            },
+            {
+              "path": "summary.weighted_score",
+              "type": "number"
             }
           ]
         }

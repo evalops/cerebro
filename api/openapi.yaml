@@ -9872,19 +9872,83 @@ components:
           type: integer
         failing_controls:
           type: integer
+        partial_controls:
+          type: integer
+        not_applicable_controls:
+          type: integer
         compliance_score:
           type: number
-    ControlStatus:
+        weighted_score:
+          type: number
+        graph_evaluated_controls:
+          type: integer
+        fallback_controls:
+          type: integer
+    ControlEvidence:
       type: object
       properties:
-        control_id:
+        entity_id:
+          type: string
+        entity_kind:
+          type: string
+        entity_name:
+          type: string
+        facet_id:
+          type: string
+        policy_id:
           type: string
         status:
           type: string
           enum:
             - passing
             - failing
+            - partial
+            - not_applicable
             - unknown
+        reason:
+          type: string
+    ControlStatus:
+      type: object
+      properties:
+        control_id:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        severity:
+          type: string
+        status:
+          type: string
+          enum:
+            - passing
+            - failing
+            - partial
+            - not_applicable
+            - unknown
+        pass_count:
+          type: integer
+        fail_count:
+          type: integer
+        total_assets:
+          type: integer
+        evaluation_source:
+          type: string
+          enum:
+            - graph
+            - findings_fallback
+            - hybrid
+        last_evaluated:
+          type: string
+          format: date-time
+        policy_ids:
+          type: array
+          items:
+            type: string
+        evidence:
+          type: array
+          items:
+            $ref: '#/components/schemas/ControlEvidence'
     PreAuditReport:
       type: object
       properties:
@@ -9907,10 +9971,40 @@ components:
       properties:
         manifest:
           type: object
+        summary:
+          type: object
         controls:
           type: array
           items:
             type: object
+            properties:
+              control_id:
+                type: string
+              title:
+                type: string
+              description:
+                type: string
+              status:
+                type: string
+              policies:
+                type: array
+                items:
+                  type: string
+              findings:
+                type: array
+                items:
+                  type: string
+              finding_count:
+                type: integer
+              evaluation_source:
+                type: string
+              last_evaluated:
+                type: string
+                format: date-time
+              evidence:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ControlEvidence'
     StaleAccessResponse:
       type: object
       properties:
