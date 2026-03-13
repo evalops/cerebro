@@ -34,6 +34,7 @@ type EventEnvelope struct {
 }
 
 type RunListOptions struct {
+	Namespaces         []string
 	Statuses           []string
 	ExcludeStatuses    []string
 	Limit              int
@@ -173,6 +174,14 @@ func (s *SQLiteStore) LoadRun(ctx context.Context, namespace, runID string) (*Ru
 }
 
 func (s *SQLiteStore) ListRuns(ctx context.Context, namespace string, opts RunListOptions) ([]RunEnvelope, error) {
+	return s.listRunsWithNamespaces(ctx, []string{namespace}, opts)
+}
+
+func (s *SQLiteStore) ListAllRuns(ctx context.Context, opts RunListOptions) ([]RunEnvelope, error) {
+	return s.listRunsWithNamespaces(ctx, opts.Namespaces, opts)
+}
+
+func (s *SQLiteStore) listRunsWithNamespaces(ctx context.Context, namespaces []string, opts RunListOptions) ([]RunEnvelope, error) {
 	if s == nil || s.db == nil {
 		return nil, nil
 	}
@@ -182,9 +191,18 @@ func (s *SQLiteStore) ListRuns(ctx context.Context, namespace string, opts RunLi
 	query := `
 		SELECT namespace, run_id, kind, status, stage, submitted_at, started_at, completed_at, updated_at, payload
 		FROM execution_runs
-		WHERE namespace = ?
+		WHERE 1 = 1
 	`
-	args := []any{strings.TrimSpace(namespace)}
+	args := make([]any, 0)
+	namespaces = normalizeNamespaces(namespaces, opts.Namespaces)
+	if len(namespaces) > 0 {
+		placeholders := make([]string, 0, len(namespaces))
+		for _, namespace := range namespaces {
+			placeholders = append(placeholders, "?")
+			args = append(args, namespace)
+		}
+		query += ` AND namespace IN (` + strings.Join(placeholders, ",") + `)` // #nosec G202 -- fixed placeholders; values remain parameterized.
+	}
 	if len(opts.Statuses) > 0 {
 		placeholders := make([]string, 0, len(opts.Statuses))
 		for _, status := range opts.Statuses {
@@ -239,6 +257,48 @@ func (s *SQLiteStore) ListRuns(ctx context.Context, namespace string, opts RunLi
 		return nil, fmt.Errorf("iterate execution runs: %w", err)
 	}
 	return runs, nil
+}
+
+func (s *SQLiteStore) DeleteRun(ctx context.Context, namespace, runID string) error {
+	if s == nil || s.db == nil {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	namespace = strings.TrimSpace(namespace)
+	runID = strings.TrimSpace(runID)
+	if namespace == "" || runID == "" {
+		return fmt.Errorf("execution run namespace and id are required")
+	}
+	if _, err := s.db.ExecContext(ctx, `
+		DELETE FROM execution_runs
+		WHERE namespace = ? AND run_id = ?
+	`, namespace, runID); err != nil {
+		return fmt.Errorf("delete execution run: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) DeleteEvents(ctx context.Context, namespace, runID string) error {
+	if s == nil || s.db == nil {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	namespace = strings.TrimSpace(namespace)
+	runID = strings.TrimSpace(runID)
+	if namespace == "" || runID == "" {
+		return fmt.Errorf("execution event namespace and run id are required")
+	}
+	if _, err := s.db.ExecContext(ctx, `
+		DELETE FROM execution_events
+		WHERE namespace = ? AND run_id = ?
+	`, namespace, runID); err != nil {
+		return fmt.Errorf("delete execution events: %w", err)
+	}
+	return nil
 }
 
 func (s *SQLiteStore) SaveEvent(ctx context.Context, env EventEnvelope) (EventEnvelope, error) {
@@ -347,4 +407,28 @@ func nullableTimeValue(value sql.NullTime) *time.Time {
 	}
 	ts := value.Time.UTC()
 	return &ts
+}
+
+func normalizeNamespaces(primary []string, secondary []string) []string {
+	values := append(append([]string(nil), primary...), secondary...)
+	if len(values) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(values))
+	normalized := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		normalized = append(normalized, value)
+	}
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
 }

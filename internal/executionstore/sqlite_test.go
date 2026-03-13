@@ -122,3 +122,85 @@ func TestSQLiteStoreAllocatesEventSequencesPerRun(t *testing.T) {
 		t.Fatalf("unexpected sequences: first=%d second=%d other=%d", first.Sequence, second.Sequence, other.Sequence)
 	}
 }
+
+func TestSQLiteStoreListsAcrossNamespaces(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "executions.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	now := time.Now().UTC()
+	for _, env := range []RunEnvelope{
+		{Namespace: NamespacePlatformReportRun, RunID: "report-1", Kind: "quality", Status: "succeeded", Stage: "succeeded", SubmittedAt: now.Add(-time.Minute), UpdatedAt: now.Add(-time.Minute), Payload: []byte(`{"kind":"report"}`)},
+		{Namespace: NamespaceWorkloadScan, RunID: "scan-1", Kind: "aws", Status: "running", Stage: "analyze", SubmittedAt: now, UpdatedAt: now, Payload: []byte(`{"kind":"workload"}`)},
+	} {
+		if err := store.UpsertRun(context.Background(), env); err != nil {
+			t.Fatalf("UpsertRun %s: %v", env.RunID, err)
+		}
+	}
+
+	runs, err := store.ListAllRuns(context.Background(), RunListOptions{
+		Namespaces:         []string{NamespacePlatformReportRun, NamespaceWorkloadScan},
+		OrderBySubmittedAt: true,
+	})
+	if err != nil {
+		t.Fatalf("ListAllRuns: %v", err)
+	}
+	if len(runs) != 2 {
+		t.Fatalf("expected 2 runs, got %#v", runs)
+	}
+	if runs[0].RunID != "scan-1" || runs[1].RunID != "report-1" {
+		t.Fatalf("unexpected ordering across namespaces: %#v", runs)
+	}
+}
+
+func TestSQLiteStoreDeleteRunAndEvents(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "executions.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	now := time.Now().UTC()
+	if err := store.UpsertRun(context.Background(), RunEnvelope{
+		Namespace:   NamespacePlatformReportRun,
+		RunID:       "run-delete",
+		Kind:        "quality",
+		Status:      "queued",
+		Stage:       "queued",
+		SubmittedAt: now,
+		UpdatedAt:   now,
+		Payload:     []byte(`{"id":"run-delete"}`),
+	}); err != nil {
+		t.Fatalf("UpsertRun: %v", err)
+	}
+	if _, err := store.SaveEvent(context.Background(), EventEnvelope{
+		Namespace:  NamespacePlatformReportRun,
+		RunID:      "run-delete",
+		RecordedAt: now,
+		Payload:    []byte(`{"message":"queued"}`),
+	}); err != nil {
+		t.Fatalf("SaveEvent: %v", err)
+	}
+	if err := store.DeleteEvents(context.Background(), NamespacePlatformReportRun, "run-delete"); err != nil {
+		t.Fatalf("DeleteEvents: %v", err)
+	}
+	if err := store.DeleteRun(context.Background(), NamespacePlatformReportRun, "run-delete"); err != nil {
+		t.Fatalf("DeleteRun: %v", err)
+	}
+	run, err := store.LoadRun(context.Background(), NamespacePlatformReportRun, "run-delete")
+	if err != nil {
+		t.Fatalf("LoadRun after delete: %v", err)
+	}
+	if run != nil {
+		t.Fatalf("expected run to be deleted, got %#v", run)
+	}
+	events, err := store.LoadEvents(context.Background(), NamespacePlatformReportRun, "run-delete")
+	if err != nil {
+		t.Fatalf("LoadEvents after delete: %v", err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("expected no events after delete, got %#v", events)
+	}
+}

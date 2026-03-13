@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/evalops/cerebro/internal/executionstore"
 )
 
 func TestReportRunStoreRoundTrip(t *testing.T) {
@@ -64,7 +66,11 @@ func TestReportRunStoreRoundTrip(t *testing.T) {
 	run.Snapshot.Storage = CloneReportStoragePolicy(run.Storage)
 
 	stateDir := t.TempDir()
-	store := NewReportRunStore(filepath.Join(stateDir, "state.json"), filepath.Join(stateDir, "snapshots"))
+	store, err := NewReportRunStore(filepath.Join(stateDir, "executions.db"), filepath.Join(stateDir, "snapshots"), filepath.Join(stateDir, "legacy-state.json"))
+	if err != nil {
+		t.Fatalf("NewReportRunStore: %v", err)
+	}
+	defer func() { _ = store.Close() }()
 	if err := store.SaveAll(map[string]*ReportRun{run.ID: run}); err != nil {
 		t.Fatalf("save report runs: %v", err)
 	}
@@ -116,6 +122,19 @@ func TestReportRunStoreRoundTrip(t *testing.T) {
 	}
 	if loaded.Snapshot.Storage.StorageClass != "local_durable" {
 		t.Fatalf("expected restored snapshot storage, got %+v", loaded.Snapshot.Storage)
+	}
+
+	executionStore, err := executionstore.NewSQLiteStore(store.StateFile())
+	if err != nil {
+		t.Fatalf("open shared execution store: %v", err)
+	}
+	defer func() { _ = executionStore.Close() }()
+	envs, err := executionStore.ListRuns(t.Context(), executionstore.NamespacePlatformReportRun, executionstore.RunListOptions{})
+	if err != nil {
+		t.Fatalf("ListRuns report namespace: %v", err)
+	}
+	if len(envs) != 1 || envs[0].RunID != run.ID {
+		t.Fatalf("expected persisted report run in shared execution store, got %#v", envs)
 	}
 }
 

@@ -1957,7 +1957,7 @@ func TestPlatformReportRunUpdateRollsBackOnPersistenceFailure(t *testing.T) {
 		t.Fatalf("storePlatformReportRun() failed: %v", err)
 	}
 
-	stateDir := filepath.Dir(application.Config.PlatformReportRunStateFile)
+	stateDir := filepath.Dir(application.Config.ExecutionStoreFile)
 	if err := os.Chmod(stateDir, 0o500); err != nil {
 		t.Fatalf("chmod state dir read-only: %v", err)
 	}
