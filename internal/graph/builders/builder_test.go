@@ -831,7 +831,34 @@ func TestBuilder_GCPIAMPoliciesPreferredOverMembersPreserveConditions(t *testing
 	}
 }
 
-func TestBuilder_GCPIAMPoliciesDisableMemberFallbackWithoutMaterializedEdges(t *testing.T) {
+func TestBuilder_GCPIAMPoliciesMarkProjectsWithBindingsWithoutMaterializedEdges(t *testing.T) {
+	ctx := context.Background()
+	source := newMockDataSource()
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	source.setResult(`SELECT project_id, bindings FROM gcp_iam_policies`, &DataQueryResult{
+		Rows: []map[string]any{{
+			"project_id": "proj-without-resources",
+			"bindings": []any{
+				map[string]any{
+					"role":    "roles/viewer",
+					"members": []any{"user:bob@example.com"},
+				},
+			},
+		}},
+	})
+
+	builder := NewBuilder(source, logger)
+	count, policyProjects := builder.buildGCPEdgesFromPolicies(ctx)
+	if count != 0 {
+		t.Fatalf("expected no edges without project resources, got %d", count)
+	}
+	if _, ok := policyProjects["proj-without-resources"]; !ok {
+		t.Fatalf("expected project to be marked as having policy bindings, got %#v", policyProjects)
+	}
+}
+
+func TestBuilder_GCPIAMMembersFallbackStillAppliesPerProject(t *testing.T) {
 	ctx := context.Background()
 	source := newMockDataSource()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
@@ -874,10 +901,15 @@ func TestBuilder_GCPIAMPoliciesDisableMemberFallbackWithoutMaterializedEdges(t *
 		t.Fatalf("Build failed: %v", err)
 	}
 
+	found := false
 	for _, edge := range builder.Graph().GetOutEdges("user:carol@example.com") {
-		if edge.Target == "instance-5" {
-			t.Fatalf("did not expect member fallback edge when policy bindings are present elsewhere: %#v", edge)
+		if edge.Target == "instance-5" && edge.Kind == EdgeKindCanAdmin {
+			found = true
+			break
 		}
+	}
+	if !found {
+		t.Fatal("expected member fallback edge for project without policy bindings")
 	}
 }
 

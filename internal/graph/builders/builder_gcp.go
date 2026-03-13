@@ -146,10 +146,8 @@ func (b *Builder) buildGCPNodes(ctx context.Context) {
 }
 
 func (b *Builder) buildGCPEdges(ctx context.Context) {
-	edgeCount, usedPolicies := b.buildGCPEdgesFromPolicies(ctx)
-	if !usedPolicies {
-		edgeCount = b.buildGCPEdgesFromMembers(ctx)
-	}
+	edgeCount, policyProjects := b.buildGCPEdgesFromPolicies(ctx)
+	edgeCount += b.buildGCPEdgesFromMembers(ctx, policyProjects)
 	edgeCount += b.buildGCPBucketIAMPolicyEdges(ctx)
 	b.logger.Debug("processed GCP IAM bindings", "count", edgeCount)
 
@@ -157,7 +155,7 @@ func (b *Builder) buildGCPEdges(ctx context.Context) {
 	b.buildGCPFirewallEdges(ctx)
 }
 
-func (b *Builder) buildGCPEdgesFromMembers(ctx context.Context) int {
+func (b *Builder) buildGCPEdgesFromMembers(ctx context.Context, policyProjects map[string]struct{}) int {
 	members, err := b.queryIfExists(ctx, "gcp_iam_members",
 		`SELECT project_id, member, roles FROM gcp_iam_members`)
 	if err != nil {
@@ -170,6 +168,9 @@ func (b *Builder) buildGCPEdgesFromMembers(ctx context.Context) int {
 		projectID := toString(row["project_id"])
 		member := toString(row["member"])
 		if projectID == "" || member == "" {
+			continue
+		}
+		if _, ok := policyProjects[projectID]; ok {
 			continue
 		}
 
@@ -207,16 +208,16 @@ func (b *Builder) buildGCPEdgesFromMembers(ctx context.Context) int {
 	return count
 }
 
-func (b *Builder) buildGCPEdgesFromPolicies(ctx context.Context) (int, bool) {
+func (b *Builder) buildGCPEdgesFromPolicies(ctx context.Context) (int, map[string]struct{}) {
 	policies, err := b.queryIfExists(ctx, "gcp_iam_policies",
 		`SELECT project_id, bindings FROM gcp_iam_policies`)
 	if err != nil {
 		b.logger.Debug("failed to query GCP IAM policies", "error", err)
-		return 0, false
+		return 0, nil
 	}
 
 	count := 0
-	hasPolicyBindings := false
+	policyProjects := make(map[string]struct{})
 	for _, policy := range policies.Rows {
 		projectID := toString(policy["project_id"])
 		if projectID == "" {
@@ -234,7 +235,7 @@ func (b *Builder) buildGCPEdgesFromPolicies(ctx context.Context) (int, bool) {
 			if len(members) == 0 {
 				continue
 			}
-			hasPolicyBindings = true
+			policyProjects[projectID] = struct{}{}
 			edgeKind := gcpRoleToEdgeKind(role)
 			condition := gcpIAMBindingCondition(bindingMap)
 			for _, memberValue := range members {
@@ -267,7 +268,7 @@ func (b *Builder) buildGCPEdgesFromPolicies(ctx context.Context) (int, bool) {
 		}
 	}
 
-	return count, hasPolicyBindings
+	return count, policyProjects
 }
 
 func (b *Builder) buildGCPBucketIAMPolicyEdges(ctx context.Context) int {
