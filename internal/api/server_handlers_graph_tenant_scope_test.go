@@ -11,6 +11,7 @@ import (
 
 	"github.com/evalops/cerebro/internal/graph"
 	"github.com/evalops/cerebro/internal/metrics"
+	"github.com/evalops/cerebro/internal/snowflake"
 	dto "github.com/prometheus/client_model/go"
 )
 
@@ -176,5 +177,43 @@ func TestCrossTenantReadOperationsEmitAuditAndMetrics(t *testing.T) {
 	}
 	if got := aggregateSnapshot.GetCounter().GetValue(); got < 1 {
 		t.Fatalf("expected aggregate cross-tenant metric increment, got %f", got)
+	}
+}
+
+func TestRiskReportPersistsOnlyForGlobalRequests(t *testing.T) {
+	s := newTestServer(t)
+	seedGraphRiskFeedbackGraph(s.app.SecurityGraph)
+	s.app.RiskEngineStateRepo = &snowflake.RiskEngineStateRepository{}
+
+	saveFailed := metrics.GraphStatePersistenceTotal.WithLabelValues("save_failed")
+	before := &dto.Metric{}
+	if err := saveFailed.Write(before); err != nil {
+		t.Fatalf("read initial persistence metric: %v", err)
+	}
+
+	global := do(t, s, http.MethodGet, "/api/v1/graph/risk-report", nil)
+	if global.Code != http.StatusOK {
+		t.Fatalf("expected global risk report 200, got %d: %s", global.Code, global.Body.String())
+	}
+
+	afterGlobal := &dto.Metric{}
+	if err := saveFailed.Write(afterGlobal); err != nil {
+		t.Fatalf("read global persistence metric: %v", err)
+	}
+	if afterGlobal.GetCounter().GetValue() <= before.GetCounter().GetValue() {
+		t.Fatalf("expected global risk report to attempt persistence, before=%f after=%f", before.GetCounter().GetValue(), afterGlobal.GetCounter().GetValue())
+	}
+
+	tenant := doWithTenantContext(t, s, http.MethodGet, "/api/v1/graph/risk-report", nil, "tenant-a")
+	if tenant.Code != http.StatusOK {
+		t.Fatalf("expected tenant risk report 200, got %d: %s", tenant.Code, tenant.Body.String())
+	}
+
+	afterTenant := &dto.Metric{}
+	if err := saveFailed.Write(afterTenant); err != nil {
+		t.Fatalf("read tenant persistence metric: %v", err)
+	}
+	if afterTenant.GetCounter().GetValue() != afterGlobal.GetCounter().GetValue() {
+		t.Fatalf("expected tenant-scoped risk report to skip persistence, global=%f tenant=%f", afterGlobal.GetCounter().GetValue(), afterTenant.GetCounter().GetValue())
 	}
 }

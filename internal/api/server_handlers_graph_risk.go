@@ -135,7 +135,9 @@ func (s *Server) riskReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	report := engine.Analyze()
-	if g == s.app.SecurityGraph {
+	// Persist only for global requests. Context-derived scope is stable even if the
+	// live graph pointer changes during a concurrent rebuild.
+	if !requestUsesTenantScope(r.Context()) {
 		s.persistRiskEngineState(r.Context(), engine)
 	}
 	s.json(w, http.StatusOK, report)
