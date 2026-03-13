@@ -1250,6 +1250,55 @@ func TestPlatformIntelligenceReportRunRetrySync(t *testing.T) {
 	}
 }
 
+func waitForPlatformJobTerminalStatus(t *testing.T, s *Server, jobURL, wantStatus string) map[string]any {
+	t.Helper()
+	if strings.TrimSpace(jobURL) == "" {
+		t.Fatal("expected non-empty jobURL")
+	}
+	var latest map[string]any
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		resp := do(t, s, http.MethodGet, jobURL, nil)
+		if resp.Code != http.StatusOK {
+			t.Fatalf("expected 200 for platform job lookup, got %d: %s", resp.Code, resp.Body.String())
+		}
+		latest = decodeJSON(t, resp)
+		status, _ := latest["status"].(string)
+		if status == wantStatus {
+			return latest
+		}
+		if status == "failed" || status == "canceled" {
+			t.Fatalf("expected platform job status %q, got terminal status %q: %#v", wantStatus, status, latest)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for platform job status %q, last payload: %#v", wantStatus, latest)
+	return nil
+}
+
+func waitForPlatformReportRunStatus(t *testing.T, s *Server, statusURL, wantStatus string) map[string]any {
+	t.Helper()
+	if strings.TrimSpace(statusURL) == "" {
+		t.Fatal("expected non-empty statusURL")
+	}
+	var latest map[string]any
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		resp := do(t, s, http.MethodGet, statusURL, nil)
+		if resp.Code != http.StatusOK {
+			t.Fatalf("expected 200 for report run lookup, got %d: %s", resp.Code, resp.Body.String())
+		}
+		latest = decodeJSON(t, resp)
+		status, _ := latest["status"].(string)
+		if status == wantStatus {
+			return latest
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for report run status %q, last payload: %#v", wantStatus, latest)
+	return nil
+}
+
 func TestPlatformIntelligenceReportRunRetryAsyncIncludesBackoffMetadata(t *testing.T) {
 	s := newTestServer(t)
 	g := s.app.SecurityGraph
@@ -1291,26 +1340,13 @@ func TestPlatformIntelligenceReportRunRetryAsyncIncludesBackoffMetadata(t *testi
 		t.Fatalf("expected 202 for initial async run, got %d: %s", create.Code, create.Body.String())
 	}
 	created := decodeJSON(t, create)
+	jobURL, _ := created["job_status_url"].(string)
 	statusURL, _ := created["status_url"].(string)
-	if statusURL == "" {
-		t.Fatalf("expected status_url, got %#v", created["status_url"])
+	if statusURL == "" || jobURL == "" {
+		t.Fatalf("expected async run URLs, got status=%#v job=%#v", created["status_url"], created["job_status_url"])
 	}
-
-	var failedRun map[string]any
-	for i := 0; i < 600; i++ {
-		status := do(t, s, http.MethodGet, statusURL, nil)
-		if status.Code != http.StatusOK {
-			t.Fatalf("expected 200 for async run lookup, got %d: %s", status.Code, status.Body.String())
-		}
-		failedRun = decodeJSON(t, status)
-		if failedRun["status"] == reports.ReportRunStatusFailed {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if got := failedRun["status"]; got != reports.ReportRunStatusFailed {
-		t.Fatalf("expected initial async run to fail, got %#v", got)
-	}
+	waitForPlatformJobTerminalStatus(t, s, jobURL, "failed")
+	waitForPlatformReportRunStatus(t, s, statusURL, reports.ReportRunStatusFailed)
 
 	retry := do(t, s, http.MethodPost, statusURL+":retry", map[string]any{
 		"execution_mode": "async",
@@ -1325,11 +1361,15 @@ func TestPlatformIntelligenceReportRunRetryAsyncIncludesBackoffMetadata(t *testi
 		t.Fatalf("expected 202 for async retry, got %d: %s", retry.Code, retry.Body.String())
 	}
 	retried := decodeJSON(t, retry)
+	retryJobURL, _ := retried["job_status_url"].(string)
 	if got := retried["status"]; got != reports.ReportRunStatusQueued {
 		t.Fatalf("expected queued retry response, got %#v", got)
 	}
 	if got := retried["attempt_count"]; got != float64(2) {
 		t.Fatalf("expected attempt_count=2 after retry queue, got %#v", got)
+	}
+	if retryJobURL == "" {
+		t.Fatalf("expected retry job_status_url, got %#v", retried["job_status_url"])
 	}
 
 	attemptsResp := do(t, s, http.MethodGet, statusURL+"/attempts", nil)
@@ -1355,21 +1395,8 @@ func TestPlatformIntelligenceReportRunRetryAsyncIncludesBackoffMetadata(t *testi
 		t.Fatalf("expected scheduled second attempt status, got %#v", got)
 	}
 
-	var latest map[string]any
-	for i := 0; i < 600; i++ {
-		status := do(t, s, http.MethodGet, statusURL, nil)
-		if status.Code != http.StatusOK {
-			t.Fatalf("expected 200 for async retry lookup, got %d: %s", status.Code, status.Body.String())
-		}
-		latest = decodeJSON(t, status)
-		if latest["status"] == reports.ReportRunStatusSucceeded {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if got := latest["status"]; got != reports.ReportRunStatusSucceeded {
-		t.Fatalf("expected async retry to succeed, got %#v", got)
-	}
+	waitForPlatformJobTerminalStatus(t, s, retryJobURL, "succeeded")
+	latest := waitForPlatformReportRunStatus(t, s, statusURL, reports.ReportRunStatusSucceeded)
 	sections, ok := latest["sections"].([]any)
 	if !ok || len(sections) == 0 {
 		t.Fatalf("expected sections on retried run, got %#v", latest["sections"])
