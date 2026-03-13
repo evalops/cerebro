@@ -1108,6 +1108,20 @@ func TestPlatformIntelligenceReportRunStreamEmitsSections(t *testing.T) {
 	if statusURL == "" {
 		t.Fatalf("expected status_url, got %#v", createBody["status_url"])
 	}
+	for i := 0; i < 200; i++ {
+		statusResp := doAuthenticatedHTTP(t, server.URL, http.MethodGet, statusURL, nil, nil)
+		if statusResp.Code != http.StatusOK {
+			t.Fatalf("expected 200 for async run status, got %d: %s", statusResp.Code, statusResp.Body.String())
+		}
+		statusBody := decodeJSON(t, statusResp)
+		if statusBody["status"] == reports.ReportRunStatusSucceeded {
+			break
+		}
+		if i == 199 {
+			t.Fatalf("timed out waiting for async run to finish, got %#v", statusBody["status"])
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
 
 	streamCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
