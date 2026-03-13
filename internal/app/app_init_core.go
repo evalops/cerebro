@@ -14,6 +14,7 @@ import (
 	"github.com/evalops/cerebro/internal/dspm"
 	"github.com/evalops/cerebro/internal/events"
 	"github.com/evalops/cerebro/internal/findings"
+	"github.com/evalops/cerebro/internal/graph"
 	"github.com/evalops/cerebro/internal/identity"
 	"github.com/evalops/cerebro/internal/metrics"
 	"github.com/evalops/cerebro/internal/notifications"
@@ -306,7 +307,10 @@ func validateTicketingProvider(parent context.Context, provider ticketing.Provid
 }
 
 func (a *App) initIdentity() {
-	a.Identity = identity.NewService()
+	a.Identity = identity.NewService(
+		identity.WithExecutionStore(a.ExecutionStore),
+		identity.WithGraphResolver(func() *graph.Graph { return a.CurrentSecurityGraph() }),
+	)
 }
 
 func (a *App) initAttackPath() {

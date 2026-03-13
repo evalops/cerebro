@@ -85,7 +85,6 @@ func NewAppWithWarehouse(t *testing.T, store warehouse.DataWarehouse) *app.App {
 		Notifications:  notifications.NewManager(),
 		Scheduler:      scheduler.NewScheduler(logger),
 		Ticketing:      ticketing.NewService(),
-		Identity:       identity.NewService(),
 		AttackPath:     attackpath.NewGraph(),
 		Providers:      providers.NewRegistry(),
 		Health:         health.NewRegistry(),
@@ -97,6 +96,10 @@ func NewAppWithWarehouse(t *testing.T, store warehouse.DataWarehouse) *app.App {
 		ScanWatermarks: scanner.NewWatermarkStore(nil),
 		ThreatIntel:    threatintel.NewThreatIntelService(),
 	}
+	application.Identity = identity.NewService(
+		identity.WithExecutionStore(executionStore),
+		identity.WithGraphResolver(func() *graph.Graph { return application.SecurityGraph }),
+	)
 	t.Cleanup(func() { _ = application.Close() })
 	return application
 }

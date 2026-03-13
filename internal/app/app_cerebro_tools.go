@@ -14,6 +14,7 @@ import (
 	"github.com/evalops/cerebro/internal/findings"
 	"github.com/evalops/cerebro/internal/graph"
 	reports "github.com/evalops/cerebro/internal/graph/reports"
+	"github.com/evalops/cerebro/internal/identity"
 )
 
 func (a *App) cerebroTools() []agents.Tool {
@@ -1803,7 +1804,7 @@ func (a *App) toolCerebroFindings(_ context.Context, args json.RawMessage) (stri
 	})
 }
 
-func (a *App) toolCerebroAccessReview(_ context.Context, args json.RawMessage) (string, error) {
+func (a *App) toolCerebroAccessReview(ctx context.Context, args json.RawMessage) (string, error) {
 	g, err := a.requireSecurityGraph()
 	if err != nil {
 		return "", err
@@ -1813,7 +1814,6 @@ func (a *App) toolCerebroAccessReview(_ context.Context, args json.RawMessage) (
 		IdentityID  string `json:"identity_id"`
 		Name        string `json:"name"`
 		Description string `json:"description"`
-		CreatedBy   string `json:"created_by"`
 	}
 	if err := decodeToolArgs(args, &req); err != nil {
 		return "", err
@@ -1830,17 +1830,53 @@ func (a *App) toolCerebroAccessReview(_ context.Context, args json.RawMessage) (
 	if name == "" {
 		name = "Identity access review: " + req.IdentityID
 	}
-	createdBy := strings.TrimSpace(req.CreatedBy)
-	if createdBy == "" {
-		createdBy = "ensemble"
+
+	reviewService := a.Identity
+	if reviewService == nil {
+		reviewService = identity.NewService(identity.WithGraphResolver(func() *graph.Graph { return g }))
 	}
 
-	review := graph.CreateAccessReview(g, name, graph.ReviewScope{
-		Type:       graph.ScopeTypePrincipal,
-		Principals: []string{req.IdentityID},
-	}, createdBy)
-	review.Description = strings.TrimSpace(req.Description)
-	return marshalToolResponse(review)
+	review, err := reviewService.CreateReview(ctx, &identity.AccessReview{
+		Name:        name,
+		Description: strings.TrimSpace(req.Description),
+		Type:        identity.ReviewTypeUserAccess,
+		CreatedBy:   toolDurableActorID(ctx),
+		Scope: identity.ReviewScope{
+			Mode:  identity.ReviewScopeModePrincipal,
+			Users: []string{req.IdentityID},
+		},
+		GenerationSource: "graph",
+	})
+	if err != nil {
+		return "", err
+	}
+	payload := map[string]any{
+		"id":                review.ID,
+		"name":              review.Name,
+		"description":       review.Description,
+		"type":              review.Type,
+		"status":            review.Status,
+		"scope":             review.Scope,
+		"reviewers":         review.Reviewers,
+		"items":             review.Items,
+		"stats":             review.Stats,
+		"created_by":        review.CreatedBy,
+		"created_at":        review.CreatedAt,
+		"started_at":        review.StartedAt,
+		"due_at":            review.DueAt,
+		"completed_at":      review.CompletedAt,
+		"generation_source": review.GenerationSource,
+	}
+	if review.Status == identity.ReviewStatusDraft {
+		payload["status"] = "pending"
+	}
+	return marshalToolResponse(payload)
+}
+
+func toolDurableActorID(_ context.Context) string {
+	// Tool arguments are untrusted input. Until the app surface exposes an authenticated
+	// caller identity contract, durable tool writes must use a fixed system actor.
+	return "ensemble"
 }
 
 func findingMatchesQuery(f *findings.Finding, query string) bool {
