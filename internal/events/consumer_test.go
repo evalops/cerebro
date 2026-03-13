@@ -443,17 +443,17 @@ func TestConsumerHandleMessageDeadLettersDuplicateKeyPayloadMismatch(t *testing.
 		t.Fatalf("expected deduplicated counter unchanged on hash mismatch, before=%v after=%v", beforeDedup, afterDedup)
 	}
 	afterDropped := counterValue(t, metrics.NATSConsumerDroppedTotal.WithLabelValues(cfg.Stream, cfg.Durable, "dedupe_hash_mismatch"))
-	if afterDropped != beforeDropped+1 {
-		t.Fatalf("expected dropped counter to increment for hash mismatch, before=%v after=%v", beforeDropped, afterDropped)
+	if afterDropped != beforeDropped {
+		t.Fatalf("expected hash mismatch to requeue instead of drop, before=%v after=%v", beforeDropped, afterDropped)
 	}
 	if handlerCalls != 1 {
 		t.Fatalf("expected handler to run only for first event, got %d calls", handlerCalls)
 	}
-	if ackCalls != 2 {
-		t.Fatalf("expected first event and dead-lettered mismatch to ack, got %d", ackCalls)
+	if ackCalls != 1 {
+		t.Fatalf("expected only the first event to ack before requeue, got %d", ackCalls)
 	}
-	if nakCalls != 0 {
-		t.Fatalf("expected no nacks when dead-lettering hash mismatch succeeds, got %d", nakCalls)
+	if nakCalls != 1 {
+		t.Fatalf("expected hash mismatch to requeue once, got %d nacks", nakCalls)
 	}
 
 	payload, err := os.ReadFile(cfg.DeadLetterPath)
@@ -465,8 +465,8 @@ func TestConsumerHandleMessageDeadLettersDuplicateKeyPayloadMismatch(t *testing.
 	}
 
 	snapshot := consumer.HealthSnapshot(time.Now().UTC())
-	if snapshot.LastDropReason != "dedupe_hash_mismatch" {
-		t.Fatalf("expected last drop reason dedupe_hash_mismatch, got %q", snapshot.LastDropReason)
+	if snapshot.LastDropReason != "" {
+		t.Fatalf("expected hash mismatch requeue not to mark a drop, got %q", snapshot.LastDropReason)
 	}
 
 	eventKey, ok := consumerProcessedEventKey(firstEvent)
@@ -477,11 +477,58 @@ func TestConsumerHandleMessageDeadLettersDuplicateKeyPayloadMismatch(t *testing.
 	if err != nil {
 		t.Fatalf("LookupProcessedEvent after hash mismatch: %v", err)
 	}
+	if record != nil {
+		t.Fatalf("expected hash mismatch to clear processed event record, got %#v", record)
+	}
+
+	third := consumer.handleMessage(context.Background(), "ensemble.tap.test", secondPayload, ack, nak, func() error { return nil })
+	if !third.Processed {
+		t.Fatalf("expected replayed hash-mismatch event to process after dedupe reset, got %+v", third)
+	}
+	if handlerCalls != 2 {
+		t.Fatalf("expected handler to run again after hash-mismatch reset, got %d calls", handlerCalls)
+	}
+	if ackCalls != 2 {
+		t.Fatalf("expected replayed event to ack after processing, got %d", ackCalls)
+	}
+	if nakCalls != 1 {
+		t.Fatalf("expected only one hash-mismatch requeue, got %d", nakCalls)
+	}
+
+	record, err = deduper.store.LookupProcessedEvent(context.Background(), deduper.namespace, eventKey, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("LookupProcessedEvent after replayed hash mismatch: %v", err)
+	}
 	if record == nil {
-		t.Fatal("expected processed event record after hash mismatch")
+		t.Fatal("expected replayed hash-mismatch event to persist a new processed event record")
 	}
 	if record.DuplicateCount != 0 {
-		t.Fatalf("expected hash mismatch not to increment duplicate count, got %#v", record)
+		t.Fatalf("expected replayed hash-mismatch event to persist without duplicate count, got %#v", record)
+	}
+}
+
+func TestConsumerProcessedEventKeyIsUnambiguous(t *testing.T) {
+	first, ok := consumerProcessedEventKey(CloudEvent{
+		ID:       "d",
+		Source:   "c",
+		TenantID: "a|b",
+	})
+	if !ok {
+		t.Fatal("expected first dedupe key")
+	}
+	second, ok := consumerProcessedEventKey(CloudEvent{
+		ID:       "d",
+		Source:   "b|c",
+		TenantID: "a",
+	})
+	if !ok {
+		t.Fatal("expected second dedupe key")
+	}
+	if first == second {
+		t.Fatalf("expected canonical dedupe keys to differ, both were %q", first)
+	}
+	if !strings.HasPrefix(first, "sha256:") || !strings.HasPrefix(second, "sha256:") {
+		t.Fatalf("expected canonical hashed dedupe keys, got %q and %q", first, second)
 	}
 }
 

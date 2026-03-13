@@ -96,3 +96,36 @@ func TestSQLiteStoreProcessedEventsTrimOldest(t *testing.T) {
 		t.Fatal("expected newest processed event to remain after trim")
 	}
 }
+
+func TestSQLiteStoreDeleteProcessedEvent(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "executions.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	now := time.Date(2026, 3, 12, 4, 0, 0, 0, time.UTC)
+	if err := store.RememberProcessedEvent(context.Background(), ProcessedEventRecord{
+		Namespace:   NamespaceProcessedCloudEvent,
+		EventKey:    "evt-delete",
+		PayloadHash: "hash-a",
+		FirstSeenAt: now,
+		LastSeenAt:  now,
+		ProcessedAt: now,
+		ExpiresAt:   now.Add(24 * time.Hour),
+	}, 100); err != nil {
+		t.Fatalf("RememberProcessedEvent: %v", err)
+	}
+
+	if err := store.DeleteProcessedEvent(context.Background(), NamespaceProcessedCloudEvent, "evt-delete"); err != nil {
+		t.Fatalf("DeleteProcessedEvent: %v", err)
+	}
+
+	record, err := store.LookupProcessedEvent(context.Background(), NamespaceProcessedCloudEvent, "evt-delete", now.Add(time.Hour))
+	if err != nil {
+		t.Fatalf("LookupProcessedEvent after delete: %v", err)
+	}
+	if record != nil {
+		t.Fatalf("expected processed event to be deleted, got %#v", record)
+	}
+}

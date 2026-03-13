@@ -221,3 +221,24 @@ func (s *SQLiteStore) RememberProcessedEvent(ctx context.Context, record Process
 	}
 	return nil
 }
+
+func (s *SQLiteStore) DeleteProcessedEvent(ctx context.Context, namespace, eventKey string) error {
+	if s == nil || s.db == nil {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	namespace = strings.TrimSpace(namespace)
+	eventKey = strings.TrimSpace(eventKey)
+	if namespace == "" || eventKey == "" {
+		return fmt.Errorf("processed event namespace and key are required")
+	}
+	if _, err := s.db.ExecContext(ctx, `
+		DELETE FROM processed_events
+		WHERE namespace = ? AND event_key = ?
+	`, namespace, eventKey); err != nil {
+		return fmt.Errorf("delete processed event: %w", err)
+	}
+	return nil
+}

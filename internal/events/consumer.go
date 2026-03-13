@@ -381,6 +381,19 @@ func (c *Consumer) handleMessage(ctx context.Context, subject string, payload []
 			)
 		} else if record != nil {
 			if hashMismatch {
+				if err := c.deduper.Forget(ctx, evt); err != nil {
+					c.logger.Error("tap consumer failed to clear conflicting dedupe state; message requeued",
+						"error", err,
+						"event_id", evt.ID,
+						"event_type", evt.Type,
+						"source", evt.Source,
+						"processed_at", record.ProcessedAt.UTC().Format(time.RFC3339Nano),
+					)
+					if nakErr := nak(); nakErr != nil {
+						c.logger.Warn("tap consumer nak failed after dedupe hash mismatch state clear failure", "error", nakErr, "event_type", evt.Type)
+					}
+					return consumerMessageResult{}
+				}
 				if dlqErr := c.dlq.Write(consumerDeadLetterRecord{
 					RecordedAt: time.Now().UTC(),
 					Stream:     c.config.Stream,
@@ -407,9 +420,8 @@ func (c *Consumer) handleMessage(ctx context.Context, subject string, payload []
 					"source", evt.Source,
 					"processed_at", record.ProcessedAt.UTC().Format(time.RFC3339Nano),
 				)
-				c.recordDropped("dedupe_hash_mismatch", time.Now().UTC())
-				if err := ack(); err != nil {
-					c.logger.Warn("tap consumer ack failed after dead-lettering dedupe hash mismatch", "error", err, "event_type", evt.Type)
+				if nakErr := nak(); nakErr != nil {
+					c.logger.Warn("tap consumer nak failed after clearing dedupe hash mismatch state", "error", nakErr, "event_type", evt.Type)
 				}
 				return consumerMessageResult{}
 			}

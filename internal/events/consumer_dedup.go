@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -103,6 +104,17 @@ func (d *consumerProcessedEventDeduper) Remember(ctx context.Context, evt CloudE
 	}, d.maxRecords)
 }
 
+func (d *consumerProcessedEventDeduper) Forget(ctx context.Context, evt CloudEvent) error {
+	if d == nil || d.store == nil {
+		return nil
+	}
+	key, ok := consumerProcessedEventKey(evt)
+	if !ok {
+		return nil
+	}
+	return d.store.DeleteProcessedEvent(ctx, d.namespace, key)
+}
+
 func consumerProcessedEventKey(evt CloudEvent) (string, bool) {
 	eventID := strings.TrimSpace(evt.ID)
 	if eventID == "" {
@@ -116,7 +128,12 @@ func consumerProcessedEventKey(evt CloudEvent) (string, bool) {
 	if tenantID == "" {
 		tenantID = "default"
 	}
-	return strings.Join([]string{tenantID, source, eventID}, "|"), true
+	keyPayload, err := json.Marshal([]string{tenantID, source, eventID})
+	if err != nil {
+		return "", false
+	}
+	sum := sha256.Sum256(keyPayload)
+	return "sha256:" + hex.EncodeToString(sum[:]), true
 }
 
 func consumerProcessedEventPayloadHash(payload []byte) string {
