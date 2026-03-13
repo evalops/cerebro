@@ -143,3 +143,47 @@ func TestPlatformExecutionsListsSharedExecutionStoreRuns(t *testing.T) {
 		t.Fatalf("expected one filtered execution, got %#v", filteredBody)
 	}
 }
+
+func TestPlatformGraphSnapshotRecordsIncludePersistedReportRuns(t *testing.T) {
+	s := newTestServer(t)
+	builtAt := time.Date(2026, 3, 12, 11, 0, 0, 0, time.UTC)
+	s.app.SecurityGraph.SetMetadata(graph.Metadata{
+		BuiltAt:   builtAt,
+		NodeCount: 1,
+		EdgeCount: 0,
+	})
+
+	run := &reports.ReportRun{
+		ID:            "report_run:graph-snapshot-persisted",
+		ReportID:      "quality",
+		Status:        reports.ReportRunStatusSucceeded,
+		ExecutionMode: reports.ReportExecutionModeSync,
+		SubmittedAt:   builtAt.Add(5 * time.Minute),
+		RequestedBy:   "alice",
+		Lineage: reports.ReportLineage{
+			GraphSnapshotID:         "graph_snapshot:historic",
+			GraphSchemaVersion:      3,
+			OntologyContractVersion: "2026-03-12",
+			GraphBuiltAt:            &builtAt,
+		},
+	}
+	if err := s.storePlatformReportRun(run); err != nil {
+		t.Fatalf("storePlatformReportRun: %v", err)
+	}
+
+	s.platformReportRunMu.Lock()
+	s.platformReportRuns = map[string]*reports.ReportRun{}
+	s.platformReportRunMu.Unlock()
+
+	records := s.platformGraphSnapshotRecords()
+	record, ok := records["graph_snapshot:historic"]
+	if !ok || record == nil {
+		t.Fatalf("expected persisted report-run lineage snapshot to be present, got %#v", records)
+	}
+	if got := record.ObservedRunCount; got < 1 {
+		t.Fatalf("expected observed run count from persisted report run, got %#v", got)
+	}
+	if len(record.ObservedReportIDs) == 0 || record.ObservedReportIDs[0] != "quality" {
+		t.Fatalf("expected observed report id to include quality, got %#v", record.ObservedReportIDs)
+	}
+}
