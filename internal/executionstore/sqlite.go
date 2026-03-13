@@ -146,6 +146,91 @@ func (s *SQLiteStore) UpsertRun(ctx context.Context, env RunEnvelope) error {
 	return nil
 }
 
+func (s *SQLiteStore) ReplaceRunWithEvents(ctx context.Context, env RunEnvelope, events []EventEnvelope) error {
+	if s == nil || s.db == nil {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	env.Namespace = strings.TrimSpace(env.Namespace)
+	env.RunID = strings.TrimSpace(env.RunID)
+	if env.Namespace == "" || env.RunID == "" {
+		return fmt.Errorf("execution run namespace and id are required")
+	}
+	env.Kind = strings.TrimSpace(env.Kind)
+	env.Status = strings.TrimSpace(env.Status)
+	env.Stage = strings.TrimSpace(env.Stage)
+	env.SubmittedAt = env.SubmittedAt.UTC()
+	env.UpdatedAt = env.UpdatedAt.UTC()
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin execution run replacement tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO execution_runs (
+			namespace, run_id, kind, status, stage, submitted_at, started_at, completed_at, updated_at, payload
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(namespace, run_id) DO UPDATE SET
+			kind = excluded.kind,
+			status = excluded.status,
+			stage = excluded.stage,
+			submitted_at = excluded.submitted_at,
+			started_at = excluded.started_at,
+			completed_at = excluded.completed_at,
+			updated_at = excluded.updated_at,
+			payload = excluded.payload
+	`, env.Namespace, env.RunID, env.Kind, env.Status, env.Stage, env.SubmittedAt, nullableTime(env.StartedAt), nullableTime(env.CompletedAt), env.UpdatedAt, env.Payload); err != nil {
+		return fmt.Errorf("persist execution run: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM execution_events
+		WHERE namespace = ? AND run_id = ?
+	`, env.Namespace, env.RunID); err != nil {
+		return fmt.Errorf("delete execution events: %w", err)
+	}
+
+	for index, event := range events {
+		event.Namespace = strings.TrimSpace(event.Namespace)
+		if event.Namespace == "" {
+			event.Namespace = env.Namespace
+		}
+		event.RunID = strings.TrimSpace(event.RunID)
+		if event.RunID == "" {
+			event.RunID = env.RunID
+		}
+		if event.Namespace != env.Namespace || event.RunID != env.RunID {
+			return fmt.Errorf("execution event namespace/run mismatch for %s/%s", event.Namespace, event.RunID)
+		}
+		if event.RecordedAt.IsZero() {
+			event.RecordedAt = time.Now().UTC()
+		} else {
+			event.RecordedAt = event.RecordedAt.UTC()
+		}
+		if event.Sequence <= 0 {
+			event.Sequence = int64(index + 1)
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO execution_events (namespace, run_id, sequence, recorded_at, payload)
+			VALUES (?, ?, ?, ?, ?)
+			ON CONFLICT(namespace, run_id, sequence) DO UPDATE SET
+				recorded_at = excluded.recorded_at,
+				payload = excluded.payload
+		`, event.Namespace, event.RunID, event.Sequence, event.RecordedAt, event.Payload); err != nil {
+			return fmt.Errorf("persist execution event: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit execution run replacement: %w", err)
+	}
+	return nil
+}
+
 func (s *SQLiteStore) LoadRun(ctx context.Context, namespace, runID string) (*RunEnvelope, error) {
 	if s == nil || s.db == nil {
 		return nil, nil

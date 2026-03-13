@@ -138,6 +138,56 @@ func TestReportRunStoreRoundTrip(t *testing.T) {
 	}
 }
 
+func TestReportRunStoreSaveRunReplacesPersistedEvents(t *testing.T) {
+	now := time.Date(2026, 3, 10, 1, 0, 0, 0, time.UTC)
+	run := &ReportRun{
+		ID:            "report_run:replace-events",
+		ReportID:      "quality",
+		Status:        ReportRunStatusQueued,
+		ExecutionMode: ReportExecutionModeAsync,
+		SubmittedAt:   now,
+	}
+	AppendReportRunEvent(run, "platform.report_run.queued", ReportRunStatusQueued, "api.request", "alice", now, nil)
+	run.EventCount = len(run.Events)
+
+	stateDir := t.TempDir()
+	store, err := NewReportRunStore(filepath.Join(stateDir, "executions.db"), filepath.Join(stateDir, "snapshots"), filepath.Join(stateDir, "legacy-state.json"))
+	if err != nil {
+		t.Fatalf("NewReportRunStore: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	if err := store.SaveRun(run); err != nil {
+		t.Fatalf("SaveRun initial: %v", err)
+	}
+
+	run.Status = ReportRunStatusSucceeded
+	run.CompletedAt = timePtr(now.Add(2 * time.Minute))
+	AppendReportRunEvent(run, "platform.report_run.completed", ReportRunStatusSucceeded, "api.request", "alice", now.Add(2*time.Minute), nil)
+	run.EventCount = len(run.Events)
+
+	if err := store.SaveRun(run); err != nil {
+		t.Fatalf("SaveRun updated: %v", err)
+	}
+
+	loaded, err := store.LoadRun(run.ID)
+	if err != nil {
+		t.Fatalf("LoadRun: %v", err)
+	}
+	if loaded == nil {
+		t.Fatal("expected saved run")
+	}
+	if loaded.Status != ReportRunStatusSucceeded {
+		t.Fatalf("expected updated status, got %+v", loaded)
+	}
+	if len(loaded.Events) != 2 {
+		t.Fatalf("expected replaced persisted events, got %+v", loaded.Events)
+	}
+	if loaded.Events[0].Type != "platform.report_run.queued" || loaded.Events[1].Type != "platform.report_run.completed" {
+		t.Fatalf("unexpected persisted event ordering: %+v", loaded.Events)
+	}
+}
+
 func timePtr(value time.Time) *time.Time {
 	return &value
 }

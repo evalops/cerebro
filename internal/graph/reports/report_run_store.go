@@ -271,7 +271,7 @@ func (s *ReportRunStore) persistRun(ctx context.Context, input *ReportRun, retai
 	if err != nil {
 		return fmt.Errorf("encode report run %q: %w", run.ID, err)
 	}
-	if err := s.execution.UpsertRun(ctx, executionstore.RunEnvelope{
+	runEnv := executionstore.RunEnvelope{
 		Namespace:   executionstore.NamespacePlatformReportRun,
 		RunID:       strings.TrimSpace(run.ID),
 		Kind:        strings.TrimSpace(run.ReportID),
@@ -282,26 +282,23 @@ func (s *ReportRunStore) persistRun(ctx context.Context, input *ReportRun, retai
 		CompletedAt: run.CompletedAt,
 		UpdatedAt:   reportRunUpdatedAt(run),
 		Payload:     payload,
-	}); err != nil {
-		return fmt.Errorf("persist report run %q: %w", run.ID, err)
 	}
-	if err := s.execution.DeleteEvents(ctx, executionstore.NamespacePlatformReportRun, run.ID); err != nil {
-		return fmt.Errorf("reset report run events %q: %w", run.ID, err)
-	}
+	eventEnvs := make([]executionstore.EventEnvelope, 0, len(run.Events))
 	for _, event := range run.Events {
 		eventPayload, err := json.Marshal(event)
 		if err != nil {
 			return fmt.Errorf("encode report run event %q/%d: %w", run.ID, event.Sequence, err)
 		}
-		if _, err := s.execution.SaveEvent(ctx, executionstore.EventEnvelope{
+		eventEnvs = append(eventEnvs, executionstore.EventEnvelope{
 			Namespace:  executionstore.NamespacePlatformReportRun,
 			RunID:      run.ID,
 			Sequence:   int64(event.Sequence),
 			RecordedAt: event.Timestamp.UTC(),
 			Payload:    eventPayload,
-		}); err != nil {
-			return fmt.Errorf("persist report run event %q/%d: %w", run.ID, event.Sequence, err)
-		}
+		})
+	}
+	if err := s.execution.ReplaceRunWithEvents(ctx, runEnv, eventEnvs); err != nil {
+		return fmt.Errorf("persist report run %q: %w", run.ID, err)
 	}
 	return nil
 }
