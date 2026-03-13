@@ -698,8 +698,9 @@ func (a *App) cerebroTools() []agents.Tool {
 			Handler: a.toolCerebroAutonomousCredentialResponse,
 		},
 		{
-			Name:        "cerebro.autonomous_workflow_approve",
-			Description: "Approve or reject a pending autonomous workflow and continue execution",
+			Name:             "cerebro.autonomous_workflow_approve",
+			Description:      "Approve or reject a pending autonomous workflow and continue execution",
+			RequiresApproval: true,
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{

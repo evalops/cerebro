@@ -257,6 +257,7 @@
         "reason": "reason",
         "run_id": "run_id"
       },
+      "requires_approval": true,
       "execution_kind": "direct_tool"
     },
     {

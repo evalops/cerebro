@@ -170,6 +170,14 @@ func TestCerebroToolsApprovalFlags(t *testing.T) {
 	if !accessReview.RequiresApproval {
 		t.Fatal("access_review should require approval with current config")
 	}
+
+	autonomousApprove := findCerebroTool(tools, "cerebro.autonomous_workflow_approve")
+	if autonomousApprove == nil {
+		t.Fatal("expected cerebro.autonomous_workflow_approve tool")
+	}
+	if !autonomousApprove.RequiresApproval {
+		t.Fatal("autonomous_workflow_approve should require approval")
+	}
 }
 
 func TestCerebroBlastRadiusTool(t *testing.T) {
