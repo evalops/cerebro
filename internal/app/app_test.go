@@ -56,12 +56,19 @@ func TestLoadConfigCredentialFileSourceOverridesSecretsOnly(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "API_KEYS"), []byte("file-key:file-user\n"), 0o600); err != nil {
 		t.Fatalf("write api keys secret: %v", err)
 	}
+	if err := os.WriteFile(filepath.Join(dir, "LOG_LEVEL"), []byte("debug\n"), 0o600); err != nil {
+		t.Fatalf("write log level attempt: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "API_AUTH_ENABLED"), []byte("false\n"), 0o600); err != nil {
+		t.Fatalf("write api auth attempt: %v", err)
+	}
 
 	t.Setenv("CEREBRO_CREDENTIAL_SOURCE", "file")
 	t.Setenv("CEREBRO_CREDENTIAL_FILE_DIR", dir)
 	t.Setenv("OPENAI_API_KEY", "env-openai-key")
 	t.Setenv("API_KEYS", "env-key:env-user")
 	t.Setenv("LOG_LEVEL", "warn")
+	t.Setenv("API_AUTH_ENABLED", "true")
 
 	cfg := LoadConfig()
 	if cfg.CredentialSource != "file" {
@@ -76,6 +83,9 @@ func TestLoadConfigCredentialFileSourceOverridesSecretsOnly(t *testing.T) {
 	if cfg.LogLevel != "warn" {
 		t.Fatalf("expected non-secret config to continue using env/config, got %q", cfg.LogLevel)
 	}
+	if !cfg.APIAuthEnabled {
+		t.Fatal("expected credential file source to be unable to disable API auth")
+	}
 }
 
 func TestLoadConfigCredentialVaultSource(t *testing.T) {
@@ -87,7 +97,7 @@ func TestLoadConfigCredentialVaultSource(t *testing.T) {
 			t.Fatalf("unexpected vault token %q", got)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"data":{"data":{"OPENAI_API_KEY":"vault-openai-key","API_CREDENTIALS_JSON":[{"key":"vault-key","user_id":"vault-user"}]}}}`)
+		_, _ = fmt.Fprint(w, `{"data":{"data":{"OPENAI_API_KEY":"vault-openai-key","API_CREDENTIALS_JSON":[{"key":"vault-key","user_id":"vault-user"}],"LOG_LEVEL":"debug","API_AUTH_ENABLED":"false"}}}`)
 	}))
 	defer server.Close()
 
@@ -97,6 +107,7 @@ func TestLoadConfigCredentialVaultSource(t *testing.T) {
 	t.Setenv("CEREBRO_CREDENTIAL_VAULT_PATH", "secret/cerebro")
 	t.Setenv("CEREBRO_CREDENTIAL_VAULT_KV_VERSION", "2")
 	t.Setenv("LOG_LEVEL", "error")
+	t.Setenv("API_AUTH_ENABLED", "true")
 
 	cfg := LoadConfig()
 	if cfg.CredentialSource != "vault" {
@@ -110,6 +121,9 @@ func TestLoadConfigCredentialVaultSource(t *testing.T) {
 	}
 	if cfg.LogLevel != "error" {
 		t.Fatalf("expected non-secret env config to survive vault credential source, got %q", cfg.LogLevel)
+	}
+	if !cfg.APIAuthEnabled {
+		t.Fatal("expected vault credential source to be unable to disable API auth")
 	}
 }
 

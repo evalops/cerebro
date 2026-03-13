@@ -19,14 +19,54 @@ var configValueSourceState struct {
 	source secretsource.Source
 }
 
+var credentialSourceExactKeys = map[string]struct{}{
+	"API_KEYS":              {},
+	"API_CREDENTIALS_JSON":  {},
+	"PAGERDUTY_ROUTING_KEY": {},
+}
+
+var credentialSourceKeySuffixes = []string{
+	"_API_KEY",
+	"_API_TOKEN",
+	"_TOKEN",
+	"_SECRET",
+	"_SECRET_KEY",
+	"_PASSWORD",
+	"_PRIVATE_KEY",
+	"_SIGNING_KEY",
+	"_NKEY_SEED",
+	"_USER_JWT",
+	"_WEBHOOK_URL",
+	"_ROUTING_KEY",
+	"_CREDENTIALS_JSON",
+}
+
 func getEnv(key, fallback string) string {
-	if value, ok := lookupActiveConfigSourceValue(key); ok && strings.TrimSpace(value) != "" {
-		return value
+	if credentialSourceEligibleKey(key) {
+		if value, ok := lookupActiveConfigSourceValue(key); ok && strings.TrimSpace(value) != "" {
+			return value
+		}
 	}
 	if value, ok := lookupRawConfigValue(key); ok {
 		return value
 	}
 	return fallback
+}
+
+func credentialSourceEligibleKey(key string) bool {
+	key = strings.ToUpper(strings.TrimSpace(key))
+	if key == "" {
+		return false
+	}
+	if _, ok := credentialSourceExactKeys[key]; ok {
+		return true
+	}
+	for _, suffix := range credentialSourceKeySuffixes {
+		if strings.HasSuffix(key, suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 func withConfigValueSource(source secretsource.Source, fn func()) {
