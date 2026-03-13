@@ -11,6 +11,7 @@ import (
 type Store interface {
 	Close() error
 	UpsertRun(context.Context, RunEnvelope) error
+	CompareAndSwapRun(context.Context, RunEnvelope, RunEnvelope) (bool, error)
 	ReplaceRunWithEvents(context.Context, RunEnvelope, []EventEnvelope) error
 	LoadRun(context.Context, string, string) (*RunEnvelope, error)
 	ListRuns(context.Context, string, RunListOptions) ([]RunEnvelope, error)

@@ -213,6 +213,7 @@ func (a *App) toolCerebroAutonomousWorkflowApprove(ctx context.Context, args jso
 		return "", fmt.Errorf("action execution %s is not awaiting approval", run.ActionExecutionID)
 	}
 	executor := a.newSharedActionExecutor()
+	defer func() { _ = executor.Close() }()
 	playbook := autonomousCredentialPlaybook(run)
 	signal := autonomousCredentialSignal(run)
 	approver := toolDurableActorID(ctx)
@@ -220,6 +221,13 @@ func (a *App) toolCerebroAutonomousWorkflowApprove(ctx context.Context, args jso
 		handler: a.autonomousActionHandler(),
 	}
 	if approve {
+		execution, claimed, err := actionStore.ClaimApproval(ctx, run.ActionExecutionID, approver, time.Now().UTC())
+		if err != nil {
+			return "", err
+		}
+		if !claimed {
+			return "", fmt.Errorf("action execution %s is not awaiting approval", run.ActionExecutionID)
+		}
 		if err := executor.Approve(ctx, execution, approver, playbook, signal, runner); err != nil {
 			run.Status = autonomous.RunStatusFailed
 			run.Stage = autonomous.RunStageClosed
@@ -381,6 +389,7 @@ func (a *App) startAutonomousCredentialAction(ctx context.Context, run *autonomo
 		return nil, fmt.Errorf("credential exposure did not resolve to a revocable principal")
 	}
 	executor := a.newSharedActionExecutor()
+	defer func() { _ = executor.Close() }()
 	playbook := autonomousCredentialPlaybook(run)
 	signal := autonomousCredentialSignal(run)
 	execution := executor.NewExecution(playbook, signal)

@@ -89,6 +89,51 @@ func TestExecutorApprovalFlowAndStorePersistence(t *testing.T) {
 	}
 }
 
+func TestSQLiteStoreClaimApprovalTransitionsOnce(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "executions.db"), DefaultNamespace)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	execution := &Execution{
+		ID:           "exec-claim",
+		PlaybookID:   "playbook-1",
+		PlaybookName: "Approval Playbook",
+		Status:       StatusAwaitingApproval,
+		StartedAt:    now,
+	}
+	if err := store.SaveExecution(context.Background(), execution); err != nil {
+		t.Fatalf("SaveExecution: %v", err)
+	}
+
+	claimed, ok, err := store.ClaimApproval(context.Background(), execution.ID, "alice", now.Add(time.Second))
+	if err != nil {
+		t.Fatalf("ClaimApproval first: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected first approval claim to succeed")
+	}
+	if claimed.Status != StatusRunning {
+		t.Fatalf("claimed status = %s, want %s", claimed.Status, StatusRunning)
+	}
+	if claimed.ApprovedBy != "alice" || claimed.ApprovedAt == nil {
+		t.Fatalf("expected approval metadata to be persisted, got %#v", claimed)
+	}
+
+	claimed, ok, err = store.ClaimApproval(context.Background(), execution.ID, "bob", now.Add(2*time.Second))
+	if err != nil {
+		t.Fatalf("ClaimApproval second: %v", err)
+	}
+	if ok {
+		t.Fatal("expected second approval claim to fail")
+	}
+	if claimed == nil || claimed.Status != StatusRunning || claimed.ApprovedBy != "alice" {
+		t.Fatalf("expected latest claimed execution state, got %#v", claimed)
+	}
+}
+
 func TestPlaybookMatchesSignalSeverityModes(t *testing.T) {
 	signal := Signal{Kind: "finding", Severity: "critical"}
 	exact := Playbook{

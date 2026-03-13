@@ -26,6 +26,13 @@ func NewExecutor(store Store) *Executor {
 	}
 }
 
+func (e *Executor) Close() error {
+	if e == nil || e.store == nil {
+		return nil
+	}
+	return e.store.Close()
+}
+
 func (e *Executor) RequiresApproval(playbook Playbook) bool {
 	if playbook.RequireApproval {
 		return true

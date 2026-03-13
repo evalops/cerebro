@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -24,6 +26,13 @@ type recordingAutonomousActionHandler struct {
 	principalID string
 	provider    string
 	calls       int
+}
+
+type blockingAutonomousActionHandler struct {
+	started chan struct{}
+	release chan struct{}
+	calls   atomic.Int32
+	once    sync.Once
 }
 
 func (h *recordingAutonomousActionHandler) KillProcess(context.Context, string, int) error {
@@ -58,6 +67,43 @@ func (h *recordingAutonomousActionHandler) RevokeCredentials(_ context.Context, 
 }
 
 func (h *recordingAutonomousActionHandler) ScaleDown(context.Context, string, int) error {
+	return nil
+}
+
+func (h *blockingAutonomousActionHandler) KillProcess(context.Context, string, int) error {
+	return nil
+}
+
+func (h *blockingAutonomousActionHandler) IsolateContainer(context.Context, string, string) error {
+	return nil
+}
+
+func (h *blockingAutonomousActionHandler) IsolateHost(context.Context, string, string) error {
+	return nil
+}
+
+func (h *blockingAutonomousActionHandler) QuarantineFile(context.Context, string, string) error {
+	return nil
+}
+
+func (h *blockingAutonomousActionHandler) BlockIP(context.Context, string) error {
+	return nil
+}
+
+func (h *blockingAutonomousActionHandler) BlockDomain(context.Context, string) error {
+	return nil
+}
+
+func (h *blockingAutonomousActionHandler) RevokeCredentials(context.Context, string, string) error {
+	h.calls.Add(1)
+	h.once.Do(func() {
+		close(h.started)
+	})
+	<-h.release
+	return nil
+}
+
+func (h *blockingAutonomousActionHandler) ScaleDown(context.Context, string, int) error {
 	return nil
 }
 
@@ -1227,6 +1273,99 @@ func TestCerebroAutonomousWorkflowApproveTool_CompletesRun(t *testing.T) {
 	}
 	if handler.calls != 1 {
 		t.Fatalf("expected one revoke call after replay attempt, got %d", handler.calls)
+	}
+}
+
+func TestCerebroAutonomousWorkflowApproveTool_ConcurrentApprovalClaimsOnce(t *testing.T) {
+	dir := t.TempDir()
+	store, err := executionstore.NewSQLiteStore(filepath.Join(dir, "executions.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	handler := &blockingAutonomousActionHandler{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	responseEngine := runtime.NewResponseEngine()
+	responseEngine.SetActionHandler(handler)
+
+	application := &App{
+		Config:         &Config{ExecutionStoreFile: filepath.Join(dir, "executions.db")},
+		ExecutionStore: store,
+		SecurityGraph:  autonomousCredentialWorkflowGraph(),
+		RuntimeRespond: responseEngine,
+	}
+
+	startTool := findCerebroTool(application.cerebroTools(), "cerebro.autonomous_credential_response")
+	if startTool == nil {
+		t.Fatal("expected autonomous credential response tool")
+	}
+	startResult, err := startTool.Handler(context.Background(), json.RawMessage(`{
+		"secret_node_id":"secret:public-repo:1",
+		"require_approval":true
+	}`))
+	if err != nil {
+		t.Fatalf("start tool returned error: %v", err)
+	}
+	var startBody map[string]any
+	if err := json.Unmarshal([]byte(startResult), &startBody); err != nil {
+		t.Fatalf("decode start payload: %v", err)
+	}
+	runID, ok := startBody["run_id"].(string)
+	if !ok || strings.TrimSpace(runID) == "" {
+		t.Fatalf("expected run_id, got %#v", startBody["run_id"])
+	}
+
+	approveTool := findCerebroTool(application.cerebroTools(), "cerebro.autonomous_workflow_approve")
+	if approveTool == nil {
+		t.Fatal("expected autonomous workflow approve tool")
+	}
+
+	type approveResult struct {
+		body string
+		err  error
+	}
+	results := make(chan approveResult, 2)
+	approveCall := func() {
+		body, err := approveTool.Handler(context.Background(), json.RawMessage(fmt.Sprintf(`{
+			"run_id":%q,
+			"approve":true,
+			"approved_by":"manager@example.com"
+		}`, runID)))
+		results <- approveResult{body: body, err: err}
+	}
+
+	go approveCall()
+	<-handler.started
+	go approveCall()
+
+	firstResult := <-results
+	if firstResult.err == nil {
+		t.Fatal("expected one concurrent approval to fail before release")
+	}
+	if !strings.Contains(firstResult.err.Error(), "not awaiting approval") {
+		t.Fatalf("expected awaiting approval error, got %v", firstResult.err)
+	}
+
+	close(handler.release)
+
+	secondResult := <-results
+	if secondResult.err != nil {
+		t.Fatalf("expected claimed approval to complete, got %v", secondResult.err)
+	}
+
+	if got := handler.calls.Load(); got != 1 {
+		t.Fatalf("expected exactly one revoke call, got %d", got)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal([]byte(secondResult.body), &body); err != nil {
+		t.Fatalf("decode approve payload: %v", err)
+	}
+	if body["status"] != string(autonomous.RunStatusCompleted) {
+		t.Fatalf("expected completed status, got %#v", body["status"])
 	}
 }
 
