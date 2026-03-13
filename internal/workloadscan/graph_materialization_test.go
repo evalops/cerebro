@@ -191,7 +191,7 @@ func TestMaterializeRunsIntoGraphAddsCredentialPivotEdges(t *testing.T) {
 		Severity: "critical",
 		Path:     "home/user/.env",
 		Line:     1,
-		Match:    "sha256:deadbeef",
+		Match:    "AKIA1234567890ABCDEF",
 		References: []filesystemanalyzer.SecretReference{{
 			Kind:       "cloud_identity",
 			Provider:   "aws",
@@ -208,11 +208,17 @@ func TestMaterializeRunsIntoGraphAddsCredentialPivotEdges(t *testing.T) {
 	}
 
 	secretID := discoveredSecretNodeID("arn:aws:ec2:us-east-1:123456789012:instance/i-abc123", run.Volumes[0].Analysis.Catalog.Secrets[0])
-	if _, ok := g.GetNode(secretID); !ok {
+	secretNode, ok := g.GetNode(secretID)
+	if !ok {
 		t.Fatalf("expected discovered secret node %q", secretID)
+	}
+	if got := graphValueString(secretNode.Properties["match_fingerprint"]); got == "AKIA1234567890ABCDEF" || got == "" {
+		t.Fatalf("expected sanitized fingerprint on secret node, got %#v", secretNode.Properties)
 	}
 	if edge := findOutEdge(g, "arn:aws:ec2:us-east-1:123456789012:instance/i-abc123", graph.EdgeKindHasCredentialFor, "arn:aws:s3:::prod-data"); edge == nil {
 		t.Fatal("expected workload credential pivot edge to bucket")
+	} else if got := graphValueString(edge.Properties["match_fingerprint"]); got == "AKIA1234567890ABCDEF" || got == "" {
+		t.Fatalf("expected sanitized fingerprint on pivot edge, got %#v", edge.Properties)
 	}
 
 	sim := graph.NewAttackPathSimulator(g)

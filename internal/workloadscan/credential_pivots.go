@@ -1,6 +1,7 @@
 package workloadscan
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"sort"
 	"strconv"
@@ -33,6 +34,7 @@ func materializeSecretPivots(g *graph.Graph, workloadNode, scanNode *graph.Node,
 
 	for _, id := range secretIDs {
 		secret := secrets[id].record
+		matchFingerprint := normalizeSecretMatchFingerprint(secret.Match)
 		secretNode := buildDiscoveredSecretNode(secret, workloadNode, writeMeta)
 		g.AddNode(secretNode)
 		result.SecretNodesUpserted++
@@ -57,7 +59,7 @@ func materializeSecretPivots(g *graph.Graph, workloadNode, scanNode *graph.Node,
 			props := cloneWorkloadAnyMap(writeMeta.PropertyMap())
 			props["credential_type"] = secret.Type
 			props["credential_finding_id"] = secret.ID
-			props["match_fingerprint"] = secret.Match
+			props["match_fingerprint"] = matchFingerprint
 			if addEdgeIfMissing(g, &graph.Edge{
 				ID:         edgeID(secretNode.ID, target.ID, graph.EdgeKindTargets),
 				Source:     secretNode.ID,
@@ -78,7 +80,7 @@ func materializeSecretPivots(g *graph.Graph, workloadNode, scanNode *graph.Node,
 			props := cloneWorkloadAnyMap(writeMeta.PropertyMap())
 			props["credential_type"] = secret.Type
 			props["credential_finding_id"] = secret.ID
-			props["match_fingerprint"] = secret.Match
+			props["match_fingerprint"] = matchFingerprint
 			props["secret_node_id"] = secretNode.ID
 			if target.viaPrincipalID != "" {
 				props["via_principal_id"] = target.viaPrincipalID
@@ -108,7 +110,7 @@ func buildDiscoveredSecretNode(secret filesystemanalyzer.SecretFinding, workload
 		"finding_id":         strings.TrimSpace(secret.ID),
 		"secret_type":        strings.TrimSpace(secret.Type),
 		"severity":           strings.TrimSpace(secret.Severity),
-		"match_fingerprint":  strings.TrimSpace(secret.Match),
+		"match_fingerprint":  normalizeSecretMatchFingerprint(secret.Match),
 		"path":               strings.TrimSpace(secret.Path),
 		"line":               secret.Line,
 		"description":        strings.TrimSpace(secret.Description),
@@ -128,6 +130,18 @@ func buildDiscoveredSecretNode(secret filesystemanalyzer.SecretFinding, workload
 		Risk:       severityToRisk(secret.Severity, false),
 		Properties: properties,
 	}
+}
+
+func normalizeSecretMatchFingerprint(match string) string {
+	match = strings.TrimSpace(match)
+	if match == "" {
+		return ""
+	}
+	if match == "<redacted>" || match == "private_key" || strings.HasPrefix(match, "sha256:") {
+		return match
+	}
+	sum := sha256.Sum256([]byte(match))
+	return fmt.Sprintf("sha256:%x", sum[:8])
 }
 
 func resolveCredentialTargets(g *graph.Graph, secret filesystemanalyzer.SecretFinding) ([]*graph.Node, []credentialPivotTarget) {
