@@ -1213,6 +1213,21 @@ func TestCerebroAutonomousWorkflowApproveTool_CompletesRun(t *testing.T) {
 	if _, ok := current.GetNode(run.OutcomeID); !ok {
 		t.Fatalf("expected outcome node %q", run.OutcomeID)
 	}
+
+	_, err = approveTool.Handler(context.Background(), json.RawMessage(fmt.Sprintf(`{
+		"run_id":%q,
+		"approve":true,
+		"approved_by":"manager@example.com"
+	}`, runID)))
+	if err == nil {
+		t.Fatal("expected second approval attempt to fail")
+	}
+	if !strings.Contains(err.Error(), "not awaiting approval") {
+		t.Fatalf("expected awaiting approval error, got %v", err)
+	}
+	if handler.calls != 1 {
+		t.Fatalf("expected one revoke call after replay attempt, got %d", handler.calls)
+	}
 }
 
 func TestCerebroScenarioSimulateTool(t *testing.T) {

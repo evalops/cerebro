@@ -78,6 +78,7 @@ func (a *App) toolCerebroAutonomousCredentialResponse(ctx context.Context, args 
 	if err != nil {
 		return "", err
 	}
+	defer func() { _ = store.Close() }()
 	if err := store.SaveRun(ctx, run); err != nil {
 		return "", fmt.Errorf("save autonomous workflow run: %w", err)
 	}
@@ -178,6 +179,7 @@ func (a *App) toolCerebroAutonomousWorkflowApprove(ctx context.Context, args jso
 	if err != nil {
 		return "", err
 	}
+	defer func() { _ = store.Close() }()
 	run, err := store.LoadRun(ctx, req.RunID)
 	if err != nil {
 		return "", err
@@ -191,17 +193,24 @@ func (a *App) toolCerebroAutonomousWorkflowApprove(ctx context.Context, args jso
 	if run.ActionExecutionID == "" {
 		return "", fmt.Errorf("workflow run %s has no action execution", req.RunID)
 	}
+	if run.Status != autonomous.RunStatusAwaitingApproval || run.Stage != autonomous.RunStageAwaitingApproval {
+		return "", fmt.Errorf("workflow run %s is not awaiting approval", req.RunID)
+	}
 
 	actionStore, err := a.autonomousActionStore()
 	if err != nil {
 		return "", err
 	}
+	defer func() { _ = actionStore.Close() }()
 	execution, err := actionStore.LoadExecution(ctx, run.ActionExecutionID)
 	if err != nil {
 		return "", err
 	}
 	if execution == nil {
 		return "", fmt.Errorf("action execution not found: %s", run.ActionExecutionID)
+	}
+	if execution.Status != actionengine.StatusAwaitingApproval || execution.CompletedAt != nil {
+		return "", fmt.Errorf("action execution %s is not awaiting approval", run.ActionExecutionID)
 	}
 	executor := a.newSharedActionExecutor()
 	playbook := autonomousCredentialPlaybook(run)
@@ -275,6 +284,7 @@ func (a *App) toolCerebroAutonomousWorkflowStatus(ctx context.Context, args json
 	if err != nil {
 		return "", err
 	}
+	defer func() { _ = store.Close() }()
 	run, err := store.LoadRun(ctx, req.RunID)
 	if err != nil {
 		return "", err
@@ -290,6 +300,7 @@ func (a *App) toolCerebroAutonomousWorkflowStatus(ctx context.Context, args json
 	if run.ActionExecutionID != "" {
 		actionStore, actionErr := a.autonomousActionStore()
 		if actionErr == nil {
+			defer func() { _ = actionStore.Close() }()
 			if execution, loadErr := actionStore.LoadExecution(ctx, run.ActionExecutionID); loadErr == nil && execution != nil {
 				response["action_execution"] = execution
 				if actionEvents, eventErr := actionStore.LoadEvents(ctx, run.ActionExecutionID); eventErr == nil {
