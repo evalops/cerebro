@@ -413,6 +413,13 @@ func (c *Consumer) handleMessage(ctx context.Context, subject string, payload []
 				}
 				return consumerMessageResult{}
 			}
+			if err := c.deduper.ObserveDuplicate(ctx, evt, time.Now().UTC()); err != nil {
+				c.logger.Warn("tap consumer failed to refresh duplicate dedupe state",
+					"error", err,
+					"event_id", evt.ID,
+					"event_type", evt.Type,
+				)
+			}
 			metrics.RecordNATSConsumerDeduplicated(c.config.Stream, c.config.Durable)
 			if err := ack(); err != nil {
 				c.logger.Warn("tap consumer ack failed after duplicate suppression", "error", err, "event_type", evt.Type)

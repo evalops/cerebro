@@ -28,7 +28,7 @@ func TestSQLiteStoreProcessedEventsRoundTripAndTouch(t *testing.T) {
 		t.Fatalf("RememberProcessedEvent: %v", err)
 	}
 
-	record, err := store.LookupProcessedEvent(context.Background(), NamespaceProcessedCloudEvent, "stream|durable|tenant|source|evt-1", now.Add(time.Hour), 24*time.Hour)
+	record, err := store.LookupProcessedEvent(context.Background(), NamespaceProcessedCloudEvent, "stream|durable|tenant|source|evt-1", now.Add(time.Hour))
 	if err != nil {
 		t.Fatalf("LookupProcessedEvent: %v", err)
 	}
@@ -38,8 +38,23 @@ func TestSQLiteStoreProcessedEventsRoundTripAndTouch(t *testing.T) {
 	if record.PayloadHash != "hash-a" {
 		t.Fatalf("expected payload hash hash-a, got %#v", record)
 	}
-	if record.DuplicateCount != 1 {
-		t.Fatalf("expected duplicate count increment to 1, got %#v", record)
+	if record.DuplicateCount != 0 {
+		t.Fatalf("expected read-only lookup to preserve duplicate count, got %#v", record)
+	}
+
+	if err := store.TouchProcessedEvent(context.Background(), NamespaceProcessedCloudEvent, "stream|durable|tenant|source|evt-1", now.Add(2*time.Hour), 24*time.Hour); err != nil {
+		t.Fatalf("TouchProcessedEvent: %v", err)
+	}
+
+	touched, err := store.LookupProcessedEvent(context.Background(), NamespaceProcessedCloudEvent, "stream|durable|tenant|source|evt-1", now.Add(3*time.Hour))
+	if err != nil {
+		t.Fatalf("LookupProcessedEvent after touch: %v", err)
+	}
+	if touched == nil {
+		t.Fatal("expected touched processed event record")
+	}
+	if touched.DuplicateCount != 1 {
+		t.Fatalf("expected duplicate count increment to 1 after touch, got %#v", touched)
 	}
 }
 
@@ -66,14 +81,14 @@ func TestSQLiteStoreProcessedEventsTrimOldest(t *testing.T) {
 		}
 	}
 
-	first, err := store.LookupProcessedEvent(context.Background(), NamespaceProcessedCloudEvent, "evt-1", base.Add(2*time.Hour), 24*time.Hour)
+	first, err := store.LookupProcessedEvent(context.Background(), NamespaceProcessedCloudEvent, "evt-1", base.Add(2*time.Hour))
 	if err != nil {
 		t.Fatalf("LookupProcessedEvent first: %v", err)
 	}
 	if first != nil {
 		t.Fatalf("expected oldest processed event to be trimmed, got %#v", first)
 	}
-	last, err := store.LookupProcessedEvent(context.Background(), NamespaceProcessedCloudEvent, "evt-3", base.Add(2*time.Hour), 24*time.Hour)
+	last, err := store.LookupProcessedEvent(context.Background(), NamespaceProcessedCloudEvent, "evt-3", base.Add(2*time.Hour))
 	if err != nil {
 		t.Fatalf("LookupProcessedEvent last: %v", err)
 	}

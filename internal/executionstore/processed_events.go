@@ -20,7 +20,7 @@ type ProcessedEventRecord struct {
 	DuplicateCount int
 }
 
-func (s *SQLiteStore) LookupProcessedEvent(ctx context.Context, namespace, eventKey string, observedAt time.Time, ttl time.Duration) (*ProcessedEventRecord, error) {
+func (s *SQLiteStore) LookupProcessedEvent(ctx context.Context, namespace, eventKey string, observedAt time.Time) (*ProcessedEventRecord, error) {
 	if s == nil || s.db == nil {
 		return nil, nil
 	}
@@ -36,9 +36,6 @@ func (s *SQLiteStore) LookupProcessedEvent(ctx context.Context, namespace, event
 		observedAt = time.Now().UTC()
 	} else {
 		observedAt = observedAt.UTC()
-	}
-	if ttl <= 0 {
-		return nil, fmt.Errorf("processed event ttl must be > 0")
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -79,21 +76,68 @@ func (s *SQLiteStore) LookupProcessedEvent(ctx context.Context, namespace, event
 		return nil, fmt.Errorf("load processed event: %w", err)
 	}
 
-	record.LastSeenAt = observedAt
-	record.ExpiresAt = observedAt.Add(ttl)
-	record.DuplicateCount++
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE processed_events
-		SET last_seen_at = ?, expires_at = ?, duplicate_count = ?
-		WHERE namespace = ? AND event_key = ?
-	`, record.LastSeenAt, record.ExpiresAt, record.DuplicateCount, record.Namespace, record.EventKey); err != nil {
-		return nil, fmt.Errorf("touch processed event: %w", err)
-	}
-
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit processed event lookup: %w", err)
 	}
 	return &record, nil
+}
+
+func (s *SQLiteStore) TouchProcessedEvent(ctx context.Context, namespace, eventKey string, observedAt time.Time, ttl time.Duration) error {
+	if s == nil || s.db == nil {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	namespace = strings.TrimSpace(namespace)
+	eventKey = strings.TrimSpace(eventKey)
+	if namespace == "" || eventKey == "" {
+		return fmt.Errorf("processed event namespace and key are required")
+	}
+	if observedAt.IsZero() {
+		observedAt = time.Now().UTC()
+	} else {
+		observedAt = observedAt.UTC()
+	}
+	if ttl <= 0 {
+		return fmt.Errorf("processed event ttl must be > 0")
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin processed event touch tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM processed_events
+		WHERE namespace = ? AND expires_at <= ?
+	`, namespace, observedAt); err != nil {
+		return fmt.Errorf("prune expired processed events: %w", err)
+	}
+
+	result, err := tx.ExecContext(ctx, `
+		UPDATE processed_events
+		SET last_seen_at = ?,
+			expires_at = ?,
+			duplicate_count = duplicate_count + 1
+		WHERE namespace = ? AND event_key = ?
+	`, observedAt, observedAt.Add(ttl), namespace, eventKey)
+	if err != nil {
+		return fmt.Errorf("touch processed event: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read touched processed event rows: %w", err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("processed event %s/%s not found", namespace, eventKey)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit processed event touch: %w", err)
+	}
+	return nil
 }
 
 func (s *SQLiteStore) RememberProcessedEvent(ctx context.Context, record ProcessedEventRecord, maxRecords int) error {

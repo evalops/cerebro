@@ -56,11 +56,27 @@ func (d *consumerProcessedEventDeduper) Lookup(ctx context.Context, evt CloudEve
 	if !ok {
 		return nil, false, nil
 	}
-	record, err := d.store.LookupProcessedEvent(ctx, d.namespace, key, now, d.ttl)
+	record, err := d.store.LookupProcessedEvent(ctx, d.namespace, key, now)
 	if err != nil || record == nil {
 		return record, false, err
 	}
 	return record, record.PayloadHash != consumerProcessedEventPayloadHash(payload), nil
+}
+
+func (d *consumerProcessedEventDeduper) ObserveDuplicate(ctx context.Context, evt CloudEvent, now time.Time) error {
+	if d == nil || d.store == nil {
+		return nil
+	}
+	key, ok := consumerProcessedEventKey(evt)
+	if !ok {
+		return nil
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	} else {
+		now = now.UTC()
+	}
+	return d.store.TouchProcessedEvent(ctx, d.namespace, key, now, d.ttl)
 }
 
 func (d *consumerProcessedEventDeduper) Remember(ctx context.Context, evt CloudEvent, payload []byte, processedAt time.Time) error {

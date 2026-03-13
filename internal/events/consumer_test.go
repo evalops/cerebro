@@ -468,6 +468,21 @@ func TestConsumerHandleMessageDeadLettersDuplicateKeyPayloadMismatch(t *testing.
 	if snapshot.LastDropReason != "dedupe_hash_mismatch" {
 		t.Fatalf("expected last drop reason dedupe_hash_mismatch, got %q", snapshot.LastDropReason)
 	}
+
+	eventKey, ok := consumerProcessedEventKey(firstEvent)
+	if !ok {
+		t.Fatal("expected event key for first event")
+	}
+	record, err := deduper.store.LookupProcessedEvent(context.Background(), deduper.namespace, eventKey, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("LookupProcessedEvent after hash mismatch: %v", err)
+	}
+	if record == nil {
+		t.Fatal("expected processed event record after hash mismatch")
+	}
+	if record.DuplicateCount != 0 {
+		t.Fatalf("expected hash mismatch not to increment duplicate count, got %#v", record)
+	}
 }
 
 func TestSaturatingUint64ToInt(t *testing.T) {
