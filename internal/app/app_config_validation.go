@@ -221,6 +221,9 @@ func (c *Config) Validate() error {
 		if c.CredentialVaultKVVersion != 1 && c.CredentialVaultKVVersion != 2 {
 			problems = addConfigProblem(problems, "CEREBRO_CREDENTIAL_VAULT_KV_VERSION must be 1 or 2 when CEREBRO_CREDENTIAL_SOURCE=vault")
 		}
+		if !credentialVaultAddressAllowed(c.CredentialVaultAddress) {
+			problems = addConfigProblem(problems, "CEREBRO_CREDENTIAL_VAULT_ADDRESS must use https unless it targets localhost or a loopback address")
+		}
 	}
 
 	hasSnowflakeAuth := strings.TrimSpace(c.SnowflakeAccount) != "" ||
