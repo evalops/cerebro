@@ -412,8 +412,9 @@ func TestServiceCreateReviewGeneratesGraphCampaignItems(t *testing.T) {
 
 	svc := NewService(WithGraphResolver(func() *graph.Graph { return g }))
 	review, err := svc.CreateReview(context.Background(), &AccessReview{
-		Name:      "Quarterly Prod Review",
-		CreatedBy: "secops@example.com",
+		Name:             "Quarterly Prod Review",
+		CreatedBy:        "secops@example.com",
+		GenerationSource: "graph",
 		Scope: ReviewScope{
 			Mode:      ReviewScopeModeResource,
 			Resources: []string{"bucket:prod-data"},
@@ -485,5 +486,51 @@ func TestServicePersistsReviewsInSharedExecutionStore(t *testing.T) {
 	joined := strings.Join(eventTypes, ",")
 	if !strings.Contains(joined, "review.created") || !strings.Contains(joined, "review.started") {
 		t.Fatalf("expected created/started events, got %#v", eventTypes)
+	}
+}
+
+func TestServiceCreateReviewDoesNotAutoGenerateManualGraphCampaigns(t *testing.T) {
+	g := graph.New()
+	g.AddNode(&graph.Node{
+		ID:       "user:alice",
+		Kind:     graph.NodeKindUser,
+		Name:     "alice@example.com",
+		Provider: "aws",
+		Account:  "123456789012",
+	})
+	g.AddNode(&graph.Node{
+		ID:       "bucket:prod-data",
+		Kind:     graph.NodeKindBucket,
+		Name:     "prod-data",
+		Provider: "aws",
+		Account:  "123456789012",
+		Risk:     graph.RiskCritical,
+	})
+	g.AddEdge(&graph.Edge{
+		ID:     "alice-admin",
+		Source: "user:alice",
+		Target: "bucket:prod-data",
+		Kind:   graph.EdgeKindCanAdmin,
+		Effect: graph.EdgeEffectAllow,
+	})
+
+	svc := NewService(WithGraphResolver(func() *graph.Graph { return g }))
+	review, err := svc.CreateReview(context.Background(), &AccessReview{
+		Name:      "Manual Review",
+		CreatedBy: "secops@example.com",
+		Scope: ReviewScope{
+			Mode:      ReviewScopeModeResource,
+			Resources: []string{"bucket:prod-data"},
+			Users:     []string{"user:alice"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateReview failed: %v", err)
+	}
+	if review.GenerationSource != "manual" {
+		t.Fatalf("expected manual generation source, got %q", review.GenerationSource)
+	}
+	if len(review.Items) != 0 {
+		t.Fatalf("expected no auto-generated items for manual review, got %d", len(review.Items))
 	}
 }

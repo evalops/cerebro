@@ -240,15 +240,12 @@ func (s *Service) CreateReview(ctx context.Context, review *AccessReview) (*Acce
 		due := created.Schedule.NextRun
 		created.DueAt = &due
 	}
-	if len(created.Items) == 0 {
+	if created.GenerationSource == "graph" && len(created.Items) == 0 {
 		items, err := s.generateReviewItems(ctx, &created)
 		if err != nil {
 			return nil, err
 		}
 		created.Items = items
-		if len(items) > 0 {
-			created.GenerationSource = "graph"
-		}
 	}
 	created.recalculateStats()
 	if err := s.store.SaveReview(ctx, &created); err != nil {

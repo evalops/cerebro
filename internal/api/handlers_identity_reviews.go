@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/evalops/cerebro/internal/identity"
 	"github.com/go-chi/chi/v5"
@@ -12,7 +13,13 @@ import (
 
 func (s *Server) listReviews(w http.ResponseWriter, r *http.Request) {
 	status := identity.ReviewStatus(r.URL.Query().Get("status"))
-	reviews := s.app.Identity.ListReviews(r.Context(), status)
+	allReviews := s.app.Identity.ListReviews(r.Context(), status)
+	reviews := make([]*identity.AccessReview, 0, len(allReviews))
+	for _, review := range allReviews {
+		if review != nil && review.GenerationSource != "graph" {
+			reviews = append(reviews, review)
+		}
+	}
 	s.json(w, http.StatusOK, map[string]interface{}{"reviews": reviews, "count": len(reviews)})
 }
 
@@ -22,6 +29,11 @@ func (s *Server) createReview(w http.ResponseWriter, r *http.Request) {
 		s.error(w, http.StatusBadRequest, "invalid request")
 		return
 	}
+	if strings.TrimSpace(review.GenerationSource) == "graph" {
+		s.error(w, http.StatusBadRequest, "graph-generated reviews must use graph access review routes")
+		return
+	}
+	review.GenerationSource = "manual"
 
 	created, err := s.app.Identity.CreateReview(r.Context(), &review)
 	if err != nil {
@@ -33,7 +45,7 @@ func (s *Server) createReview(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) getReview(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	review, ok := s.app.Identity.GetReview(r.Context(), id)
+	review, ok := s.identityRouteReview(r, id)
 	if !ok {
 		s.error(w, http.StatusNotFound, "review not found")
 		return
@@ -43,6 +55,10 @@ func (s *Server) getReview(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) startReview(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	if _, ok := s.identityRouteReview(r, id); !ok {
+		s.error(w, http.StatusNotFound, "review not found")
+		return
+	}
 	if err := s.app.Identity.StartReview(r.Context(), id); err != nil {
 		s.errorFromErr(w, err)
 		return
@@ -52,7 +68,7 @@ func (s *Server) startReview(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) listReviewItems(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	review, ok := s.app.Identity.GetReview(r.Context(), id)
+	review, ok := s.identityRouteReview(r, id)
 	if !ok {
 		s.error(w, http.StatusNotFound, "review not found")
 		return
@@ -62,6 +78,10 @@ func (s *Server) listReviewItems(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) addReviewItem(w http.ResponseWriter, r *http.Request) {
 	reviewID := chi.URLParam(r, "id")
+	if _, ok := s.identityRouteReview(r, reviewID); !ok {
+		s.error(w, http.StatusNotFound, "review not found")
+		return
+	}
 	var item identity.ReviewItem
 	if err := json.NewDecoder(r.Body).Decode(&item); err != nil {
 		s.error(w, http.StatusBadRequest, "invalid request")
@@ -77,6 +97,10 @@ func (s *Server) addReviewItem(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) recordDecision(w http.ResponseWriter, r *http.Request) {
 	reviewID := chi.URLParam(r, "id")
+	if _, ok := s.identityRouteReview(r, reviewID); !ok {
+		s.error(w, http.StatusNotFound, "review not found")
+		return
+	}
 	itemID := chi.URLParam(r, "itemId")
 	var decision identity.ReviewDecision
 	if err := json.NewDecoder(r.Body).Decode(&decision); err != nil {
@@ -89,4 +113,12 @@ func (s *Server) recordDecision(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.json(w, http.StatusOK, map[string]string{"status": "decision recorded"})
+}
+
+func (s *Server) identityRouteReview(r *http.Request, id string) (*identity.AccessReview, bool) {
+	review, ok := s.app.Identity.GetReview(r.Context(), id)
+	if !ok || review.GenerationSource == "graph" {
+		return nil, false
+	}
+	return review, true
 }
