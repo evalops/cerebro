@@ -353,7 +353,22 @@ func waitForCondition(t *testing.T, timeout time.Duration, condition func() bool
 func formatEdges(edges []*graph.Edge) string {
 	parts := make([]string, 0, len(edges))
 	for _, edge := range edges {
+		if edge == nil {
+			continue
+		}
 		parts = append(parts, string(edge.Kind)+":"+edge.Target)
 	}
 	return strings.Join(parts, ",")
+}
+
+func TestFormatEdgesSkipsNilEdges(t *testing.T) {
+	t.Parallel()
+
+	got := formatEdges([]*graph.Edge{
+		nil,
+		{Kind: graph.EdgeKindCausedBy, Target: "deployment:payments:deploy-1"},
+	})
+	if got != "caused_by:deployment:payments:deploy-1" {
+		t.Fatalf("formatEdges() = %q, want %q", got, "caused_by:deployment:payments:deploy-1")
+	}
 }
