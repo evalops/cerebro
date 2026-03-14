@@ -442,7 +442,7 @@ func resolveWorkloadScanGitleaksBinary(cfg *app.Config) string {
 	if strings.TrimSpace(workloadScanGitleaksBinary) != "" {
 		return strings.TrimSpace(workloadScanGitleaksBinary)
 	}
-	if cfg != nil {
+	if cfg != nil && strings.TrimSpace(cfg.WorkloadScanGitleaksBinary) != "" {
 		return strings.TrimSpace(cfg.WorkloadScanGitleaksBinary)
 	}
 	return ""

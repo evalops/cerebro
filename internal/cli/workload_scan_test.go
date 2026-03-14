@@ -157,3 +157,27 @@ func TestResolveWorkloadScanTrivyBinaryPrefersCLIOverride(t *testing.T) {
 		t.Fatalf("expected CLI override to win, got %q", got)
 	}
 }
+
+func TestResolveWorkloadScanGitleaksBinaryFallsBackToEmptyOnWhitespaceConfig(t *testing.T) {
+	state := snapshotWorkloadScanAWSFlagState()
+	t.Cleanup(func() { restoreWorkloadScanAWSFlagState(state) })
+
+	workloadScanGitleaksBinary = ""
+
+	got := resolveWorkloadScanGitleaksBinary(&app.Config{WorkloadScanGitleaksBinary: "   "})
+	if got != "" {
+		t.Fatalf("expected empty default gitleaks binary, got %q", got)
+	}
+}
+
+func TestResolveWorkloadScanGitleaksBinaryPrefersCLIOverride(t *testing.T) {
+	state := snapshotWorkloadScanAWSFlagState()
+	t.Cleanup(func() { restoreWorkloadScanAWSFlagState(state) })
+
+	workloadScanGitleaksBinary = "/usr/local/bin/gitleaks"
+
+	got := resolveWorkloadScanGitleaksBinary(&app.Config{WorkloadScanGitleaksBinary: "/opt/gitleaks"})
+	if got != "/usr/local/bin/gitleaks" {
+		t.Fatalf("expected CLI override to win, got %q", got)
+	}
+}
