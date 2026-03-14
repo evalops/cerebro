@@ -191,7 +191,7 @@ func TestCriticalPath_PolicyEvaluationToRemediationAction(t *testing.T) {
 		t.Fatalf("AddRule: %v", err)
 	}
 
-	findings, err := application.Policy.EvaluateAsset(context.Background(), map[string]any{
+	policyFindings, err := application.Policy.EvaluateAsset(context.Background(), map[string]any{
 		"_cq_id":    "bucket-1",
 		"_cq_table": "aws_s3_buckets",
 		"type":      "aws::s3::bucket",
@@ -201,11 +201,11 @@ func TestCriticalPath_PolicyEvaluationToRemediationAction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EvaluateAsset: %v", err)
 	}
-	if len(findings) != 1 {
-		t.Fatalf("expected one finding from policy evaluation, got %#v", findings)
+	if len(policyFindings) != 1 {
+		t.Fatalf("expected one finding from policy evaluation, got %#v", policyFindings)
 	}
 
-	stored := application.upsertFindingAndRemediate(context.Background(), findings[0])
+	stored := application.upsertFindingAndRemediate(context.Background(), policyFindings[0])
 	if stored == nil {
 		t.Fatal("expected finding to be persisted")
 	}
