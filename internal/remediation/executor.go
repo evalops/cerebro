@@ -123,10 +123,11 @@ func (ex *Executor) actionRequiresApproval(action Action) bool {
 	case "required", "manual":
 		return true
 	}
-	if actionDeliveryMode(action, CatalogEntry{}) == DeliveryModeTerraform {
+	entry, _ := CatalogEntryByAction(action.Type)
+	if actionDeliveryMode(action, entry) == DeliveryModeTerraform {
 		return false
 	}
-	if action.RequiresApproval {
+	if action.RequiresApproval || entry.RequiresApproval {
 		return true
 	}
 	if ex != nil && ex.ensemble != nil {

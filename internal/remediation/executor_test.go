@@ -425,6 +425,61 @@ func TestExecutor_EnableBucketDefaultEncryptionTerraformModeCapturesArtifact(t *
 	}
 }
 
+func TestExecutor_EnableBucketDefaultEncryptionUsesCatalogDefaultTerraformMode(t *testing.T) {
+	engine := NewEngine(testutil.Logger())
+	rule := Rule{
+		ID:      "enable-bucket-default-encryption-catalog-default",
+		Name:    "Enable Bucket Default Encryption Catalog Default",
+		Enabled: true,
+		Trigger: Trigger{Type: TriggerManual},
+		Actions: []Action{{
+			Type: ActionEnableBucketDefaultEncryption,
+		}},
+	}
+	if err := engine.AddRule(rule); err != nil {
+		t.Fatalf("add rule: %v", err)
+	}
+
+	executions, err := engine.Evaluate(context.Background(), Event{
+		Type:     TriggerManual,
+		PolicyID: "aws-s3-bucket-encryption-enabled",
+		EntityID: "bucket:audit-logs",
+		Data: map[string]any{
+			"resource_id":       "bucket:audit-logs",
+			"resource_name":     "audit-logs",
+			"resource_type":     "bucket",
+			"resource_platform": "aws",
+			"iac_state_id":      "module.platform.module.storage.aws_s3_bucket.audit_logs",
+			"resource": map[string]any{
+				"default_encryption_enabled": false,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("evaluate: %v", err)
+	}
+	execution := executions[0]
+	executor := NewExecutor(engine, nil, nil, nil, nil)
+
+	if err := executor.Execute(context.Background(), execution); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if execution.Status != ExecutionCompleted {
+		t.Fatalf("status = %s, want %s", execution.Status, ExecutionCompleted)
+	}
+	metadata := execution.Actions[0].Metadata
+	if metadata["delivery_mode"] != "terraform" {
+		t.Fatalf("expected catalog default terraform delivery mode, got %#v", metadata["delivery_mode"])
+	}
+	if requiresApproval, _ := metadata["requires_approval"].(bool); requiresApproval {
+		t.Fatalf("expected catalog default terraform delivery not to require approval, got %#v", metadata)
+	}
+	artifact, _ := metadata["artifact"].(map[string]any)
+	if artifact["path"] != "generated/terraform/platform/storage/cerebro_s3_bucket_default_encryption_audit_logs.tf" {
+		t.Fatalf("unexpected terraform artifact path: %#v", artifact["path"])
+	}
+}
+
 func TestExecutor_EnableBucketDefaultEncryptionRemoteApplyRequiresApprovalByDefault(t *testing.T) {
 	engine := NewEngine(testutil.Logger())
 	rule := Rule{

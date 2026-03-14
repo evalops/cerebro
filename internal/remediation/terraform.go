@@ -66,6 +66,17 @@ func renderTerraformBucketDefaultEncryptionArtifact(execution *Execution, sseAlg
 	if bucketName == "" {
 		return TerraformArtifact{}, fmt.Errorf("missing bucket identifier for terraform artifact")
 	}
+	iacFile := ""
+	iacModule := ""
+	iacStateID := ""
+	if execution != nil {
+		iacFile = strings.TrimSpace(remediationMapValueToString(execution.TriggerData, "iac_file"))
+		iacModule = firstNonEmpty(
+			strings.TrimSpace(remediationMapValueToString(execution.TriggerData, "iac_module")),
+			terraformModuleAddressFromStateID(strings.TrimSpace(remediationMapValueToString(execution.TriggerData, "iac_state_id"))),
+		)
+		iacStateID = strings.TrimSpace(remediationMapValueToString(execution.TriggerData, "iac_state_id"))
+	}
 
 	resourceName := terraformIdentifier(bucketName + "_default_encryption")
 	address := "aws_s3_bucket_server_side_encryption_configuration." + resourceName
@@ -78,16 +89,18 @@ func renderTerraformBucketDefaultEncryptionArtifact(execution *Execution, sseAlg
 		"BucketKeyEnabled":  fmt.Sprintf("%t", bucketKeyEnabled),
 		"ImportAddress":     address,
 		"ImportIdentifier":  terraformString(bucketName),
-		"ExistingIaCFile":   strings.TrimSpace(remediationMapValueToString(execution.TriggerData, "iac_file")),
-		"ExistingIaCModule": strings.TrimSpace(remediationMapValueToString(execution.TriggerData, "iac_module")),
+		"ExistingIaCFile":   iacFile,
+		"ExistingIaCModule": iacModule,
 	})
 
 	notes := []string{
 		"Run terraform plan before apply.",
 		fmt.Sprintf("Import the existing encryption configuration before apply: terraform import %s %s", address, bucketName),
 	}
-	if iacFile := strings.TrimSpace(remediationMapValueToString(execution.TriggerData, "iac_file")); iacFile != "" {
+	if iacFile != "" {
 		notes = append(notes, fmt.Sprintf("Co-locate the generated resource with the existing IaC file %s if that file manages the bucket.", iacFile))
+	} else if iacModule != "" {
+		notes = append(notes, fmt.Sprintf("Place the generated resource in the Terraform module %s so it stays with the bucket definition.", iacModule))
 	}
 
 	return TerraformArtifact{
@@ -101,9 +114,9 @@ func renderTerraformBucketDefaultEncryptionArtifact(execution *Execution, sseAlg
 		Summary:         fmt.Sprintf("Terraform patch for enabling default encryption on S3 bucket %s", bucketName),
 		Content:         content,
 		Notes:           notes,
-		IaCFile:         strings.TrimSpace(remediationMapValueToString(execution.TriggerData, "iac_file")),
-		IaCModule:       strings.TrimSpace(remediationMapValueToString(execution.TriggerData, "iac_module")),
-		IaCStateID:      strings.TrimSpace(remediationMapValueToString(execution.TriggerData, "iac_state_id")),
+		IaCFile:         iacFile,
+		IaCModule:       iacModule,
+		IaCStateID:      iacStateID,
 	}, nil
 }
 
@@ -174,12 +187,77 @@ func terraformArtifactPath(execution *Execution, fileName string) string {
 			}
 			return filepath.ToSlash(filepath.Join(dir, fileName))
 		}
-		if rawModule := strings.TrimSpace(remediationMapValueToString(execution.TriggerData, "iac_module")); rawModule != "" {
-			module := terraformIdentifier(rawModule)
-			return filepath.ToSlash(filepath.Join("generated", "terraform", module, fileName))
+		moduleSegments := terraformModulePathSegments(firstNonEmpty(
+			strings.TrimSpace(remediationMapValueToString(execution.TriggerData, "iac_module")),
+			terraformModuleAddressFromStateID(strings.TrimSpace(remediationMapValueToString(execution.TriggerData, "iac_state_id"))),
+		))
+		if len(moduleSegments) > 0 {
+			pathParts := append([]string{"generated", "terraform"}, moduleSegments...)
+			pathParts = append(pathParts, fileName)
+			return filepath.ToSlash(filepath.Join(pathParts...))
 		}
 	}
 	return filepath.ToSlash(filepath.Join("generated", "terraform", "aws", fileName))
+}
+
+func terraformModuleAddressFromStateID(stateID string) string {
+	segments := terraformModulePathSegments(stateID)
+	if len(segments) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(segments)*2)
+	for _, segment := range segments {
+		parts = append(parts, "module", segment)
+	}
+	return strings.Join(parts, ".")
+}
+
+func terraformModulePathSegments(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	if strings.Contains(raw, "module.") {
+		parts := strings.Split(raw, ".")
+		segments := make([]string, 0)
+		for idx := 0; idx < len(parts)-1; idx++ {
+			if parts[idx] != "module" {
+				continue
+			}
+			name := terraformAddressSegment(parts[idx+1])
+			if name == "" {
+				continue
+			}
+			segments = append(segments, name)
+			idx++
+		}
+		return segments
+	}
+
+	parts := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == '/' || r == '\\'
+	})
+	segments := make([]string, 0, len(parts))
+	for _, part := range parts {
+		name := terraformAddressSegment(part)
+		if name == "" {
+			continue
+		}
+		segments = append(segments, name)
+	}
+	return segments
+}
+
+func terraformAddressSegment(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if idx := strings.IndexRune(raw, '['); idx >= 0 {
+		raw = raw[:idx]
+	}
+	raw = strings.Trim(raw, `"'`)
+	return terraformIdentifier(raw)
 }
 
 func terraformIdentifier(raw string) string {
