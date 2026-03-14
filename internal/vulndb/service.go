@@ -191,7 +191,12 @@ func distributionVersionMatches(installed, affected string) bool {
 	if installed == affected || strings.HasPrefix(installed, affected+".") || strings.HasPrefix(affected, installed+".") {
 		return true
 	}
-	return leadingNumericComponent(installed) == leadingNumericComponent(affected)
+	installedMajor := leadingNumericComponent(installed)
+	affectedMajor := leadingNumericComponent(affected)
+	if installedMajor == "" || affectedMajor == "" {
+		return false
+	}
+	return installedMajor == affectedMajor
 }
 
 func leadingNumericComponent(value string) string {
