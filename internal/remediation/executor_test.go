@@ -480,6 +480,18 @@ func TestExecutor_EnableBucketDefaultEncryptionUsesCatalogDefaultTerraformMode(t
 	}
 }
 
+func TestExecutor_NonCatalogTerraformDeliveryDoesNotBypassApproval(t *testing.T) {
+	executor := NewExecutor(NewEngine(testutil.Logger()), nil, nil, nil, nil)
+	if !executor.actionRequiresApproval(Action{
+		Type: ActionPauseSubscription,
+		Config: map[string]string{
+			"delivery_mode": "terraform",
+		},
+	}) {
+		t.Fatal("expected non-catalog action to keep approval requirement")
+	}
+}
+
 func TestExecutor_EnableBucketDefaultEncryptionRemoteApplyRequiresApprovalByDefault(t *testing.T) {
 	engine := NewEngine(testutil.Logger())
 	rule := Rule{

@@ -124,7 +124,8 @@ func (ex *Executor) actionRequiresApproval(action Action) bool {
 		return true
 	}
 	entry, _ := CatalogEntryByAction(action.Type)
-	if actionDeliveryMode(action, entry) == DeliveryModeTerraform {
+	mode := actionDeliveryMode(action, entry)
+	if catalogSupportsDeliveryMode(entry, mode) && mode == DeliveryModeTerraform {
 		return false
 	}
 	if action.RequiresApproval || entry.RequiresApproval {
