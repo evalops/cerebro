@@ -248,6 +248,18 @@ func (e *Engine) loadDefaultRules() {
 					},
 					RequiresApproval: false,
 				},
+			},
+		},
+		{
+			ID:          "s3-public-restrict",
+			Name:        "Restrict public S3 bucket",
+			Description: "Approval-gated automatic public access restriction for S3 buckets",
+			Enabled:     true,
+			Trigger: Trigger{
+				Type:     TriggerFindingCreated,
+				PolicyID: "aws-s3-bucket-no-public-access",
+			},
+			Actions: []Action{
 				{
 					Type: ActionRestrictPublicStorageAccess,
 					Config: map[string]string{
@@ -259,8 +271,8 @@ func (e *Engine) loadDefaultRules() {
 		},
 		{
 			ID:          "gcs-public-notify",
-			Name:        "Restrict public GCS bucket",
-			Description: "Create tracking and approval-gated remediation for public GCS buckets",
+			Name:        "Alert on public GCS bucket",
+			Description: "Create tracking for public GCS bucket findings",
 			Enabled:     true,
 			Trigger: Trigger{
 				Type:     TriggerFindingCreated,
@@ -283,6 +295,18 @@ func (e *Engine) loadDefaultRules() {
 					},
 					RequiresApproval: false,
 				},
+			},
+		},
+		{
+			ID:          "gcs-public-restrict",
+			Name:        "Restrict public GCS bucket",
+			Description: "Approval-gated automatic public access restriction for GCS buckets",
+			Enabled:     true,
+			Trigger: Trigger{
+				Type:     TriggerFindingCreated,
+				PolicyID: "gcp-storage-bucket-no-public",
+			},
+			Actions: []Action{
 				{
 					Type: ActionRestrictPublicStorageAccess,
 					Config: map[string]string{
@@ -294,8 +318,8 @@ func (e *Engine) loadDefaultRules() {
 		},
 		{
 			ID:          "gcs-public-principal-notify",
-			Name:        "Restrict GCS bucket with public principals",
-			Description: "Create tracking and approval-gated remediation when GCS bucket IAM exposes public principals",
+			Name:        "Alert on GCS bucket with public principals",
+			Description: "Create tracking when GCS bucket IAM exposes public principals",
 			Enabled:     true,
 			Trigger: Trigger{
 				Type:     TriggerFindingCreated,
@@ -310,6 +334,18 @@ func (e *Engine) loadDefaultRules() {
 					},
 					RequiresApproval: false,
 				},
+			},
+		},
+		{
+			ID:          "gcs-public-principal-restrict",
+			Name:        "Restrict GCS bucket with public principals",
+			Description: "Approval-gated automatic public principal removal for GCS bucket IAM",
+			Enabled:     true,
+			Trigger: Trigger{
+				Type:     TriggerFindingCreated,
+				PolicyID: "gcp-storage-no-public-allusers",
+			},
+			Actions: []Action{
 				{
 					Type: ActionRestrictPublicStorageAccess,
 					Config: map[string]string{
@@ -344,11 +380,23 @@ func (e *Engine) loadDefaultRules() {
 					},
 					RequiresApproval: false,
 				},
+			},
+		},
+		{
+			ID:          "aws-unused-access-key-notify",
+			Name:        "Track stale AWS access keys",
+			Description: "Create tracking for unused AWS IAM access key findings",
+			Enabled:     true,
+			Trigger: Trigger{
+				Type:     TriggerFindingCreated,
+				PolicyID: "aws-iam-user-unused-credentials",
+			},
+			Actions: []Action{
 				{
-					Type: ActionDisableStaleAccessKey,
+					Type: ActionCreateTicket,
 					Config: map[string]string{
-						"inactive_days": "90",
-						"approval_mode": "required",
+						"priority": "high",
+						"labels":   "identity,access-key,stale,auto-generated",
 					},
 					RequiresApproval: false,
 				},
@@ -365,18 +413,30 @@ func (e *Engine) loadDefaultRules() {
 			},
 			Actions: []Action{
 				{
-					Type: ActionCreateTicket,
-					Config: map[string]string{
-						"priority": "high",
-						"labels":   "identity,access-key,stale,auto-generated",
-					},
-					RequiresApproval: false,
-				},
-				{
 					Type: ActionDisableStaleAccessKey,
 					Config: map[string]string{
 						"inactive_days": "90",
 						"approval_mode": "required",
+					},
+					RequiresApproval: false,
+				},
+			},
+		},
+		{
+			ID:          "gcp-user-managed-key-notify",
+			Name:        "Track stale GCP user-managed service account keys",
+			Description: "Create tracking for stale GCP service account key findings",
+			Enabled:     true,
+			Trigger: Trigger{
+				Type:     TriggerFindingCreated,
+				PolicyID: "gcp-iam-minimize-user-managed-keys",
+			},
+			Actions: []Action{
+				{
+					Type: ActionCreateTicket,
+					Config: map[string]string{
+						"priority": "high",
+						"labels":   "gcp,service-account-key,stale,auto-generated",
 					},
 					RequiresApproval: false,
 				},
@@ -392,14 +452,6 @@ func (e *Engine) loadDefaultRules() {
 				PolicyID: "gcp-iam-minimize-user-managed-keys",
 			},
 			Actions: []Action{
-				{
-					Type: ActionCreateTicket,
-					Config: map[string]string{
-						"priority": "high",
-						"labels":   "gcp,service-account-key,stale,auto-generated",
-					},
-					RequiresApproval: false,
-				},
 				{
 					Type: ActionDisableStaleAccessKey,
 					Config: map[string]string{

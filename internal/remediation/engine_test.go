@@ -35,10 +35,15 @@ func TestEngine_ListRules(t *testing.T) {
 		"pagerduty-critical",
 		"auto-ticket-high",
 		"s3-public-notify",
+		"s3-public-restrict",
 		"gcs-public-notify",
+		"gcs-public-restrict",
 		"gcs-public-principal-notify",
+		"gcs-public-principal-restrict",
 		"identity-stale-user-remediation",
+		"aws-unused-access-key-notify",
 		"aws-unused-access-key-disable",
+		"gcp-user-managed-key-notify",
 		"gcp-user-managed-key-disable",
 		"identity-excessive-privilege-remediation",
 		"dspm-restricted-data-unencrypted-remediation",
@@ -59,15 +64,18 @@ func TestEngine_DefaultSafeCatalogRulesIncludeApprovalGatedActions(t *testing.T)
 	if !ok {
 		t.Fatal("expected s3-public-notify rule")
 	}
-	foundRestrict := false
 	for _, action := range s3Rule.Actions {
 		if action.Type == ActionRestrictPublicStorageAccess {
-			foundRestrict = true
-			break
+			t.Fatalf("expected s3-public-notify to remain notification-only, got %+v", s3Rule.Actions)
 		}
 	}
-	if !foundRestrict {
-		t.Fatalf("expected s3-public-notify to include %s", ActionRestrictPublicStorageAccess)
+
+	s3RestrictRule, ok := engine.GetRule("s3-public-restrict")
+	if !ok {
+		t.Fatal("expected s3-public-restrict rule")
+	}
+	if len(s3RestrictRule.Actions) != 1 || s3RestrictRule.Actions[0].Type != ActionRestrictPublicStorageAccess {
+		t.Fatalf("expected dedicated restrict action rule, got %+v", s3RestrictRule.Actions)
 	}
 
 	keyRule, ok := engine.GetRule("aws-unused-access-key-disable")
@@ -85,6 +93,57 @@ func TestEngine_DefaultSafeCatalogRulesIncludeApprovalGatedActions(t *testing.T)
 	}
 	if !foundDisable {
 		t.Fatalf("expected aws-unused-access-key-disable to include %s", ActionDisableStaleAccessKey)
+	}
+
+	staleUserRule, ok := engine.GetRule("identity-stale-user-remediation")
+	if !ok {
+		t.Fatal("expected identity-stale-user-remediation rule")
+	}
+	for _, action := range staleUserRule.Actions {
+		if action.Type == ActionDisableStaleAccessKey {
+			t.Fatalf("expected identity-stale-user-remediation to remain tracking-only, got %+v", staleUserRule.Actions)
+		}
+	}
+}
+
+func TestEngine_ApprovalCatalogRulesDoNotBlockNotificationRules(t *testing.T) {
+	engine := NewEngine(testutil.Logger())
+	executor := NewExecutor(engine, nil, nil, nil, nil)
+
+	notifyRule, ok := engine.GetRule("s3-public-notify")
+	if !ok {
+		t.Fatal("expected s3-public-notify rule")
+	}
+	notifyPlaybook := remediationPlaybookFromRule(*notifyRule, executor)
+	if executor.shared.RequiresApproval(notifyPlaybook) {
+		t.Fatal("expected s3-public-notify playbook not to require approval")
+	}
+
+	restrictRule, ok := engine.GetRule("s3-public-restrict")
+	if !ok {
+		t.Fatal("expected s3-public-restrict rule")
+	}
+	restrictPlaybook := remediationPlaybookFromRule(*restrictRule, executor)
+	if !executor.shared.RequiresApproval(restrictPlaybook) {
+		t.Fatal("expected s3-public-restrict playbook to require approval")
+	}
+
+	notifyKeyRule, ok := engine.GetRule("aws-unused-access-key-notify")
+	if !ok {
+		t.Fatal("expected aws-unused-access-key-notify rule")
+	}
+	notifyKeyPlaybook := remediationPlaybookFromRule(*notifyKeyRule, executor)
+	if executor.shared.RequiresApproval(notifyKeyPlaybook) {
+		t.Fatal("expected aws-unused-access-key-notify playbook not to require approval")
+	}
+
+	disableKeyRule, ok := engine.GetRule("aws-unused-access-key-disable")
+	if !ok {
+		t.Fatal("expected aws-unused-access-key-disable rule")
+	}
+	disableKeyPlaybook := remediationPlaybookFromRule(*disableKeyRule, executor)
+	if !executor.shared.RequiresApproval(disableKeyPlaybook) {
+		t.Fatal("expected aws-unused-access-key-disable playbook to require approval")
 	}
 }
 
