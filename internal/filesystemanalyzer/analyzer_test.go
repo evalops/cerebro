@@ -318,6 +318,36 @@ func TestAnalyzerDetectsIaCArtifactsAndMisconfigurations(t *testing.T) {
 	}
 }
 
+func TestAnalyzerDoesNotFlagBucketEncryptionForHelmValuesReference(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "charts", "api", "values.yaml"), strings.Join([]string{
+		"# terraform module provisions aws_s3_bucket elsewhere",
+		"bucketName: app-logs",
+	}, "\n"))
+
+	report, err := New(Options{}).Analyze(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+
+	foundHelmValues := false
+	for _, artifact := range report.IaCArtifacts {
+		if artifact.Type == "helm_values" {
+			foundHelmValues = true
+			break
+		}
+	}
+	if !foundHelmValues {
+		t.Fatalf("expected helm_values artifact, got %#v", report.IaCArtifacts)
+	}
+
+	for _, finding := range report.Misconfigurations {
+		if finding.Type == "iac_missing_bucket_encryption" {
+			t.Fatalf("expected no bucket encryption finding for Helm values reference, got %#v", report.Misconfigurations)
+		}
+	}
+}
+
 func mustWriteFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

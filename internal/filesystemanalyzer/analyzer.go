@@ -1062,7 +1062,7 @@ func parseIaCFindings(filePath string, data []byte, artifacts []IaCArtifact) []C
 		)
 	}
 
-	if missingBucketEncryption(lowerText) {
+	if supportsBucketEncryptionCheck(artifactType) && missingBucketEncryption(lowerText) {
 		appendFinding(
 			"iac_missing_bucket_encryption",
 			"medium",
@@ -1074,6 +1074,15 @@ func parseIaCFindings(filePath string, data []byte, artifacts []IaCArtifact) []C
 	}
 
 	return findings
+}
+
+func supportsBucketEncryptionCheck(artifactType string) bool {
+	switch strings.TrimSpace(artifactType) {
+	case "terraform", "terraform_json", "cloudformation":
+		return true
+	default:
+		return false
+	}
 }
 
 func inferIaCResourceType(filePath, text string) string {

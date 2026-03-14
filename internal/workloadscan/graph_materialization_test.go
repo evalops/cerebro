@@ -318,6 +318,44 @@ func TestMaterializeRunsIntoGraphAddsIaCFindingObservations(t *testing.T) {
 	}
 }
 
+func TestMaterializeRunsIntoGraphAppliesLegacyMisconfigurationRiskWithoutObservation(t *testing.T) {
+	now := time.Date(2026, 3, 12, 18, 0, 0, 0, time.UTC)
+	g := graph.New()
+	g.AddNode(&graph.Node{
+		ID:       "arn:aws:ec2:us-east-1:123456789012:instance/i-abc123",
+		Kind:     graph.NodeKindInstance,
+		Name:     "i-abc123",
+		Provider: "aws",
+		Account:  "123456789012",
+		Region:   "us-east-1",
+	})
+	g.BuildIndex()
+
+	run := buildGraphMaterializationTestRun("workload_scan:run-legacy-misconfig", now.Add(-2*time.Hour), 0)
+	run.Summary.Findings = 1
+	run.Volumes[0].Analysis.FindingCount = 1
+	run.Volumes[0].Analysis.Catalog.Misconfigurations = []filesystemanalyzer.ConfigFinding{{
+		ID:       "finding:ssh-root-login",
+		Type:     "ssh",
+		Severity: "high",
+		Path:     "etc/ssh/sshd_config",
+		Title:    "SSH root login enabled",
+	}}
+
+	summary := MaterializeRunsIntoGraph(g, []RunRecord{run}, now)
+	if summary.ObservationNodesUpserted != 0 {
+		t.Fatalf("expected no IaC observations for legacy config finding, got %#v", summary)
+	}
+
+	scanNode, ok := g.GetNode(run.ID)
+	if !ok {
+		t.Fatalf("expected workload scan node %q", run.ID)
+	}
+	if scanNode.Risk != graph.RiskHigh {
+		t.Fatalf("expected legacy misconfiguration to raise scan risk, got %#v", scanNode)
+	}
+}
+
 func TestMaterializeRunsIntoGraphMapsDatabaseConnectionStrings(t *testing.T) {
 	now := time.Date(2026, 3, 12, 18, 0, 0, 0, time.UTC)
 	g := graph.New()

@@ -488,13 +488,13 @@ func summarizeRun(run RunRecord) (scanSummary, map[string]configAggregate, map[s
 			summary.Risk = maxRiskLevel(summary.Risk, severityToRisk(secret.Severity, false))
 		}
 		for _, finding := range catalog.Misconfigurations {
+			summary.Risk = maxRiskLevel(summary.Risk, severityToRisk(finding.Severity, false))
 			if strings.TrimSpace(finding.ID) == "" || strings.TrimSpace(finding.ArtifactType) == "" {
 				continue
 			}
 			if _, exists := findings[finding.ID]; !exists {
 				findings[finding.ID] = configAggregate{record: finding}
 			}
-			summary.Risk = maxRiskLevel(summary.Risk, severityToRisk(finding.Severity, false))
 		}
 		for _, malware := range catalog.Malware {
 			summary.Risk = maxRiskLevel(summary.Risk, severityToRisk(malware.Severity, false))
