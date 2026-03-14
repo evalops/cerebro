@@ -5,6 +5,34 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 79 - Filesystem IaC Detection During Workload Scans (2026-03-13)
+
+### Review findings
+- [x] Gap: issue `#228` was still leaving obvious filesystem-level IaC and config evidence on the floor even though the workload scan walk already touches those files.
+- [x] Gap: waiting for a separate `trivy config` parser would unnecessarily block a first shippable cut because the existing analyzer already has deterministic content and file-type heuristics available locally.
+- [x] Gap: the scan graph still had no first-class representation for IaC findings, so scan nodes could report misconfiguration counts without any durable graph object to inspect.
+- [x] Gap: IaC-only scans could still collapse to `risk:none` because workload-scan risk was driven primarily by vulnerability aggregates.
+
+### Execution plan
+- [x] Extend filesystem analyzer outputs with typed IaC artifact inventory:
+  - [x] add `iac_artifacts` to analyzer reports
+  - [x] track `iac_artifact_count` in scan summaries
+- [x] Detect common IaC/config surfaces during the existing filesystem walk:
+  - [x] Terraform and Terraform state
+  - [x] CloudFormation and Kubernetes manifests
+  - [x] Helm, Docker, Ansible, `.env`, and common app-config files
+- [x] Add deterministic IaC/config findings without a new scan pipeline:
+  - [x] flag Terraform state files as high severity
+  - [x] flag public exposure patterns such as `0.0.0.0/0`
+  - [x] flag public storage principals / ACLs
+  - [x] flag bucket definitions missing explicit encryption settings
+- [x] Materialize IaC findings into the graph:
+  - [x] create `observation` nodes with `workload_iac_finding`
+  - [x] link findings to the workload-scan node with `targets`
+  - [x] surface `iac_artifact_count` on workload-scan nodes
+- [x] Fix risk semantics so IaC-only findings raise workload-scan risk appropriately.
+- [x] Add regression coverage for analyzer detection and graph materialization.
+
 ## Deep Review Cycle 78 - Graph-Derived Compliance Control Evaluation (2026-03-13)
 
 ### Review findings
