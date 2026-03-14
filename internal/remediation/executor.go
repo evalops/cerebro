@@ -850,7 +850,7 @@ func (ex *Executor) emitApprovalRequested(ctx context.Context, execution *Execut
 	}
 	actions := make([]string, 0, len(rule.Actions))
 	for _, action := range rule.Actions {
-		if action.RequiresApproval {
+		if ex.actionRequiresApproval(action) {
 			actions = append(actions, string(action.Type))
 		}
 	}

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/evalops/cerebro/internal/testutil"
+	"github.com/evalops/cerebro/internal/webhooks"
 )
 
 func TestExecutor_ApproveBypassesApprovalGate(t *testing.T) {
@@ -418,5 +419,64 @@ func TestExecutor_DisableStaleAccessKeyUsesRemoteToolAfterApproval(t *testing.T)
 	triggerData, _ := payload["trigger_data"].(map[string]any)
 	if triggerData["access_key_id"] != "AKIASTALE" {
 		t.Fatalf("expected access_key_id in trigger data payload, got %#v", triggerData["access_key_id"])
+	}
+}
+
+func TestExecutor_ApprovalWebhookIncludesCatalogActions(t *testing.T) {
+	engine := NewEngine(testutil.Logger())
+	rule := Rule{
+		ID:      "catalog-approval-webhook",
+		Name:    "Catalog approval webhook",
+		Enabled: true,
+		Trigger: Trigger{Type: TriggerManual},
+		Actions: []Action{{
+			Type: ActionRestrictPublicStorageAccess,
+			Config: map[string]string{
+				"approval_mode": "required",
+			},
+		}},
+	}
+	if err := engine.AddRule(rule); err != nil {
+		t.Fatalf("add rule: %v", err)
+	}
+
+	hooks := webhooks.NewServiceForTesting()
+	var approvalEvent webhooks.Event
+	hooks.Subscribe(func(_ context.Context, event webhooks.Event) error {
+		if event.Type == webhooks.EventApprovalRequested {
+			approvalEvent = event
+		}
+		return nil
+	})
+
+	executions, err := engine.Evaluate(context.Background(), Event{
+		Type:     TriggerManual,
+		PolicyID: "aws-s3-bucket-no-public-access",
+		EntityID: "bucket:public-assets",
+		Data: map[string]any{
+			"resource_id":       "bucket:public-assets",
+			"resource_name":     "public-assets",
+			"resource_type":     "bucket",
+			"resource_platform": "aws",
+			"resource": map[string]any{
+				"public_access": true,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("evaluate: %v", err)
+	}
+	execution := executions[0]
+	executor := NewExecutor(engine, nil, nil, nil, hooks)
+
+	if err := executor.Execute(context.Background(), execution); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if approvalEvent.Type != webhooks.EventApprovalRequested {
+		t.Fatalf("expected approval webhook event, got %#v", approvalEvent)
+	}
+	actions, ok := approvalEvent.Data["approval_actions"].([]string)
+	if !ok || len(actions) != 1 || actions[0] != string(ActionRestrictPublicStorageAccess) {
+		t.Fatalf("expected catalog action in approval webhook, got %#v", approvalEvent.Data["approval_actions"])
 	}
 }
