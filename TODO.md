@@ -5,6 +5,25 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 83 - Reuse Existing Terraform Bucket References from State (2026-03-14)
+
+### Review findings
+- [x] Gap: even after the renderer-registry cut, generated remediation HCL still hardcoded literal bucket names when `iac_state_id` already pointed at the managed `aws_s3_bucket` resource.
+- [x] Gap: that loses module/resource address fidelity and makes generated Terraform patches weaker than the lineage data Cerebro already has from state-derived provenance.
+- [x] Gap: the right first reuse seam is state-aware address reuse, not speculative full-file rewriting. If `iac_state_id` is already an `aws_s3_bucket` address, generated remediation resources should bind to `<address>.id`; if not, they should fall back to the literal bucket identifier.
+
+### Execution plan
+- [x] Reuse existing bucket resource addresses when `iac_state_id` points at `aws_s3_bucket.*`
+- [x] Apply that reuse consistently to:
+  - [x] public access block generation
+  - [x] default encryption generation
+- [x] Keep fallback behavior explicit:
+  - [x] root state IDs still work
+  - [x] non-bucket state IDs fall back to the literal bucket name instead of emitting the wrong reference
+- [ ] Next Terraform/IaC codegen depth cuts after this slice:
+  - [ ] emit import-block/state-reconciliation guidance in a structured artifact model once Terraform v1.5+ import surfaces become first-class in generated output
+  - [ ] add the next Terraform-backed safe actions: public security-group ingress restriction and selected encryption defaults beyond S3
+
 ## Deep Review Cycle 82 - Terraform Renderer Registry by Action, Provider, and Resource Family (2026-03-14)
 
 ### Review findings
@@ -24,7 +43,7 @@ Status: executed end-to-end via PR workflow
   - [x] reject non-AWS Terraform bucket-encryption rendering
   - [x] reject non-bucket Terraform public-storage rendering even when the identifier looks bucket-like
 - [ ] Next Terraform/IaC codegen depth cuts after this slice:
-  - [ ] use lineage/state/HCL parsing to prefer existing Terraform resource references when available instead of literal identifiers
+  - [x] use lineage/state/HCL parsing to prefer existing Terraform resource references when available instead of literal identifiers
   - [ ] emit import-block/state-reconciliation guidance in a structured artifact model once Terraform v1.5+ import surfaces become first-class in generated output
   - [ ] add the next Terraform-backed safe actions: public security-group ingress restriction and selected encryption defaults beyond S3
 
