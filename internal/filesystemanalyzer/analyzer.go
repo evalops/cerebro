@@ -1298,8 +1298,7 @@ func scanSecrets(filePath string, data []byte) []SecretFinding {
 		}
 		if !matchedSpecific && inlineSecretPattern.MatchString(line) {
 			appendFinding("inline_secret", "high", fingerprintSecretMatch(line), "Inline secret-like assignment detected.", lineNo)
-		}
-		if !matchedSpecific {
+		} else if !matchedSpecific {
 			if token := entropySecretToken(line); token != "" {
 				appendFinding("high_entropy_token", "medium", fingerprintSecretMatch(token), "High-entropy token detected in text content.", lineNo)
 			}
