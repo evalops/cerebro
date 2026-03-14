@@ -1390,6 +1390,9 @@ func TestExecutor_RestrictPublicSecurityGroupIngressTerraformModeRejectsInlineSe
 	if !found {
 		t.Fatalf("expected standalone-rule precondition detail, got %#v", preconditions)
 	}
+	if _, ok := execution.Actions[0].Metadata["planned_tool"]; ok {
+		t.Fatalf("expected compact metadata to omit planned_tool on terraform precondition failure, got %#v", execution.Actions[0].Metadata["planned_tool"])
+	}
 }
 
 func TestExecutor_RestrictPublicSecurityGroupIngressTerraformModeRejectsForEachRuleState(t *testing.T) {
@@ -1456,6 +1459,9 @@ func TestExecutor_RestrictPublicSecurityGroupIngressTerraformModeRejectsForEachR
 	}
 	if !found {
 		t.Fatalf("expected standalone-rule precondition detail, got %#v", preconditions)
+	}
+	if _, ok := execution.Actions[0].Metadata["planned_tool"]; ok {
+		t.Fatalf("expected compact metadata to omit planned_tool on terraform precondition failure, got %#v", execution.Actions[0].Metadata["planned_tool"])
 	}
 }
 

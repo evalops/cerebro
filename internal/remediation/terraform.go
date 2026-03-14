@@ -270,7 +270,7 @@ func renderTerraformRestrictPublicSecurityGroupIngressArtifact(execution *Execut
 	if err := validateTerraformArtifactContext(ActionRestrictPublicSecurityGroupIngress, execution, "aws", "security_group"); err != nil {
 		return TerraformArtifact{}, err
 	}
-	ruleAddress, ruleType, ok := terraformExistingSecurityGroupRuleAddress(execution)
+	ruleAddress, _, ok := terraformExistingSecurityGroupRuleAddress(execution)
 	if !ok {
 		return TerraformArtifact{}, fmt.Errorf("terraform delivery for %s currently requires standalone Terraform security group rule resources (aws_security_group_rule or aws_vpc_security_group_ingress_rule)", ActionRestrictPublicSecurityGroupIngress)
 	}
@@ -312,7 +312,7 @@ func renderTerraformRestrictPublicSecurityGroupIngressArtifact(execution *Execut
 		Path:                path,
 		ResourceType:        "security_group_rule",
 		ResourceAddress:     ruleAddress,
-		Summary:             fmt.Sprintf("Terraform removal patch for public ingress rule %s", ruleType),
+		Summary:             fmt.Sprintf("Terraform removal patch for public ingress rule %s", ruleAddress),
 		Content:             content,
 		Notes:               notes,
 		IaCFile:             iacFile,

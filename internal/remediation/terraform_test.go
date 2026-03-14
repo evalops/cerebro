@@ -34,6 +34,9 @@ func TestRenderTerraformArtifact_RestrictPublicSecurityGroupIngressUsesRemovedBl
 	if artifact.ResourceAddress != "module.platform.aws_security_group_rule.public_ssh" {
 		t.Fatalf("unexpected resource address: %#v", artifact.ResourceAddress)
 	}
+	if artifact.Summary != "Terraform removal patch for public ingress rule module.platform.aws_security_group_rule.public_ssh" {
+		t.Fatalf("unexpected artifact summary: %#v", artifact.Summary)
+	}
 	if artifact.Path != "generated/terraform/platform/cerebro_remove_public_ingress_public_ssh.tf" {
 		t.Fatalf("unexpected artifact path: %#v", artifact.Path)
 	}

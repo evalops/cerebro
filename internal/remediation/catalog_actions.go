@@ -222,6 +222,7 @@ func (ex *Executor) restrictPublicSecurityGroupIngress(ctx context.Context, acti
 	if !catalogSupportsDeliveryMode(entry, plan.deliveryMode) {
 		return "", compactAnyMap(metadata), fmt.Errorf("delivery mode %q is not supported for %s", plan.deliveryMode, action.Type)
 	}
+	metadata = compactAnyMap(metadata)
 	if !allPreconditionsPassed(plan.preconditionCheck) {
 		return "", metadata, fmt.Errorf("restrict public security group ingress precondition failed")
 	}
