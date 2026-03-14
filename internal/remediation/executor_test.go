@@ -501,3 +501,23 @@ func TestRemediationExecutionToSharedPreservesResourceIDFallback(t *testing.T) {
 		t.Fatalf("resource id = %q, want bucket:public-assets", shared.ResourceID)
 	}
 }
+
+func TestCaptureAccessKeyEvidencePrefersSelectedCandidateID(t *testing.T) {
+	execution := &Execution{
+		TriggerData: map[string]any{
+			"resource_id":   "iam_user:alice",
+			"resource_type": "identity/user",
+			"access_key_id": "AKIAFRESH",
+		},
+	}
+
+	evidence := captureAccessKeyEvidence(execution, accessKeyCandidate{
+		ID:           "AKIASTALE",
+		InactiveDays: 121,
+		Source:       "access_key_metadata",
+	}, 90)
+
+	if got := evidence["access_key_id"]; got != "AKIASTALE" {
+		t.Fatalf("access_key_id = %#v, want AKIASTALE", got)
+	}
+}

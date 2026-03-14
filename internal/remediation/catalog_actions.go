@@ -264,7 +264,10 @@ func captureAccessKeyEvidence(execution *Execution, candidate accessKeyCandidate
 		"resource_platform":    remediationMapValueToString(execution.TriggerData, "resource_platform"),
 		"resource_external_id": remediationMapValueToString(execution.TriggerData, "resource_external_id"),
 	}
-	copyFields(evidence, execution.TriggerData, "access_key_id", "access_key_metadata", "access_keys")
+	copyFields(evidence, execution.TriggerData, "access_key_metadata", "access_keys")
+	if evidence["access_key_id"] == "" {
+		copyFields(evidence, execution.TriggerData, "access_key_id")
+	}
 	if resource, ok := execution.TriggerData["resource"].(map[string]any); ok && len(resource) > 0 {
 		evidence["resource"] = cloneAnyMap(resource)
 	}
