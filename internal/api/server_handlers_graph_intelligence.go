@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/evalops/cerebro/internal/graph"
+	"github.com/evalops/cerebro/internal/graph/knowledge"
 	reports "github.com/evalops/cerebro/internal/graph/reports"
 	"github.com/evalops/cerebro/internal/graphingest"
 )
@@ -384,7 +385,7 @@ func (s *Server) graphIntelligenceClaimConflicts(w http.ResponseWriter, r *http.
 		recordedAt = parsed
 	}
 
-	report := graph.BuildClaimConflictReport(g, graph.ClaimConflictReportOptions{
+	report := knowledge.BuildClaimConflictReport(g, knowledge.ClaimConflictReportOptions{
 		ValidAt:         validAt,
 		RecordedAt:      recordedAt,
 		MaxConflicts:    maxConflicts,
