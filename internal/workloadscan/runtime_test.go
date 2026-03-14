@@ -22,6 +22,8 @@ type fakeProvider struct {
 	failDeleteSnapshot    int
 	deletedVolumes        []string
 	deletedSnapshots      []string
+	sharedSnapshotSuffix  string
+	lastInspectionSource  string
 }
 
 func (p *fakeProvider) Kind() ProviderKind { return ProviderAWS }
@@ -58,11 +60,19 @@ func (p *fakeProvider) CreateSnapshot(_ context.Context, _ VMTarget, volume Sour
 	}, nil
 }
 
-func (p *fakeProvider) ShareSnapshot(context.Context, VMTarget, ScannerHost, SnapshotArtifact) error {
-	return nil
+func (p *fakeProvider) ShareSnapshot(_ context.Context, _ VMTarget, _ ScannerHost, snapshot SnapshotArtifact) (*SnapshotArtifact, error) {
+	if p.sharedSnapshotSuffix == "" {
+		return &snapshot, nil
+	}
+	shared := snapshot
+	shared.ID = snapshot.ID + p.sharedSnapshotSuffix
+	return &shared, nil
 }
 
 func (p *fakeProvider) CreateInspectionVolume(_ context.Context, _ VMTarget, _ ScannerHost, snapshot SnapshotArtifact) (*InspectionVolume, error) {
+	p.mu.Lock()
+	p.lastInspectionSource = snapshot.ID
+	p.mu.Unlock()
 	now := time.Now().UTC()
 	return &InspectionVolume{
 		ID:         "vol-" + snapshot.ID,
@@ -440,5 +450,39 @@ func TestRunnerUsesAttachmentSlotsInsteadOfVolumeIndexes(t *testing.T) {
 		if slot < 0 || slot >= provider.maxAttachmentSlots {
 			t.Fatalf("expected attachment slot to stay within [0,%d), got %d", provider.maxAttachmentSlots, slot)
 		}
+	}
+}
+
+func TestRunnerUsesSharedSnapshotArtifactForInspectionVolumeCreation(t *testing.T) {
+	store, err := NewSQLiteRunStore(filepath.Join(t.TempDir(), "workload-scan.db"))
+	if err != nil {
+		t.Fatalf("new sqlite run store: %v", err)
+	}
+	defer func() { _ = store.Close() }()
+
+	provider := &fakeProvider{
+		volumes:              []SourceVolume{{ID: "vol-a", SizeGiB: 10}},
+		sharedSnapshotSuffix: "-shared",
+	}
+	runner := NewRunner(RunnerOptions{
+		Store:     store,
+		Providers: []Provider{provider},
+		Mounter:   &fakeMounter{},
+		Analyzer:  fakeAnalyzer{},
+	})
+
+	run, err := runner.RunVMScan(context.Background(), ScanRequest{
+		ID:          "workload_scan:shared-snapshot",
+		Target:      VMTarget{Provider: ProviderAWS, Region: "us-east-1", InstanceID: "i-target"},
+		ScannerHost: ScannerHost{HostID: "i-scan", Region: "us-east-1"},
+	})
+	if err != nil {
+		t.Fatalf("run vm scan: %v", err)
+	}
+	if got := run.Volumes[0].Snapshot.ID; got != "snap-vol-a-shared" {
+		t.Fatalf("expected shared snapshot id to persist on run, got %s", got)
+	}
+	if got := provider.lastInspectionSource; got != "snap-vol-a-shared" {
+		t.Fatalf("expected inspection volume to use shared snapshot id, got %s", got)
 	}
 }
