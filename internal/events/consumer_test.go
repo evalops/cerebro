@@ -252,6 +252,79 @@ func TestJetStreamConsumer_DrainWaitsForHandlerWithoutCancel(t *testing.T) {
 	}
 }
 
+func TestJetStreamConsumerProcessesMultipleFilterSubjects(t *testing.T) {
+	natsURL := startJetStreamServer(t)
+
+	received := make(chan string, 4)
+	consumer, err := NewJetStreamConsumer(ConsumerConfig{
+		URLs:           []string{natsURL},
+		Stream:         "ENSEMBLE_GRAPH_MULTI_SUBJECT_TEST",
+		Subjects:       []string{"ensemble.tap.>", "aws.cloudtrail.>"},
+		Durable:        "cerebro_multi_subject_test",
+		DeadLetterPath: t.TempDir() + "/consumer.dlq.jsonl",
+		BatchSize:      2,
+		AckWait:        5 * time.Second,
+		FetchTimeout:   100 * time.Millisecond,
+	}, nil, func(_ context.Context, evt CloudEvent) error {
+		received <- evt.ID
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("new consumer: %v", err)
+	}
+	defer func() { _ = consumer.Close() }()
+
+	nc, err := nats.Connect(natsURL)
+	if err != nil {
+		t.Fatalf("connect nats: %v", err)
+	}
+	defer nc.Close()
+	js, err := nc.JetStream()
+	if err != nil {
+		t.Fatalf("jetstream context: %v", err)
+	}
+
+	for _, tc := range []struct {
+		subject string
+		id      string
+		typ     string
+	}{
+		{subject: "ensemble.tap.github.pull_request.merged", id: "evt-tap-1", typ: "ensemble.tap.github.pull_request.merged"},
+		{subject: "aws.cloudtrail.asset.changed", id: "evt-audit-1", typ: "aws.cloudtrail.asset.changed"},
+	} {
+		payload, err := json.Marshal(CloudEvent{
+			SpecVersion: cloudEventSpecVersion,
+			ID:          tc.id,
+			Source:      "urn:test",
+			Type:        tc.typ,
+			Time:        time.Now().UTC(),
+			DataSchema:  "urn:test:schema",
+		})
+		if err != nil {
+			t.Fatalf("marshal cloud event: %v", err)
+		}
+		if _, err := js.Publish(tc.subject, payload); err != nil {
+			t.Fatalf("publish cloud event %s: %v", tc.id, err)
+		}
+	}
+
+	want := map[string]bool{"evt-tap-1": false, "evt-audit-1": false}
+	deadline := time.After(5 * time.Second)
+	for range want {
+		select {
+		case id := <-received:
+			want[id] = true
+		case <-deadline:
+			t.Fatalf("timed out waiting for multi-subject deliveries: %#v", want)
+		}
+	}
+	for id, seen := range want {
+		if !seen {
+			t.Fatalf("expected event %s to be delivered, got %#v", id, want)
+		}
+	}
+}
+
 func TestConsumerStartBatchInProgressHeartbeatSkipsDeactivatedEntries(t *testing.T) {
 	consumer := &Consumer{
 		config: ConsumerConfig{

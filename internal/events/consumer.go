@@ -36,6 +36,7 @@ type ConsumerConfig struct {
 	URLs                []string
 	Stream              string
 	Subject             string
+	Subjects            []string
 	Durable             string
 	BatchSize           int
 	AckWait             time.Duration
@@ -184,14 +185,21 @@ func NewJetStreamConsumer(cfg ConsumerConfig, logger *slog.Logger, handler Event
 		nc.Close()
 		return nil, err
 	}
-	sub, err := c.js.PullSubscribe(
-		config.Subject,
-		config.Durable,
+	subjects := consumerSubjects(config)
+	subOpts := []nats.SubOpt{
 		nats.BindStream(config.Stream),
 		nats.AckExplicit(),
 		nats.AckWait(config.AckWait),
 		nats.MaxAckPending(config.MaxAckPending),
-	)
+	}
+	subject := config.Subject
+	if len(subjects) > 1 {
+		subject = ""
+		subOpts = append(subOpts, nats.ConsumerFilterSubjects(subjects...))
+	} else if len(subjects) == 1 {
+		subject = subjects[0]
+	}
+	sub, err := c.js.PullSubscribe(subject, config.Durable, subOpts...)
 	if err != nil {
 		nc.Close()
 		return nil, fmt.Errorf("create consumer subscription: %w", err)
@@ -725,17 +733,27 @@ func payloadPreview(payload []byte, limit int) string {
 }
 
 func (c *Consumer) ensureStream() error {
+	subjects := consumerSubjects(c.config)
+	if len(subjects) == 0 {
+		return errors.New("consumer subject is required")
+	}
 	stream, err := c.js.StreamInfo(c.config.Stream)
 	if err == nil {
-		for _, subj := range stream.Config.Subjects {
-			if subj == c.config.Subject || subj == ">" || subj == "ensemble.tap.>" {
-				return nil
+		missing := make([]string, 0, len(subjects))
+		for _, expected := range subjects {
+			if streamHasSubject(stream.Config.Subjects, expected) {
+				continue
 			}
+			missing = append(missing, expected)
+		}
+		if len(missing) == 0 {
+			return nil
 		}
 		c.logger.Warn("consumer stream exists without matching subject filter",
 			"stream", c.config.Stream,
 			"stream_subjects", stream.Config.Subjects,
-			"expected_subject", c.config.Subject,
+			"expected_subjects", subjects,
+			"missing_subjects", missing,
 		)
 		return nil
 	}
@@ -744,7 +762,7 @@ func (c *Consumer) ensureStream() error {
 	}
 	_, err = c.js.AddStream(&nats.StreamConfig{
 		Name:      c.config.Stream,
-		Subjects:  []string{c.config.Subject},
+		Subjects:  subjects,
 		Retention: nats.LimitsPolicy,
 		Storage:   nats.FileStorage,
 		Replicas:  1,
@@ -752,7 +770,7 @@ func (c *Consumer) ensureStream() error {
 	if err != nil {
 		return fmt.Errorf("create consumer stream %s: %w", c.config.Stream, err)
 	}
-	c.logger.Info("created jetstream consumer stream", "stream", c.config.Stream, "subject", c.config.Subject)
+	c.logger.Info("created jetstream consumer stream", "stream", c.config.Stream, "subjects", subjects)
 	return nil
 }
 
@@ -764,8 +782,12 @@ func (c ConsumerConfig) withDefaults() ConsumerConfig {
 	if cfg.Stream == "" {
 		cfg.Stream = defaultConsumerStream
 	}
-	if cfg.Subject == "" {
+	if len(cfg.Subjects) == 0 && cfg.Subject == "" {
 		cfg.Subject = defaultConsumerSubject
+	}
+	cfg.Subjects = consumerSubjects(cfg)
+	if len(cfg.Subjects) == 1 {
+		cfg.Subject = cfg.Subjects[0]
 	}
 	if cfg.Durable == "" {
 		cfg.Durable = defaultConsumerDurable
@@ -816,7 +838,7 @@ func (c ConsumerConfig) validate() error {
 	if strings.TrimSpace(c.Stream) == "" {
 		return errors.New("consumer stream is required")
 	}
-	if strings.TrimSpace(c.Subject) == "" {
+	if len(consumerSubjects(c)) == 0 {
 		return errors.New("consumer subject is required")
 	}
 	if strings.TrimSpace(c.Durable) == "" {
@@ -846,6 +868,44 @@ func (c ConsumerConfig) validate() error {
 		}
 	}
 	return nil
+}
+
+func consumerSubjects(cfg ConsumerConfig) []string {
+	seen := make(map[string]struct{}, len(cfg.Subjects)+1)
+	subjects := make([]string, 0, len(cfg.Subjects)+1)
+	appendSubject := func(raw string) {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			return
+		}
+		if _, ok := seen[raw]; ok {
+			return
+		}
+		seen[raw] = struct{}{}
+		subjects = append(subjects, raw)
+	}
+	for _, subject := range cfg.Subjects {
+		appendSubject(subject)
+	}
+	appendSubject(cfg.Subject)
+	return subjects
+}
+
+func streamHasSubject(streamSubjects []string, expected string) bool {
+	expected = strings.TrimSpace(expected)
+	if expected == "" {
+		return false
+	}
+	for _, subject := range streamSubjects {
+		subject = strings.TrimSpace(subject)
+		if subject == "" {
+			continue
+		}
+		if subject == expected || subject == ">" {
+			return true
+		}
+	}
+	return false
 }
 
 type consumerDeadLetterRecord struct {

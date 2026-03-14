@@ -380,6 +380,8 @@ func cdcEventToNode(table string, event cdcEvent) *Node {
 			Region:   firstNonEmpty(queryRowString(payload, "region"), region),
 			Risk:     RiskHigh,
 		}
+	case "aws_ec2_security_groups":
+		return awsSecurityGroupNodeFromRecord(payload, firstNonEmpty(provider, "aws"), account, region)
 
 	case "gcp_iam_service_accounts":
 		id := cdcNodeID(table, payload, event.ResourceID)
@@ -493,6 +495,8 @@ func cdcEventToNode(table string, event cdcEvent) *Node {
 				"uri":     queryRow(payload, "uri"),
 			},
 		}
+	case "gcp_compute_firewalls":
+		return gcpFirewallNodeFromRecord(payload, firstNonEmpty(provider, "gcp"), account, region)
 
 	case "azure_ad_service_principals":
 		id := cdcNodeID(table, payload, event.ResourceID)
@@ -598,6 +602,8 @@ func cdcEventToNode(table string, event cdcEvent) *Node {
 				"identity":       queryRow(payload, "identity"),
 			},
 		}
+	case "azure_network_security_groups":
+		return azureNetworkSecurityGroupNodeFromRecord(payload, firstNonEmpty(provider, "azure"), account, region)
 
 	case "okta_users":
 		id := cdcNodeID(table, payload, event.ResourceID)
@@ -680,7 +686,7 @@ func cdcEventToNode(table string, event cdcEvent) *Node {
 
 func cdcNodeID(table string, payload map[string]any, fallback string) string {
 	switch strings.ToLower(strings.TrimSpace(table)) {
-	case "aws_iam_users", "aws_iam_roles", "aws_iam_groups", "aws_s3_buckets", "aws_ec2_instances", "aws_rds_instances", "aws_lambda_functions", "aws_secretsmanager_secrets":
+	case "aws_iam_users", "aws_iam_roles", "aws_iam_groups", "aws_s3_buckets", "aws_ec2_instances", "aws_ec2_security_groups", "aws_rds_instances", "aws_lambda_functions", "aws_secretsmanager_secrets":
 		if id := strings.TrimSpace(fallback); id != "" {
 			return id
 		}
@@ -690,12 +696,12 @@ func cdcNodeID(table string, payload map[string]any, fallback string) string {
 			return id
 		}
 		return firstNonEmpty(queryRowString(payload, "unique_id"), queryRowString(payload, "email"), queryRowString(payload, "name"), queryRowString(payload, "id"))
-	case "gcp_compute_instances", "gcp_storage_buckets", "gcp_sql_instances", "gcp_cloudfunctions_functions", "gcp_cloudrun_services":
+	case "gcp_compute_instances", "gcp_compute_firewalls", "gcp_storage_buckets", "gcp_sql_instances", "gcp_cloudfunctions_functions", "gcp_cloudrun_services":
 		if id := strings.TrimSpace(fallback); id != "" {
 			return id
 		}
 		return firstNonEmpty(queryRowString(payload, "id"), queryRowString(payload, "name"))
-	case "azure_ad_service_principals", "azure_ad_users", "azure_compute_virtual_machines", "azure_storage_accounts", "azure_sql_databases", "azure_keyvault_vaults", "azure_functions_apps", "okta_users", "okta_groups", "okta_applications":
+	case "azure_ad_service_principals", "azure_ad_users", "azure_compute_virtual_machines", "azure_network_security_groups", "azure_storage_accounts", "azure_sql_databases", "azure_keyvault_vaults", "azure_functions_apps", "okta_users", "okta_groups", "okta_applications":
 		if id := strings.TrimSpace(fallback); id != "" {
 			return id
 		}
