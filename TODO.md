@@ -5,6 +5,25 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 86 - Reuse Existing Terraform Subresource Addresses for Bucket Remediations (2026-03-14)
+
+### Review findings
+- [x] Gap: even after reusing existing bucket resource references, generated Terraform still minted new subresource labels for bucket remediations when `iac_state_id` already pointed at an existing `aws_s3_bucket_public_access_block` or `aws_s3_bucket_server_side_encryption_configuration`.
+- [x] Gap: that creates duplicate Terraform resources and weakens the new state-reconciliation contract because the artifact no longer lines up with the resource Terraform is already managing.
+- [x] Gap: `for_each` instances need an explicit boundary here. Reusing exact addresses is correct for plain managed resources, but blindly turning instance addresses like `resource.name["key"]` into block labels would generate invalid HCL.
+
+### Execution plan
+- [x] Reuse existing Terraform-managed subresource addresses when `iac_state_id` points directly at:
+  - [x] `aws_s3_bucket_public_access_block.*`
+  - [x] `aws_s3_bucket_server_side_encryption_configuration.*`
+- [x] Keep generated fallback names for cases that cannot be represented as a single resource block:
+  - [x] `for_each` instance addresses
+  - [x] unrelated resource types
+- [x] Add TDD coverage at both renderer and executor metadata layers.
+- [ ] Next Terraform/IaC codegen depth cuts after this slice:
+  - [ ] add the next Terraform-backed safe actions: public security-group ingress restriction and selected encryption defaults beyond S3
+  - [ ] use parsed HCL and lineage to anchor generated blocks to existing module files/labels instead of only path-level placement
+
 ## Deep Review Cycle 85 - Structured Terraform Import and State-Reconciliation Guidance (2026-03-14)
 
 ### Review findings

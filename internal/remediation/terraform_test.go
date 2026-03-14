@@ -235,6 +235,56 @@ func TestRenderTerraformRestrictPublicStorageAccessArtifact_UsesIaCStateIDModule
 	}
 }
 
+func TestRenderTerraformRestrictPublicStorageAccessArtifact_ReusesExistingPublicAccessBlockResourceAddress(t *testing.T) {
+	artifact, err := renderTerraformArtifact(Action{
+		Type: ActionRestrictPublicStorageAccess,
+	}, &Execution{
+		TriggerData: map[string]any{
+			"resource_id":       "bucket:audit-logs",
+			"resource_platform": "aws",
+			"iac_state_id":      "module.platform.module.storage.aws_s3_bucket_public_access_block.existing_block",
+		},
+	})
+	if err != nil {
+		t.Fatalf("render artifact: %v", err)
+	}
+
+	if artifact.ResourceAddress != "module.platform.module.storage.aws_s3_bucket_public_access_block.existing_block" {
+		t.Fatalf("unexpected resource address: %#v", artifact.ResourceAddress)
+	}
+	if !strings.Contains(artifact.Content, `resource "aws_s3_bucket_public_access_block" "existing_block"`) {
+		t.Fatalf("expected existing resource label reuse, got:\n%s", artifact.Content)
+	}
+	if artifact.StateReconciliation == nil || len(artifact.StateReconciliation.Imports) != 1 {
+		t.Fatalf("expected import guidance, got %#v", artifact.StateReconciliation)
+	}
+	if artifact.StateReconciliation.Imports[0].To != "module.platform.module.storage.aws_s3_bucket_public_access_block.existing_block" {
+		t.Fatalf("unexpected import target: %#v", artifact.StateReconciliation.Imports[0])
+	}
+}
+
+func TestRenderTerraformRestrictPublicStorageAccessArtifact_DoesNotReuseForEachInstanceAsResourceLabel(t *testing.T) {
+	artifact, err := renderTerraformArtifact(Action{
+		Type: ActionRestrictPublicStorageAccess,
+	}, &Execution{
+		TriggerData: map[string]any{
+			"resource_id":       "bucket:audit.logs",
+			"resource_platform": "aws",
+			"iac_state_id":      `module.platform.module.storage.aws_s3_bucket_public_access_block.blocks["audit.logs"]`,
+		},
+	})
+	if err != nil {
+		t.Fatalf("render artifact: %v", err)
+	}
+
+	if artifact.ResourceAddress != "aws_s3_bucket_public_access_block.audit_logs_public_access_block" {
+		t.Fatalf("expected generated resource address fallback, got %#v", artifact.ResourceAddress)
+	}
+	if strings.Contains(artifact.Content, `resource "aws_s3_bucket_public_access_block" "blocks["audit.logs"]"`) {
+		t.Fatalf("unexpected invalid for_each instance resource label in content:\n%s", artifact.Content)
+	}
+}
+
 func TestRenderTerraformRestrictPublicStorageAccessArtifact_FallsBackToLiteralBucketWhenStateIDIsNonBucketResource(t *testing.T) {
 	artifact, err := renderTerraformArtifact(Action{
 		Type: ActionRestrictPublicStorageAccess,
@@ -299,6 +349,25 @@ func TestRenderTerraformBucketDefaultEncryptionArtifact_FallsBackToLiteralBucket
 	}
 	if strings.Contains(artifact.Content, `.id.id`) {
 		t.Fatalf("unexpected duplicated id reference in content:\n%s", artifact.Content)
+	}
+}
+
+func TestRenderTerraformBucketDefaultEncryptionArtifact_ReusesExistingEncryptionResourceAddress(t *testing.T) {
+	artifact, err := renderTerraformBucketDefaultEncryptionArtifact(&Execution{
+		TriggerData: map[string]any{
+			"resource_id":  "bucket:audit-logs",
+			"iac_state_id": "module.platform.module.storage.aws_s3_bucket_server_side_encryption_configuration.existing_encryption",
+		},
+	}, "AES256", "", false)
+	if err != nil {
+		t.Fatalf("render artifact: %v", err)
+	}
+
+	if artifact.ResourceAddress != "module.platform.module.storage.aws_s3_bucket_server_side_encryption_configuration.existing_encryption" {
+		t.Fatalf("unexpected resource address: %#v", artifact.ResourceAddress)
+	}
+	if !strings.Contains(artifact.Content, `resource "aws_s3_bucket_server_side_encryption_configuration" "existing_encryption"`) {
+		t.Fatalf("expected existing encryption resource label reuse, got:\n%s", artifact.Content)
 	}
 }
 

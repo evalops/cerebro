@@ -149,6 +149,10 @@ func renderTerraformPublicStorageAccessArtifact(execution *Execution) (Terraform
 
 	resourceName := terraformIdentifier(bucketName + "_public_access_block")
 	address := "aws_s3_bucket_public_access_block." + resourceName
+	if existingAddress, existingName, ok := terraformExistingManagedResourceAddress(execution, "aws_s3_bucket_public_access_block"); ok {
+		address = existingAddress
+		resourceName = existingName
+	}
 	path := terraformArtifactPath(execution, "cerebro_s3_bucket_public_access_block_"+terraformIdentifier(bucketName)+".tf")
 	content := iacrender.RenderTemplate("terraform", terraformBucketPublicAccessBlockTemplate, map[string]string{
 		"BucketReference":   terraformBucketArgument(execution, bucketName),
@@ -208,6 +212,10 @@ func renderTerraformBucketDefaultEncryptionArtifact(execution *Execution, sseAlg
 
 	resourceName := terraformIdentifier(bucketName + "_default_encryption")
 	address := "aws_s3_bucket_server_side_encryption_configuration." + resourceName
+	if existingAddress, existingName, ok := terraformExistingManagedResourceAddress(execution, "aws_s3_bucket_server_side_encryption_configuration"); ok {
+		address = existingAddress
+		resourceName = existingName
+	}
 	path := terraformArtifactPath(execution, "cerebro_s3_bucket_default_encryption_"+terraformIdentifier(bucketName)+".tf")
 	content := iacrender.RenderTemplate("terraform", terraformBucketDefaultEncryptionTemplate, map[string]string{
 		"BucketReference":   terraformBucketArgument(execution, bucketName),
@@ -456,6 +464,26 @@ func terraformBucketReferenceFromExecution(execution *Execution) string {
 		return ""
 	}
 	return resourceAddress + ".id"
+}
+
+func terraformExistingManagedResourceAddress(execution *Execution, expectedType string) (string, string, bool) {
+	if execution == nil {
+		return "", "", false
+	}
+	stateID := strings.TrimSpace(remediationMapValueToString(execution.TriggerData, "iac_state_id"))
+	resourceAddress, resourceType := terraformStateResourceAddress(stateID)
+	if resourceType != expectedType || resourceAddress == "" {
+		return "", "", false
+	}
+	parts := terraformAddressParts(resourceAddress)
+	if len(parts) < 2 {
+		return "", "", false
+	}
+	resourceName := strings.TrimSpace(parts[len(parts)-1])
+	if resourceName == "" || strings.ContainsRune(resourceName, '[') {
+		return "", "", false
+	}
+	return resourceAddress, resourceName, true
 }
 
 func terraformStateResourceAddress(stateID string) (string, string) {
