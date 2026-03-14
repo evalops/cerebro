@@ -154,6 +154,61 @@ func TestEvaluateFrameworkSupportsSensitiveDataAndGCPControls(t *testing.T) {
 	}
 }
 
+func TestEvaluateFrameworkTreatsUnknownGCPKeyRotationStateAsNonPassing(t *testing.T) {
+	now := time.Date(2026, 3, 13, 16, 30, 0, 0, time.UTC)
+	g := graph.New()
+	g.AddNode(&graph.Node{
+		ID:        "serviceAccount:proj-1:missing-has-keys@proj-1.iam.gserviceaccount.com",
+		Kind:      graph.NodeKindServiceAccount,
+		Name:      "missing-has-keys@proj-1.iam.gserviceaccount.com",
+		Provider:  "gcp",
+		Account:   "proj-1",
+		CreatedAt: now,
+		Properties: map[string]any{
+			"oldest_key_age_days": 15,
+			"observed_at":         now,
+			"valid_from":          now,
+			"recorded_at":         now,
+			"transaction_from":    now,
+		},
+	})
+	g.AddNode(&graph.Node{
+		ID:        "serviceAccount:proj-1:missing-key-age@proj-1.iam.gserviceaccount.com",
+		Kind:      graph.NodeKindServiceAccount,
+		Name:      "missing-key-age@proj-1.iam.gserviceaccount.com",
+		Provider:  "gcp",
+		Account:   "proj-1",
+		CreatedAt: now,
+		Properties: map[string]any{
+			"has_access_keys":  true,
+			"observed_at":      now,
+			"valid_from":       now,
+			"recorded_at":      now,
+			"transaction_from": now,
+		},
+	})
+
+	framework := &Framework{
+		ID:   "graph-gcp-key-unknown",
+		Name: "Graph GCP Key Unknown",
+		Controls: []Control{
+			{ID: "gcp-keys", Title: "SA keys rotated", PolicyIDs: []string{"gcp-service-account-key-rotation"}},
+		},
+	}
+
+	report := EvaluateFramework(g, framework, EvaluationOptions{GeneratedAt: now})
+	status := controlStatusByID(t, report, "gcp-keys")
+	if status.Status != ControlStatePartial {
+		t.Fatalf("expected unknown key-rotation state to remain non-passing, got %+v", status)
+	}
+	if status.PassCount != 0 || status.FailCount != 0 {
+		t.Fatalf("expected unknown key-rotation state to avoid pass/fail counts, got %+v", status)
+	}
+	if len(status.Evidence) != 0 {
+		t.Fatalf("expected no evidence when key-rotation state is unknown, got %+v", status)
+	}
+}
+
 func TestBuildAuditPackageFromReportIncludesEvidence(t *testing.T) {
 	framework := &Framework{
 		ID:      "pkg",
