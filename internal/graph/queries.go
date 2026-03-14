@@ -699,6 +699,14 @@ func riskToImpact(risk RiskLevel) string {
 
 // detectSensitiveData checks if a node contains sensitive data
 func detectSensitiveData(node *Node) *SensitiveDataNode {
+	return detectSensitiveDataWithOptions(node, true)
+}
+
+func detectSensitiveDataExplicit(node *Node) *SensitiveDataNode {
+	return detectSensitiveDataWithOptions(node, false)
+}
+
+func detectSensitiveDataWithOptions(node *Node, includeNameHeuristics bool) *SensitiveDataNode {
 	if node.Properties == nil {
 		return nil
 	}
@@ -748,15 +756,17 @@ func detectSensitiveData(node *Node) *SensitiveDataNode {
 		result.DataTypes = append(result.DataTypes, "credentials")
 	}
 
-	// Check node name for sensitive patterns
-	sensitivePatterns := []string{"secret", "credential", "password", "key", "token", "backup", "pii", "phi"}
-	nodeName := node.Name
-	for _, pattern := range sensitivePatterns {
-		if containsIgnoreCase(nodeName, pattern) {
-			if !sliceContains(result.DataTypes, "sensitive_by_name") {
-				result.DataTypes = append(result.DataTypes, "sensitive_by_name")
+	if includeNameHeuristics {
+		// Check node name for sensitive patterns
+		sensitivePatterns := []string{"secret", "credential", "password", "key", "token", "backup", "pii", "phi"}
+		nodeName := node.Name
+		for _, pattern := range sensitivePatterns {
+			if containsIgnoreCase(nodeName, pattern) {
+				if !sliceContains(result.DataTypes, "sensitive_by_name") {
+					result.DataTypes = append(result.DataTypes, "sensitive_by_name")
+				}
+				break
 			}
-			break
 		}
 	}
 

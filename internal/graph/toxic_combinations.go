@@ -912,7 +912,7 @@ func findSensitiveDataReachable(g *Graph, nodeID string, maxDepth int) []*Reacha
 				sensitive = append(sensitive, rn)
 				continue
 			}
-			if detectSensitiveData(rn.Node) != nil {
+			if detectSensitiveDataExplicit(rn.Node) != nil {
 				sensitive = append(sensitive, rn)
 				continue
 			}

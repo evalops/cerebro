@@ -156,7 +156,7 @@ func TestScanAndPersistDSPMFindings_EnrichesSecurityGraphNodes(t *testing.T) {
 	app.scanAndPersistDSPMFindings(context.Background(), "aws_s3_buckets", assets)
 
 	for name, g := range map[string]*graph.Graph{
-		"live":    liveGraph,
+		"live":    app.CurrentSecurityGraph(),
 		"builder": builder.Graph(),
 	} {
 		node, ok := g.GetNode(builderNodeID)
@@ -229,12 +229,13 @@ func TestScanAndPersistDSPMFindings_NameFallbackRequiresScopedUniqueMatch(t *tes
 		},
 	})
 
-	accountANode, _ := liveGraph.GetNode("bucket:acct-a:shared-bucket")
+	current := app.CurrentSecurityGraph()
+	accountANode, _ := current.GetNode("bucket:acct-a:shared-bucket")
 	if scanned, _ := accountANode.Properties["dspm_scanned"].(bool); scanned {
 		t.Fatal("expected scoped name fallback to avoid enriching same-name bucket in another account")
 	}
 
-	accountBNode, ok := liveGraph.GetNode("bucket:acct-b:shared-bucket")
+	accountBNode, ok := current.GetNode("bucket:acct-b:shared-bucket")
 	if !ok || accountBNode == nil {
 		t.Fatal("expected scoped same-name bucket to exist")
 	}

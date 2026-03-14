@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"reflect"
 	"strings"
 
@@ -23,24 +24,39 @@ func (a *App) enrichSecurityGraphWithDSPMResult(target *dspm.ScanTarget, result 
 		return
 	}
 
-	a.graphUpdateMu.Lock()
-	defer a.graphUpdateMu.Unlock()
-
-	var builderSecurityGraph *graph.Graph
+	current := a.CurrentSecurityGraph()
+	var (
+		updatedLive          *graph.Graph
+		builderSecurityGraph *graph.Graph
+	)
 	if a.SecurityGraphBuilder != nil {
 		builderSecurityGraph = a.SecurityGraphBuilder.Graph()
 	}
 
-	seen := make(map[*graph.Graph]struct{}, 2)
-	for _, g := range []*graph.Graph{a.CurrentSecurityGraph(), builderSecurityGraph} {
-		if g == nil {
-			continue
+	if current != nil {
+		candidate, err := a.MutateSecurityGraphMaybe(context.Background(), func(g *graph.Graph) (bool, error) {
+			return applyDSPMPropertiesToGraph(g, target, exactNodeIDs, fallbackNames, props), nil
+		})
+		if err != nil {
+			if a.Logger != nil {
+				a.Logger.Warn("failed to enrich live security graph with DSPM result", "target_id", target.ID, "error", err)
+			}
+			return
 		}
-		if _, ok := seen[g]; ok {
-			continue
+		updatedLive = candidate
+		if a.SecurityGraphBuilder != nil && builderSecurityGraph == current && updatedLive != nil {
+			a.SecurityGraphBuilder.ReplaceGraph(updatedLive)
+			builderSecurityGraph = updatedLive
 		}
-		seen[g] = struct{}{}
-		applyDSPMPropertiesToGraph(g, target, exactNodeIDs, fallbackNames, props)
+	}
+
+	if builderSecurityGraph != nil && builderSecurityGraph != updatedLive {
+		a.graphUpdateMu.Lock()
+		changed := applyDSPMPropertiesToGraph(builderSecurityGraph, target, exactNodeIDs, fallbackNames, props)
+		if changed {
+			builderSecurityGraph.BuildIndex()
+		}
+		a.graphUpdateMu.Unlock()
 	}
 }
 
@@ -50,29 +66,30 @@ func applyDSPMPropertiesToGraph(g *graph.Graph, target *dspm.ScanTarget, exactNo
 	}
 
 	if nodeID, ok := firstDSPMGraphNodeIDMatch(g, exactNodeIDs); ok {
-		applyDSPMPropertiesToNode(g, nodeID, props)
-		return true
+		return applyDSPMPropertiesToNode(g, nodeID, props)
 	}
 	if nodeID, ok := scopedDSPMGraphNodeNameMatch(g, target, fallbackNames); ok {
-		applyDSPMPropertiesToNode(g, nodeID, props)
-		return true
+		return applyDSPMPropertiesToNode(g, nodeID, props)
 	}
 
 	return false
 }
 
-func applyDSPMPropertiesToNode(g *graph.Graph, nodeID string, props map[string]any) {
+func applyDSPMPropertiesToNode(g *graph.Graph, nodeID string, props map[string]any) bool {
 	node, ok := g.GetNode(nodeID)
 	if !ok || node == nil {
-		return
+		return false
 	}
+	changed := false
 	for key, value := range props {
 		existing, exists := node.Properties[key]
 		if exists && reflect.DeepEqual(existing, value) {
 			continue
 		}
 		g.SetNodeProperty(nodeID, key, value)
+		changed = true
 	}
+	return changed
 }
 
 func firstDSPMGraphNodeIDMatch(g *graph.Graph, candidates []string) (string, bool) {
@@ -132,8 +149,7 @@ func dspmGraphNodeNameMatches(node *graph.Node, candidate string) bool {
 	if node == nil || candidate == "" {
 		return false
 	}
-	if strings.EqualFold(strings.TrimSpace(node.ID), candidate) ||
-		strings.EqualFold(strings.TrimSpace(node.Name), candidate) {
+	if strings.EqualFold(strings.TrimSpace(node.Name), candidate) {
 		return true
 	}
 	if node.Properties == nil {
