@@ -1,6 +1,7 @@
 package filesystemanalyzer
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -93,6 +94,33 @@ func TestGitleaksScannerScanFilesystemError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("expected stderr in error, got %v", err)
+	}
+}
+
+func TestParseGitleaksReportRejectsOversizedOutput(t *testing.T) {
+	raw := []byte(`[{"RuleID":"GitHub","Description":"GitHub token","StartLine":1,"Match":"ghp_1234567890abcdefghijklmn","Secret":"ghp_1234567890abcdefghijklmn","File":"workspace/.env"}]`)
+
+	_, err := parseGitleaksReport(bytes.NewReader(raw), 32, defaultGitleaksMaxFindings)
+	if err == nil {
+		t.Fatal("expected size limit error")
+	}
+	if !strings.Contains(err.Error(), "max size") {
+		t.Fatalf("expected max size error, got %v", err)
+	}
+}
+
+func TestParseGitleaksReportRejectsTooManyFindings(t *testing.T) {
+	raw := []byte(`[
+		{"RuleID":"GitHub","Description":"GitHub token","StartLine":1,"Match":"ghp_1234567890abcdefghijklmn","Secret":"ghp_1234567890abcdefghijklmn","File":"workspace/.env"},
+		{"RuleID":"GitHub","Description":"GitHub token","StartLine":2,"Match":"ghp_abcdefghijklmnopqrstuvwxyz","Secret":"ghp_abcdefghijklmnopqrstuvwxyz","File":"workspace/.env"}
+	]`)
+
+	_, err := parseGitleaksReport(bytes.NewReader(raw), int64(len(raw))+1, 1)
+	if err == nil {
+		t.Fatal("expected max findings error")
+	}
+	if !strings.Contains(err.Error(), "max findings") {
+		t.Fatalf("expected max findings error, got %v", err)
 	}
 }
 

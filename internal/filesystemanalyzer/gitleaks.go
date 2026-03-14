@@ -5,21 +5,33 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os/exec"
 	"path/filepath"
 	"strings"
 )
 
+const (
+	defaultGitleaksMaxReportBytes = 8 << 20
+	defaultGitleaksMaxFindings    = 5000
+)
+
 // GitleaksScanner wraps `gitleaks dir` for filesystem-root secret scanning.
 type GitleaksScanner struct {
-	binaryPath string
+	binaryPath     string
+	maxReportBytes int64
+	maxFindings    int
 }
 
 func NewGitleaksScanner(binaryPath string) *GitleaksScanner {
 	if strings.TrimSpace(binaryPath) == "" {
 		binaryPath = "gitleaks"
 	}
-	return &GitleaksScanner{binaryPath: binaryPath}
+	return &GitleaksScanner{
+		binaryPath:     binaryPath,
+		maxReportBytes: defaultGitleaksMaxReportBytes,
+		maxFindings:    defaultGitleaksMaxFindings,
+	}
 }
 
 func (s *GitleaksScanner) ScanFilesystem(ctx context.Context, rootfsPath string) (*SecretScanResult, error) {
@@ -49,19 +61,30 @@ func (s *GitleaksScanner) ScanFilesystem(ctx context.Context, rootfsPath string)
 		"--report-path", "-",
 		absPath,
 	) // #nosec G204 -- fixed binary/arguments, no shell interpolation
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("gitleaks dir scan stdout pipe: %w", err)
+	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	output, err := cmd.Output()
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("gitleaks dir scan failed to start: %w", err)
+	}
+	findings, err := parseGitleaksReport(stdout, s.maxReportBytes, s.maxFindings)
 	if err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		if stderrText := strings.TrimSpace(stderr.String()); stderrText != "" {
+			return nil, fmt.Errorf("%w: %s", err, stderrText)
+		}
+		return nil, err
+	}
+	if err := cmd.Wait(); err != nil {
 		stderrText := strings.TrimSpace(stderr.String())
 		if stderrText != "" {
 			return nil, fmt.Errorf("gitleaks dir scan failed: %s", stderrText)
 		}
 		return nil, fmt.Errorf("gitleaks dir scan failed: %w", err)
-	}
-	findings, err := parseGitleaksOutput(output)
-	if err != nil {
-		return nil, err
 	}
 	return &SecretScanResult{
 		Engine:   "gitleaks",
@@ -80,17 +103,62 @@ type gitleaksFinding struct {
 }
 
 func parseGitleaksOutput(data []byte) ([]SecretFinding, error) {
-	data = bytes.TrimSpace(data)
-	if len(data) == 0 || bytes.Equal(data, []byte("null")) {
-		return nil, nil
+	return parseGitleaksReport(bytes.NewReader(data), int64(len(data))+1, defaultGitleaksMaxFindings)
+}
+
+func parseGitleaksReport(r io.Reader, maxReportBytes int64, maxFindings int) ([]SecretFinding, error) {
+	if maxReportBytes <= 0 {
+		return nil, fmt.Errorf("gitleaks max report bytes must be positive")
 	}
-	var raw []gitleaksFinding
-	if err := json.Unmarshal(data, &raw); err != nil {
+	if maxFindings <= 0 {
+		return nil, fmt.Errorf("gitleaks max findings must be positive")
+	}
+	limited := &io.LimitedReader{R: r, N: maxReportBytes + 1}
+	decoder := json.NewDecoder(limited)
+
+	token, err := decoder.Token()
+	if err != nil {
+		if err == io.EOF {
+			return nil, nil
+		}
+		if limited.N <= 0 {
+			return nil, fmt.Errorf("gitleaks report exceeded max size of %d bytes", maxReportBytes)
+		}
 		return nil, fmt.Errorf("parse gitleaks report: %w", err)
 	}
-	findings := make([]SecretFinding, 0, len(raw))
-	for _, finding := range raw {
-		findings = append(findings, normalizeSecretFinding(convertGitleaksFinding(finding)))
+	if token == nil {
+		if limited.N <= 0 {
+			return nil, fmt.Errorf("gitleaks report exceeded max size of %d bytes", maxReportBytes)
+		}
+		return nil, nil
+	}
+	delim, ok := token.(json.Delim)
+	if !ok || delim != '[' {
+		return nil, fmt.Errorf("parse gitleaks report: expected JSON array")
+	}
+
+	findings := make([]SecretFinding, 0)
+	for decoder.More() {
+		if len(findings) >= maxFindings {
+			return nil, fmt.Errorf("gitleaks report exceeded max findings of %d", maxFindings)
+		}
+		var raw gitleaksFinding
+		if err := decoder.Decode(&raw); err != nil {
+			if limited.N <= 0 {
+				return nil, fmt.Errorf("gitleaks report exceeded max size of %d bytes", maxReportBytes)
+			}
+			return nil, fmt.Errorf("parse gitleaks report: %w", err)
+		}
+		findings = append(findings, normalizeSecretFinding(convertGitleaksFinding(raw)))
+	}
+	if _, err := decoder.Token(); err != nil {
+		if limited.N <= 0 {
+			return nil, fmt.Errorf("gitleaks report exceeded max size of %d bytes", maxReportBytes)
+		}
+		return nil, fmt.Errorf("parse gitleaks report: %w", err)
+	}
+	if limited.N <= 0 {
+		return nil, fmt.Errorf("gitleaks report exceeded max size of %d bytes", maxReportBytes)
 	}
 	return findings, nil
 }
