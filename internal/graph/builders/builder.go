@@ -564,7 +564,7 @@ func providerForResourceType(resourceType string) string {
 	if strings.HasPrefix(resourceType, "gcp:") {
 		return "gcp"
 	}
-	if strings.HasPrefix(resourceType, "azure:") {
+	if strings.HasPrefix(resourceType, "azure:") || strings.HasPrefix(resourceType, "entra:") {
 		return "azure"
 	}
 	if strings.HasPrefix(resourceType, "okta:") {
