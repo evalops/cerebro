@@ -483,3 +483,21 @@ func TestExecutor_ApprovalWebhookIncludesCatalogActions(t *testing.T) {
 		t.Fatalf("expected catalog action in approval webhook, got %#v", approvalEvent.Data["approval_actions"])
 	}
 }
+
+func TestRemediationExecutionToSharedPreservesResourceIDFallback(t *testing.T) {
+	execution := &Execution{
+		ID:       "exec-1",
+		RuleID:   "rule-1",
+		RuleName: "Rule",
+		Status:   ExecutionPending,
+		TriggerData: map[string]any{
+			"resource_id":   "bucket:public-assets",
+			"resource_type": "bucket",
+		},
+	}
+
+	shared := remediationExecutionToShared(execution)
+	if shared.ResourceID != "bucket:public-assets" {
+		t.Fatalf("resource id = %q, want bucket:public-assets", shared.ResourceID)
+	}
+}

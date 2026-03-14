@@ -231,7 +231,7 @@ func remediationExecutionToShared(execution *Execution) *actionengine.Execution 
 		PlaybookID:   execution.RuleID,
 		PlaybookName: execution.RuleName,
 		Status:       remediationStatusToShared(execution.Status),
-		ResourceID:   remediationMapValueToString(execution.TriggerData, "entity_id"),
+		ResourceID:   firstNonEmpty(remediationMapValueToString(execution.TriggerData, "entity_id"), remediationMapValueToString(execution.TriggerData, "resource_id")),
 		ResourceType: remediationMapValueToString(execution.TriggerData, "resource_type"),
 		TriggerData:  cloneAnyMap(execution.TriggerData),
 		Results:      make([]actionengine.ActionResult, 0, len(execution.Actions)),
