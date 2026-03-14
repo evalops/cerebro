@@ -17,6 +17,7 @@ import (
 	"github.com/evalops/cerebro/internal/app"
 	"github.com/evalops/cerebro/internal/graph"
 	reports "github.com/evalops/cerebro/internal/graph/reports"
+	risk "github.com/evalops/cerebro/internal/graph/risk"
 	"github.com/evalops/cerebro/internal/health"
 	"github.com/evalops/cerebro/internal/metrics"
 	"github.com/evalops/cerebro/internal/snowflake"
@@ -30,7 +31,7 @@ type Server struct {
 	auditLogger              auditLogWriter
 	rateLimiter              *RateLimiter
 	riskEngineMu             sync.Mutex
-	riskEngine               *graph.RiskEngine
+	riskEngine               *risk.RiskEngine
 	riskEngineSource         *graph.Graph
 	crossTenantReplayMu      sync.Mutex
 	crossTenantReplay        map[string]time.Time

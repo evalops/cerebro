@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/evalops/cerebro/internal/graph"
+	risk "github.com/evalops/cerebro/internal/graph/risk"
 )
 
 func (s *Server) tenantScopedGraph(ctx context.Context, g *graph.Graph) *graph.Graph {
@@ -30,7 +31,7 @@ func (s *Server) currentTenantSecurityGraph(ctx context.Context) *graph.Graph {
 	return s.tenantScopedGraph(ctx, s.app.CurrentSecurityGraph())
 }
 
-func (s *Server) currentTenantRiskEngine(ctx context.Context) *graph.RiskEngine {
+func (s *Server) currentTenantRiskEngine(ctx context.Context) *risk.RiskEngine {
 	if s == nil || s.app == nil {
 		return nil
 	}
@@ -41,9 +42,9 @@ func (s *Server) currentTenantRiskEngine(ctx context.Context) *graph.RiskEngine 
 	if g == nil {
 		return nil
 	}
-	engine := graph.NewRiskEngine(g)
+	engine := risk.NewRiskEngine(g)
 	if s.app.Config != nil {
-		engine.SetCrossTenantPrivacyConfig(graph.CrossTenantPrivacyConfig{
+		engine.SetCrossTenantPrivacyConfig(risk.CrossTenantPrivacyConfig{
 			MinTenantCount:    s.app.Config.GraphCrossTenantMinTenants,
 			MinPatternSupport: s.app.Config.GraphCrossTenantMinSupport,
 		})
