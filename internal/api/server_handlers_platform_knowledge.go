@@ -416,7 +416,7 @@ func parsePlatformClaimQueryOptions(r *http.Request) (knowledge.ClaimQueryOption
 		opts.Sourceless = &sourceless
 	}
 	if conflicted, ok, err := parseOptionalBoolQuery(r, "conflicted"); err != nil {
-		return graph.ClaimQueryOptions{}, err
+		return knowledge.ClaimQueryOptions{}, err
 	} else if ok {
 		opts.Conflicted = &conflicted
 	}
@@ -610,7 +610,7 @@ func parsePlatformClaimDiffQueryOptions(r *http.Request) (knowledge.ClaimDiffQue
 	opts.ToValidAt = toValidAt
 	toRecordedAt, err := parseOptionalRFC3339Query(r, "to_recorded_at")
 	if err != nil {
-		return graph.ClaimDiffQueryOptions{}, err
+		return knowledge.ClaimDiffQueryOptions{}, err
 	}
 	opts.ToRecordedAt = toRecordedAt
 	return opts, nil
