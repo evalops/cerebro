@@ -214,6 +214,9 @@ func TestExecutor_RestrictPublicStorageAccessDryRunCapturesMetadata(t *testing.T
 	if dryRun, _ := metadata["dry_run"].(bool); !dryRun {
 		t.Fatalf("expected dry_run metadata, got %#v", metadata)
 	}
+	if requiresApproval, _ := metadata["requires_approval"].(bool); requiresApproval {
+		t.Fatalf("expected dry-run action with approval_mode=auto to report requires_approval=false, got %#v", metadata)
+	}
 	if metadata["planned_tool"] != "aws.s3.block_public_access" {
 		t.Fatalf("unexpected planned tool metadata: %#v", metadata["planned_tool"])
 	}

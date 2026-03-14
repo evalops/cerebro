@@ -42,7 +42,7 @@ func (ex *Executor) executeCatalogAction(ctx context.Context, action Action, exe
 
 func (ex *Executor) restrictPublicStorageAccess(ctx context.Context, action Action, execution *Execution) (string, map[string]any, error) {
 	entry, _ := CatalogEntryByAction(action.Type)
-	plan := newCatalogActionPlan(action, execution, entry)
+	plan := newCatalogActionPlan(action, execution, entry, ex.actionRequiresApproval(action))
 	plan.before = captureStorageAccessEvidence(execution)
 
 	publicAccess, detail := publicStorageAccessStillEnabled(execution)
@@ -76,7 +76,7 @@ func (ex *Executor) restrictPublicStorageAccess(ctx context.Context, action Acti
 
 func (ex *Executor) disableStaleAccessKey(ctx context.Context, action Action, execution *Execution) (string, map[string]any, error) {
 	entry, _ := CatalogEntryByAction(action.Type)
-	plan := newCatalogActionPlan(action, execution, entry)
+	plan := newCatalogActionPlan(action, execution, entry, ex.actionRequiresApproval(action))
 	threshold := actionIntConfig(action, "inactive_days", 90)
 	candidate, candidateOK := staleAccessKeyCandidateFromExecution(execution, threshold)
 	plan.before = captureAccessKeyEvidence(execution, candidate, threshold)
@@ -139,7 +139,7 @@ func (ex *Executor) executeCatalogRemoteAction(ctx context.Context, action Actio
 	return ex.ensemble.ExecuteWithOutput(ctx, cloned, execution)
 }
 
-func newCatalogActionPlan(action Action, execution *Execution, entry CatalogEntry) catalogActionPlan {
+func newCatalogActionPlan(action Action, execution *Execution, entry CatalogEntry, approvalRequired bool) catalogActionPlan {
 	provider := inferProvider(execution)
 	return catalogActionPlan{
 		entry:            entry,
@@ -149,7 +149,7 @@ func newCatalogActionPlan(action Action, execution *Execution, entry CatalogEntr
 		resourceType:     remediationMapValueToString(execution.TriggerData, "resource_type"),
 		tool:             firstNonEmpty(action.Config["tool"], catalogToolForProvider(entry, provider)),
 		dryRun:           dryRunEnabled(action, execution),
-		approvalRequired: actionRequiresApprovalByConfig(action, entry),
+		approvalRequired: approvalRequired,
 	}
 }
 
@@ -390,19 +390,6 @@ func dryRunEnabled(action Action, execution *Execution) bool {
 		}
 	}
 	return false
-}
-
-func actionRequiresApprovalByConfig(action Action, entry CatalogEntry) bool {
-	switch strings.ToLower(strings.TrimSpace(action.Config["approval_mode"])) {
-	case "auto", "none", "disabled", "not_required":
-		return false
-	case "required", "manual":
-		return true
-	}
-	if action.RequiresApproval {
-		return true
-	}
-	return entry.RequiresApproval
 }
 
 func actionIntConfig(action Action, key string, defaultValue int) int {
