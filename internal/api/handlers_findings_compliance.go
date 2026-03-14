@@ -512,7 +512,6 @@ func (s *Server) preAuditCheck(w http.ResponseWriter, r *http.Request) {
 	}
 
 	checks := make([]ControlCheck, 0, len(framework.Controls))
-	passing, failing, atRisk := 0, 0, 0
 
 	report := s.evaluateComplianceFramework(r.Context(), framework)
 	for _, ctrl := range report.Controls {
@@ -541,32 +540,25 @@ func (s *Server) preAuditCheck(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		switch check.Status {
-		case "passing":
-			passing++
-		case "failing":
-			failing++
+		switch ctrl.Status {
+		case compliance.ControlStateFailing:
 			check.Remediation = "Review and remediate findings before audit"
-		case "at_risk":
-			atRisk++
+		case compliance.ControlStatePartial, compliance.ControlStateUnknown:
 			check.Remediation = "Collect missing evidence or close ambiguous control gaps before audit"
 		}
 
 		checks = append(checks, check)
 	}
 
+	passing, failing, atRisk, notApplicable, assessedControls, score := preAuditMetrics(report)
+
 	// Determine estimated outcome
 	outcome := "PASS"
 	if failing > 0 {
 		outcome = fmt.Sprintf("PASS WITH %d EXCEPTIONS", failing)
 	}
-	if len(framework.Controls) > 0 && float64(failing)/float64(len(framework.Controls)) > 0.2 {
+	if assessedControls > 0 && float64(failing)/float64(assessedControls) > 0.2 {
 		outcome = "AT RISK - RECOMMEND POSTPONING"
-	}
-
-	score := 0.0
-	if len(framework.Controls) > 0 {
-		score = float64(passing) / float64(len(framework.Controls)) * 100
 	}
 
 	s.json(w, http.StatusOK, map[string]interface{}{
@@ -579,11 +571,24 @@ func (s *Server) preAuditCheck(w http.ResponseWriter, r *http.Request) {
 			"passing":          passing,
 			"failing":          failing,
 			"at_risk":          atRisk,
+			"not_applicable":   notApplicable,
 			"compliance_score": fmt.Sprintf("%.1f%%", score),
 		},
 		"controls":        checks,
-		"recommendations": s.generateAuditRecommendations(failing, atRisk, len(framework.Controls)),
+		"recommendations": s.generateAuditRecommendations(failing, atRisk, assessedControls),
 	})
+}
+
+func preAuditMetrics(report compliance.ComplianceReport) (passing, failing, atRisk, notApplicable, assessedControls int, score float64) {
+	passing = report.Summary.PassingControls
+	failing = report.Summary.FailingControls
+	atRisk = report.Summary.PartialControls
+	notApplicable = report.Summary.NotApplicableControls
+	assessedControls = report.Summary.TotalControls - notApplicable
+	if assessedControls > 0 {
+		score = float64(passing) / float64(assessedControls) * 100
+	}
+	return passing, failing, atRisk, notApplicable, assessedControls, score
 }
 
 func (s *Server) generateAuditRecommendations(failing, atRisk, total int) []string {

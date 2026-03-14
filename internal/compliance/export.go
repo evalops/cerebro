@@ -118,7 +118,7 @@ func BuildAuditPackageFromReport(framework *Framework, report ComplianceReport) 
 		Summary: AuditSummary{
 			TotalControls:   report.Summary.TotalControls,
 			PassingControls: report.Summary.PassingControls,
-			FailingControls: report.Summary.FailingControls,
+			FailingControls: report.Summary.FailingControls + report.Summary.PartialControls,
 		},
 	}
 	for _, ctrl := range report.Controls {

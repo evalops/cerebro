@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/evalops/cerebro/internal/compliance"
 	"github.com/evalops/cerebro/internal/graph"
 )
 
@@ -143,5 +144,28 @@ func TestComplianceReportDerivesFromGraphWithoutFindings(t *testing.T) {
 	}
 	if !foundEvidence {
 		t.Fatalf("expected control 2.1.1 in exported controls payload: %#v", controlsPayload)
+	}
+}
+
+func TestPreAuditMetricsExcludeNotApplicableControls(t *testing.T) {
+	report := compliance.ComplianceReport{
+		Summary: compliance.ComplianceSummary{
+			TotalControls:         4,
+			PassingControls:       1,
+			FailingControls:       1,
+			PartialControls:       1,
+			NotApplicableControls: 1,
+		},
+	}
+
+	passing, failing, atRisk, notApplicable, assessedControls, score := preAuditMetrics(report)
+	if passing != 1 || failing != 1 || atRisk != 1 || notApplicable != 1 {
+		t.Fatalf("unexpected pre-audit counts: passing=%d failing=%d atRisk=%d notApplicable=%d", passing, failing, atRisk, notApplicable)
+	}
+	if assessedControls != 3 {
+		t.Fatalf("expected 3 assessed controls, got %d", assessedControls)
+	}
+	if score != (float64(1) / float64(3) * 100) {
+		t.Fatalf("expected score to exclude not-applicable controls, got %f", score)
 	}
 }
