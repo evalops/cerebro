@@ -106,6 +106,7 @@ const (
 	ActionSendCustomerComm  ActionType = "send_customer_comm"
 
 	ActionRestrictPublicStorageAccess        ActionType = "restrict_public_storage_access"
+	ActionEnableBucketDefaultEncryption      ActionType = "enable_bucket_default_encryption"
 	ActionDisableStaleAccessKey              ActionType = "disable_stale_access_key"
 	ActionRestrictPublicSecurityGroupIngress ActionType = "restrict_public_security_group_ingress"
 )
@@ -265,6 +266,54 @@ func (e *Engine) loadDefaultRules() {
 					Type: ActionRestrictPublicStorageAccess,
 					Config: map[string]string{
 						"approval_mode": "required",
+					},
+					RequiresApproval: false,
+				},
+			},
+		},
+		{
+			ID:          "s3-encryption-notify",
+			Name:        "Alert on unencrypted S3 bucket",
+			Description: "Create tracking for S3 buckets that do not have default encryption enabled",
+			Enabled:     true,
+			Trigger: Trigger{
+				Type:     TriggerFindingCreated,
+				PolicyID: "aws-s3-bucket-encryption-enabled",
+			},
+			Actions: []Action{
+				{
+					Type: ActionNotifySlack,
+					Config: map[string]string{
+						"channel": "#security-alerts",
+						"message": "UNENCRYPTED S3 BUCKET DETECTED - Approval required for default encryption",
+					},
+					RequiresApproval: false,
+				},
+				{
+					Type: ActionCreateTicket,
+					Config: map[string]string{
+						"priority": "high",
+						"labels":   "s3,encryption,data-protection",
+					},
+					RequiresApproval: false,
+				},
+			},
+		},
+		{
+			ID:          "s3-encryption-enable",
+			Name:        "Enable default S3 bucket encryption",
+			Description: "Approval-gated automatic default encryption enablement for S3 buckets",
+			Enabled:     true,
+			Trigger: Trigger{
+				Type:     TriggerFindingCreated,
+				PolicyID: "aws-s3-bucket-encryption-enabled",
+			},
+			Actions: []Action{
+				{
+					Type: ActionEnableBucketDefaultEncryption,
+					Config: map[string]string{
+						"approval_mode": "required",
+						"sse_algorithm": "AES256",
 					},
 					RequiresApproval: false,
 				},

@@ -33,6 +33,9 @@ func (ex *Executor) executeCatalogAction(ctx context.Context, action Action, exe
 	case ActionRestrictPublicStorageAccess:
 		output, metadata, err := ex.restrictPublicStorageAccess(ctx, action, execution)
 		return output, metadata, err, true
+	case ActionEnableBucketDefaultEncryption:
+		output, metadata, err := ex.enableBucketDefaultEncryption(ctx, action, execution)
+		return output, metadata, err, true
 	case ActionDisableStaleAccessKey:
 		output, metadata, err := ex.disableStaleAccessKey(ctx, action, execution)
 		return output, metadata, err, true
@@ -76,6 +79,63 @@ func (ex *Executor) restrictPublicStorageAccess(ctx context.Context, action Acti
 		return "", metadata, err
 	}
 	return firstNonEmpty(strings.TrimSpace(output), "Public access restricted"), metadata, nil
+}
+
+func (ex *Executor) enableBucketDefaultEncryption(ctx context.Context, action Action, execution *Execution) (string, map[string]any, error) {
+	entry, _ := CatalogEntryByAction(action.Type)
+	plan := newCatalogActionPlan(action, execution, entry, ex.actionRequiresApproval(action))
+	sseAlgorithm := firstNonEmpty(strings.TrimSpace(action.Config["sse_algorithm"]), "AES256")
+	kmsMasterKeyID := strings.TrimSpace(action.Config["kms_master_key_id"])
+	bucketKeyEnabled := configBool(action.Config["bucket_key_enabled"])
+	plan.before = captureBucketEncryptionEvidence(execution)
+
+	disabled, detail := bucketDefaultEncryptionStillDisabled(execution)
+	metadata := plan.metadata(map[string]any{
+		"sse_algorithm":      sseAlgorithm,
+		"kms_master_key_id":  kmsMasterKeyID,
+		"bucket_key_enabled": bucketKeyEnabled,
+	})
+	plan.preconditionCheck = append(plan.preconditionCheck,
+		preconditionResult("resource identifier available", plan.resourceID != "", firstNonEmpty(plan.resourceID, "missing resource identifier")),
+		preconditionResult("provider supported", plan.provider == "aws" && plan.tool != "", firstNonEmpty(plan.provider, "missing provider")),
+		preconditionResult("bucket default encryption still disabled", disabled, detail),
+	)
+
+	metadata["preconditions"] = cloneMapSlice(plan.preconditionCheck)
+	metadata = compactAnyMap(metadata)
+	if !allPreconditionsPassed(plan.preconditionCheck) {
+		return "", metadata, fmt.Errorf("enable bucket default encryption precondition failed")
+	}
+
+	enrichExecutionWithCatalogPlan(execution, plan)
+	if execution.TriggerData == nil {
+		execution.TriggerData = map[string]any{}
+	}
+	execution.TriggerData["sse_algorithm"] = sseAlgorithm
+	if kmsMasterKeyID != "" {
+		execution.TriggerData["kms_master_key_id"] = kmsMasterKeyID
+	}
+	if bucketKeyEnabled {
+		execution.TriggerData["bucket_key_enabled"] = true
+	}
+
+	if plan.dryRun {
+		metadata["after"] = map[string]any{
+			"planned":            true,
+			"change":             "bucket default encryption would be enabled",
+			"sse_algorithm":      sseAlgorithm,
+			"kms_master_key_id":  kmsMasterKeyID,
+			"bucket_key_enabled": bucketKeyEnabled,
+		}
+		return fmt.Sprintf("Dry-run: would invoke %s", plan.tool), compactAnyMap(metadata), nil
+	}
+
+	output, err := ex.executeCatalogRemoteAction(ctx, action, execution, plan)
+	metadata["after"] = catalogAfterState(output, err)
+	if err != nil {
+		return "", compactAnyMap(metadata), err
+	}
+	return firstNonEmpty(strings.TrimSpace(output), fmt.Sprintf("Enabled bucket default encryption using %s", sseAlgorithm)), compactAnyMap(metadata), nil
 }
 
 func (ex *Executor) restrictPublicSecurityGroupIngress(ctx context.Context, action Action, execution *Execution) (string, map[string]any, error) {
@@ -339,6 +399,22 @@ func captureStorageAccessEvidence(execution *Execution) map[string]any {
 	return compactAnyMap(evidence)
 }
 
+func captureBucketEncryptionEvidence(execution *Execution) map[string]any {
+	evidence := map[string]any{
+		"resource_id":          firstNonEmpty(remediationMapValueToString(execution.TriggerData, "entity_id"), remediationMapValueToString(execution.TriggerData, "resource_id")),
+		"resource_name":        remediationMapValueToString(execution.TriggerData, "resource_name"),
+		"resource_type":        remediationMapValueToString(execution.TriggerData, "resource_type"),
+		"resource_platform":    remediationMapValueToString(execution.TriggerData, "resource_platform"),
+		"resource_external_id": remediationMapValueToString(execution.TriggerData, "resource_external_id"),
+		"policy_id":            remediationMapValueToString(execution.TriggerData, "policy_id"),
+	}
+	copyFields(evidence, execution.TriggerData, "encrypted", "default_encryption", "default_encryption_enabled", "encryption_enabled", "server_side_encryption_enabled", "kms_encrypted", "encryption", "sse_algorithm", "encryption_algorithm", "kms_master_key_id", "encryption_key_id", "bucket_key_enabled", "server_side_encryption_configuration", "encryption_configuration")
+	if resource, ok := execution.TriggerData["resource"].(map[string]any); ok && len(resource) > 0 {
+		evidence["resource"] = cloneAnyMap(resource)
+	}
+	return compactAnyMap(evidence)
+}
+
 func captureSecurityGroupIngressEvidence(execution *Execution, matches []map[string]any) map[string]any {
 	evidence := map[string]any{
 		"resource_id":          firstNonEmpty(remediationMapValueToString(execution.TriggerData, "entity_id"), remediationMapValueToString(execution.TriggerData, "resource_id")),
@@ -408,6 +484,66 @@ func publicSecurityGroupIngressMatches(execution *Execution) ([]map[string]any, 
 		return nil, "current security group data does not confirm a matching public ingress rule"
 	}
 	return nil, "no matching public ingress rule found in trigger data"
+}
+
+func bucketDefaultEncryptionStillDisabled(execution *Execution) (bool, string) {
+	if execution == nil {
+		return false, "missing execution context"
+	}
+	data := execution.TriggerData
+	if value, detail, ok := bucketDefaultEncryptionFromValue(data["resource"], "resource payload"); ok {
+		return value, detail
+	}
+	if resource, ok := anyMap(data["resource"]); ok {
+		if value, detail, ok := bucketDefaultEncryptionFromValue(resource["resource_json"], "resource payload resource_json"); ok {
+			return value, detail
+		}
+	}
+	if value, detail, ok := bucketDefaultEncryptionFromValue(data["resource_json"], "trigger data resource_json"); ok {
+		return value, detail
+	}
+	if value, detail, ok := bucketDefaultEncryptionFromValue(data, "trigger data"); ok {
+		return value, detail
+	}
+	if strings.EqualFold(strings.TrimSpace(remediationMapValueToString(data, "policy_id")), "aws-s3-bucket-encryption-enabled") {
+		return true, "current bucket data does not show default encryption enabled"
+	}
+	return false, "current bucket data does not confirm default encryption is disabled"
+}
+
+func bucketDefaultEncryptionFromValue(raw any, source string) (bool, string, bool) {
+	values, ok := anyMap(raw)
+	if !ok {
+		return false, "", false
+	}
+	enabled, known := bucketDefaultEncryptionEnabled(values)
+	if !known {
+		return false, "", false
+	}
+	if enabled {
+		return false, fmt.Sprintf("%s shows default encryption enabled", source), true
+	}
+	return true, fmt.Sprintf("%s does not show default encryption enabled", source), true
+}
+
+func bucketDefaultEncryptionEnabled(values map[string]any) (bool, bool) {
+	if len(values) == 0 {
+		return false, false
+	}
+	if enabled, ok := firstBool(values, "encrypted", "default_encryption", "default_encryption_enabled", "encryption_enabled", "server_side_encryption_enabled", "kms_encrypted"); ok {
+		return enabled, true
+	}
+	for _, key := range []string{"server_side_encryption_configuration", "encryption_configuration"} {
+		if raw, ok := values[key]; ok {
+			return hasStructuredValue(raw), true
+		}
+	}
+	for _, key := range []string{"sse_algorithm", "encryption_algorithm", "kms_master_key_id", "encryption_key_id", "encryption"} {
+		if raw, ok := values[key]; ok {
+			return strings.TrimSpace(stringValue(raw)) != "", true
+		}
+	}
+	return false, false
 }
 
 func securityGroupMatchesFromPermissions(raw any, policyID string) []map[string]any {
@@ -905,5 +1041,23 @@ func configBool(raw string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func hasStructuredValue(raw any) bool {
+	switch typed := raw.(type) {
+	case nil:
+		return false
+	case string:
+		text := strings.TrimSpace(typed)
+		return text != "" && text != "null"
+	case []any:
+		return len(typed) > 0
+	case []map[string]any:
+		return len(typed) > 0
+	case map[string]any:
+		return len(typed) > 0
+	default:
+		return strings.TrimSpace(stringValue(raw)) != ""
 	}
 }

@@ -346,6 +346,207 @@ func TestExecutor_RestrictPublicStorageAccessDoesNotTrustStalePolicyWithoutCurre
 	}
 }
 
+func TestExecutor_EnableBucketDefaultEncryptionDryRunCapturesMetadata(t *testing.T) {
+	engine := NewEngine(testutil.Logger())
+	rule := Rule{
+		ID:      "enable-bucket-default-encryption-dry-run",
+		Name:    "Enable Bucket Default Encryption Dry Run",
+		Enabled: true,
+		Trigger: Trigger{Type: TriggerManual},
+		Actions: []Action{{
+			Type: ActionEnableBucketDefaultEncryption,
+			Config: map[string]string{
+				"dry_run":       "true",
+				"approval_mode": "auto",
+			},
+		}},
+	}
+	if err := engine.AddRule(rule); err != nil {
+		t.Fatalf("add rule: %v", err)
+	}
+
+	executions, err := engine.Evaluate(context.Background(), Event{
+		Type:     TriggerManual,
+		PolicyID: "aws-s3-bucket-encryption-enabled",
+		EntityID: "bucket:audit-logs",
+		Data: map[string]any{
+			"resource_id":       "bucket:audit-logs",
+			"resource_name":     "audit-logs",
+			"resource_type":     "bucket",
+			"resource_platform": "aws",
+			"resource": map[string]any{
+				"default_encryption_enabled": false,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("evaluate: %v", err)
+	}
+	execution := executions[0]
+	executor := NewExecutor(engine, nil, nil, nil, nil)
+
+	if err := executor.Execute(context.Background(), execution); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if execution.Status != ExecutionCompleted {
+		t.Fatalf("status = %s, want %s", execution.Status, ExecutionCompleted)
+	}
+	if len(execution.Actions) != 1 {
+		t.Fatalf("expected one action result, got %d", len(execution.Actions))
+	}
+	metadata := execution.Actions[0].Metadata
+	if dryRun, _ := metadata["dry_run"].(bool); !dryRun {
+		t.Fatalf("expected dry_run metadata, got %#v", metadata)
+	}
+	if requiresApproval, _ := metadata["requires_approval"].(bool); requiresApproval {
+		t.Fatalf("expected dry-run action with approval_mode=auto to report requires_approval=false, got %#v", metadata)
+	}
+	if metadata["planned_tool"] != "aws.s3.put_bucket_encryption" {
+		t.Fatalf("unexpected planned tool metadata: %#v", metadata["planned_tool"])
+	}
+	if metadata["sse_algorithm"] != "AES256" {
+		t.Fatalf("unexpected sse_algorithm metadata: %#v", metadata["sse_algorithm"])
+	}
+	after, _ := metadata["after"].(map[string]any)
+	if planned, _ := after["planned"].(bool); !planned {
+		t.Fatalf("expected planned after-state metadata, got %#v", after)
+	}
+}
+
+func TestExecutor_EnableBucketDefaultEncryptionRequiresApprovalByDefault(t *testing.T) {
+	engine := NewEngine(testutil.Logger())
+	rule := Rule{
+		ID:      "enable-bucket-default-encryption",
+		Name:    "Enable Bucket Default Encryption",
+		Enabled: true,
+		Trigger: Trigger{Type: TriggerManual},
+		Actions: []Action{{
+			Type: ActionEnableBucketDefaultEncryption,
+		}},
+	}
+	if err := engine.AddRule(rule); err != nil {
+		t.Fatalf("add rule: %v", err)
+	}
+
+	executions, err := engine.Evaluate(context.Background(), Event{
+		Type:     TriggerManual,
+		PolicyID: "aws-s3-bucket-encryption-enabled",
+		EntityID: "arn:aws:s3:::audit-logs",
+		Data: map[string]any{
+			"resource_id":       "arn:aws:s3:::audit-logs",
+			"resource_name":     "audit-logs",
+			"resource_type":     "bucket",
+			"resource_platform": "aws",
+			"resource": map[string]any{
+				"default_encryption_enabled": false,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("evaluate: %v", err)
+	}
+	execution := executions[0]
+	caller := &fakeRemoteCaller{
+		responses: map[string][]fakeRemoteCallResult{
+			"aws.s3.put_bucket_encryption": {{output: `{"changed":true}`}},
+		},
+	}
+	executor := NewExecutor(engine, nil, nil, nil, nil)
+	executor.SetRemoteCaller(caller)
+
+	if err := executor.Execute(context.Background(), execution); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if execution.Status != ExecutionApproval {
+		t.Fatalf("status = %s, want %s", execution.Status, ExecutionApproval)
+	}
+	if len(caller.calls) != 0 {
+		t.Fatalf("expected no remote call before approval, got %v", caller.calls)
+	}
+
+	if err := executor.Approve(context.Background(), execution.ID, "security@example.com"); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	if execution.Status != ExecutionCompleted {
+		t.Fatalf("status = %s, want %s", execution.Status, ExecutionCompleted)
+	}
+	if len(caller.calls) != 1 || caller.calls[0] != "aws.s3.put_bucket_encryption" {
+		t.Fatalf("unexpected remote calls: %v", caller.calls)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(caller.payloads[0], &payload); err != nil {
+		t.Fatalf("unmarshal remote payload: %v", err)
+	}
+	triggerData, _ := payload["trigger_data"].(map[string]any)
+	if triggerData["sse_algorithm"] != "AES256" {
+		t.Fatalf("expected default sse_algorithm in trigger data, got %#v", triggerData["sse_algorithm"])
+	}
+}
+
+func TestExecutor_EnableBucketDefaultEncryptionDoesNotTrustStalePolicyWhenResourceJSONShowsEncrypted(t *testing.T) {
+	engine := NewEngine(testutil.Logger())
+	rule := Rule{
+		ID:      "enable-bucket-default-encryption-stale-policy",
+		Name:    "Enable Bucket Default Encryption Stale Policy",
+		Enabled: true,
+		Trigger: Trigger{Type: TriggerManual},
+		Actions: []Action{{
+			Type: ActionEnableBucketDefaultEncryption,
+			Config: map[string]string{
+				"dry_run":       "true",
+				"approval_mode": "auto",
+			},
+		}},
+	}
+	if err := engine.AddRule(rule); err != nil {
+		t.Fatalf("add rule: %v", err)
+	}
+
+	executions, err := engine.Evaluate(context.Background(), Event{
+		Type:     TriggerManual,
+		PolicyID: "aws-s3-bucket-encryption-enabled",
+		EntityID: "bucket:audit-logs",
+		Data: map[string]any{
+			"resource_id":       "bucket:audit-logs",
+			"resource_name":     "audit-logs",
+			"resource_type":     "bucket",
+			"resource_platform": "aws",
+			"resource": map[string]any{
+				"resource_json": map[string]any{
+					"encryption_configuration": map[string]any{
+						"rules": []any{
+							map[string]any{"sse_algorithm": "AES256"},
+						},
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("evaluate: %v", err)
+	}
+	execution := executions[0]
+	executor := NewExecutor(engine, nil, nil, nil, nil)
+
+	err = executor.Execute(context.Background(), execution)
+	if err == nil {
+		t.Fatal("expected precondition failure")
+	}
+	if !strings.Contains(err.Error(), "precondition failed") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if execution.Status != ExecutionFailed {
+		t.Fatalf("status = %s, want %s", execution.Status, ExecutionFailed)
+	}
+	if len(execution.Actions) != 1 || execution.Actions[0].Metadata == nil {
+		t.Fatalf("expected failed action metadata, got %#v", execution.Actions)
+	}
+	preconditions, _ := execution.Actions[0].Metadata["preconditions"].([]map[string]any)
+	if len(preconditions) == 0 {
+		t.Fatalf("expected preconditions metadata, got %#v", execution.Actions[0].Metadata)
+	}
+}
+
 func TestExecutor_RestrictPublicSecurityGroupIngressDryRunCapturesMetadata(t *testing.T) {
 	engine := NewEngine(testutil.Logger())
 	rule := Rule{
