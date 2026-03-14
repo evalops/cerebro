@@ -516,7 +516,7 @@ func terraformStateResourceAddress(stateID string) (string, string) {
 		idx += 2
 	}
 	remaining := parts[idx:]
-	if len(remaining) != 2 {
+	if len(remaining) < 2 {
 		return "", ""
 	}
 	resourceType := strings.TrimSpace(remaining[0])

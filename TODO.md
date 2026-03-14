@@ -24,6 +24,24 @@ Status: executed end-to-end via PR workflow
   - [ ] add the next Terraform-backed safe actions: public security-group ingress restriction and selected encryption defaults beyond S3
   - [ ] use parsed HCL and lineage to anchor generated blocks to existing module files/labels instead of only path-level placement
 
+## Deep Review Cycle 87 - Normalize Terraform Attribute-Path State IDs Back to Managed Resources (2026-03-14)
+
+### Review findings
+- [x] Gap: the Terraform state-address parser only recognized bare managed resource addresses. When `iac_state_id` included an attribute suffix like `.id`, remediation codegen dropped back to literal identifiers and generated weaker patches.
+- [x] Gap: that parser limitation also blocked reuse of existing `aws_s3_bucket_public_access_block` and `aws_s3_bucket_server_side_encryption_configuration` resources when lineage/state data pointed at one of their attributes instead of the bare resource address.
+- [x] Gap: the right behavior is to normalize attribute-path state IDs back to the managed resource address and let the existing bucket/subresource reuse logic operate on that normalized form.
+
+### Execution plan
+- [x] Add TDD coverage for attribute-path `iac_state_id` inputs at the renderer layer:
+  - [x] bucket reference reuse from `aws_s3_bucket.*.id`
+  - [x] public-access-block reuse from `aws_s3_bucket_public_access_block.*.id`
+  - [x] bucket-encryption reuse from `aws_s3_bucket_server_side_encryption_configuration.*.id`
+- [x] Add executor-level regressions so artifact metadata keeps the normalized managed resource address.
+- [x] Normalize `terraformStateResourceAddress` to accept attribute-path state IDs by stripping trailing attribute segments after the managed resource address.
+- [ ] Next Terraform/IaC codegen depth cuts after this slice:
+  - [ ] add the next Terraform-backed safe actions: public security-group ingress restriction and selected encryption defaults beyond S3
+  - [ ] use parsed HCL and lineage to anchor generated blocks to existing module files/labels instead of only path-level placement
+
 ## Deep Review Cycle 85 - Structured Terraform Import and State-Reconciliation Guidance (2026-03-14)
 
 ### Review findings
