@@ -5,8 +5,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -43,23 +41,6 @@ func buildReportGraphSnapshotID(meta Metadata) string {
 	)
 	sum := sha256.Sum256([]byte(payload))
 	return "graph_snapshot:" + hex.EncodeToString(sum[:12])
-}
-
-func writeJSONAtomic(path string, payload any) error {
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return err
-	}
-	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0o600); err != nil { // #nosec G304 -- path is controlled by the local platform operator.
-		_ = os.Remove(tmpPath)
-		return err
-	}
-	return os.Rename(tmpPath, path)
 }
 
 func sanitizeReportFileName(value string) string {
@@ -212,18 +193,7 @@ func matchesPropertyType(value any, expectedType string) bool {
 		default:
 			return false
 		}
-	case "any":
-		return true
 	default:
-		return false
+		return true
 	}
-}
-
-func sliceContainsString(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
 }

@@ -2,8 +2,6 @@ package reports
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 )
@@ -62,13 +60,16 @@ func TestNormalizeNodeMetadataProfileAndTypeMatching(t *testing.T) {
 	if matchesPropertyType("not-a-duration", "duration") {
 		t.Fatal("expected invalid duration string to fail")
 	}
+	if !matchesPropertyType(struct{}{}, "future-schema-token") {
+		t.Fatal("expected unknown schema type token to remain permissive")
+	}
 }
 
 func TestReportUtilityHelpers(t *testing.T) {
 	if got := firstNonEmpty("", "  ", "value", "later"); got != "value" {
 		t.Fatalf("unexpected first non-empty value %q", got)
 	}
-	if !sliceContainsString([]string{"a", "b"}, "b") {
+	if !containsString([]string{"a", "b"}, "b") {
 		t.Fatal("expected slice to contain target")
 	}
 	if got := sanitizeReportFileName(" ../Quarterly Report:prod.json "); got != "Quarterly-Report-prod.json" {
@@ -80,25 +81,5 @@ func TestReportUtilityHelpers(t *testing.T) {
 	}
 	if counts[0].Kind != "<empty>" || counts[0].Count != 3 {
 		t.Fatalf("unexpected leading count: %#v", counts[0])
-	}
-}
-
-func TestWriteJSONAtomicCreatesParentDirectory(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "nested", "report.json")
-	payload := map[string]any{"ok": true, "count": 2}
-	if err := writeJSONAtomic(path, payload); err != nil {
-		t.Fatalf("writeJSONAtomic returned error: %v", err)
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("ReadFile returned error: %v", err)
-	}
-	var decoded map[string]any
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatalf("Unmarshal returned error: %v", err)
-	}
-	if decoded["ok"] != true || decoded["count"] != float64(2) {
-		t.Fatalf("unexpected payload: %#v", decoded)
 	}
 }
