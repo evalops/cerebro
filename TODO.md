@@ -5,6 +5,29 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 82 - Terraform Renderer Registry by Action, Provider, and Resource Family (2026-03-14)
+
+### Review findings
+- [x] Gap: the Terraform codegen path still used a flat action-to-renderer map, which is the wrong seam for multi-provider remediation actions and would force future support into per-renderer guard logic instead of an explicit dispatch model.
+- [x] Gap: that flat map was already hiding a real bug: `enable_bucket_default_encryption` could still emit AWS Terraform for explicit non-AWS input because its direct renderer had no provider guard.
+- [x] Gap: the same flat map was also too trusting of resource shape. A public-storage action with an explicit non-bucket `resource_type` could still fall through to bucket Terraform generation as long as the identifier looked bucket-like.
+
+### Execution plan
+- [x] Replace the flat Terraform renderer map with an explicit registry keyed by:
+  - [x] remediation action
+  - [x] provider
+  - [x] resource family
+- [x] Infer registry lookup context from existing remediation data:
+  - [x] normalize provider from execution context with catalog fallback when the action is single-provider
+  - [x] normalize resource family from `resource_type` with catalog alias fallback when the action is single-family
+- [x] Fail fast with explicit unsupported-context errors:
+  - [x] reject non-AWS Terraform bucket-encryption rendering
+  - [x] reject non-bucket Terraform public-storage rendering even when the identifier looks bucket-like
+- [ ] Next Terraform/IaC codegen depth cuts after this slice:
+  - [ ] use lineage/state/HCL parsing to prefer existing Terraform resource references when available instead of literal identifiers
+  - [ ] emit import-block/state-reconciliation guidance in a structured artifact model once Terraform v1.5+ import surfaces become first-class in generated output
+  - [ ] add the next Terraform-backed safe actions: public security-group ingress restriction and selected encryption defaults beyond S3
+
 ## Deep Review Cycle 81 - Provider-Aware Terraform Delivery Defaults (2026-03-14)
 
 ### Review findings
