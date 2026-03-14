@@ -513,8 +513,11 @@ func securityGroupRuleAllowsPort(protocol string, fromPort, toPort int, hasFrom,
 }
 
 func securityGroupRuleAllowsAllTraffic(protocol string, fromPort, toPort int, hasFrom, hasTo bool) bool {
-	if protocol == "-1" || protocol == "all" || (!hasFrom && !hasTo) {
+	if protocol == "-1" || protocol == "all" {
 		return true
+	}
+	if !hasFrom && !hasTo {
+		return false
 	}
 	if !hasFrom {
 		fromPort = toPort

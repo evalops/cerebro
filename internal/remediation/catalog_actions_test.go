@@ -57,3 +57,21 @@ func TestPublicSecurityGroupIngressMatches_SSHDoesNotMatchUDP(t *testing.T) {
 		t.Fatalf("matches = %#v, want none (detail=%q)", matches, detail)
 	}
 }
+
+func TestPublicSecurityGroupIngressMatches_AllTrafficDoesNotMatchProtocolSpecificRulesWithoutPorts(t *testing.T) {
+	execution := &Execution{
+		TriggerData: map[string]any{
+			"policy_id": "aws-ec2-sg-no-all-traffic-ingress",
+			"direction": "ingress",
+			"protocol":  "icmp",
+			"ip_ranges": []any{
+				map[string]any{"CidrIp": "0.0.0.0/0"},
+			},
+		},
+	}
+
+	matches, detail := publicSecurityGroupIngressMatches(execution)
+	if len(matches) != 0 {
+		t.Fatalf("matches = %#v, want none (detail=%q)", matches, detail)
+	}
+}
