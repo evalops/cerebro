@@ -91,6 +91,11 @@ func (ex *Executor) enableBucketDefaultEncryption(ctx context.Context, action Ac
 	plan.before = captureBucketEncryptionEvidence(execution)
 
 	disabled, detail := bucketDefaultEncryptionStillDisabled(execution)
+	plan.preconditionCheck = append(plan.preconditionCheck,
+		preconditionResult("resource identifier available", plan.resourceID != "", firstNonEmpty(plan.resourceID, "missing resource identifier")),
+		preconditionResult("provider supported", plan.provider == "aws" && (plan.deliveryMode == DeliveryModeTerraform || plan.tool != ""), firstNonEmpty(plan.provider, "missing provider")),
+		preconditionResult("bucket default encryption still disabled", disabled, detail),
+	)
 	metadata := plan.metadata(map[string]any{
 		"sse_algorithm":      sseAlgorithm,
 		"kms_master_key_id":  kmsMasterKeyID,
@@ -99,13 +104,6 @@ func (ex *Executor) enableBucketDefaultEncryption(ctx context.Context, action Ac
 	if !catalogSupportsDeliveryMode(entry, plan.deliveryMode) {
 		return "", compactAnyMap(metadata), fmt.Errorf("delivery mode %q is not supported for %s", plan.deliveryMode, action.Type)
 	}
-	plan.preconditionCheck = append(plan.preconditionCheck,
-		preconditionResult("resource identifier available", plan.resourceID != "", firstNonEmpty(plan.resourceID, "missing resource identifier")),
-		preconditionResult("provider supported", plan.provider == "aws" && (plan.deliveryMode == DeliveryModeTerraform || plan.tool != ""), firstNonEmpty(plan.provider, "missing provider")),
-		preconditionResult("bucket default encryption still disabled", disabled, detail),
-	)
-
-	metadata["preconditions"] = cloneMapSlice(plan.preconditionCheck)
 	metadata = compactAnyMap(metadata)
 	if !allPreconditionsPassed(plan.preconditionCheck) {
 		return "", metadata, fmt.Errorf("enable bucket default encryption precondition failed")
