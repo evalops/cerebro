@@ -36,6 +36,9 @@ Status: executed end-to-end via PR workflow
   - [x] bucket reference reuse from `aws_s3_bucket.*.id`
   - [x] public-access-block reuse from `aws_s3_bucket_public_access_block.*.id`
   - [x] bucket-encryption reuse from `aws_s3_bucket_server_side_encryption_configuration.*.id`
+- [x] Add parser-boundary coverage for `for_each` instance attribute paths so:
+  - [x] bucket references still normalize to `<resource>.id` without `.id.id`
+  - [x] subresource renderers still refuse to reuse invalid `for_each` instance labels as block names
 - [x] Add executor-level regressions so artifact metadata keeps the normalized managed resource address.
 - [x] Normalize `terraformStateResourceAddress` to accept attribute-path state IDs by stripping trailing attribute segments after the managed resource address.
 - [ ] Next Terraform/IaC codegen depth cuts after this slice:
