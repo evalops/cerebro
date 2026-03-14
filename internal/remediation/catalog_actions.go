@@ -490,8 +490,10 @@ func securityGroupPolicyMatchesRule(policyID, protocol string, fromPort, toPort 
 func securityGroupRuleAllowsPort(protocol string, fromPort, toPort int, hasFrom, hasTo bool, targetPort int) bool {
 	switch protocol {
 	case "-1", "all", "":
-		return true
-	case "tcp", "udp":
+		if protocol == "" && !hasFrom && !hasTo {
+			return false
+		}
+	case "tcp":
 	default:
 		return false
 	}
