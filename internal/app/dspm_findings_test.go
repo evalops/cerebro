@@ -178,6 +178,71 @@ func TestScanAndPersistDSPMFindings_EnrichesSecurityGraphNodes(t *testing.T) {
 	}
 }
 
+func TestScanAndPersistDSPMFindings_NameFallbackRequiresScopedUniqueMatch(t *testing.T) {
+	logger := testutil.Logger()
+	fetcher := &stubDSPMFetcher{
+		samples: []dspm.DataSample{
+			{ObjectKey: "sample-1", Data: []byte("customer email jane@example.com and card 4111-1111-1111-1111")},
+		},
+	}
+
+	liveGraph := graph.New()
+	liveGraph.AddNode(&graph.Node{
+		ID:       "bucket:acct-a:shared-bucket",
+		Kind:     graph.NodeKindBucket,
+		Name:     "shared-bucket",
+		Provider: "aws",
+		Account:  "acct-a",
+		Region:   "us-west-2",
+		Properties: map[string]any{
+			"bucket_name": "shared-bucket",
+		},
+	})
+	liveGraph.AddNode(&graph.Node{
+		ID:       "bucket:acct-b:shared-bucket",
+		Kind:     graph.NodeKindBucket,
+		Name:     "shared-bucket",
+		Provider: "aws",
+		Account:  "acct-b",
+		Region:   "us-west-2",
+		Properties: map[string]any{
+			"bucket_name": "shared-bucket",
+		},
+	})
+
+	app := &App{
+		Logger:        logger,
+		Findings:      findings.NewStore(),
+		DSPM:          dspm.NewScanner(fetcher, logger, dspm.DefaultScannerConfig()),
+		SecurityGraph: liveGraph,
+	}
+
+	app.scanAndPersistDSPMFindings(context.Background(), "aws_s3_buckets", []map[string]interface{}{
+		{
+			"_cq_id":          "scan-target-id",
+			"_cq_source_name": "aws",
+			"name":            "shared-bucket",
+			"account_id":      "acct-b",
+			"region":          "us-west-2",
+			"is_public":       true,
+			"is_encrypted":    false,
+		},
+	})
+
+	accountANode, _ := liveGraph.GetNode("bucket:acct-a:shared-bucket")
+	if scanned, _ := accountANode.Properties["dspm_scanned"].(bool); scanned {
+		t.Fatal("expected scoped name fallback to avoid enriching same-name bucket in another account")
+	}
+
+	accountBNode, ok := liveGraph.GetNode("bucket:acct-b:shared-bucket")
+	if !ok || accountBNode == nil {
+		t.Fatal("expected scoped same-name bucket to exist")
+	}
+	if scanned, _ := accountBNode.Properties["dspm_scanned"].(bool); !scanned {
+		t.Fatal("expected scoped name fallback to enrich the uniquely matched bucket")
+	}
+}
+
 type stubDSPMFetcher struct {
 	samples    []dspm.DataSample
 	fetchCalls int
