@@ -79,7 +79,7 @@ func TestAzureFetchWithRetryDelegatesToTableFetch(t *testing.T) {
 			}
 			return []map[string]interface{}{{"_cq_id": "row-1"}}, nil
 		},
-	})
+	}, "sub-123")
 	if err != nil {
 		t.Fatalf("fetchWithRetry returned error: %v", err)
 	}
