@@ -26,8 +26,13 @@ func (a *App) enrichSecurityGraphWithDSPMResult(target *dspm.ScanTarget, result 
 	a.graphUpdateMu.Lock()
 	defer a.graphUpdateMu.Unlock()
 
+	var builderSecurityGraph *graph.Graph
+	if a.SecurityGraphBuilder != nil {
+		builderSecurityGraph = a.SecurityGraphBuilder.Graph()
+	}
+
 	seen := make(map[*graph.Graph]struct{}, 2)
-	for _, g := range []*graph.Graph{a.CurrentSecurityGraph(), builderGraph(a.SecurityGraphBuilder)} {
+	for _, g := range []*graph.Graph{a.CurrentSecurityGraph(), builderSecurityGraph} {
 		if g == nil {
 			continue
 		}
@@ -37,13 +42,6 @@ func (a *App) enrichSecurityGraphWithDSPMResult(target *dspm.ScanTarget, result 
 		seen[g] = struct{}{}
 		applyDSPMPropertiesToGraph(g, nodeIDs, props)
 	}
-}
-
-func builderGraph(builder interface{ Graph() *graph.Graph }) *graph.Graph {
-	if builder == nil {
-		return nil
-	}
-	return builder.Graph()
 }
 
 func applyDSPMPropertiesToGraph(g *graph.Graph, nodeIDs []string, props map[string]any) bool {
