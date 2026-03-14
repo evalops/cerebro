@@ -58,6 +58,29 @@ func TestPublicSecurityGroupIngressMatches_SSHDoesNotMatchUDP(t *testing.T) {
 	}
 }
 
+func TestPublicSecurityGroupIngressMatches_SSHMatchesAllTrafficRule(t *testing.T) {
+	execution := &Execution{
+		TriggerData: map[string]any{
+			"policy_id": "aws-security-group-restrict-ssh",
+			"direction": "ingress",
+			"protocol":  "-1",
+			"from_port": -1,
+			"to_port":   -1,
+			"ip_ranges": []any{
+				map[string]any{"CidrIp": "0.0.0.0/0"},
+			},
+		},
+	}
+
+	matches, detail := publicSecurityGroupIngressMatches(execution)
+	if len(matches) != 1 {
+		t.Fatalf("matches = %#v, want one match (detail=%q)", matches, detail)
+	}
+	if matches[0]["port_label"] != "all" {
+		t.Fatalf("unexpected match payload: %#v", matches[0])
+	}
+}
+
 func TestPublicSecurityGroupIngressMatches_AllTrafficDoesNotMatchProtocolSpecificRulesWithoutPorts(t *testing.T) {
 	execution := &Execution{
 		TriggerData: map[string]any{
