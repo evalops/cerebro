@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -403,9 +404,51 @@ func (s *Server) riskSummary(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) frameworkComplianceReport(w http.ResponseWriter, r *http.Request) {
 	framework := chi.URLParam(r, "framework")
-	reporter := findings.NewComplianceReporter(s.findingsStoreForRequest(r.Context()), s.app.Policy)
-	report := reporter.GenerateFrameworkReport(framework)
-	s.json(w, http.StatusOK, report)
+	definition := compliance.GetFramework(framework)
+	if definition == nil {
+		reporter := findings.NewComplianceReporter(s.findingsStoreForRequest(r.Context()), s.app.Policy)
+		report := reporter.GenerateFrameworkReport(framework)
+		s.json(w, http.StatusOK, report)
+		return
+	}
+
+	report := s.evaluateComplianceFramework(r.Context(), definition)
+	legacy := map[string]interface{}{
+		"framework":             definition.Name,
+		"total_controls":        report.Summary.TotalControls,
+		"assessed_controls":     report.Summary.TotalControls - report.Summary.NotApplicableControls,
+		"passing_controls":      report.Summary.PassingControls,
+		"failing_controls":      report.Summary.FailingControls + report.Summary.PartialControls,
+		"not_assessed_controls": report.Summary.NotApplicableControls,
+		"coverage_percent":      report.Summary.ComplianceScore,
+		"compliance_percent":    report.Summary.ComplianceScore,
+		"control_status":        make(map[string]map[string]interface{}, len(report.Controls)),
+		"findings_by_control":   make(map[string][]string, len(report.Controls)),
+	}
+	for _, ctrl := range report.Controls {
+		status := "NOT_ASSESSED"
+		switch ctrl.Status {
+		case compliance.ControlStatePassing:
+			status = "PASS"
+		case compliance.ControlStateFailing, compliance.ControlStatePartial:
+			status = "FAIL"
+		}
+		legacy["control_status"].(map[string]map[string]interface{})[ctrl.ControlID] = map[string]interface{}{
+			"control_id":   ctrl.ControlID,
+			"control_name": ctrl.Title,
+			"status":       status,
+			"findings":     ctrl.FailCount,
+			"policy_ids":   ctrl.PolicyIDs,
+		}
+		findingsByControl := make([]string, 0)
+		for _, item := range ctrl.Evidence {
+			if item.PolicyID != "" && item.Status == compliance.ControlStateFailing {
+				findingsByControl = append(findingsByControl, item.PolicyID)
+			}
+		}
+		legacy["findings_by_control"].(map[string][]string)[ctrl.ControlID] = findingsByControl
+	}
+	s.json(w, http.StatusOK, legacy)
 }
 
 // Compliance endpoints
@@ -432,106 +475,19 @@ func (s *Server) generateComplianceReport(w http.ResponseWriter, r *http.Request
 		s.error(w, http.StatusNotFound, "framework not found")
 		return
 	}
-
-	// Generate report based on current findings
-	store := s.findingsStoreForRequest(r.Context())
-	openFindingsByPolicy := s.openFindingsByPolicy(store)
-
-	report := compliance.ComplianceReport{
-		FrameworkID:   framework.ID,
-		FrameworkName: framework.Name,
-		GeneratedAt:   time.Now().UTC().Format(time.RFC3339),
-		Summary: compliance.ComplianceSummary{
-			TotalControls: len(framework.Controls),
-		},
-		Controls: make([]compliance.ControlStatus, len(framework.Controls)),
-	}
-
-	// Build evidence map for failing controls
-	type Evidence struct {
-		Resource   string `json:"resource"`
-		FindingID  string `json:"finding_id"`
-		Severity   string `json:"severity"`
-		DetectedAt string `json:"detected_at"`
-	}
-	controlEvidence := make(map[string][]Evidence)
-
-	passing := 0
+	report := compliance.RedactReportEvidence(s.evaluateComplianceFramework(r.Context(), framework))
 	totalFindings := 0
-	for i, ctrl := range framework.Controls {
-		// Count findings for this control and gather evidence
-		failCount := 0
-		var evidence []Evidence
-		for _, policyID := range ctrl.PolicyIDs {
-			if count, ok := openFindingsByPolicy[policyID]; ok {
-				failCount += count
-			}
-			// Get sample findings for evidence (limit to 5 per policy)
-			policyFindings := store.List(findings.FindingFilter{PolicyID: policyID, Status: "open"})
-			for j, f := range policyFindings {
-				if j >= 5 {
-					break
-				}
-				resourceName := f.ResourceID
-				if resourceName == "" {
-					if arn, ok := f.Resource["arn"].(string); ok {
-						resourceName = arn
-					} else if name, ok := f.Resource["name"].(string); ok {
-						resourceName = name
-					}
-				}
-				evidence = append(evidence, Evidence{
-					Resource:   resourceName,
-					FindingID:  f.ID,
-					Severity:   f.Severity,
-					DetectedAt: f.FirstSeen.Format(time.RFC3339),
-				})
-			}
-		}
-		totalFindings += failCount
-
-		status := "passing"
-		if failCount > 0 {
-			status = "failing"
-			if len(evidence) > 10 {
-				evidence = evidence[:10] // Limit evidence per control
-			}
-			controlEvidence[ctrl.ID] = evidence
-		} else {
-			passing++
-		}
-
-		report.Controls[i] = compliance.ControlStatus{
-			ControlID: ctrl.ID,
-			Status:    status,
-			FailCount: failCount,
-		}
-	}
-
-	report.Summary.PassingControls = passing
-	report.Summary.FailingControls = len(framework.Controls) - passing
-	if len(framework.Controls) > 0 {
-		report.Summary.ComplianceScore = float64(passing) / float64(len(framework.Controls)) * 100
-	}
-
-	// Calculate weighted score based on control severity
-	failingControlIDs := make(map[string]bool)
+	controlEvidence := make(map[string][]compliance.ControlEvidence)
 	for _, ctrl := range report.Controls {
-		if ctrl.Status == "failing" {
-			failingControlIDs[ctrl.ControlID] = true
+		totalFindings += ctrl.FailCount
+		if len(ctrl.Evidence) > 0 {
+			controlEvidence[ctrl.ControlID] = ctrl.Evidence
 		}
 	}
-	report.Summary.WeightedScore, _, _ = compliance.CalculateWeightedScore(framework.Controls, failingControlIDs)
-
-	// Return enhanced response with evidence
-	var dataWarning string
 	response := map[string]interface{}{
 		"report":         report,
 		"total_findings": totalFindings,
 		"evidence":       controlEvidence,
-	}
-	if dataWarning != "" {
-		response["data_warning"] = dataWarning
 	}
 
 	s.json(w, http.StatusOK, response)
@@ -546,9 +502,6 @@ func (s *Server) preAuditCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store := s.findingsStoreForRequest(r.Context())
-	openFindingsByPolicy := s.openFindingsByPolicy(store)
-
 	type ControlCheck struct {
 		ControlID   string   `json:"control_id"`
 		Title       string   `json:"title"`
@@ -559,65 +512,83 @@ func (s *Server) preAuditCheck(w http.ResponseWriter, r *http.Request) {
 	}
 
 	checks := make([]ControlCheck, 0, len(framework.Controls))
-	passing, failing, atRisk := 0, 0, 0
 
-	for _, ctrl := range framework.Controls {
+	report := s.evaluateComplianceFramework(r.Context(), framework)
+	for _, ctrl := range report.Controls {
 		check := ControlCheck{
-			ControlID: ctrl.ID,
+			ControlID: ctrl.ControlID,
 			Title:     ctrl.Title,
 			Status:    "passing",
 		}
-
-		for _, policyID := range ctrl.PolicyIDs {
-			if count, ok := openFindingsByPolicy[policyID]; ok && count > 0 {
-				check.Status = "failing"
-				check.Issues = append(check.Issues, fmt.Sprintf("%d findings for policy %s", count, policyID))
-				check.Findings = append(check.Findings, policyID)
+		switch ctrl.Status {
+		case compliance.ControlStateFailing:
+			check.Status = "failing"
+		case compliance.ControlStatePartial, compliance.ControlStateUnknown:
+			check.Status = "at_risk"
+		case compliance.ControlStateNotApplicable:
+			check.Status = "passing"
+		}
+		for _, item := range ctrl.Evidence {
+			if item.Status == compliance.ControlStatePassing {
+				continue
+			}
+			if item.Reason != "" {
+				check.Issues = append(check.Issues, item.Reason)
+			}
+			if item.PolicyID != "" {
+				check.Findings = append(check.Findings, item.PolicyID)
 			}
 		}
 
-		switch check.Status {
-		case "passing":
-			passing++
-		case "failing":
-			failing++
+		switch ctrl.Status {
+		case compliance.ControlStateFailing:
 			check.Remediation = "Review and remediate findings before audit"
-		case "at_risk":
-			atRisk++
+		case compliance.ControlStatePartial, compliance.ControlStateUnknown:
+			check.Remediation = "Collect missing evidence or close ambiguous control gaps before audit"
 		}
 
 		checks = append(checks, check)
 	}
+
+	passing, failing, atRisk, notApplicable, assessedControls, score := preAuditMetrics(report)
 
 	// Determine estimated outcome
 	outcome := "PASS"
 	if failing > 0 {
 		outcome = fmt.Sprintf("PASS WITH %d EXCEPTIONS", failing)
 	}
-	if len(framework.Controls) > 0 && float64(failing)/float64(len(framework.Controls)) > 0.2 {
+	if assessedControls > 0 && float64(failing)/float64(assessedControls) > 0.2 {
 		outcome = "AT RISK - RECOMMEND POSTPONING"
-	}
-
-	score := 0.0
-	if len(framework.Controls) > 0 {
-		score = float64(passing) / float64(len(framework.Controls)) * 100
 	}
 
 	s.json(w, http.StatusOK, map[string]interface{}{
 		"framework_id":      framework.ID,
 		"framework_name":    framework.Name,
-		"generated_at":      time.Now().UTC().Format(time.RFC3339),
+		"generated_at":      report.GeneratedAt,
 		"estimated_outcome": outcome,
 		"summary": map[string]interface{}{
-			"total_controls":   len(framework.Controls),
+			"total_controls":   report.Summary.TotalControls,
 			"passing":          passing,
 			"failing":          failing,
 			"at_risk":          atRisk,
+			"not_applicable":   notApplicable,
 			"compliance_score": fmt.Sprintf("%.1f%%", score),
 		},
 		"controls":        checks,
-		"recommendations": s.generateAuditRecommendations(failing, atRisk, len(framework.Controls)),
+		"recommendations": s.generateAuditRecommendations(failing, atRisk, assessedControls),
 	})
+}
+
+func preAuditMetrics(report compliance.ComplianceReport) (passing, failing, atRisk, notApplicable, assessedControls int, score float64) {
+	passing = report.Summary.PassingControls
+	failing = report.Summary.FailingControls
+	atRisk = report.Summary.PartialControls
+	notApplicable = report.Summary.NotApplicableControls
+	assessedControls = report.Summary.TotalControls - notApplicable
+	if assessedControls > 0 {
+		score = float64(passing) / float64(assessedControls) * 100
+	}
+	return passing, failing, atRisk, notApplicable, assessedControls, score
 }
 
 func (s *Server) generateAuditRecommendations(failing, atRisk, total int) []string {
@@ -661,7 +632,11 @@ func (s *Server) exportAuditPackage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	generatedAt := time.Now().UTC()
-	pkg := compliance.BuildAuditPackage(framework, s.openFindingsByPolicy(s.findingsStoreForRequest(r.Context())), generatedAt)
+	report := s.evaluateComplianceFramework(r.Context(), framework)
+	if report.GeneratedAt == "" {
+		report.GeneratedAt = generatedAt.Format(time.RFC3339)
+	}
+	pkg := compliance.BuildAuditPackageFromReport(framework, compliance.RedactReportEvidence(report))
 
 	zipBytes, err := compliance.RenderAuditPackageZIP(pkg)
 	if err != nil {
@@ -680,4 +655,11 @@ func (s *Server) exportAuditPackage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	metrics.RecordComplianceExport(true)
+}
+
+func (s *Server) evaluateComplianceFramework(ctx context.Context, framework *compliance.Framework) compliance.ComplianceReport {
+	return compliance.EvaluateFramework(s.currentTenantSecurityGraph(ctx), framework, compliance.EvaluationOptions{
+		GeneratedAt:          time.Now().UTC(),
+		OpenFindingsByPolicy: s.openFindingsByPolicy(s.findingsStoreForRequest(ctx)),
+	})
 }

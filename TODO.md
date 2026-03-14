@@ -5,6 +5,49 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 78 - Graph-Derived Compliance Control Evaluation (2026-03-13)
+
+### Review findings
+- [x] Gap: issue `#252` was still compliance-by-findings, even though the graph already held the stronger substrate for many control questions: bucket encryption, public exposure, logging, versioning, sensitive-data posture, database exposure, and parts of GCP IAM.
+- [x] Gap: leaving compliance on the findings path created a split-brain model: the graph could answer the control question, but exports and pre-audit checks still only knew how to count policy violations.
+- [x] Gap: the right first cut is graph-first with explicit fallback, not a fake “all controls are graph-native now” rewrite. Unsupported controls should stay visible as findings-backed until the graph substrate actually earns the migration.
+- [x] Gap: upstream graph/security platforms converge on the same lesson:
+  - [x] `cartography-cncf/cartography` gets leverage when inventory relationships become reusable compliance evidence instead of remaining isolated snapshots.
+  - [x] `cloudquery/cloudquery` reinforces that control logic becomes composable when it runs over normalized resource state rather than one-off scan outputs.
+  - [x] `stackrox/stackrox` and similar posture systems keep the strongest checks close to the resource graph and use exported evidence as a downstream view, not the source of truth.
+
+### Execution plan
+- [x] Add a typed graph-backed compliance evaluator:
+  - [x] evaluate per-control status as `passing|failing|partial|not_applicable|unknown`
+  - [x] attach structured evidence entities, policy IDs, reasons, and evaluation source
+  - [x] cache entity materialization per provider/kind slice instead of embedding logic in API handlers
+- [x] Support the first graph-native control tranche:
+  - [x] AWS S3 encryption, public access, policy public exposure, logging, and versioning
+  - [x] AWS RDS encryption and public exposure
+  - [x] DSPM sensitive-data public/unencrypted posture
+  - [x] GCP service-account admin privilege, key rotation, and user-managed-key minimization
+  - [x] GCP storage public-access checks
+- [x] Keep findings fallback explicit where graph support is not yet real:
+  - [x] unsupported policies remain findings-backed
+  - [x] mixed controls are labeled `hybrid` when graph + fallback are both involved
+- [x] Rewire existing compliance surfaces onto the evaluator:
+  - [x] `/api/v1/compliance/frameworks/{id}/report`
+  - [x] `/api/v1/compliance/frameworks/{id}/pre-audit`
+  - [x] `/api/v1/compliance/frameworks/{id}/export`
+  - [x] legacy `/api/v1/reports/compliance/{framework}` compatibility view
+- [x] Tighten exported evidence:
+  - [x] carry control evidence into audit-package ZIP exports
+  - [x] preserve evaluation source and last-evaluated timestamps
+- [x] Add regression coverage:
+  - [x] mixed graph + findings-fallback control evaluation
+  - [x] DSPM + GCP graph-backed control evaluation
+  - [x] API test proving compliance report/export can fail from graph state without findings
+- [ ] Next compliance depth cuts after this slice:
+  - [ ] persist control-evaluation history on graph rebuilds instead of evaluating only at request time
+  - [ ] add control-detail and history endpoints (`/status`, `/controls/{id}`, `/history`)
+  - [ ] emit control-status-change events for alert routing and report drift
+  - [ ] replace remaining findings fallbacks by deepening graph coverage for IAM MFA, CloudTrail/Config, flow logs, and Cloud SQL/Secrets posture
+
 ## Deep Review Cycle 77 - Autonomous Credential Exposure Workflow Demo (2026-03-13)
 
 ### Review findings
