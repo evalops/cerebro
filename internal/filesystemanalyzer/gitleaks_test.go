@@ -124,6 +124,12 @@ func TestParseGitleaksReportRejectsTooManyFindings(t *testing.T) {
 	}
 }
 
+func TestNormalizeGitleaksRuleIDCanonicalizesNPMTokens(t *testing.T) {
+	if got := normalizeGitleaksRuleID("npm-access-token"); got != "npm_token" {
+		t.Fatalf("expected npm token canonicalization, got %q", got)
+	}
+}
+
 func writeSecretScannerExecutable(t *testing.T, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "gitleaks")

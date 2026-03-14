@@ -198,6 +198,8 @@ func normalizeGitleaksRuleID(ruleID string) string {
 		return "github_token"
 	case strings.Contains(candidate, "gitlab"):
 		return "gitlab_token"
+	case strings.Contains(candidate, "npm"):
+		return "npm_token"
 	case strings.Contains(candidate, "slack"):
 		return "slack_token"
 	case strings.Contains(candidate, "stripe"):
