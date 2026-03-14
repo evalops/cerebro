@@ -129,10 +129,6 @@ func (b *Builder) loadAWSPublicSecurityGroupRules(ctx context.Context) (map[stri
 	observed := make(map[string]struct{})
 
 	for _, row := range rows.Rows {
-		if !strings.EqualFold(queryRowString(row, "direction"), "ingress") {
-			continue
-		}
-
 		accountID := queryRowString(row, "account_id")
 		region := queryRowString(row, "region")
 		securityGroupID := queryRowString(row, "security_group_id")
@@ -142,6 +138,10 @@ func (b *Builder) loadAWSPublicSecurityGroupRules(ctx context.Context) (map[stri
 
 		sgARN := awsSecurityGroupARN(region, accountID, securityGroupID)
 		observed[sgARN] = struct{}{}
+
+		if !strings.EqualFold(queryRowString(row, "direction"), "ingress") {
+			continue
+		}
 
 		cidr, ok := awsPublicCIDR(queryRow(row, "ip_ranges"), "CidrIp", "cidr_ip", "cidr")
 		if !ok {
