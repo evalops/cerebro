@@ -470,6 +470,7 @@ func (r *Runner) processVolume(ctx context.Context, provider Provider, req ScanR
 		volume.Inspection = inspection
 		volume.UpdatedAt = r.now().UTC()
 	}, "inspection volume ready", map[string]any{"inspection_volume_id": inspection.ID})
+	finishAttachObservation := startStageObservation(req.Target.Provider, RunStageAttach, true)
 	attachmentSlot := idx
 	releaseAttachmentSlot := func() {}
 	if attachmentSlots != nil {
@@ -479,11 +480,11 @@ func (r *Runner) processVolume(ctx context.Context, provider Provider, req ScanR
 				attachmentSlots <- attachmentSlot
 			}
 		case <-ctx.Done():
+			finishAttachObservation(RunStatusFailed)
 			return r.failVolume(ctx, run, idx, runMu, RunStageAttach, ctx.Err())
 		}
 	}
 	defer releaseAttachmentSlot()
-	finishAttachObservation := startStageObservation(req.Target.Provider, RunStageAttach, true)
 	attachment, _, err := scanner.WithRetryValue(ctx, r.retry, func() (*VolumeAttachment, error) {
 		return provider.AttachInspectionVolume(ctx, req.Target, req.ScannerHost, *inspection, attachmentSlot)
 	})
