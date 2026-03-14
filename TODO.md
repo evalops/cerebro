@@ -5,6 +5,66 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 86 - Reuse Existing Terraform Subresource Addresses for Bucket Remediations (2026-03-14)
+
+### Review findings
+- [x] Gap: even after reusing existing bucket resource references, generated Terraform still minted new subresource labels for bucket remediations when `iac_state_id` already pointed at an existing `aws_s3_bucket_public_access_block` or `aws_s3_bucket_server_side_encryption_configuration`.
+- [x] Gap: that creates duplicate Terraform resources and weakens the new state-reconciliation contract because the artifact no longer lines up with the resource Terraform is already managing.
+- [x] Gap: `for_each` instances need an explicit boundary here. Reusing exact addresses is correct for plain managed resources, but blindly turning instance addresses like `resource.name["key"]` into block labels would generate invalid HCL.
+
+### Execution plan
+- [x] Reuse existing Terraform-managed subresource addresses when `iac_state_id` points directly at:
+  - [x] `aws_s3_bucket_public_access_block.*`
+  - [x] `aws_s3_bucket_server_side_encryption_configuration.*`
+- [x] Keep generated fallback names for cases that cannot be represented as a single resource block:
+  - [x] `for_each` instance addresses
+  - [x] unrelated resource types
+- [x] Add TDD coverage at both renderer and executor metadata layers.
+- [ ] Next Terraform/IaC codegen depth cuts after this slice:
+  - [ ] add the next Terraform-backed safe actions: public security-group ingress restriction and selected encryption defaults beyond S3
+  - [ ] use parsed HCL and lineage to anchor generated blocks to existing module files/labels instead of only path-level placement
+
+## Deep Review Cycle 87 - Normalize Terraform Attribute-Path State IDs Back to Managed Resources (2026-03-14)
+
+### Review findings
+- [x] Gap: the Terraform state-address parser only recognized bare managed resource addresses. When `iac_state_id` included an attribute suffix like `.id`, remediation codegen dropped back to literal identifiers and generated weaker patches.
+- [x] Gap: that parser limitation also blocked reuse of existing `aws_s3_bucket_public_access_block` and `aws_s3_bucket_server_side_encryption_configuration` resources when lineage/state data pointed at one of their attributes instead of the bare resource address.
+- [x] Gap: the right behavior is to normalize attribute-path state IDs back to the managed resource address and let the existing bucket/subresource reuse logic operate on that normalized form.
+
+### Execution plan
+- [x] Add TDD coverage for attribute-path `iac_state_id` inputs at the renderer layer:
+  - [x] bucket reference reuse from `aws_s3_bucket.*.id`
+  - [x] public-access-block reuse from `aws_s3_bucket_public_access_block.*.id`
+  - [x] bucket-encryption reuse from `aws_s3_bucket_server_side_encryption_configuration.*.id`
+- [x] Add parser-boundary coverage for `for_each` instance attribute paths so:
+  - [x] bucket references still normalize to `<resource>.id` without `.id.id`
+  - [x] subresource renderers still refuse to reuse invalid `for_each` instance labels as block names
+- [x] Add executor-level regressions so artifact metadata keeps the normalized managed resource address.
+- [x] Normalize `terraformStateResourceAddress` to accept attribute-path state IDs by stripping trailing attribute segments after the managed resource address.
+- [ ] Next Terraform/IaC codegen depth cuts after this slice:
+  - [ ] add the next Terraform-backed safe actions: public security-group ingress restriction and selected encryption defaults beyond S3
+  - [ ] use parsed HCL and lineage to anchor generated blocks to existing module files/labels instead of only path-level placement
+
+## Deep Review Cycle 85 - Structured Terraform Import and State-Reconciliation Guidance (2026-03-14)
+
+### Review findings
+- [x] Gap: the Terraform remediation artifacts still exposed import/state handling mostly as freeform notes plus `resource_address` and `import_id`, which is weak for downstream automation and UI rendering.
+- [x] Gap: now that Terraform resource selection is state-aware, the next practical step is not another renderer template. It is a structured artifact model that tells operators exactly how to reconcile generated HCL with Terraform state.
+- [x] Gap: upstream reverse-Terraform tools reinforce that shape:
+  - [x] `GoogleCloudPlatform/terraformer` keeps import identity, output paths, and plan-time behavior explicit rather than burying state handling in prose.
+  - [x] `cycloidio/terracognita` similarly treats generated Terraform and Terraform state/import semantics as first-class output, not just side comments.
+
+### Execution plan
+- [x] Extend `TerraformArtifact` with structured state-reconciliation metadata.
+- [x] Emit machine-readable Terraform commands for:
+  - [x] `terraform state show`
+  - [x] `terraform import`
+  - [x] `terraform plan`
+- [x] Emit Terraform v1.5-style import-block HCL as structured artifact data instead of only freeform notes.
+- [ ] Next Terraform/IaC codegen depth cuts after this slice:
+  - [ ] add the next Terraform-backed safe actions: public security-group ingress restriction and selected encryption defaults beyond S3
+  - [ ] use parsed HCL and lineage to anchor generated blocks to existing module files/labels instead of only path-level placement
+
 ## Deep Review Cycle 84 - Preserve Terraform `for_each` State Addresses in Remediation Codegen (2026-03-14)
 
 ### Review findings
