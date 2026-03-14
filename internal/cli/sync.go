@@ -54,61 +54,64 @@ Examples:
 }
 
 var (
-	syncScanAfter          bool
-	syncPreflightOnly      bool
-	syncStrictExit         bool
-	syncGCP                bool
-	syncGCPProject         string
-	syncGCPProjects        string // comma-separated list of projects
-	syncScope              string
-	syncProjectsFile       string
-	syncProjectInclude     string
-	syncProjectExclude     string
-	syncGCPOrg             string // organization ID for multi-project sync
-	syncGCPProjectTimeout  string
-	syncMultiRegion        bool
-	syncRegion             string
-	syncUseAssetAPI        bool   // use Cloud Asset Inventory API
-	syncSecurity           bool   // sync security data (vulnerabilities, SCC findings)
-	syncK8s                bool   // sync Kubernetes resources
-	syncK8sKubeconfig      string // kubeconfig path
-	syncK8sContext         string // kubeconfig context
-	syncK8sNamespace       string // namespace to sync
-	syncAzure              bool   // sync Azure resources
-	syncAzureSubscription  string // Azure subscription ID
-	syncConcurrency        int
-	syncTable              string
-	syncOutput             string
-	syncReportFile         string
-	syncValidate           bool
-	syncAuthMode           string
-	syncShowAuthChain      bool
-	syncGCPCredentialsFile string
-	syncGCPImpersonateSA   string
-	syncGCPImpersonateDel  string
-	syncGCPImpersonateTTL  string
-	syncAWSProfile         string
-	syncAWSProfiles        string // comma-separated AWS SSO profiles
-	syncAWSConfigFile      string
-	syncAWSSharedCredsFile string
-	syncAWSCredentialProc  string
-	syncAWSWebIDTokenFile  string
-	syncAWSWebIDRoleARN    string
-	syncAWSRoleARN         string
-	syncAWSRoleSession     string
-	syncAWSRoleExternalID  string
-	syncAWSRoleMFASerial   string
-	syncAWSRoleMFAToken    string
-	syncAWSRoleSourceID    string
-	syncAWSRoleDuration    string
-	syncAWSRoleTags        string
-	syncAWSRoleTransitive  string
-	syncAWSOrg             bool
-	syncAWSOrgRole         string
-	syncAWSOrgInclude      string
-	syncAWSOrgExclude      string
-	syncAWSOrgConcurrency  int
-	syncBackfillBatchSize  int
+	syncScanAfter           bool
+	syncPreflightOnly       bool
+	syncStrictExit          bool
+	syncGCP                 bool
+	syncGCPProject          string
+	syncGCPProjects         string // comma-separated list of projects
+	syncScope               string
+	syncProjectsFile        string
+	syncProjectInclude      string
+	syncProjectExclude      string
+	syncGCPOrg              string // organization ID for multi-project sync
+	syncGCPProjectTimeout   string
+	syncMultiRegion         bool
+	syncRegion              string
+	syncUseAssetAPI         bool   // use Cloud Asset Inventory API
+	syncSecurity            bool   // sync security data (vulnerabilities, SCC findings)
+	syncK8s                 bool   // sync Kubernetes resources
+	syncK8sKubeconfig       string // kubeconfig path
+	syncK8sContext          string // kubeconfig context
+	syncK8sNamespace        string // namespace to sync
+	syncAzure               bool   // sync Azure resources
+	syncAzureSubscription   string // Azure subscription ID
+	syncAzureSubscriptions  string // comma-separated Azure subscription IDs
+	syncAzureMgmtGroup      string // Azure management group ID
+	syncAzureSubConcurrency int
+	syncConcurrency         int
+	syncTable               string
+	syncOutput              string
+	syncReportFile          string
+	syncValidate            bool
+	syncAuthMode            string
+	syncShowAuthChain       bool
+	syncGCPCredentialsFile  string
+	syncGCPImpersonateSA    string
+	syncGCPImpersonateDel   string
+	syncGCPImpersonateTTL   string
+	syncAWSProfile          string
+	syncAWSProfiles         string // comma-separated AWS SSO profiles
+	syncAWSConfigFile       string
+	syncAWSSharedCredsFile  string
+	syncAWSCredentialProc   string
+	syncAWSWebIDTokenFile   string
+	syncAWSWebIDRoleARN     string
+	syncAWSRoleARN          string
+	syncAWSRoleSession      string
+	syncAWSRoleExternalID   string
+	syncAWSRoleMFASerial    string
+	syncAWSRoleMFAToken     string
+	syncAWSRoleSourceID     string
+	syncAWSRoleDuration     string
+	syncAWSRoleTags         string
+	syncAWSRoleTransitive   string
+	syncAWSOrg              bool
+	syncAWSOrgRole          string
+	syncAWSOrgInclude       string
+	syncAWSOrgExclude       string
+	syncAWSOrgConcurrency   int
+	syncBackfillBatchSize   int
 )
 
 const (
@@ -141,7 +144,10 @@ func init() {
 	syncCmd.Flags().StringVar(&syncK8sContext, "kube-context", "", "Kubernetes context name")
 	syncCmd.Flags().StringVar(&syncK8sNamespace, "k8s-namespace", "", "Kubernetes namespace to sync (defaults to all)")
 	syncCmd.Flags().BoolVar(&syncAzure, "azure", false, "Sync Azure resources")
-	syncCmd.Flags().StringVar(&syncAzureSubscription, "azure-subscription", "", "Azure subscription ID (optional, will auto-discover if not set)")
+	syncCmd.Flags().StringVar(&syncAzureSubscription, "azure-subscription", "", "Azure subscription ID")
+	syncCmd.Flags().StringVar(&syncAzureSubscriptions, "azure-subscriptions", "", "Comma-separated Azure subscription IDs")
+	syncCmd.Flags().StringVar(&syncAzureMgmtGroup, "azure-management-group", "", "Azure management group ID for recursive subscription discovery")
+	syncCmd.Flags().IntVar(&syncAzureSubConcurrency, "azure-subscription-concurrency", 4, "Max concurrent Azure subscription syncs when multiple subscriptions are selected")
 	syncCmd.Flags().IntVar(&syncConcurrency, "concurrency", 20, "Max concurrent table syncs for native engines")
 	syncCmd.Flags().StringVar(&syncTable, "table", "", "Sync only specific table(s), comma-separated (e.g., aws_iam_accounts)")
 	syncCmd.Flags().StringVarP(&syncOutput, "output", "o", "table", "Output format (table, json)")
