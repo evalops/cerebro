@@ -37,7 +37,7 @@ func TestEngine_ListRules(t *testing.T) {
 		"s3-public-notify",
 		"s3-public-restrict",
 		"s3-encryption-notify",
-		"s3-encryption-enable",
+		"s3-encryption-terraform",
 		"gcs-public-notify",
 		"gcs-public-restrict",
 		"gcs-public-principal-notify",
@@ -86,15 +86,15 @@ func TestEngine_DefaultSafeCatalogRulesIncludeApprovalGatedActions(t *testing.T)
 		t.Fatalf("expected dedicated restrict action rule, got %+v", s3RestrictRule.Actions)
 	}
 
-	s3EncryptionRule, ok := engine.GetRule("s3-encryption-enable")
+	s3EncryptionRule, ok := engine.GetRule("s3-encryption-terraform")
 	if !ok {
-		t.Fatal("expected s3-encryption-enable rule")
+		t.Fatal("expected s3-encryption-terraform rule")
 	}
 	if len(s3EncryptionRule.Actions) != 1 || s3EncryptionRule.Actions[0].Type != ActionEnableBucketDefaultEncryption {
 		t.Fatalf("expected dedicated encryption action rule, got %+v", s3EncryptionRule.Actions)
 	}
-	if s3EncryptionRule.Actions[0].Config["approval_mode"] != "required" {
-		t.Fatalf("expected bucket encryption rule to require approval, got %#v", s3EncryptionRule.Actions[0].Config)
+	if s3EncryptionRule.Actions[0].Config["delivery_mode"] != "terraform" {
+		t.Fatalf("expected bucket encryption rule to default to terraform delivery, got %#v", s3EncryptionRule.Actions[0].Config)
 	}
 
 	keyRule, ok := engine.GetRule("aws-unused-access-key-disable")
@@ -167,13 +167,13 @@ func TestEngine_ApprovalCatalogRulesDoNotBlockNotificationRules(t *testing.T) {
 		t.Fatal("expected s3-encryption-notify playbook not to require approval")
 	}
 
-	enableEncryptionRule, ok := engine.GetRule("s3-encryption-enable")
+	enableEncryptionRule, ok := engine.GetRule("s3-encryption-terraform")
 	if !ok {
-		t.Fatal("expected s3-encryption-enable rule")
+		t.Fatal("expected s3-encryption-terraform rule")
 	}
 	enableEncryptionPlaybook := remediationPlaybookFromRule(*enableEncryptionRule, executor)
-	if !executor.shared.RequiresApproval(enableEncryptionPlaybook) {
-		t.Fatal("expected s3-encryption-enable playbook to require approval")
+	if executor.shared.RequiresApproval(enableEncryptionPlaybook) {
+		t.Fatal("expected s3-encryption-terraform playbook not to require approval")
 	}
 
 	notifyKeyRule, ok := engine.GetRule("aws-unused-access-key-notify")

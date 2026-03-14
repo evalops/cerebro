@@ -300,9 +300,9 @@ func (e *Engine) loadDefaultRules() {
 			},
 		},
 		{
-			ID:          "s3-encryption-enable",
-			Name:        "Enable default S3 bucket encryption",
-			Description: "Approval-gated automatic default encryption enablement for S3 buckets",
+			ID:          "s3-encryption-terraform",
+			Name:        "Generate Terraform for S3 bucket encryption",
+			Description: "Generate Terraform code for enabling default S3 bucket encryption using the existing IaC context when available",
 			Enabled:     true,
 			Trigger: Trigger{
 				Type:     TriggerFindingCreated,
@@ -312,7 +312,7 @@ func (e *Engine) loadDefaultRules() {
 				{
 					Type: ActionEnableBucketDefaultEncryption,
 					Config: map[string]string{
-						"approval_mode": "required",
+						"delivery_mode": "terraform",
 						"sse_algorithm": "AES256",
 					},
 					RequiresApproval: false,

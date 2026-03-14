@@ -346,18 +346,17 @@ func TestExecutor_RestrictPublicStorageAccessDoesNotTrustStalePolicyWithoutCurre
 	}
 }
 
-func TestExecutor_EnableBucketDefaultEncryptionDryRunCapturesMetadata(t *testing.T) {
+func TestExecutor_EnableBucketDefaultEncryptionTerraformModeCapturesArtifact(t *testing.T) {
 	engine := NewEngine(testutil.Logger())
 	rule := Rule{
-		ID:      "enable-bucket-default-encryption-dry-run",
-		Name:    "Enable Bucket Default Encryption Dry Run",
+		ID:      "enable-bucket-default-encryption-terraform",
+		Name:    "Enable Bucket Default Encryption Terraform",
 		Enabled: true,
 		Trigger: Trigger{Type: TriggerManual},
 		Actions: []Action{{
 			Type: ActionEnableBucketDefaultEncryption,
 			Config: map[string]string{
-				"dry_run":       "true",
-				"approval_mode": "auto",
+				"delivery_mode": "terraform",
 			},
 		}},
 	}
@@ -374,6 +373,8 @@ func TestExecutor_EnableBucketDefaultEncryptionDryRunCapturesMetadata(t *testing
 			"resource_name":     "audit-logs",
 			"resource_type":     "bucket",
 			"resource_platform": "aws",
+			"iac_file":          "infra/storage/main.tf",
+			"iac_module":        "storage",
 			"resource": map[string]any{
 				"default_encryption_enabled": false,
 			},
@@ -395,17 +396,28 @@ func TestExecutor_EnableBucketDefaultEncryptionDryRunCapturesMetadata(t *testing
 		t.Fatalf("expected one action result, got %d", len(execution.Actions))
 	}
 	metadata := execution.Actions[0].Metadata
-	if dryRun, _ := metadata["dry_run"].(bool); !dryRun {
-		t.Fatalf("expected dry_run metadata, got %#v", metadata)
+	if metadata["delivery_mode"] != "terraform" {
+		t.Fatalf("expected terraform delivery mode, got %#v", metadata["delivery_mode"])
 	}
 	if requiresApproval, _ := metadata["requires_approval"].(bool); requiresApproval {
-		t.Fatalf("expected dry-run action with approval_mode=auto to report requires_approval=false, got %#v", metadata)
+		t.Fatalf("expected terraform generation not to require approval by default, got %#v", metadata)
 	}
-	if metadata["planned_tool"] != "aws.s3.put_bucket_encryption" {
-		t.Fatalf("unexpected planned tool metadata: %#v", metadata["planned_tool"])
+	if plannedTool := stringValue(metadata["planned_tool"]); plannedTool != "" {
+		t.Fatalf("expected no planned tool for terraform delivery, got %#v", metadata["planned_tool"])
 	}
 	if metadata["sse_algorithm"] != "AES256" {
 		t.Fatalf("unexpected sse_algorithm metadata: %#v", metadata["sse_algorithm"])
+	}
+	artifact, _ := metadata["artifact"].(map[string]any)
+	if artifact["path"] != "infra/storage/cerebro_s3_bucket_default_encryption_audit_logs.tf" {
+		t.Fatalf("unexpected terraform artifact path: %#v", artifact["path"])
+	}
+	if artifact["resource_address"] != "aws_s3_bucket_server_side_encryption_configuration.audit_logs_default_encryption" {
+		t.Fatalf("unexpected terraform resource address: %#v", artifact["resource_address"])
+	}
+	content, _ := artifact["content"].(string)
+	if !strings.Contains(content, `resource "aws_s3_bucket_server_side_encryption_configuration" "audit_logs_default_encryption"`) {
+		t.Fatalf("expected terraform resource block, got %q", content)
 	}
 	after, _ := metadata["after"].(map[string]any)
 	if planned, _ := after["planned"].(bool); !planned {
@@ -413,7 +425,7 @@ func TestExecutor_EnableBucketDefaultEncryptionDryRunCapturesMetadata(t *testing
 	}
 }
 
-func TestExecutor_EnableBucketDefaultEncryptionRequiresApprovalByDefault(t *testing.T) {
+func TestExecutor_EnableBucketDefaultEncryptionRemoteApplyRequiresApprovalByDefault(t *testing.T) {
 	engine := NewEngine(testutil.Logger())
 	rule := Rule{
 		ID:      "enable-bucket-default-encryption",
@@ -422,6 +434,9 @@ func TestExecutor_EnableBucketDefaultEncryptionRequiresApprovalByDefault(t *test
 		Trigger: Trigger{Type: TriggerManual},
 		Actions: []Action{{
 			Type: ActionEnableBucketDefaultEncryption,
+			Config: map[string]string{
+				"delivery_mode": "remote_apply",
+			},
 		}},
 	}
 	if err := engine.AddRule(rule); err != nil {
@@ -483,6 +498,65 @@ func TestExecutor_EnableBucketDefaultEncryptionRequiresApprovalByDefault(t *test
 	}
 }
 
+func TestExecutor_EnableBucketDefaultEncryptionTerraformModeHonorsExplicitApprovalOverride(t *testing.T) {
+	engine := NewEngine(testutil.Logger())
+	rule := Rule{
+		ID:      "enable-bucket-default-encryption-terraform-approval",
+		Name:    "Enable Bucket Default Encryption Terraform Approval",
+		Enabled: true,
+		Trigger: Trigger{Type: TriggerManual},
+		Actions: []Action{{
+			Type: ActionEnableBucketDefaultEncryption,
+			Config: map[string]string{
+				"delivery_mode": "terraform",
+				"approval_mode": "required",
+			},
+		}},
+	}
+	if err := engine.AddRule(rule); err != nil {
+		t.Fatalf("add rule: %v", err)
+	}
+
+	executions, err := engine.Evaluate(context.Background(), Event{
+		Type:     TriggerManual,
+		PolicyID: "aws-s3-bucket-encryption-enabled",
+		EntityID: "arn:aws:s3:::audit-logs",
+		Data: map[string]any{
+			"resource_id":       "arn:aws:s3:::audit-logs",
+			"resource_name":     "audit-logs",
+			"resource_type":     "bucket",
+			"resource_platform": "aws",
+			"iac_file":          "infra/storage/main.tf",
+			"resource": map[string]any{
+				"default_encryption_enabled": false,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("evaluate: %v", err)
+	}
+	execution := executions[0]
+	executor := NewExecutor(engine, nil, nil, nil, nil)
+
+	if err := executor.Execute(context.Background(), execution); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if execution.Status != ExecutionApproval {
+		t.Fatalf("status = %s, want %s", execution.Status, ExecutionApproval)
+	}
+
+	if err := executor.Approve(context.Background(), execution.ID, "security@example.com"); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	if execution.Status != ExecutionCompleted {
+		t.Fatalf("status = %s, want %s", execution.Status, ExecutionCompleted)
+	}
+	artifact, _ := execution.Actions[0].Metadata["artifact"].(map[string]any)
+	if artifact["path"] != "infra/storage/cerebro_s3_bucket_default_encryption_audit_logs.tf" {
+		t.Fatalf("unexpected terraform artifact path after approval: %#v", artifact["path"])
+	}
+}
+
 func TestExecutor_EnableBucketDefaultEncryptionDoesNotTrustStalePolicyWhenResourceJSONShowsEncrypted(t *testing.T) {
 	engine := NewEngine(testutil.Logger())
 	rule := Rule{
@@ -493,8 +567,7 @@ func TestExecutor_EnableBucketDefaultEncryptionDoesNotTrustStalePolicyWhenResour
 		Actions: []Action{{
 			Type: ActionEnableBucketDefaultEncryption,
 			Config: map[string]string{
-				"dry_run":       "true",
-				"approval_mode": "auto",
+				"delivery_mode": "terraform",
 			},
 		}},
 	}

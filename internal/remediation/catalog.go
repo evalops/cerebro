@@ -11,22 +11,24 @@ const (
 )
 
 type CatalogEntry struct {
-	ID                   string            `json:"id"`
-	ActionType           ActionType        `json:"action_type"`
-	Name                 string            `json:"name"`
-	Description          string            `json:"description"`
-	Providers            []string          `json:"providers,omitempty"`
-	ResourceTypes        []string          `json:"resource_types,omitempty"`
-	SafeByDefault        bool              `json:"safe_by_default"`
-	SupportsDryRun       bool              `json:"supports_dry_run"`
-	SupportsRollback     bool              `json:"supports_rollback"`
-	RequiresApproval     bool              `json:"requires_approval"`
-	BlastRadius          BlastRadiusClass  `json:"blast_radius"`
-	Preconditions        []string          `json:"preconditions,omitempty"`
-	RollbackSteps        []string          `json:"rollback_steps,omitempty"`
-	EvidenceFields       []string          `json:"evidence_fields,omitempty"`
-	DefaultRemoteTools   map[string]string `json:"default_remote_tools,omitempty"`
-	BlastRadiusRationale string            `json:"blast_radius_rationale,omitempty"`
+	ID                     string            `json:"id"`
+	ActionType             ActionType        `json:"action_type"`
+	Name                   string            `json:"name"`
+	Description            string            `json:"description"`
+	Providers              []string          `json:"providers,omitempty"`
+	ResourceTypes          []string          `json:"resource_types,omitempty"`
+	SafeByDefault          bool              `json:"safe_by_default"`
+	SupportsDryRun         bool              `json:"supports_dry_run"`
+	SupportsRollback       bool              `json:"supports_rollback"`
+	RequiresApproval       bool              `json:"requires_approval"`
+	BlastRadius            BlastRadiusClass  `json:"blast_radius"`
+	Preconditions          []string          `json:"preconditions,omitempty"`
+	RollbackSteps          []string          `json:"rollback_steps,omitempty"`
+	EvidenceFields         []string          `json:"evidence_fields,omitempty"`
+	DefaultRemoteTools     map[string]string `json:"default_remote_tools,omitempty"`
+	SupportedDeliveryModes []DeliveryMode    `json:"supported_delivery_modes,omitempty"`
+	DefaultDeliveryMode    DeliveryMode      `json:"default_delivery_mode,omitempty"`
+	BlastRadiusRationale   string            `json:"blast_radius_rationale,omitempty"`
 }
 
 var remediationCatalog = []CatalogEntry{
@@ -60,6 +62,10 @@ var remediationCatalog = []CatalogEntry{
 			"before",
 			"after",
 		},
+		SupportedDeliveryModes: []DeliveryMode{
+			DeliveryModeRemoteApply,
+		},
+		DefaultDeliveryMode: DeliveryModeRemoteApply,
 		DefaultRemoteTools: map[string]string{
 			"aws":   "aws.s3.block_public_access",
 			"gcp":   "gcp.storage.remove_public_access",
@@ -98,6 +104,10 @@ var remediationCatalog = []CatalogEntry{
 			"before",
 			"after",
 		},
+		SupportedDeliveryModes: []DeliveryMode{
+			DeliveryModeRemoteApply,
+		},
+		DefaultDeliveryMode: DeliveryModeRemoteApply,
 		DefaultRemoteTools: map[string]string{
 			"aws": "aws.iam.disable_access_key",
 			"gcp": "gcp.iam.disable_service_account_key",
@@ -132,9 +142,15 @@ var remediationCatalog = []CatalogEntry{
 			"sse_algorithm",
 			"kms_master_key_id",
 			"bucket_key_enabled",
+			"artifact",
 			"before",
 			"after",
 		},
+		SupportedDeliveryModes: []DeliveryMode{
+			DeliveryModeTerraform,
+			DeliveryModeRemoteApply,
+		},
+		DefaultDeliveryMode: DeliveryModeTerraform,
 		DefaultRemoteTools: map[string]string{
 			"aws": "aws.s3.put_bucket_encryption",
 		},
@@ -171,6 +187,10 @@ var remediationCatalog = []CatalogEntry{
 			"before",
 			"after",
 		},
+		SupportedDeliveryModes: []DeliveryMode{
+			DeliveryModeRemoteApply,
+		},
+		DefaultDeliveryMode: DeliveryModeRemoteApply,
 		DefaultRemoteTools: map[string]string{
 			"aws": "aws.ec2.revoke_security_group_ingress",
 		},
@@ -208,6 +228,7 @@ func cloneCatalogEntry(entry CatalogEntry) CatalogEntry {
 	entry.Preconditions = append([]string(nil), entry.Preconditions...)
 	entry.RollbackSteps = append([]string(nil), entry.RollbackSteps...)
 	entry.EvidenceFields = append([]string(nil), entry.EvidenceFields...)
+	entry.SupportedDeliveryModes = append([]DeliveryMode(nil), entry.SupportedDeliveryModes...)
 	if len(entry.DefaultRemoteTools) > 0 {
 		clonedTools := make(map[string]string, len(entry.DefaultRemoteTools))
 		for key, value := range entry.DefaultRemoteTools {

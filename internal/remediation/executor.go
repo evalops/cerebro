@@ -123,6 +123,9 @@ func (ex *Executor) actionRequiresApproval(action Action) bool {
 	case "required", "manual":
 		return true
 	}
+	if actionDeliveryMode(action, CatalogEntry{}) == DeliveryModeTerraform {
+		return false
+	}
 	if action.RequiresApproval {
 		return true
 	}

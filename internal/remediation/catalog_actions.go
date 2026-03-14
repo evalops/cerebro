@@ -15,6 +15,7 @@ type catalogActionPlan struct {
 	resourceID        string
 	resourceName      string
 	resourceType      string
+	deliveryMode      DeliveryMode
 	tool              string
 	dryRun            bool
 	approvalRequired  bool
@@ -95,9 +96,12 @@ func (ex *Executor) enableBucketDefaultEncryption(ctx context.Context, action Ac
 		"kms_master_key_id":  kmsMasterKeyID,
 		"bucket_key_enabled": bucketKeyEnabled,
 	})
+	if !catalogSupportsDeliveryMode(entry, plan.deliveryMode) {
+		return "", compactAnyMap(metadata), fmt.Errorf("delivery mode %q is not supported for %s", plan.deliveryMode, action.Type)
+	}
 	plan.preconditionCheck = append(plan.preconditionCheck,
 		preconditionResult("resource identifier available", plan.resourceID != "", firstNonEmpty(plan.resourceID, "missing resource identifier")),
-		preconditionResult("provider supported", plan.provider == "aws" && plan.tool != "", firstNonEmpty(plan.provider, "missing provider")),
+		preconditionResult("provider supported", plan.provider == "aws" && (plan.deliveryMode == DeliveryModeTerraform || plan.tool != ""), firstNonEmpty(plan.provider, "missing provider")),
 		preconditionResult("bucket default encryption still disabled", disabled, detail),
 	)
 
@@ -117,6 +121,22 @@ func (ex *Executor) enableBucketDefaultEncryption(ctx context.Context, action Ac
 	}
 	if bucketKeyEnabled {
 		execution.TriggerData["bucket_key_enabled"] = true
+	}
+
+	if plan.deliveryMode == DeliveryModeTerraform {
+		artifact, err := renderTerraformBucketDefaultEncryptionArtifact(execution, sseAlgorithm, kmsMasterKeyID, bucketKeyEnabled)
+		if err != nil {
+			return "", compactAnyMap(metadata), err
+		}
+		metadata["artifact"] = terraformArtifactMetadata(artifact)
+		metadata["after"] = map[string]any{
+			"planned":          true,
+			"delivery_mode":    string(plan.deliveryMode),
+			"change":           "terraform configuration generated for bucket default encryption",
+			"artifact_path":    artifact.Path,
+			"resource_address": artifact.ResourceAddress,
+		}
+		return fmt.Sprintf("Generated Terraform remediation at %s", artifact.Path), compactAnyMap(metadata), nil
 	}
 
 	if plan.dryRun {
@@ -253,13 +273,19 @@ func (ex *Executor) executeCatalogRemoteAction(ctx context.Context, action Actio
 
 func newCatalogActionPlan(action Action, execution *Execution, entry CatalogEntry, approvalRequired bool) catalogActionPlan {
 	provider := inferProvider(execution)
+	deliveryMode := actionDeliveryMode(action, entry)
+	tool := ""
+	if deliveryMode == DeliveryModeRemoteApply {
+		tool = firstNonEmpty(action.Config["tool"], catalogToolForProvider(entry, provider))
+	}
 	return catalogActionPlan{
 		entry:            entry,
 		provider:         provider,
 		resourceID:       firstNonEmpty(remediationMapValueToString(execution.TriggerData, "entity_id"), remediationMapValueToString(execution.TriggerData, "resource_id"), remediationMapValueToString(execution.TriggerData, "resource_external_id")),
 		resourceName:     remediationMapValueToString(execution.TriggerData, "resource_name"),
 		resourceType:     remediationMapValueToString(execution.TriggerData, "resource_type"),
-		tool:             firstNonEmpty(action.Config["tool"], catalogToolForProvider(entry, provider)),
+		deliveryMode:     deliveryMode,
+		tool:             tool,
 		dryRun:           dryRunEnabled(action, execution),
 		approvalRequired: approvalRequired,
 	}
@@ -273,6 +299,7 @@ func (p catalogActionPlan) metadata(extra map[string]any) map[string]any {
 		"resource_id":         p.resourceID,
 		"resource_name":       p.resourceName,
 		"resource_type":       p.resourceType,
+		"delivery_mode":       string(p.deliveryMode),
 		"dry_run":             p.dryRun,
 		"requires_approval":   p.approvalRequired,
 		"blast_radius":        p.entry.BlastRadius,
