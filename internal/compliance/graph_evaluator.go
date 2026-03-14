@@ -191,10 +191,7 @@ func (e *graphComplianceEvaluator) evaluateControl(ctrl Control) ControlStatus {
 	} else {
 		status.EvaluationSource = ControlEvaluationSourceFindingsFallback
 	}
-	if len(evidence) > maxControlEvidence {
-		evidence = evidence[:maxControlEvidence]
-	}
-	status.Evidence = evidence
+	status.Evidence = limitControlEvidence(evidence)
 	return status
 }
 

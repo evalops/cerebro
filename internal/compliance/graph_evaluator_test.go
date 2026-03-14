@@ -209,6 +209,58 @@ func TestEvaluateFrameworkTreatsUnknownGCPKeyRotationStateAsNonPassing(t *testin
 	}
 }
 
+func TestEvaluateFrameworkPrioritizesFailingEvidenceBeforeTruncation(t *testing.T) {
+	now := time.Date(2026, 3, 13, 16, 45, 0, 0, time.UTC)
+	g := graph.New()
+	g.AddNode(&graph.Node{
+		ID:        "arn:aws:s3:::late-failing-bucket",
+		Kind:      graph.NodeKindBucket,
+		Name:      "late-failing-bucket",
+		Provider:  "aws",
+		Account:   "123456789012",
+		CreatedAt: now,
+		Properties: map[string]any{
+			"encrypted":        false,
+			"observed_at":      now,
+			"valid_from":       now,
+			"recorded_at":      now,
+			"transaction_from": now,
+		},
+	})
+
+	policies := make([]string, 0, maxControlEvidence+6)
+	for i := 0; i < maxControlEvidence+5; i++ {
+		policies = append(policies, "unsupported-pass-"+string(rune('a'+(i%26)))+string(rune('a'+((i/26)%26))))
+	}
+	policies = append(policies, "aws-s3-bucket-encryption-enabled")
+	framework := &Framework{
+		ID:   "truncation",
+		Name: "Truncation",
+		Controls: []Control{
+			{ID: "truncation-control", Title: "Truncation Control", PolicyIDs: policies},
+		},
+	}
+
+	report := EvaluateFramework(g, framework, EvaluationOptions{GeneratedAt: now})
+	status := controlStatusByID(t, report, "truncation-control")
+	if status.Status != ControlStateFailing {
+		t.Fatalf("expected control to fail, got %+v", status)
+	}
+	if len(status.Evidence) != maxControlEvidence {
+		t.Fatalf("expected capped evidence length %d, got %d", maxControlEvidence, len(status.Evidence))
+	}
+	foundFailingEvidence := false
+	for _, item := range status.Evidence {
+		if item.PolicyID == "aws-s3-bucket-encryption-enabled" && item.Status == ControlStateFailing {
+			foundFailingEvidence = true
+			break
+		}
+	}
+	if !foundFailingEvidence {
+		t.Fatalf("expected failing evidence to survive truncation, got %+v", status.Evidence)
+	}
+}
+
 func TestBuildAuditPackageFromReportIncludesEvidence(t *testing.T) {
 	framework := &Framework{
 		ID:      "pkg",

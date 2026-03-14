@@ -244,3 +244,21 @@ func cloneFindingCounts(src map[string]int) map[string]int {
 	}
 	return dst
 }
+
+func limitControlEvidence(items []ControlEvidence) []ControlEvidence {
+	if len(items) <= maxControlEvidence {
+		return items
+	}
+	prioritized := make([]ControlEvidence, 0, len(items))
+	for _, item := range items {
+		if item.Status != ControlStatePassing {
+			prioritized = append(prioritized, item)
+		}
+	}
+	for _, item := range items {
+		if item.Status == ControlStatePassing {
+			prioritized = append(prioritized, item)
+		}
+	}
+	return prioritized[:maxControlEvidence]
+}
