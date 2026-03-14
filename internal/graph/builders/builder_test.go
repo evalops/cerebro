@@ -398,6 +398,9 @@ func TestBuilder_BuildsS3BucketResourcePolicyEdges(t *testing.T) {
 		if conditions, ok := edge.Properties["conditions"].(map[string]any); !ok || len(conditions) == 0 {
 			t.Fatalf("expected statement conditions on edge, got %#v", edge.Properties["conditions"])
 		}
+		if _, ok := edge.Properties["conditions_present"]; ok {
+			t.Fatalf("expected resource-policy edge to omit unused conditions_present flag, got %#v", edge.Properties)
+		}
 		foundAliceResourcePolicy = true
 	}
 	if !foundAliceResourcePolicy {
@@ -477,6 +480,9 @@ func TestBuilder_BuildPreservesIdentityPolicyConditions(t *testing.T) {
 		if !ok || len(conditions) == 0 {
 			t.Fatalf("expected identity-policy conditions on edge, got %#v", edge.Properties)
 		}
+		if _, ok := edge.Properties["conditions_present"]; ok {
+			t.Fatalf("expected identity-policy edge to omit unused conditions_present flag, got %#v", edge.Properties)
+		}
 		found = true
 	}
 	if !found {
@@ -551,6 +557,9 @@ func TestBuilder_BuildPreservesTrustPolicyConditions(t *testing.T) {
 		conditions, ok := edge.Properties["conditions"].(map[string]any)
 		if !ok || len(conditions) == 0 {
 			t.Fatalf("expected trust-policy conditions on assume-role edge, got %#v", edge.Properties)
+		}
+		if _, ok := edge.Properties["conditions_present"]; ok {
+			t.Fatalf("expected trust-policy edge to omit unused conditions_present flag, got %#v", edge.Properties)
 		}
 		found = true
 	}

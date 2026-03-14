@@ -418,12 +418,8 @@ func (c *EffectivePermissionsCalculator) applyDenyRules(
 
 	// Apply all collected denies
 	for resourceID, deniedActions := range denies {
-		if access, ok := ep.Resources[resourceID]; ok {
-			access.Actions = removeActions(access.Actions, deniedActions)
-			if len(access.Actions) == 0 {
-				delete(ep.Resources, resourceID)
-			}
-		}
+		applyDeniedActions(ep.Resources, resourceID, deniedActions)
+		applyDeniedActions(ep.Conditional, resourceID, deniedActions)
 	}
 }
 
@@ -1063,6 +1059,15 @@ func removeActions(actions, toRemove []string) []string {
 		}
 	}
 	return result
+}
+
+func applyDeniedActions(bucket map[string]*ResourceAccess, resourceID string, deniedActions []string) {
+	if access, ok := bucket[resourceID]; ok {
+		access.Actions = removeActions(access.Actions, deniedActions)
+		if len(access.Actions) == 0 {
+			delete(bucket, resourceID)
+		}
+	}
 }
 
 func subtractActions(a, b []string) []string {

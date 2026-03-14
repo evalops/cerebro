@@ -385,6 +385,71 @@ func TestEffectivePermissionsCalculator_DenyRules(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("explicit deny removes conditional access", func(t *testing.T) {
+		g := New()
+		g.AddNode(&Node{
+			ID:       "user:alice",
+			Kind:     NodeKindUser,
+			Name:     "alice",
+			Account:  "111111111111",
+			Provider: "aws",
+		})
+		g.AddNode(&Node{
+			ID:       "bucket:data",
+			Kind:     NodeKindBucket,
+			Name:     "data",
+			Account:  "111111111111",
+			Provider: "aws",
+		})
+		g.AddEdge(&Edge{
+			ID:     "conditional-allow",
+			Source: "user:alice",
+			Target: "bucket:data",
+			Kind:   EdgeKindCanRead,
+			Effect: EdgeEffectAllow,
+			Properties: map[string]any{
+				"actions":    []string{"s3:GetObject"},
+				"conditions": map[string]any{"StringEquals": map[string]any{"aws:SourceVpce": "vpce-123"}},
+			},
+		})
+		g.AddEdge(&Edge{
+			ID:     "explicit-deny",
+			Source: "user:alice",
+			Target: "bucket:data",
+			Kind:   EdgeKindCanRead,
+			Effect: EdgeEffectDeny,
+			Properties: map[string]any{
+				"actions": []string{"s3:GetObject"},
+			},
+		})
+
+		calc := NewEffectivePermissionsCalculator(g)
+
+		ep := calc.Calculate("user:alice")
+		if ep == nil {
+			t.Fatal("expected effective permissions, got nil")
+		}
+		if _, ok := ep.Resources["bucket:data"]; ok {
+			t.Fatalf("expected explicit deny to block unconditional access, got %#v", ep.Resources["bucket:data"])
+		}
+		if _, ok := ep.Conditional["bucket:data"]; ok {
+			t.Fatalf("expected explicit deny to remove conditional access, got %#v", ep.Conditional["bucket:data"])
+		}
+
+		withContext := calc.CalculateWithContext("user:alice", &PermissionEvaluationContext{
+			SourceVPCe: "vpce-123",
+		})
+		if withContext == nil {
+			t.Fatal("expected contextual effective permissions, got nil")
+		}
+		if _, ok := withContext.Resources["bucket:data"]; ok {
+			t.Fatalf("expected explicit deny to override satisfied conditional allow, got %#v", withContext.Resources["bucket:data"])
+		}
+		if _, ok := withContext.Conditional["bucket:data"]; ok {
+			t.Fatalf("expected no remaining conditional access after explicit deny, got %#v", withContext.Conditional["bucket:data"])
+		}
+	})
 }
 
 func TestEffectivePermissionsCalculator_PermissionBoundary(t *testing.T) {

@@ -382,7 +382,6 @@ func (b *Builder) buildEdgesFromPolicy(principalARN, policyDoc, via string) {
 			effect = EdgeEffectDeny
 			priority = 100
 		}
-		conditionsPresent := len(stmt.Conditions) > 0
 
 		for resourceIdx, resource := range stmt.Resources {
 			matchingNodes := FindMatchingNodes(b.graph, resource)
@@ -396,10 +395,9 @@ func (b *Builder) buildEdgesFromPolicy(principalARN, policyDoc, via string) {
 					Effect:   effect,
 					Priority: priority,
 					Properties: map[string]any{
-						"actions":            append([]string(nil), stmt.Actions...),
-						"conditions":         cloneAnyMap(stmt.Conditions),
-						"conditions_present": conditionsPresent,
-						"via":                via,
+						"actions":    append([]string(nil), stmt.Actions...),
+						"conditions": cloneAnyMap(stmt.Conditions),
+						"via":        via,
 					},
 				})
 			}
@@ -449,7 +447,6 @@ func (b *Builder) buildEdgesFromResourcePolicy(ownerResourceID, policyDoc, via, 
 					properties := map[string]any{
 						"actions":               append([]string(nil), stmt.Actions...),
 						"conditions":            cloneAnyMap(stmt.Conditions),
-						"conditions_present":    conditionsPresent,
 						"mechanism":             "resource_policy",
 						"policy_type":           policyType,
 						"resource_policy_owner": ownerResourceID,
@@ -555,7 +552,6 @@ func (b *Builder) buildTrustEdges(ctx context.Context) error {
 		for _, principal := range principals {
 			principalAccount := ExtractAccountFromARN(principal.ARN)
 			isCrossAccount := principalAccount != "" && principalAccount != roleAccount
-			conditionsPresent := len(principal.Conditions) > 0
 
 			// Handle account root trust
 			if strings.HasSuffix(principal.ARN, ":root") {
@@ -567,13 +563,12 @@ func (b *Builder) buildTrustEdges(ctx context.Context) error {
 					Kind:   EdgeKindCanAssume,
 					Effect: EdgeEffectAllow,
 					Properties: map[string]any{
-						"mechanism":          "trust_policy",
-						"cross_account":      isCrossAccount,
-						"source_account":     principalAccount,
-						"target_account":     roleAccount,
-						"trust_type":         "account_root",
-						"conditions":         cloneAnyMap(principal.Conditions),
-						"conditions_present": conditionsPresent,
+						"mechanism":      "trust_policy",
+						"cross_account":  isCrossAccount,
+						"source_account": principalAccount,
+						"target_account": roleAccount,
+						"trust_type":     "account_root",
+						"conditions":     cloneAnyMap(principal.Conditions),
 					},
 				})
 
@@ -587,11 +582,10 @@ func (b *Builder) buildTrustEdges(ctx context.Context) error {
 							Kind:   EdgeKindCanAssume,
 							Effect: EdgeEffectAllow,
 							Properties: map[string]any{
-								"mechanism":          "account_trust",
-								"cross_account":      isCrossAccount,
-								"via":                principal.ARN,
-								"conditions":         cloneAnyMap(principal.Conditions),
-								"conditions_present": conditionsPresent,
+								"mechanism":     "account_trust",
+								"cross_account": isCrossAccount,
+								"via":           principal.ARN,
+								"conditions":    cloneAnyMap(principal.Conditions),
 							},
 						})
 					}
@@ -605,11 +599,10 @@ func (b *Builder) buildTrustEdges(ctx context.Context) error {
 					Kind:   EdgeKindCanAssume,
 					Effect: EdgeEffectAllow,
 					Properties: map[string]any{
-						"mechanism":          "service_trust",
-						"trust_type":         "service",
-						"is_service":         true,
-						"conditions":         cloneAnyMap(principal.Conditions),
-						"conditions_present": conditionsPresent,
+						"mechanism":  "service_trust",
+						"trust_type": "service",
+						"is_service": true,
+						"conditions": cloneAnyMap(principal.Conditions),
 					},
 				})
 			} else if principal.IsPublic {
@@ -622,11 +615,10 @@ func (b *Builder) buildTrustEdges(ctx context.Context) error {
 					Effect: EdgeEffectAllow,
 					Risk:   RiskCritical,
 					Properties: map[string]any{
-						"mechanism":          "public_trust",
-						"trust_type":         "public",
-						"is_public":          true,
-						"conditions":         cloneAnyMap(principal.Conditions),
-						"conditions_present": conditionsPresent,
+						"mechanism":  "public_trust",
+						"trust_type": "public",
+						"is_public":  true,
+						"conditions": cloneAnyMap(principal.Conditions),
 					},
 				})
 			} else {
@@ -638,12 +630,11 @@ func (b *Builder) buildTrustEdges(ctx context.Context) error {
 					Kind:   EdgeKindCanAssume,
 					Effect: EdgeEffectAllow,
 					Properties: map[string]any{
-						"mechanism":          "trust_policy",
-						"cross_account":      isCrossAccount,
-						"source_account":     principalAccount,
-						"target_account":     roleAccount,
-						"conditions":         cloneAnyMap(principal.Conditions),
-						"conditions_present": conditionsPresent,
+						"mechanism":      "trust_policy",
+						"cross_account":  isCrossAccount,
+						"source_account": principalAccount,
+						"target_account": roleAccount,
+						"conditions":     cloneAnyMap(principal.Conditions),
 					},
 				})
 			}
