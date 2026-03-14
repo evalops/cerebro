@@ -209,6 +209,33 @@ func TestEvaluateFrameworkTreatsUnknownGCPKeyRotationStateAsNonPassing(t *testin
 	}
 }
 
+func TestEvaluateFrameworkFallbackPassingDoesNotInventAssetCounts(t *testing.T) {
+	now := time.Date(2026, 3, 13, 16, 35, 0, 0, time.UTC)
+	report := EvaluateFramework(graph.New(), &Framework{
+		ID:   "fallback-pass",
+		Name: "Fallback Pass",
+		Controls: []Control{{
+			ID:        "root",
+			Title:     "Root access keys",
+			PolicyIDs: []string{"aws-iam-root-no-access-keys"},
+		}},
+	}, EvaluationOptions{GeneratedAt: now})
+
+	status := controlStatusByID(t, report, "root")
+	if status.Status != ControlStatePassing {
+		t.Fatalf("expected findings-fallback control to pass with zero findings, got %+v", status)
+	}
+	if status.EvaluationSource != ControlEvaluationSourceFindingsFallback {
+		t.Fatalf("expected findings fallback source, got %+v", status)
+	}
+	if status.PassCount != 0 || status.FailCount != 0 || status.TotalAssets != 0 {
+		t.Fatalf("expected fallback control to avoid invented asset counts, got %+v", status)
+	}
+	if len(status.Evidence) != 1 || status.Evidence[0].Reason == "" {
+		t.Fatalf("expected fallback evidence reason, got %+v", status.Evidence)
+	}
+}
+
 func TestEvaluateFrameworkPrioritizesFailingEvidenceBeforeTruncation(t *testing.T) {
 	now := time.Date(2026, 3, 13, 16, 45, 0, 0, time.UTC)
 	g := graph.New()

@@ -9928,12 +9928,16 @@ components:
             - unknown
         pass_count:
           type: integer
+          description: "Count of graph-identified assets currently passing this control; findings-fallback controls leave this at 0 because asset counts are not inferred from findings alone."
         fail_count:
           type: integer
+          description: "Count of graph-identified assets currently failing this control; findings-fallback controls leave this at 0 because asset counts are not inferred from findings alone."
         total_assets:
           type: integer
+          description: "Count of graph-identified assets evaluated for this control; findings-fallback controls leave this at 0 when the graph cannot enumerate an evaluated asset set."
         evaluation_source:
           type: string
+          description: "findings_fallback determines control state from mapped findings only and does not imply graph-backed asset counts."
           enum:
             - graph
             - findings_fallback

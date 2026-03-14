@@ -181,6 +181,10 @@ func (e *graphComplianceEvaluator) evaluateControl(ctrl Control) ControlStatus {
 		status.Status = ControlStateNotApplicable
 	}
 
+	// Asset counts are only meaningful when the evaluator identified concrete
+	// graph entities. Findings-fallback controls derive control state from
+	// finding presence alone and intentionally do not invent evaluated-asset
+	// counts that the graph cannot substantiate.
 	status.FailCount = len(failIDs)
 	status.PassCount = len(passIDs)
 	status.TotalAssets = len(unionStringSets(failIDs, passIDs))
