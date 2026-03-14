@@ -425,6 +425,10 @@ func TestExecutor_RestrictPublicSecurityGroupIngressDryRunCapturesMetadata(t *te
 	if len(matchedPorts) != 1 || matchedPorts[0] != "22" {
 		t.Fatalf("matched_ports = %#v, want [22]", metadata["matched_ports"])
 	}
+	matchedCIDRs, _ := metadata["matched_cidrs"].([]string)
+	if len(matchedCIDRs) != 1 || matchedCIDRs[0] != "0.0.0.0/0" {
+		t.Fatalf("matched_cidrs = %#v, want [0.0.0.0/0]", metadata["matched_cidrs"])
+	}
 	after, _ := metadata["after"].(map[string]any)
 	if planned, _ := after["planned"].(bool); !planned {
 		t.Fatalf("expected planned after-state metadata, got %#v", after)

@@ -574,6 +574,12 @@ func anySlice(raw any) []any {
 	switch typed := raw.(type) {
 	case []any:
 		return append([]any(nil), typed...)
+	case []string:
+		items := make([]any, 0, len(typed))
+		for _, item := range typed {
+			items = append(items, item)
+		}
+		return items
 	case []map[string]any:
 		items := make([]any, 0, len(typed))
 		for _, item := range typed {
