@@ -195,24 +195,37 @@ func enrichExecutionWithCatalogPlan(execution *Execution, plan catalogActionPlan
 }
 
 func publicStorageAccessStillEnabled(execution *Execution) (bool, string) {
+	if execution == nil {
+		return false, "missing execution context"
+	}
 	data := execution.TriggerData
 	if resource, ok := data["resource"].(map[string]any); ok {
-		if value, ok := firstBool(resource,
-			"public_access",
-			"public",
-			"publicly_accessible",
-			"internet_accessible",
-			"all_users_access",
-			"all_authenticated_users_access",
-			"anonymous_access",
-		); ok {
-			if value {
-				return true, "resource payload still marks the storage resource as public"
-			}
-			return false, "resource payload marks the storage resource as private"
+		if value, detail, ok := publicStorageAccessFromValue(resource, "resource payload"); ok {
+			return value, detail
+		}
+		if value, detail, ok := publicStorageAccessFromValue(resource["resource_json"], "resource payload resource_json"); ok {
+			return value, detail
 		}
 	}
-	if value, ok := firstBool(data,
+	if value, detail, ok := publicStorageAccessFromValue(data["resource_json"], "trigger data resource_json"); ok {
+		return value, detail
+	}
+	if value, detail, ok := publicStorageAccessFromValue(data, "trigger data"); ok {
+		return value, detail
+	}
+	policyID := strings.ToLower(strings.TrimSpace(remediationMapValueToString(data, "policy_id")))
+	if policyID != "" {
+		return false, "policy finding indicates public exposure but current resource data does not confirm it"
+	}
+	return false, "no public exposure signal found in trigger data"
+}
+
+func publicStorageAccessFromValue(raw any, source string) (bool, string, bool) {
+	values, ok := anyMap(raw)
+	if !ok {
+		return false, "", false
+	}
+	value, ok := firstBool(values,
 		"public_access",
 		"public",
 		"publicly_accessible",
@@ -220,18 +233,41 @@ func publicStorageAccessStillEnabled(execution *Execution) (bool, string) {
 		"all_users_access",
 		"all_authenticated_users_access",
 		"anonymous_access",
-	); ok {
-		if value {
-			return true, "trigger data still marks the storage resource as public"
-		}
-		return false, "trigger data marks the storage resource as private"
+	)
+	if !ok {
+		return false, "", false
 	}
-	policyID := strings.ToLower(strings.TrimSpace(remediationMapValueToString(data, "policy_id")))
-	switch policyID {
-	case "aws-s3-bucket-no-public-access", "gcp-storage-bucket-no-public", "gcp-storage-no-public-allusers":
-		return true, "policy finding still indicates public exposure"
+	if value {
+		return true, fmt.Sprintf("%s still marks the storage resource as public", source), true
+	}
+	return false, fmt.Sprintf("%s marks the storage resource as private", source), true
+}
+
+func anyMap(raw any) (map[string]any, bool) {
+	switch typed := raw.(type) {
+	case map[string]any:
+		return typed, true
+	case string:
+		trimmed := strings.TrimSpace(typed)
+		if trimmed == "" {
+			return nil, false
+		}
+		var decoded map[string]any
+		if err := json.Unmarshal([]byte(trimmed), &decoded); err != nil {
+			return nil, false
+		}
+		return decoded, true
+	case []byte:
+		if len(typed) == 0 {
+			return nil, false
+		}
+		var decoded map[string]any
+		if err := json.Unmarshal(typed, &decoded); err != nil {
+			return nil, false
+		}
+		return decoded, true
 	default:
-		return false, "no public exposure signal found in trigger data"
+		return nil, false
 	}
 }
 

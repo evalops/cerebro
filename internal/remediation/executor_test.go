@@ -288,6 +288,64 @@ func TestExecutor_RestrictPublicStorageAccessRequiresApprovalByDefault(t *testin
 	}
 }
 
+func TestExecutor_RestrictPublicStorageAccessDoesNotTrustStalePolicyWithoutCurrentPublicSignal(t *testing.T) {
+	engine := NewEngine(testutil.Logger())
+	rule := Rule{
+		ID:      "restrict-public-storage-stale-policy",
+		Name:    "Restrict Public Storage Stale Policy",
+		Enabled: true,
+		Trigger: Trigger{Type: TriggerManual},
+		Actions: []Action{{
+			Type: ActionRestrictPublicStorageAccess,
+			Config: map[string]string{
+				"dry_run":       "true",
+				"approval_mode": "auto",
+			},
+		}},
+	}
+	if err := engine.AddRule(rule); err != nil {
+		t.Fatalf("add rule: %v", err)
+	}
+
+	executions, err := engine.Evaluate(context.Background(), Event{
+		Type:     TriggerManual,
+		PolicyID: "aws-s3-bucket-no-public-access",
+		EntityID: "bucket:public-assets",
+		Data: map[string]any{
+			"resource_id":       "bucket:public-assets",
+			"resource_name":     "public-assets",
+			"resource_type":     "bucket",
+			"resource_platform": "aws",
+			"resource_json": map[string]any{
+				"public_access": false,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("evaluate: %v", err)
+	}
+	execution := executions[0]
+	executor := NewExecutor(engine, nil, nil, nil, nil)
+
+	err = executor.Execute(context.Background(), execution)
+	if err == nil {
+		t.Fatal("expected precondition failure")
+	}
+	if !strings.Contains(err.Error(), "precondition failed") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if execution.Status != ExecutionFailed {
+		t.Fatalf("status = %s, want %s", execution.Status, ExecutionFailed)
+	}
+	if len(execution.Actions) != 1 || execution.Actions[0].Metadata == nil {
+		t.Fatalf("expected failed action metadata, got %#v", execution.Actions)
+	}
+	preconditions, _ := execution.Actions[0].Metadata["preconditions"].([]map[string]any)
+	if len(preconditions) == 0 {
+		t.Fatalf("expected preconditions metadata, got %#v", execution.Actions[0].Metadata)
+	}
+}
+
 func TestExecutor_DisableStaleAccessKeyFailsPreconditionWhenKeyIsFresh(t *testing.T) {
 	engine := NewEngine(testutil.Logger())
 	rule := Rule{
