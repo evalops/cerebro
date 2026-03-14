@@ -253,6 +253,52 @@ func TestBuildAuditPackageFromReportIncludesEvidence(t *testing.T) {
 	if pkg.Controls[0].EvaluationSource != ControlEvaluationSourceGraph {
 		t.Fatalf("expected evaluation source to carry into export, got %+v", pkg.Controls[0])
 	}
+	if len(pkg.Controls[0].Evidence) != 1 {
+		t.Fatalf("expected one redacted failing evidence item, got %+v", pkg.Controls[0].Evidence)
+	}
+	if pkg.Controls[0].Evidence[0].EntityID != "" || pkg.Controls[0].Evidence[0].EntityName != "" || pkg.Controls[0].Evidence[0].EntityKind != "" || pkg.Controls[0].Evidence[0].FacetID != "" {
+		t.Fatalf("expected exported evidence to redact per-entity fields, got %+v", pkg.Controls[0].Evidence[0])
+	}
+}
+
+func TestRedactReportEvidenceRemovesPassingAndEntityFields(t *testing.T) {
+	report := ComplianceReport{
+		Controls: []ControlStatus{{
+			ControlID: "1",
+			Evidence: []ControlEvidence{
+				{
+					EntityID:   "bucket:1",
+					EntityKind: "bucket",
+					EntityName: "bucket-1",
+					FacetID:    "bucket_encryption",
+					PolicyID:   "policy-1",
+					Status:     ControlStateFailing,
+					Reason:     "Bucket encryption is disabled",
+				},
+				{
+					EntityID:   "bucket:2",
+					EntityKind: "bucket",
+					EntityName: "bucket-2",
+					FacetID:    "bucket_encryption",
+					PolicyID:   "policy-1",
+					Status:     ControlStatePassing,
+					Reason:     "Bucket encryption is enabled",
+				},
+			},
+		}},
+	}
+
+	redacted := RedactReportEvidence(report)
+	if len(redacted.Controls) != 1 || len(redacted.Controls[0].Evidence) != 1 {
+		t.Fatalf("expected redacted report to keep only non-passing evidence, got %+v", redacted.Controls)
+	}
+	item := redacted.Controls[0].Evidence[0]
+	if item.EntityID != "" || item.EntityName != "" || item.EntityKind != "" || item.FacetID != "" {
+		t.Fatalf("expected redacted report evidence to omit per-entity fields, got %+v", item)
+	}
+	if item.PolicyID != "policy-1" || item.Status != ControlStateFailing || item.Reason == "" {
+		t.Fatalf("expected redacted report evidence to preserve policy/status/reason, got %+v", item)
+	}
 }
 
 func controlStatusByID(t *testing.T, report ComplianceReport, id string) ControlStatus {

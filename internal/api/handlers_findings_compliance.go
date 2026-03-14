@@ -475,7 +475,7 @@ func (s *Server) generateComplianceReport(w http.ResponseWriter, r *http.Request
 		s.error(w, http.StatusNotFound, "framework not found")
 		return
 	}
-	report := s.evaluateComplianceFramework(r.Context(), framework)
+	report := compliance.RedactReportEvidence(s.evaluateComplianceFramework(r.Context(), framework))
 	totalFindings := 0
 	controlEvidence := make(map[string][]compliance.ControlEvidence)
 	for _, ctrl := range report.Controls {
@@ -631,7 +631,7 @@ func (s *Server) exportAuditPackage(w http.ResponseWriter, r *http.Request) {
 	if report.GeneratedAt == "" {
 		report.GeneratedAt = generatedAt.Format(time.RFC3339)
 	}
-	pkg := compliance.BuildAuditPackageFromReport(framework, report)
+	pkg := compliance.BuildAuditPackageFromReport(framework, compliance.RedactReportEvidence(report))
 
 	zipBytes, err := compliance.RenderAuditPackageZIP(pkg)
 	if err != nil {

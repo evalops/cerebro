@@ -47,6 +47,16 @@ type AuditPackage struct {
 	Controls []AuditControlEvidence `json:"controls"`
 }
 
+// RedactReportEvidence removes per-entity inventory details from compliance output payloads.
+func RedactReportEvidence(report ComplianceReport) ComplianceReport {
+	report.Controls = append([]ControlStatus(nil), report.Controls...)
+	for i, ctrl := range report.Controls {
+		ctrl.Evidence = redactControlEvidence(ctrl.Evidence)
+		report.Controls[i] = ctrl
+	}
+	return report
+}
+
 // BuildAuditPackage builds control evidence for a framework using finding counts by policy ID.
 func BuildAuditPackage(framework *Framework, findingsByPolicy map[string]int, generatedAt time.Time) AuditPackage {
 	if findingsByPolicy == nil {
@@ -112,6 +122,7 @@ func BuildAuditPackageFromReport(framework *Framework, report ComplianceReport) 
 		},
 	}
 	for _, ctrl := range report.Controls {
+		redactedEvidence := redactControlEvidence(ctrl.Evidence)
 		evidence := AuditControlEvidence{
 			ControlID:        ctrl.ControlID,
 			Title:            ctrl.Title,
@@ -120,11 +131,11 @@ func BuildAuditPackageFromReport(framework *Framework, report ComplianceReport) 
 			Policies:         append([]string(nil), ctrl.PolicyIDs...),
 			EvaluationSource: ctrl.EvaluationSource,
 			LastEvaluated:    ctrl.LastEvaluated,
-			Evidence:         append([]ControlEvidence(nil), ctrl.Evidence...),
+			Evidence:         redactedEvidence,
 			Findings:         make([]string, 0, len(ctrl.PolicyIDs)),
 			FindingCount:     ctrl.FailCount,
 		}
-		for _, item := range ctrl.Evidence {
+		for _, item := range redactedEvidence {
 			if item.PolicyID == "" || item.Status != ControlStateFailing {
 				continue
 			}
@@ -133,6 +144,27 @@ func BuildAuditPackageFromReport(framework *Framework, report ComplianceReport) 
 		pkg.Controls = append(pkg.Controls, evidence)
 	}
 	return pkg
+}
+
+func redactControlEvidence(items []ControlEvidence) []ControlEvidence {
+	if len(items) == 0 {
+		return nil
+	}
+	out := make([]ControlEvidence, 0, len(items))
+	for _, item := range items {
+		if item.Status == ControlStatePassing {
+			continue
+		}
+		out = append(out, ControlEvidence{
+			PolicyID: item.PolicyID,
+			Status:   item.Status,
+			Reason:   item.Reason,
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // AuditPackageFilename returns a deterministic export filename.

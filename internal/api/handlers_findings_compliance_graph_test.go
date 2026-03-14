@@ -70,6 +70,23 @@ func TestComplianceReportDerivesFromGraphWithoutFindings(t *testing.T) {
 	if !foundGraphControl {
 		t.Fatalf("expected graph-backed control 2.1.1 in report payload: %#v", controls)
 	}
+	evidencePayload, ok := body["evidence"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected evidence payload, got %#v", body)
+	}
+	controlEvidence, ok := evidencePayload["2.1.1"].([]interface{})
+	if !ok || len(controlEvidence) == 0 {
+		t.Fatalf("expected control evidence for 2.1.1, got %#v", evidencePayload)
+	}
+	firstEvidence, ok := controlEvidence[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected evidence object, got %#v", controlEvidence[0])
+	}
+	for _, field := range []string{"entity_id", "entity_name", "entity_kind", "facet_id"} {
+		if _, exists := firstEvidence[field]; exists {
+			t.Fatalf("expected redacted evidence to omit %s, got %#v", field, firstEvidence)
+		}
+	}
 
 	export := do(t, s, http.MethodGet, "/api/v1/compliance/frameworks/cis-aws-1.5/export", nil)
 	if export.Code != http.StatusOK {
@@ -113,6 +130,15 @@ func TestComplianceReportDerivesFromGraphWithoutFindings(t *testing.T) {
 		evidence, ok := item["evidence"].([]any)
 		if !ok || len(evidence) == 0 {
 			t.Fatalf("expected graph evidence in export, got %#v", item)
+		}
+		redacted, ok := evidence[0].(map[string]any)
+		if !ok {
+			t.Fatalf("expected evidence entry object, got %#v", evidence[0])
+		}
+		for _, field := range []string{"entity_id", "entity_name", "entity_kind", "facet_id"} {
+			if _, exists := redacted[field]; exists {
+				t.Fatalf("expected exported evidence to omit %s, got %#v", field, redacted)
+			}
 		}
 	}
 	if !foundEvidence {
