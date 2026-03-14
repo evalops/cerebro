@@ -70,6 +70,9 @@ func TestRenderTerraformArtifact_RestrictPublicSecurityGroupIngressSupportsForEa
 	if artifact.ResourceAddress != `module.platform.aws_vpc_security_group_ingress_rule.public["ssh_open"]` {
 		t.Fatalf("unexpected resource address: %#v", artifact.ResourceAddress)
 	}
+	if artifact.Path != "generated/terraform/platform/cerebro_remove_public_ingress_public_ssh_open.tf" {
+		t.Fatalf("unexpected artifact path: %#v", artifact.Path)
+	}
 	if !strings.Contains(artifact.Content, `from = module.platform.aws_vpc_security_group_ingress_rule.public["ssh_open"]`) {
 		t.Fatalf("expected removed block to preserve for_each instance address, got:\n%s", artifact.Content)
 	}

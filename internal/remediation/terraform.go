@@ -587,7 +587,7 @@ func terraformRuleArtifactName(execution *Execution) string {
 		resourceAddress, _ := terraformStateResourceAddress(stateID)
 		if resourceAddress != "" {
 			if parts := terraformAddressParts(resourceAddress); len(parts) >= 2 {
-				name := terraformAddressSegment(parts[len(parts)-1])
+				name := terraformIdentifier(parts[len(parts)-1])
 				if name != "" {
 					return name
 				}
