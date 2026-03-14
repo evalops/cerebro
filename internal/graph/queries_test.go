@@ -556,6 +556,26 @@ func TestDetectSensitiveData(t *testing.T) {
 		}
 	})
 
+	t.Run("detects secrets from DSPM properties", func(t *testing.T) {
+		node := &Node{
+			ID:   "test",
+			Name: "archive-bucket",
+			Properties: map[string]any{
+				"contains_secrets": true,
+			},
+		}
+		result := detectSensitiveData(node)
+		if result == nil {
+			t.Fatal("expected sensitive data detection")
+		}
+		if !sliceContains(result.DataTypes, "secrets") {
+			t.Error("expected secrets in data types")
+		}
+		if !sliceContains(result.ComplianceImpact, "SOC2") {
+			t.Error("expected SOC2 in compliance impact")
+		}
+	})
+
 	t.Run("detects sensitive by name pattern", func(t *testing.T) {
 		node := &Node{
 			ID:         "test",

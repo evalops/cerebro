@@ -735,6 +735,12 @@ func detectSensitiveData(node *Node) *SensitiveDataNode {
 		result.ComplianceImpact = append(result.ComplianceImpact, "PCI-DSS")
 	}
 
+	// Buckets and databases can also contain secrets surfaced by DSPM scans.
+	if containsSecrets, ok := node.Properties["contains_secrets"].(bool); ok && containsSecrets {
+		result.DataTypes = append(result.DataTypes, "secrets")
+		result.ComplianceImpact = append(result.ComplianceImpact, "SOC2")
+	}
+
 	// Check for credentials/secrets via ontology capability.
 	if NodeKindHasCapability(node.Kind, NodeCapabilityCredentialStore) {
 		result.DataTypes = append(result.DataTypes, "credentials")
