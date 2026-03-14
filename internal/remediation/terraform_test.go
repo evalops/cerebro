@@ -177,6 +177,37 @@ func TestRenderTerraformRestrictPublicStorageAccessArtifact_UsesIaCFilePlacement
 			t.Fatalf("expected %q in artifact content, got:\n%s", want, artifact.Content)
 		}
 	}
+	if artifact.StateReconciliation == nil {
+		t.Fatal("expected structured state reconciliation guidance")
+	}
+	if artifact.StateReconciliation.StateShow.Program != "terraform" {
+		t.Fatalf("unexpected state show program: %#v", artifact.StateReconciliation.StateShow)
+	}
+	if got := strings.Join(artifact.StateReconciliation.StateShow.Args, " "); got != "state show aws_s3_bucket_public_access_block.audit_logs_public_access_block" {
+		t.Fatalf("unexpected state show args: %q", got)
+	}
+	if artifact.StateReconciliation.Plan.Program != "terraform" {
+		t.Fatalf("unexpected plan program: %#v", artifact.StateReconciliation.Plan)
+	}
+	if got := strings.Join(artifact.StateReconciliation.Plan.Args, " "); got != "plan" {
+		t.Fatalf("unexpected plan args: %q", got)
+	}
+	if len(artifact.StateReconciliation.Imports) != 1 {
+		t.Fatalf("expected one import instruction, got %#v", artifact.StateReconciliation.Imports)
+	}
+	importInstruction := artifact.StateReconciliation.Imports[0]
+	if importInstruction.To != "aws_s3_bucket_public_access_block.audit_logs_public_access_block" {
+		t.Fatalf("unexpected import target: %#v", importInstruction)
+	}
+	if importInstruction.ID != "audit-logs" {
+		t.Fatalf("unexpected import id: %#v", importInstruction)
+	}
+	if !strings.Contains(importInstruction.HCL, `to = aws_s3_bucket_public_access_block.audit_logs_public_access_block`) {
+		t.Fatalf("expected import block target, got:\n%s", importInstruction.HCL)
+	}
+	if !strings.Contains(importInstruction.HCL, `id = "audit-logs"`) {
+		t.Fatalf("expected import block id, got:\n%s", importInstruction.HCL)
+	}
 }
 
 func TestRenderTerraformRestrictPublicStorageAccessArtifact_UsesIaCStateIDModulePath(t *testing.T) {

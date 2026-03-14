@@ -545,6 +545,21 @@ func TestExecutor_RestrictPublicStorageAccessTerraformModeCapturesArtifact(t *te
 	if !strings.Contains(content, `resource "aws_s3_bucket_public_access_block" "public_assets_public_access_block"`) {
 		t.Fatalf("expected terraform resource block, got %q", content)
 	}
+	stateReconciliation, _ := artifact["state_reconciliation"].(map[string]any)
+	if len(stateReconciliation) == 0 {
+		t.Fatalf("expected structured state reconciliation metadata, got %#v", artifact)
+	}
+	stateShow, _ := stateReconciliation["state_show"].(map[string]any)
+	if stateShow["program"] != "terraform" {
+		t.Fatalf("unexpected state show command metadata: %#v", stateShow)
+	}
+	imports, _ := stateReconciliation["imports"].([]map[string]any)
+	if len(imports) != 1 {
+		t.Fatalf("expected one import instruction in metadata, got %#v", stateReconciliation["imports"])
+	}
+	if imports[0]["to"] != "aws_s3_bucket_public_access_block.public_assets_public_access_block" {
+		t.Fatalf("unexpected import instruction target: %#v", imports[0])
+	}
 	after, _ := metadata["after"].(map[string]any)
 	if planned, _ := after["planned"].(bool); !planned {
 		t.Fatalf("expected planned after-state metadata, got %#v", after)

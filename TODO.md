@@ -5,6 +5,26 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 85 - Structured Terraform Import and State-Reconciliation Guidance (2026-03-14)
+
+### Review findings
+- [x] Gap: the Terraform remediation artifacts still exposed import/state handling mostly as freeform notes plus `resource_address` and `import_id`, which is weak for downstream automation and UI rendering.
+- [x] Gap: now that Terraform resource selection is state-aware, the next practical step is not another renderer template. It is a structured artifact model that tells operators exactly how to reconcile generated HCL with Terraform state.
+- [x] Gap: upstream reverse-Terraform tools reinforce that shape:
+  - [x] `GoogleCloudPlatform/terraformer` keeps import identity, output paths, and plan-time behavior explicit rather than burying state handling in prose.
+  - [x] `cycloidio/terracognita` similarly treats generated Terraform and Terraform state/import semantics as first-class output, not just side comments.
+
+### Execution plan
+- [x] Extend `TerraformArtifact` with structured state-reconciliation metadata.
+- [x] Emit machine-readable Terraform commands for:
+  - [x] `terraform state show`
+  - [x] `terraform import`
+  - [x] `terraform plan`
+- [x] Emit Terraform v1.5-style import-block HCL as structured artifact data instead of only freeform notes.
+- [ ] Next Terraform/IaC codegen depth cuts after this slice:
+  - [ ] add the next Terraform-backed safe actions: public security-group ingress restriction and selected encryption defaults beyond S3
+  - [ ] use parsed HCL and lineage to anchor generated blocks to existing module files/labels instead of only path-level placement
+
 ## Deep Review Cycle 84 - Preserve Terraform `for_each` State Addresses in Remediation Codegen (2026-03-14)
 
 ### Review findings
