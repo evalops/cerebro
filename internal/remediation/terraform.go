@@ -112,9 +112,6 @@ func renderTerraformPublicStorageAccessArtifact(execution *Execution) (Terraform
 	if err := validateTerraformArtifactContext(ActionRestrictPublicStorageAccess, execution, "aws", "bucket"); err != nil {
 		return TerraformArtifact{}, err
 	}
-	if provider := inferProvider(execution); provider != "" && provider != "aws" {
-		return TerraformArtifact{}, fmt.Errorf("terraform delivery for %s is only implemented for aws buckets, got %s", ActionRestrictPublicStorageAccess, provider)
-	}
 	bucketName := bucketNameFromExecution(execution)
 	if bucketName == "" {
 		return TerraformArtifact{}, fmt.Errorf("missing bucket identifier for terraform artifact")
