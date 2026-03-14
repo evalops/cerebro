@@ -2,8 +2,12 @@ package builders
 
 import "strings"
 
+func awsSecurityGroupNodeID(record map[string]any) string {
+	return firstNonEmpty(queryRowString(record, "arn"), queryRowString(record, "_cq_id"), queryRowString(record, "group_id"))
+}
+
 func awsSecurityGroupNodeFromRecord(record map[string]any, provider, account, region string) *Node {
-	id := firstNonEmpty(queryRowString(record, "arn"), queryRowString(record, "_cq_id"), queryRowString(record, "group_id"))
+	id := awsSecurityGroupNodeID(record)
 	if id == "" {
 		return nil
 	}
@@ -33,8 +37,12 @@ func awsSecurityGroupNodeFromRecord(record map[string]any, provider, account, re
 	}
 }
 
+func gcpFirewallNodeID(record map[string]any) string {
+	return firstNonEmpty(queryRowString(record, "self_link"), queryRowString(record, "_cq_id"), queryRowString(record, "id"), queryRowString(record, "name"))
+}
+
 func gcpFirewallNodeFromRecord(record map[string]any, provider, account, region string) *Node {
-	id := firstNonEmpty(queryRowString(record, "self_link"), queryRowString(record, "_cq_id"), queryRowString(record, "id"), queryRowString(record, "name"))
+	id := gcpFirewallNodeID(record)
 	if id == "" {
 		return nil
 	}
@@ -64,8 +72,12 @@ func gcpFirewallNodeFromRecord(record map[string]any, provider, account, region 
 	}
 }
 
+func azureNetworkSecurityGroupNodeID(record map[string]any) string {
+	return firstNonEmpty(queryRowString(record, "id"), queryRowString(record, "_cq_id"), queryRowString(record, "name"))
+}
+
 func azureNetworkSecurityGroupNodeFromRecord(record map[string]any, provider, account, region string) *Node {
-	id := firstNonEmpty(queryRowString(record, "id"), queryRowString(record, "_cq_id"), queryRowString(record, "name"))
+	id := azureNetworkSecurityGroupNodeID(record)
 	if id == "" {
 		return nil
 	}

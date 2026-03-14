@@ -65,3 +65,68 @@ func TestAzureNetworkSecurityGroupNodeFromRecordMarksPublicIngress(t *testing.T)
 		t.Fatalf("expected public NSG node, got %#v", node.Properties)
 	}
 }
+
+func TestNetworkAssetNodeIDsMatchCDCRemovalFallback(t *testing.T) {
+	tests := []struct {
+		name    string
+		table   string
+		payload map[string]any
+		node    *Node
+	}{
+		{
+			name:  "aws security group prefers cq id over raw id fields",
+			table: "aws_ec2_security_groups",
+			payload: map[string]any{
+				"_cq_id":   "cq-sg-123",
+				"group_id": "sg-123",
+				"id":       "legacy-id",
+				"name":     "web",
+			},
+			node: awsSecurityGroupNodeFromRecord(map[string]any{
+				"_cq_id":   "cq-sg-123",
+				"group_id": "sg-123",
+				"id":       "legacy-id",
+				"name":     "web",
+			}, "aws", "", ""),
+		},
+		{
+			name:  "gcp firewall prefers self link",
+			table: "gcp_compute_firewalls",
+			payload: map[string]any{
+				"self_link": "https://compute.googleapis.com/projects/p1/global/firewalls/fw-1",
+				"_cq_id":    "cq-fw-1",
+				"id":        "1234567890",
+				"name":      "fw-1",
+			},
+			node: gcpFirewallNodeFromRecord(map[string]any{
+				"self_link": "https://compute.googleapis.com/projects/p1/global/firewalls/fw-1",
+				"_cq_id":    "cq-fw-1",
+				"id":        "1234567890",
+				"name":      "fw-1",
+			}, "gcp", "", ""),
+		},
+		{
+			name:  "azure network security group prefers cq id before name",
+			table: "azure_network_security_groups",
+			payload: map[string]any{
+				"_cq_id": "cq-nsg-1",
+				"name":   "nsg-1",
+			},
+			node: azureNetworkSecurityGroupNodeFromRecord(map[string]any{
+				"_cq_id": "cq-nsg-1",
+				"name":   "nsg-1",
+			}, "azure", "", ""),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.node == nil {
+				t.Fatal("expected node")
+			}
+			if got := cdcNodeID(tt.table, tt.payload, ""); got != tt.node.ID {
+				t.Fatalf("expected cdc removal id %q to match node id %q", got, tt.node.ID)
+			}
+		})
+	}
+}
