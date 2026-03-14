@@ -7,6 +7,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/evalops/cerebro/internal/graph"
+	risk "github.com/evalops/cerebro/internal/graph/risk"
 )
 
 func (s *Server) graphStats(w http.ResponseWriter, r *http.Request) {
@@ -47,7 +48,7 @@ func (s *Server) blastRadius(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	result := graph.BlastRadius(g, principalID, maxDepth)
+	result := risk.BlastRadius(g, principalID, maxDepth)
 	s.json(w, http.StatusOK, result)
 }
 
@@ -71,7 +72,7 @@ func (s *Server) cascadingBlastRadius(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	result := graph.CascadingBlastRadius(g, principalID, maxDepth)
+	result := risk.CascadingBlastRadius(g, principalID, maxDepth)
 	s.json(w, http.StatusOK, result)
 }
 
@@ -95,7 +96,7 @@ func (s *Server) reverseAccess(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	result := graph.ReverseAccess(g, resourceID, maxDepth)
+	result := risk.ReverseAccess(g, resourceID, maxDepth)
 	s.json(w, http.StatusOK, result)
 }
 
@@ -151,13 +152,13 @@ func (s *Server) listToxicCombinations(w http.ResponseWriter, r *http.Request) {
 	}
 	pagination := ParsePagination(r, 100, 1000)
 
-	engine := graph.NewToxicCombinationEngine()
+	engine := risk.NewToxicCombinationEngine()
 	results := engine.Analyze(g)
 
 	// Filter by severity if requested
 	severityFilter := r.URL.Query().Get("severity")
 	if severityFilter != "" {
-		filtered := make([]*graph.ToxicCombination, 0)
+		filtered := make([]*risk.ToxicCombination, 0)
 		for _, tc := range results {
 			if string(tc.Severity) == severityFilter {
 				filtered = append(filtered, tc)
@@ -184,7 +185,7 @@ func (s *Server) listGraphAttackPaths(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	simulator := graph.NewAttackPathSimulator(g)
+	simulator := risk.NewAttackPathSimulator(g)
 
 	maxDepth := 6
 	if depthStr := r.URL.Query().Get("max_depth"); depthStr != "" {
@@ -204,7 +205,7 @@ func (s *Server) listGraphAttackPaths(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if threshold > 0 {
-		filtered := make([]*graph.ScoredAttackPath, 0)
+		filtered := make([]*risk.ScoredAttackPath, 0)
 		for _, path := range result.Paths {
 			if path.TotalScore >= threshold {
 				filtered = append(filtered, path)
@@ -240,7 +241,7 @@ func (s *Server) simulateAttackPathFix(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	simulator := graph.NewAttackPathSimulator(g)
+	simulator := risk.NewAttackPathSimulator(g)
 	result := simulator.Simulate(6)
 	fixSim := simulator.SimulateFix(result, nodeID)
 
@@ -254,7 +255,7 @@ func (s *Server) listChokepoints(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	simulator := graph.NewAttackPathSimulator(g)
+	simulator := risk.NewAttackPathSimulator(g)
 	result := simulator.Simulate(6)
 
 	limit := 20

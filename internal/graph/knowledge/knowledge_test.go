@@ -26,6 +26,7 @@ func TestObservationWrappersRoundTripRecords(t *testing.T) {
 		SourceEventID:   "evt-1",
 		ObservedAt:      baseAt,
 		ValidFrom:       baseAt,
+		RecordedAt:      baseAt,
 		Confidence:      0.9,
 	})
 	if err != nil {
@@ -41,7 +42,7 @@ func TestObservationWrappersRoundTripRecords(t *testing.T) {
 	}
 
 	records := QueryObservations(g, KnowledgeArtifactQueryOptions{
-		TargetID:   "service:payments",
+		Type:       "deployment",
 		ValidAt:    baseAt.Add(time.Minute),
 		RecordedAt: baseAt.Add(time.Minute),
 	})
@@ -84,6 +85,7 @@ func TestClaimWrappersExposeQueryGroupingAndConflicts(t *testing.T) {
 		SourceEventID: "evt-claim-1",
 		ObservedAt:    baseAt,
 		ValidFrom:     baseAt,
+		RecordedAt:    baseAt,
 		Confidence:    0.9,
 	})
 	if err != nil {
@@ -101,6 +103,7 @@ func TestClaimWrappersExposeQueryGroupingAndConflicts(t *testing.T) {
 		SourceEventID: "evt-claim-2",
 		ObservedAt:    baseAt.Add(time.Minute),
 		ValidFrom:     baseAt.Add(time.Minute),
+		RecordedAt:    baseAt.Add(time.Minute),
 		Confidence:    0.8,
 	})
 	if err != nil {
