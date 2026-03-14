@@ -432,7 +432,7 @@ func resolveWorkloadScanTrivyBinary(cfg *app.Config) string {
 	if strings.TrimSpace(workloadScanTrivyBinary) != "" {
 		return strings.TrimSpace(workloadScanTrivyBinary)
 	}
-	if cfg != nil {
+	if cfg != nil && strings.TrimSpace(cfg.WorkloadScanTrivyBinary) != "" {
 		return strings.TrimSpace(cfg.WorkloadScanTrivyBinary)
 	}
 	return "trivy"
