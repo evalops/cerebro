@@ -39,16 +39,16 @@ func StartJetStreamServer(t *testing.T) string {
 	}
 
 	var logs lockedBuffer
-	logLines := make(chan string, 32)
+	announcedURL := make(chan string, 1)
 
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start nats-server: %v", err)
 	}
 
-	go streamLogs(stdout, &logs, logLines)
-	go streamLogs(stderr, &logs, logLines)
+	go streamLogs(stdout, &logs, announcedURL)
+	go streamLogs(stderr, &logs, announcedURL)
 
-	natsURL, err := waitForNATSURL(logLines, 10*time.Second)
+	natsURL, err := waitForNATSURL(announcedURL, 10*time.Second)
 	if err != nil {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
@@ -83,28 +83,31 @@ func StartJetStreamServer(t *testing.T) string {
 	return natsURL
 }
 
-func streamLogs(r io.Reader, logs *lockedBuffer, logLines chan<- string) {
+func streamLogs(r io.Reader, logs *lockedBuffer, announcedURL chan<- string) {
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		line := scanner.Text()
 		logs.WriteLine(line)
-		logLines <- line
+		if natsURL, ok := extractNATSURL(line); ok {
+			select {
+			case announcedURL <- natsURL:
+			default:
+			}
+		}
 	}
 	if err := scanner.Err(); err != nil {
 		logs.WriteLine(fmt.Sprintf("log scanner error: %v", err))
 	}
 }
 
-func waitForNATSURL(logLines <-chan string, timeout time.Duration) (string, error) {
+func waitForNATSURL(announcedURL <-chan string, timeout time.Duration) (string, error) {
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 
 	for {
 		select {
-		case line := <-logLines:
-			if natsURL, ok := extractNATSURL(line); ok {
-				return natsURL, nil
-			}
+		case natsURL := <-announcedURL:
+			return natsURL, nil
 		case <-timer.C:
 			return "", fmt.Errorf("timeout waiting for nats-server listener announcement")
 		}
