@@ -171,6 +171,37 @@ func TestAnalyzerRecordsUnreadableFileErrors(t *testing.T) {
 	}
 }
 
+func TestAnalyzerRecordsMalwareScannerErrors(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "bin", "payload.sh"), "#!/bin/sh\necho payload\n")
+
+	clamav := filepath.Join(root, "clamscan")
+	mustWriteFile(t, clamav, "#!/bin/sh\necho 'database missing' >&2\nexit 2\n")
+	if err := os.Chmod(clamav, 0o755); err != nil {
+		t.Fatalf("Chmod(%s): %v", clamav, err)
+	}
+
+	malwareScanner := scanner.NewMalwareScanner()
+	malwareScanner.RegisterEngine(scanner.NewClamAVBinaryEngine(clamav))
+
+	report, err := New(Options{MalwareScanner: malwareScanner}).Analyze(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+
+	rawErrors, ok := report.Metadata["errors"]
+	if !ok {
+		t.Fatalf("expected malware scan metadata errors, got %#v", report.Metadata)
+	}
+	errors, ok := rawErrors.([]string)
+	if !ok {
+		t.Fatalf("expected []string metadata errors, got %T", rawErrors)
+	}
+	if len(errors) == 0 || !strings.Contains(strings.Join(errors, "\n"), "clamav binary scan failed: database missing") {
+		t.Fatalf("expected malware scan error to surface, got %#v", errors)
+	}
+}
+
 func TestAnalyzerRedactsPersistedSecretMatches(t *testing.T) {
 	root := t.TempDir()
 	mustWriteFile(t, filepath.Join(root, "home", "user", ".env"), strings.Join([]string{
