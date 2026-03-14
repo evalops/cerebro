@@ -55,7 +55,20 @@ func TestParseGitleaksOutput(t *testing.T) {
 }
 
 func TestGitleaksScannerScanFilesystem(t *testing.T) {
-	script := "#!/bin/sh\nprintf '%s' '[{\"RuleID\":\"GitHub\",\"Description\":\"GitHub token\",\"StartLine\":1,\"Match\":\"ghp_1234567890abcdefghijklmn\",\"Secret\":\"ghp_1234567890abcdefghijklmn\",\"File\":\"workspace/.env\"}]'\n"
+	script := "#!/bin/sh\n" +
+		"found_report_path=0\n" +
+		"while [ \"$#\" -gt 0 ]; do\n" +
+		"  if [ \"$1\" = \"--report-path\" ] && [ \"$2\" = \"-\" ]; then\n" +
+		"    found_report_path=1\n" +
+		"    break\n" +
+		"  fi\n" +
+		"  shift\n" +
+		"done\n" +
+		"if [ \"$found_report_path\" -ne 1 ]; then\n" +
+		"  echo missing --report-path - >&2\n" +
+		"  exit 2\n" +
+		"fi\n" +
+		"printf '%s' '[{\"RuleID\":\"GitHub\",\"Description\":\"GitHub token\",\"StartLine\":1,\"Match\":\"ghp_1234567890abcdefghijklmn\",\"Secret\":\"ghp_1234567890abcdefghijklmn\",\"File\":\"workspace/.env\"}]'\n"
 	path := writeSecretScannerExecutable(t, script)
 
 	result, err := NewGitleaksScanner(path).ScanFilesystem(context.Background(), t.TempDir())

@@ -46,6 +46,7 @@ func (s *GitleaksScanner) ScanFilesystem(ctx context.Context, rootfsPath string)
 		"--log-level", "error",
 		"--exit-code", "0",
 		"--report-format", "json",
+		"--report-path", "-",
 		absPath,
 	) // #nosec G204 -- fixed binary/arguments, no shell interpolation
 	var stderr bytes.Buffer
