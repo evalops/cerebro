@@ -28,6 +28,15 @@ func TestParseGitleaksOutput(t *testing.T) {
 			"Secret": "super-secret-value",
 			"File": "workspace/app.conf",
 			"Fingerprint": "generic:fingerprint"
+		},
+		{
+			"RuleID": "npm-access-token",
+			"Description": "npm token",
+			"StartLine": 5,
+			"Match": "npm_1234567890abcdefghijklmnopqrstuvwxyz",
+			"Secret": "npm_1234567890abcdefghijklmnopqrstuvwxyz",
+			"File": "workspace/.npmrc",
+			"Fingerprint": "npm:fingerprint"
 		}
 	]`)
 
@@ -35,8 +44,8 @@ func TestParseGitleaksOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseGitleaksOutput: %v", err)
 	}
-	if len(findings) != 2 {
-		t.Fatalf("expected two findings, got %#v", findings)
+	if len(findings) != 3 {
+		t.Fatalf("expected three findings, got %#v", findings)
 	}
 	if findings[0].Type != "aws_access_key" || findings[0].Severity != "critical" {
 		t.Fatalf("expected aws finding normalization, got %#v", findings[0])
@@ -52,6 +61,9 @@ func TestParseGitleaksOutput(t *testing.T) {
 	}
 	if findings[1].Type != "generic_api_key" || findings[1].Severity != "medium" {
 		t.Fatalf("expected generic finding normalization, got %#v", findings[1])
+	}
+	if findings[2].Type != "npm_token" || findings[2].Severity != "high" {
+		t.Fatalf("expected npm finding normalization, got %#v", findings[2])
 	}
 }
 
