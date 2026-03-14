@@ -223,6 +223,35 @@ func TestRenderTerraformRestrictPublicStorageAccessArtifact_FallsBackToLiteralBu
 	}
 }
 
+func TestTerraformStateResourceAddress_PreservesForEachKeysWithDots(t *testing.T) {
+	address, resourceType := terraformStateResourceAddress(`module.platform.module.storage.aws_s3_bucket.buckets["audit.logs"]`)
+	if resourceType != "aws_s3_bucket" {
+		t.Fatalf("unexpected resource type: %q", resourceType)
+	}
+	if address != `module.platform.module.storage.aws_s3_bucket.buckets["audit.logs"]` {
+		t.Fatalf("unexpected resource address: %q", address)
+	}
+}
+
+func TestRenderTerraformRestrictPublicStorageAccessArtifact_UsesStateReferenceForForEachKeyWithDots(t *testing.T) {
+	artifact, err := renderTerraformArtifact(Action{
+		Type: ActionRestrictPublicStorageAccess,
+	}, &Execution{
+		TriggerData: map[string]any{
+			"resource_id":       "bucket:audit.logs",
+			"resource_platform": "aws",
+			"iac_state_id":      `module.platform.module.storage.aws_s3_bucket.buckets["audit.logs"]`,
+		},
+	})
+	if err != nil {
+		t.Fatalf("render artifact: %v", err)
+	}
+
+	if !strings.Contains(artifact.Content, `bucket = module.platform.module.storage.aws_s3_bucket.buckets["audit.logs"].id`) {
+		t.Fatalf("expected bucket reference from for_each state id, got:\n%s", artifact.Content)
+	}
+}
+
 func TestRenderTerraformBucketDefaultEncryptionArtifact_FallsBackToLiteralBucketWhenStateIDIsAttributePath(t *testing.T) {
 	artifact, err := renderTerraformBucketDefaultEncryptionArtifact(&Execution{
 		TriggerData: map[string]any{

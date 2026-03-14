@@ -5,6 +5,21 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 84 - Preserve Terraform `for_each` State Addresses in Remediation Codegen (2026-03-14)
+
+### Review findings
+- [x] Gap: the new state-aware bucket-reference reuse path still parsed `iac_state_id` by splitting on raw dots, which breaks valid Terraform addresses like `aws_s3_bucket.buckets["audit.logs"]`.
+- [x] Gap: when that happens, generated remediation HCL silently falls back to literal bucket strings even though the lineage/state context already points at the managed Terraform resource.
+- [x] Gap: the parser seam needs to respect Terraform bracket/quote syntax so `for_each` and indexed resource addresses remain reusable instead of being degraded into weaker literal patches.
+
+### Execution plan
+- [x] Add TDD coverage for dotted `for_each` keys in Terraform state addresses.
+- [x] Replace the raw dot splitter with an address parser that preserves bracketed and quoted segments.
+- [x] Keep fallback behavior intact for malformed or unsupported addresses instead of guessing.
+- [ ] Next Terraform/IaC codegen depth cuts after this slice:
+  - [ ] emit import-block/state-reconciliation guidance in a structured artifact model once Terraform v1.5+ import surfaces become first-class in generated output
+  - [ ] add the next Terraform-backed safe actions: public security-group ingress restriction and selected encryption defaults beyond S3
+
 ## Deep Review Cycle 83 - Reuse Existing Terraform Bucket References from State (2026-03-14)
 
 ### Review findings

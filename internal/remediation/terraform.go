@@ -379,7 +379,10 @@ func terraformStateResourceAddress(stateID string) (string, string) {
 	if stateID == "" {
 		return "", ""
 	}
-	parts := strings.Split(stateID, ".")
+	parts := terraformAddressParts(stateID)
+	if len(parts) == 0 {
+		return "", ""
+	}
 	prefix := make([]string, 0, len(parts))
 	idx := 0
 	for idx < len(parts) {
@@ -411,6 +414,68 @@ func terraformStateResourceAddress(stateID string) (string, string) {
 	}
 	addressParts := append(prefix, resourceType, resourceName)
 	return strings.Join(addressParts, "."), resourceType
+}
+
+func terraformAddressParts(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	parts := make([]string, 0, 8)
+	var current strings.Builder
+	bracketDepth := 0
+	var quoted rune
+	escaped := false
+	flush := func() {
+		parts = append(parts, current.String())
+		current.Reset()
+	}
+	for _, r := range raw {
+		switch {
+		case escaped:
+			current.WriteRune(r)
+			escaped = false
+		case quoted != 0:
+			current.WriteRune(r)
+			if r == '\\' {
+				escaped = true
+				continue
+			}
+			if r == quoted {
+				quoted = 0
+			}
+		default:
+			switch r {
+			case '"', '\'':
+				current.WriteRune(r)
+				if bracketDepth > 0 {
+					quoted = r
+				}
+			case '[':
+				bracketDepth++
+				current.WriteRune(r)
+			case ']':
+				if bracketDepth == 0 {
+					return nil
+				}
+				bracketDepth--
+				current.WriteRune(r)
+			case '.':
+				if bracketDepth == 0 {
+					flush()
+					continue
+				}
+				current.WriteRune(r)
+			default:
+				current.WriteRune(r)
+			}
+		}
+	}
+	if escaped || quoted != 0 || bracketDepth != 0 {
+		return nil
+	}
+	flush()
+	return parts
 }
 
 func bucketNameFromExecution(execution *Execution) string {
