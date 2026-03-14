@@ -1585,12 +1585,12 @@ func (a *App) toolCerebroRiskScore(_ context.Context, args json.RawMessage) (str
 	}
 
 	engine := risk.NewRiskEngine(g)
-	risk := engine.ScoreEntity(req.EntityID)
-	if risk == nil {
+	entityRisk := engine.ScoreEntity(req.EntityID)
+	if entityRisk == nil {
 		return "", fmt.Errorf("entity not found: %s", req.EntityID)
 	}
 
-	response := map[string]any{"entity_risk": risk}
+	response := map[string]any{"entity_risk": entityRisk}
 	if req.IncludeOverall {
 		report := engine.Analyze()
 		response["overall_risk_score"] = report.RiskScore
