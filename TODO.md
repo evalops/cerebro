@@ -50,19 +50,20 @@ Status: executed end-to-end via PR workflow
 ### Review findings
 - [x] Gap: `restrict_public_security_group_ingress` existed in the remediation catalog, but the Terraform path still stopped at S3. That left one of the core low-blast-radius network remediations stuck on remote apply only.
 - [x] Gap: SG ingress is not the same shape as bucket subresources. The safe Terraform-first seam is not inline `aws_security_group` rewriting; it is targeting standalone managed rule resources where the desired end state is removal.
-- [x] Gap: the current lineage/IaC context is already sufficient for that narrow cut when `iac_state_id` points at `aws_security_group_rule` or `aws_vpc_security_group_ingress_rule`, including `for_each` instance addresses.
+- [x] Gap: the current lineage/IaC context is already sufficient for that narrow cut when `iac_state_id` points at standalone `aws_security_group_rule` or `aws_vpc_security_group_ingress_rule` resources.
+- [x] Gap: Terraform `removed` blocks impose a stricter boundary than ordinary address reuse. Multi-instance rule addresses with instance keys cannot be represented safely in this cut, so they need an explicit rejection path rather than optimistic generation.
 
 ### Execution plan
 - [x] Extend the catalog so SG ingress restriction supports Terraform delivery while keeping remote apply as the default.
 - [x] Add a Terraform renderer for standalone rule resources that emits a `removed` block targeting the existing managed rule address.
 - [x] Preserve state-address fidelity for:
   - [x] plain managed rule addresses
-  - [x] `for_each` instance rule addresses
   - [x] attribute-path forms of those addresses
-- [x] Reject inline `aws_security_group` contexts explicitly until we add real HCL-editing support.
+- [x] Reject unsupported Terraform contexts explicitly until we add real HCL-editing support:
+  - [x] inline `aws_security_group` resources
+  - [x] multi-instance rule addresses with `for_each` / instance keys
 - [x] Add renderer and executor TDD coverage for:
   - [x] standalone rule removal artifacts
-  - [x] `for_each` instance addresses
   - [x] inline-security-group rejection
 - [ ] Next Terraform/IaC codegen depth cuts after this slice:
   - [ ] add HCL-edit support for inline `aws_security_group` ingress blocks so Terraform remediation can rewrite existing rule blocks instead of only handling standalone rule resources

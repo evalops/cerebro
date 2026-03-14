@@ -1392,6 +1392,73 @@ func TestExecutor_RestrictPublicSecurityGroupIngressTerraformModeRejectsInlineSe
 	}
 }
 
+func TestExecutor_RestrictPublicSecurityGroupIngressTerraformModeRejectsForEachRuleState(t *testing.T) {
+	engine := NewEngine(testutil.Logger())
+	rule := Rule{
+		ID:      "restrict-public-security-group-ingress-terraform-foreach-rule",
+		Name:    "Restrict Public Security Group Ingress Terraform ForEach Rule",
+		Enabled: true,
+		Trigger: Trigger{Type: TriggerManual},
+		Actions: []Action{{
+			Type: ActionRestrictPublicSecurityGroupIngress,
+			Config: map[string]string{
+				"delivery_mode": "terraform",
+			},
+		}},
+	}
+	if err := engine.AddRule(rule); err != nil {
+		t.Fatalf("add rule: %v", err)
+	}
+
+	executions, err := engine.Evaluate(context.Background(), Event{
+		Type:     TriggerManual,
+		PolicyID: "aws-security-group-restrict-ssh",
+		EntityID: "sg-rule-123",
+		Data: map[string]any{
+			"resource_id":       "sg-rule-123",
+			"resource_name":     "public-ssh",
+			"resource_type":     "security_group_rule",
+			"resource_platform": "aws",
+			"iac_state_id":      `module.platform.aws_vpc_security_group_ingress_rule.public["ssh_open"].id`,
+			"direction":         "ingress",
+			"protocol":          "tcp",
+			"from_port":         22,
+			"to_port":           22,
+			"ip_ranges": []any{
+				map[string]any{"CidrIp": "0.0.0.0/0"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("evaluate: %v", err)
+	}
+	execution := executions[0]
+	executor := NewExecutor(engine, nil, nil, nil, nil)
+
+	err = executor.Execute(context.Background(), execution)
+	if err == nil {
+		t.Fatal("expected terraform for_each rule rejection")
+	}
+	if !strings.Contains(err.Error(), "precondition failed") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	preconditions, _ := execution.Actions[0].Metadata["preconditions"].([]map[string]any)
+	if len(preconditions) == 0 {
+		t.Fatalf("expected precondition metadata, got %#v", execution.Actions[0].Metadata)
+	}
+	found := false
+	for _, precondition := range preconditions {
+		detail, _ := precondition["detail"].(string)
+		if strings.Contains(detail, "standalone Terraform security group rule resources") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected standalone-rule precondition detail, got %#v", preconditions)
+	}
+}
+
 func TestExecutor_RestrictPublicSecurityGroupIngressRequiresApprovalByDefault(t *testing.T) {
 	engine := NewEngine(testutil.Logger())
 	rule := Rule{

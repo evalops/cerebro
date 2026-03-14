@@ -573,6 +573,9 @@ func terraformExistingSecurityGroupRuleAddress(execution *Execution) (string, st
 		if resourceAddress == "" {
 			return "", "", false
 		}
+		if strings.Contains(resourceAddress, "[") {
+			return "", "", false
+		}
 		return resourceAddress, resourceType, true
 	default:
 		return "", "", false
