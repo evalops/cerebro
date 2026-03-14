@@ -1,0 +1,93 @@
+package filesystemanalyzer
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestParseGitleaksOutput(t *testing.T) {
+	raw := []byte(`[
+		{
+			"RuleID": "AWS Access Key",
+			"Description": "AWS key",
+			"StartLine": 7,
+			"Match": "AKIA1234567890ABCDEF",
+			"Secret": "AKIA1234567890ABCDEF",
+			"File": "./workspace/.env",
+			"Fingerprint": "aws:fingerprint"
+		},
+		{
+			"RuleID": "Generic API Key",
+			"Description": "Generic secret",
+			"StartLine": 3,
+			"Match": "super-secret-value",
+			"Secret": "super-secret-value",
+			"File": "workspace/app.conf",
+			"Fingerprint": "generic:fingerprint"
+		}
+	]`)
+
+	findings, err := parseGitleaksOutput(raw)
+	if err != nil {
+		t.Fatalf("parseGitleaksOutput: %v", err)
+	}
+	if len(findings) != 2 {
+		t.Fatalf("expected two findings, got %#v", findings)
+	}
+	if findings[0].Type != "aws_access_key" || findings[0].Severity != "critical" {
+		t.Fatalf("expected aws finding normalization, got %#v", findings[0])
+	}
+	if findings[0].Path != "workspace/.env" || findings[0].Line != 7 {
+		t.Fatalf("expected normalized path and line, got %#v", findings[0])
+	}
+	if len(findings[0].References) != 1 || findings[0].References[0].Provider != "aws" {
+		t.Fatalf("expected aws reference extraction, got %#v", findings[0])
+	}
+	if strings.Contains(findings[0].Match, "AKIA1234567890ABCDEF") {
+		t.Fatalf("expected gitleaks finding to be fingerprinted, got %#v", findings[0])
+	}
+	if findings[1].Type != "generic_api_key" || findings[1].Severity != "medium" {
+		t.Fatalf("expected generic finding normalization, got %#v", findings[1])
+	}
+}
+
+func TestGitleaksScannerScanFilesystem(t *testing.T) {
+	script := "#!/bin/sh\nprintf '%s' '[{\"RuleID\":\"GitHub\",\"Description\":\"GitHub token\",\"StartLine\":1,\"Match\":\"ghp_1234567890abcdefghijklmn\",\"Secret\":\"ghp_1234567890abcdefghijklmn\",\"File\":\"workspace/.env\"}]'\n"
+	path := writeSecretScannerExecutable(t, script)
+
+	result, err := NewGitleaksScanner(path).ScanFilesystem(context.Background(), t.TempDir())
+	if err != nil {
+		t.Fatalf("ScanFilesystem: %v", err)
+	}
+	if result.Engine != "gitleaks" || len(result.Findings) != 1 {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+	if result.Findings[0].Type != "github_token" {
+		t.Fatalf("expected github token mapping, got %#v", result.Findings[0])
+	}
+}
+
+func TestGitleaksScannerScanFilesystemError(t *testing.T) {
+	script := "#!/bin/sh\necho boom >&2\nexit 2\n"
+	path := writeSecretScannerExecutable(t, script)
+
+	_, err := NewGitleaksScanner(path).ScanFilesystem(context.Background(), t.TempDir())
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("expected stderr in error, got %v", err)
+	}
+}
+
+func writeSecretScannerExecutable(t *testing.T, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "gitleaks")
+	if err := os.WriteFile(path, []byte(content), 0o700); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	return path
+}
