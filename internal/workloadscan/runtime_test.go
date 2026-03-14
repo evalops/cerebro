@@ -184,6 +184,18 @@ func (e *captureEmitter) EmitWithErrors(_ context.Context, eventType webhooks.Ev
 	return nil
 }
 
+type failingRunStore struct {
+	RunStore
+	failCompletedRunSave bool
+}
+
+func (s *failingRunStore) SaveRun(ctx context.Context, run *RunRecord) error {
+	if s.failCompletedRunSave && run != nil && run.Status == RunStatusSucceeded && run.Stage == RunStageCompleted {
+		return fmt.Errorf("persist completed run failed")
+	}
+	return s.RunStore.SaveRun(ctx, run)
+}
+
 func TestSQLiteRunStoreRoundTripAndEvents(t *testing.T) {
 	store, err := NewSQLiteRunStore(filepath.Join(t.TempDir(), "workload-scan.db"))
 	if err != nil {
@@ -587,6 +599,48 @@ func TestRunnerRunVMScanRecordsMountFailureMetrics(t *testing.T) {
 	}
 	if got := workloadGaugeVecValue(t, metrics.WorkloadScanActiveVolumeOps, "aws", "mount"); got != 0 {
 		t.Fatalf("expected active volume ops gauge to return to 0 after failure, got %v", got)
+	}
+}
+
+func TestRunnerRunVMScanRecordsFailedMetricWhenFinalSaveFails(t *testing.T) {
+	metrics.Register()
+
+	baseStore, err := NewSQLiteRunStore(filepath.Join(t.TempDir(), "workload-scan.db"))
+	if err != nil {
+		t.Fatalf("new sqlite run store: %v", err)
+	}
+	defer func() { _ = baseStore.Close() }()
+
+	store := &failingRunStore{
+		RunStore:             baseStore,
+		failCompletedRunSave: true,
+	}
+	provider := &fakeProvider{
+		volumes: []SourceVolume{{ID: "vol-a", SizeGiB: 10}},
+	}
+	runner := NewRunner(RunnerOptions{
+		Store:     store,
+		Providers: []Provider{provider},
+		Mounter:   &fakeMounter{},
+		Analyzer:  fakeAnalyzer{},
+	})
+
+	beforeFailed := workloadCounterValue(t, metrics.WorkloadScanRunsTotal, "aws", "failed", "false")
+	beforeSucceeded := workloadCounterValue(t, metrics.WorkloadScanRunsTotal, "aws", "succeeded", "false")
+
+	if _, err := runner.RunVMScan(context.Background(), ScanRequest{
+		ID:          "workload_scan:metrics-final-save-failure",
+		Target:      VMTarget{Provider: ProviderAWS, Region: "us-east-1", InstanceID: "i-target"},
+		ScannerHost: ScannerHost{HostID: "i-scan", Region: "us-east-1"},
+	}); err == nil {
+		t.Fatal("expected run vm scan to fail when completed run persistence fails")
+	}
+
+	if got := workloadCounterValue(t, metrics.WorkloadScanRunsTotal, "aws", "failed", "false"); got != beforeFailed+1 {
+		t.Fatalf("expected failed run counter to increase by 1, got before=%v after=%v", beforeFailed, got)
+	}
+	if got := workloadCounterValue(t, metrics.WorkloadScanRunsTotal, "aws", "succeeded", "false"); got != beforeSucceeded {
+		t.Fatalf("expected succeeded run counter to remain unchanged, got before=%v after=%v", beforeSucceeded, got)
 	}
 }
 

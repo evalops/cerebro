@@ -158,7 +158,7 @@ func NewRunner(opts RunnerOptions) *Runner {
 	}
 }
 
-func (r *Runner) RunVMScan(ctx context.Context, req ScanRequest) (*RunRecord, error) {
+func (r *Runner) RunVMScan(ctx context.Context, req ScanRequest) (result *RunRecord, err error) {
 	if r == nil {
 		return nil, fmt.Errorf("workload scan runner is nil")
 	}
@@ -209,7 +209,7 @@ func (r *Runner) RunVMScan(ctx context.Context, req ScanRequest) (*RunRecord, er
 	defer func() {
 		if finishRunObservation != nil {
 			status := run.Status
-			if !status.Terminal() {
+			if err != nil || !status.Terminal() {
 				status = RunStatusFailed
 			}
 			finishRunObservation(status)
