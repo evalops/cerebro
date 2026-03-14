@@ -541,6 +541,7 @@ func summarizeRun(run RunRecord) (scanSummary, map[string]configAggregate, map[s
 		}
 		summary.SecretCount += len(catalog.Secrets)
 		summary.MisconfigurationCount += len(catalog.Misconfigurations)
+		summary.MalwareCount += len(catalog.Malware)
 		for _, artifact := range catalog.IaCArtifacts {
 			artifactID := strings.TrimSpace(artifact.ID)
 			if artifactID == "" {
@@ -615,7 +616,6 @@ func summarizeRun(run RunRecord) (scanSummary, map[string]configAggregate, map[s
 	summary.IaCArtifactCount = len(iacArtifacts)
 	summary.PackageCount = len(packages)
 	summary.VulnerabilityCount = len(vulns)
-	summary.MalwareCount = len(malware)
 	for _, vulnAgg := range vulns {
 		switch normalizeSeverity(vulnAgg.record.Severity) {
 		case "critical":
