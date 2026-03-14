@@ -1,9 +1,39 @@
 # Cerebro Intelligence Layer Execution TODO
 
-Last updated: 2026-03-13 (America/Los_Angeles)
+Last updated: 2026-03-14 (America/Los_Angeles)
 Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
+
+## Deep Review Cycle 80 - Terraform-Backed Public Storage Remediation (2026-03-14)
+
+### Review findings
+- [x] Gap: the new remediation Terraform seam from `#301` only covered S3 encryption, so one of the highest-confidence catalog actions still fell back to remote apply even when operators wanted IaC-first change control.
+- [x] Gap: `restrict_public_storage_access` was still modeled as a multi-provider remote action only; simply flipping the whole catalog entry to Terraform-first would have been wrong because the current default-delivery model is global per action, not provider-specific.
+- [x] Gap: the renderer boundary itself was too trusting. Without a provider guard, any future direct caller could have generated AWS HCL for a non-AWS storage finding as long as a bucket-like identifier existed.
+- [x] Gap: upstream IaC tooling points to the right next seam, not a template explosion:
+  - [x] `GoogleCloudPlatform/terraformer` keeps resource import identity, output path structure, and plan-time customization explicit instead of burying them inside per-resource ad hoc writers.
+  - [x] Cerebro already has the key placement hints for that model in `internal/lineage` and remediation trigger data: `iac_file`, `iac_module`, and `iac_state_id`.
+  - [x] the shared `internal/iacrender` helper from `#301` is the correct base layer, but it still needs a higher-level remediation codegen registry once more Terraform-backed actions arrive.
+
+### Execution plan
+- [x] Extend the catalog/action path for Terraform-backed public storage remediation:
+  - [x] allow `restrict_public_storage_access` to support both `remote_apply` and `terraform`
+  - [x] keep the default delivery mode as `remote_apply` until provider-specific delivery defaults exist
+- [x] Add the first AWS Terraform implementation for the action:
+  - [x] generate `aws_s3_bucket_public_access_block` artifacts
+  - [x] reuse existing IaC placement hints from `iac_file`, `iac_module`, and `iac_state_id`
+  - [x] persist artifact metadata/evidence through execution results
+- [x] Harden provider and approval semantics with TDD:
+  - [x] terraform delivery completes without approval for this catalog action
+  - [x] non-AWS terraform delivery fails preconditions instead of emitting the wrong provider HCL
+  - [x] the renderer itself rejects explicit non-AWS provider context
+- [ ] Next Terraform/IaC codegen depth cuts after this slice:
+  - [ ] add provider-specific default delivery preferences instead of one global default per remediation action
+  - [ ] introduce a remediation codegen registry keyed by action + provider + resource family, not just a flat action-to-template map
+  - [ ] use lineage/state/HCL parsing to prefer existing Terraform resource references when available instead of literal identifiers
+  - [ ] emit import-block/state-reconciliation guidance in a structured artifact model once Terraform v1.5+ import surfaces become first-class in generated output
+  - [ ] add the next Terraform-backed safe actions: public security-group ingress restriction and selected encryption defaults beyond S3
 
 ## Deep Review Cycle 79 - Filesystem IaC Detection During Workload Scans (2026-03-13)
 
