@@ -35,7 +35,11 @@ func TestEngine_ListRules(t *testing.T) {
 		"pagerduty-critical",
 		"auto-ticket-high",
 		"s3-public-notify",
+		"gcs-public-notify",
+		"gcs-public-principal-notify",
 		"identity-stale-user-remediation",
+		"aws-unused-access-key-disable",
+		"gcp-user-managed-key-disable",
 		"identity-excessive-privilege-remediation",
 		"dspm-restricted-data-unencrypted-remediation",
 		"dspm-confidential-data-public-remediation",
@@ -45,6 +49,42 @@ func TestEngine_ListRules(t *testing.T) {
 		if !ruleIDs[id] {
 			t.Errorf("expected rule %s to be loaded", id)
 		}
+	}
+}
+
+func TestEngine_DefaultSafeCatalogRulesIncludeApprovalGatedActions(t *testing.T) {
+	engine := NewEngine(testutil.Logger())
+
+	s3Rule, ok := engine.GetRule("s3-public-notify")
+	if !ok {
+		t.Fatal("expected s3-public-notify rule")
+	}
+	foundRestrict := false
+	for _, action := range s3Rule.Actions {
+		if action.Type == ActionRestrictPublicStorageAccess {
+			foundRestrict = true
+			break
+		}
+	}
+	if !foundRestrict {
+		t.Fatalf("expected s3-public-notify to include %s", ActionRestrictPublicStorageAccess)
+	}
+
+	keyRule, ok := engine.GetRule("aws-unused-access-key-disable")
+	if !ok {
+		t.Fatal("expected aws-unused-access-key-disable rule")
+	}
+	foundDisable := false
+	for _, action := range keyRule.Actions {
+		if action.Type == ActionDisableStaleAccessKey {
+			foundDisable = true
+			if action.Config["inactive_days"] != "90" {
+				t.Fatalf("expected inactive_days=90 on key disable action, got %#v", action.Config)
+			}
+		}
+	}
+	if !foundDisable {
+		t.Fatalf("expected aws-unused-access-key-disable to include %s", ActionDisableStaleAccessKey)
 	}
 }
 
