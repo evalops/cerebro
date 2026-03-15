@@ -26,6 +26,12 @@ type auditMutationRecord struct {
 	EventTime  time.Time
 }
 
+type auditMutationParseResult struct {
+	Mutations   []auditMutationRecord
+	Dropped     int
+	DropReasons []string
+}
+
 func isAuditMutationEventType(eventType string) bool {
 	eventType = strings.ToLower(strings.TrimSpace(eventType))
 	switch {
@@ -47,10 +53,19 @@ func (a *App) handleAuditMutationCloudEvent(ctx context.Context, evt events.Clou
 		return nil
 	}
 
-	mutations, err := parseAuditMutationCloudEvent(evt)
+	result, err := parseAuditMutationCloudEvent(evt)
 	if err != nil {
 		return err
 	}
+	if a.Logger != nil && result.Dropped > 0 {
+		a.Logger.Warn("dropped invalid audit mutation records",
+			"event_type", cloudEventType(evt),
+			"source", strings.TrimSpace(evt.Source),
+			"dropped", result.Dropped,
+			"drop_reasons", result.DropReasons,
+		)
+	}
+	mutations := result.Mutations
 	if len(mutations) == 0 {
 		return nil
 	}
@@ -114,10 +129,10 @@ func (a *App) isSecurityGraphReady() bool {
 	}
 }
 
-func parseAuditMutationCloudEvent(evt events.CloudEvent) ([]auditMutationRecord, error) {
+func parseAuditMutationCloudEvent(evt events.CloudEvent) (auditMutationParseResult, error) {
 	eventType := cloudEventType(evt)
 	if !isAuditMutationEventType(eventType) {
-		return nil, nil
+		return auditMutationParseResult{}, nil
 	}
 
 	rawRecords := make([]map[string]any, 0, 4)
@@ -133,11 +148,14 @@ func parseAuditMutationCloudEvent(evt events.CloudEvent) ([]auditMutationRecord,
 		rawRecords = append(rawRecords, evt.Data)
 	}
 
-	out := make([]auditMutationRecord, 0, len(rawRecords))
+	result := auditMutationParseResult{
+		Mutations: make([]auditMutationRecord, 0, len(rawRecords)),
+	}
 	for idx, raw := range rawRecords {
 		tableName := strings.ToLower(strings.TrimSpace(anyToString(firstPresent(raw, "table_name", "table"))))
 		if tableName == "" {
-			return nil, fmt.Errorf("audit mutation event %q requires data.table_name", eventType)
+			recordAuditMutationDrop(&result, "missing_table_name")
+			continue
 		}
 
 		changeType := strings.ToLower(strings.TrimSpace(anyToString(firstPresent(raw, "change_type", "action"))))
@@ -147,6 +165,7 @@ func parseAuditMutationCloudEvent(evt events.CloudEvent) ([]auditMutationRecord,
 		if changeType == "" {
 			changeType = "modified"
 		}
+		changeType = normalizeAuditMutationChangeType(changeType)
 
 		payload := cloneAuditMutationPayload(mapFromAny(firstPresent(raw, "payload", "snapshot", "resource", "asset")))
 		if len(payload) == 0 {
@@ -158,7 +177,8 @@ func parseAuditMutationCloudEvent(evt events.CloudEvent) ([]auditMutationRecord,
 			resourceID = cdcResourceIDFromPayload(tableName, payload)
 		}
 		if resourceID == "" && changeType != "removed" {
-			return nil, fmt.Errorf("audit mutation event %q requires resource_id for table %s", eventType, tableName)
+			recordAuditMutationDrop(&result, "missing_resource_id")
+			continue
 		}
 
 		eventTime := evt.Time.UTC()
@@ -203,7 +223,7 @@ func parseAuditMutationCloudEvent(evt events.CloudEvent) ([]auditMutationRecord,
 			region = strings.TrimSpace(anyToString(firstPresent(payload, "region", "location", "zone")))
 		}
 
-		out = append(out, auditMutationRecord{
+		result.Mutations = append(result.Mutations, auditMutationRecord{
 			TableName:  tableName,
 			ResourceID: resourceID,
 			ChangeType: changeType,
@@ -215,7 +235,7 @@ func parseAuditMutationCloudEvent(evt events.CloudEvent) ([]auditMutationRecord,
 			EventTime:  eventTime,
 		})
 	}
-	return out, nil
+	return result, nil
 }
 
 func auditChangeTypeFromEventType(eventType string) string {
@@ -265,6 +285,37 @@ func auditProviderForTable(tableName string) string {
 
 func cdcResourceIDFromPayload(tableName string, payload map[string]any) string {
 	return builders.CDCResourceIDForTable(tableName, payload)
+}
+
+func normalizeAuditMutationChangeType(changeType string) string {
+	normalized := strings.ToLower(strings.TrimSpace(changeType))
+	switch normalized {
+	case "added", "add", "created", "inserted":
+		return "added"
+	case "modified", "modify", "updated", "update", "upserted", "upsert":
+		return "modified"
+	case "removed", "remove", "deleted", "delete":
+		return "removed"
+	default:
+		return normalized
+	}
+}
+
+func recordAuditMutationDrop(result *auditMutationParseResult, reason string) {
+	if result == nil {
+		return
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		reason = "invalid_record"
+	}
+	result.Dropped++
+	for _, existing := range result.DropReasons {
+		if existing == reason {
+			return
+		}
+	}
+	result.DropReasons = append(result.DropReasons, reason)
 }
 
 func deriveAuditMutationPayload(raw map[string]any) map[string]any {

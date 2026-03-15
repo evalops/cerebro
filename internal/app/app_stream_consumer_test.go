@@ -130,6 +130,49 @@ func TestHandleGraphCloudEvent_AuditMutationPersistsCDCEvents(t *testing.T) {
 	}
 }
 
+func TestHandleGraphCloudEvent_AuditMutationSkipsInvalidBatchRecords(t *testing.T) {
+	store := &warehouse.MemoryWarehouse{}
+	a := &App{Warehouse: store}
+	evt := events.CloudEvent{
+		ID:     "evt-audit-batch-invalid-1",
+		Source: "urn:aws:cloudtrail",
+		Type:   "aws.cloudtrail.asset.changed",
+		Time:   time.Date(2026, 3, 14, 12, 30, 0, 0, time.UTC),
+		Data: map[string]any{
+			"mutations": []any{
+				map[string]any{
+					"payload": map[string]any{"id": "missing-table"},
+				},
+				map[string]any{
+					"table_name":  "aws_ec2_security_groups",
+					"change_type": "modified",
+					"resource_id": "arn:aws:ec2:us-east-1:123456789012:security-group/sg-456",
+					"payload": map[string]any{
+						"arn":        "arn:aws:ec2:us-east-1:123456789012:security-group/sg-456",
+						"group_id":   "sg-456",
+						"group_name": "api",
+					},
+				},
+				map[string]any{
+					"table_name":  "aws_ec2_security_groups",
+					"change_type": "modified",
+					"payload":     map[string]any{},
+				},
+			},
+		},
+	}
+
+	if err := a.handleGraphCloudEvent(context.Background(), evt); err != nil {
+		t.Fatalf("handleGraphCloudEvent failed: %v", err)
+	}
+	if len(store.CDCBatches) != 1 || len(store.CDCBatches[0]) != 1 {
+		t.Fatalf("expected one persisted audit CDC event from valid subset, got %#v", store.CDCBatches)
+	}
+	if got := store.CDCBatches[0][0].ResourceID; got != "arn:aws:ec2:us-east-1:123456789012:security-group/sg-456" {
+		t.Fatalf("unexpected persisted resource id %q", got)
+	}
+}
+
 func TestParseTapType(t *testing.T) {
 	system, entity, action := parseTapType("ensemble.tap.stripe.customer.created")
 	if system != "stripe" || entity != "customer" || action != "created" {

@@ -43,10 +43,11 @@ func TestParseAuditMutationCloudEventUsesTableAwareResourceIDs(t *testing.T) {
 		},
 	}
 
-	mutations, err := parseAuditMutationCloudEvent(evt)
+	result, err := parseAuditMutationCloudEvent(evt)
 	if err != nil {
 		t.Fatalf("parseAuditMutationCloudEvent failed: %v", err)
 	}
+	mutations := result.Mutations
 	if len(mutations) != 3 {
 		t.Fatalf("expected 3 mutations, got %d", len(mutations))
 	}
@@ -59,5 +60,48 @@ func TestParseAuditMutationCloudEventUsesTableAwareResourceIDs(t *testing.T) {
 	}
 	if got := mutations[2].ResourceID; got != "/subscriptions/sub-1/resourceGroups/rg/providers/Microsoft.Network/networkSecurityGroups/nsg-1" {
 		t.Fatalf("expected Azure resource ID to prefer id, got %q", got)
+	}
+}
+
+func TestParseAuditMutationCloudEventSkipsInvalidBatchRecordsAndNormalizesDeleteSynonyms(t *testing.T) {
+	evt := events.CloudEvent{
+		ID:     "evt-audit-batch-2",
+		Source: "urn:test:audit",
+		Type:   "aws.cloudtrail.asset.changed",
+		Time:   time.Date(2026, 3, 14, 13, 0, 0, 0, time.UTC),
+		Data: map[string]any{
+			"mutations": []any{
+				map[string]any{
+					"payload": map[string]any{"id": "ignored"},
+				},
+				map[string]any{
+					"table_name":  "aws_ec2_security_groups",
+					"change_type": "modified",
+					"payload":     map[string]any{},
+				},
+				map[string]any{
+					"table_name":  "aws_ec2_security_groups",
+					"change_type": "deleted",
+					"payload":     map[string]any{},
+				},
+			},
+		},
+	}
+
+	result, err := parseAuditMutationCloudEvent(evt)
+	if err != nil {
+		t.Fatalf("parseAuditMutationCloudEvent failed: %v", err)
+	}
+	if result.Dropped != 2 {
+		t.Fatalf("expected 2 dropped records, got %d", result.Dropped)
+	}
+	if len(result.Mutations) != 1 {
+		t.Fatalf("expected 1 valid mutation, got %d", len(result.Mutations))
+	}
+	if got := result.Mutations[0].ChangeType; got != "removed" {
+		t.Fatalf("expected deleted synonym to normalize to removed, got %q", got)
+	}
+	if got := result.Mutations[0].ResourceID; got != "" {
+		t.Fatalf("expected removal mutation to allow empty resource_id, got %q", got)
 	}
 }

@@ -5,6 +5,24 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 90 - Audit Mutation Batch Poison-Pill and Change-Type Normalization (2026-03-14)
+
+### Review findings
+- [x] Gap: issue `#276` still allowed a single semantically invalid audit mutation record inside a batch to fail `parseAuditMutationCloudEvent`, which bubbles back into the JetStream consumer and `Nak()`s the whole message.
+- [x] Gap: that creates a poison-pill loop for otherwise valid audit batches because the malformed record is retried forever and blocks the valid mutations that share the same message.
+- [x] Gap: the parser compared the raw `change_type` string against `"removed"` before normalization, so valid deletion aliases like `"deleted"` and `"delete"` could be rejected when `resource_id` was absent.
+- [x] Gap: the audit parser had no structured way to surface partial-drop behavior back to the handler for observability.
+
+### Execution plan
+- [x] Switch audit mutation parsing to best-effort batch handling:
+  - [x] skip malformed records instead of failing the whole message
+  - [x] preserve valid records from the same batch for CDC persistence
+- [x] Normalize audit mutation change types before `resource_id` validation so delete aliases map to `removed`.
+- [x] Return structured parse-drop metadata and log dropped-record counts/reasons from the audit handler.
+- [x] Add TDD coverage for:
+  - [x] mixed valid/invalid audit mutation batches persisting only the valid subset
+  - [x] delete-synonym normalization with missing `resource_id`
+
 ## Deep Review Cycle 89 - Audit CDC Graph Ingestion Identity and Consumer Upgrade Correctness (2026-03-14)
 
 ### Review findings
