@@ -27,6 +27,7 @@ Status: executed end-to-end via PR workflow
   - [ ] Hubble
   - [ ] OpenTelemetry
 - [ ] Persist runtime-ingest runs, checkpoints, and replay/materialization jobs through `internal/executionstore` without routing every raw observation through the same store.
+  - [x] Persist the existing `/api/v1/runtime/events` and `/api/v1/telemetry/ingest` HTTP ingest flows as execution-store-backed runtime ingest runs with checkpoints and `run_id` responses.
 - [ ] Project promoted runtime observations and response outcomes into graph `observation` / `evidence` resources with causal edges to workload, deployment, incident, and response execution context.
 - [ ] Make runtime response executions emit typed outcome observations so containment success/failure becomes part of graph intelligence instead of staying local to the response subsystem.
 - [ ] Expose runtime visibility coverage and source health through platform intelligence endpoints once the substrate exists.

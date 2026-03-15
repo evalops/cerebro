@@ -1,6 +1,7 @@
 package k8saudit
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,7 +16,7 @@ const sourceName = "kubernetes_audit"
 type Adapter struct{}
 
 type payload struct {
-	Items []event `json:"items"`
+	Items json.RawMessage `json:"items"`
 }
 
 type event struct {
@@ -67,7 +68,15 @@ func decode(raw []byte) ([]event, error) {
 	var list payload
 	if err := json.Unmarshal(raw, &list); err == nil {
 		if list.Items != nil {
-			return list.Items, nil
+			trimmed := bytes.TrimSpace(list.Items)
+			if bytes.Equal(trimmed, []byte("null")) {
+				return []event{}, nil
+			}
+			var items []event
+			if err := json.Unmarshal(trimmed, &items); err != nil {
+				return nil, fmt.Errorf("decode kubernetes audit list payload: %w", err)
+			}
+			return items, nil
 		}
 	}
 

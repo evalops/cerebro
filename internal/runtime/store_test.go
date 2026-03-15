@@ -2,10 +2,90 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/evalops/cerebro/internal/executionstore"
 )
+
+type casConflictExecutionStore struct {
+	env          executionstore.RunEnvelope
+	events       []executionstore.EventEnvelope
+	compareCalls int
+}
+
+func (s *casConflictExecutionStore) Close() error { return nil }
+
+func (s *casConflictExecutionStore) UpsertRun(_ context.Context, env executionstore.RunEnvelope) error {
+	s.env = env
+	return nil
+}
+
+func (s *casConflictExecutionStore) CompareAndSwapRun(_ context.Context, _ executionstore.RunEnvelope, next executionstore.RunEnvelope) (bool, error) {
+	s.compareCalls++
+	if s.compareCalls == 1 {
+		return false, nil
+	}
+	s.env = next
+	return true, nil
+}
+
+func (s *casConflictExecutionStore) ReplaceRunWithEvents(_ context.Context, env executionstore.RunEnvelope, events []executionstore.EventEnvelope) error {
+	s.env = env
+	s.events = append([]executionstore.EventEnvelope(nil), events...)
+	return nil
+}
+
+func (s *casConflictExecutionStore) LoadRun(_ context.Context, _, _ string) (*executionstore.RunEnvelope, error) {
+	if s.env.RunID == "" {
+		return nil, nil
+	}
+	cloned := s.env
+	cloned.Payload = append([]byte(nil), s.env.Payload...)
+	return &cloned, nil
+}
+
+func (s *casConflictExecutionStore) ListRuns(context.Context, string, executionstore.RunListOptions) ([]executionstore.RunEnvelope, error) {
+	return nil, nil
+}
+
+func (s *casConflictExecutionStore) ListAllRuns(context.Context, executionstore.RunListOptions) ([]executionstore.RunEnvelope, error) {
+	return nil, nil
+}
+
+func (s *casConflictExecutionStore) DeleteRun(context.Context, string, string) error { return nil }
+
+func (s *casConflictExecutionStore) DeleteEvents(context.Context, string, string) error { return nil }
+
+func (s *casConflictExecutionStore) SaveEvent(_ context.Context, env executionstore.EventEnvelope) (executionstore.EventEnvelope, error) {
+	if env.Sequence <= 0 {
+		env.Sequence = int64(len(s.events) + 1)
+	}
+	s.events = append(s.events, env)
+	return env, nil
+}
+
+func (s *casConflictExecutionStore) LoadEvents(_ context.Context, _, _ string) ([]executionstore.EventEnvelope, error) {
+	return append([]executionstore.EventEnvelope(nil), s.events...), nil
+}
+
+func (s *casConflictExecutionStore) LookupProcessedEvent(context.Context, string, string, time.Time) (*executionstore.ProcessedEventRecord, error) {
+	return nil, nil
+}
+
+func (s *casConflictExecutionStore) TouchProcessedEvent(context.Context, string, string, time.Time, time.Duration) error {
+	return nil
+}
+
+func (s *casConflictExecutionStore) RememberProcessedEvent(context.Context, executionstore.ProcessedEventRecord, int) error {
+	return nil
+}
+
+func (s *casConflictExecutionStore) DeleteProcessedEvent(context.Context, string, string) error {
+	return nil
+}
 
 func TestSQLiteIngestStoreSaveLoadRunAndEvents(t *testing.T) {
 	store, err := NewSQLiteIngestStore(filepath.Join(t.TempDir(), "runtime-ingest.db"))
@@ -174,5 +254,71 @@ func TestSQLiteIngestStoreListRunsActiveOnly(t *testing.T) {
 	}
 	if active[0].ID != "run-running" || active[1].ID != "run-queued" {
 		t.Fatalf("active runs = %#v", active)
+	}
+}
+
+func TestSQLiteIngestStoreSaveCheckpointRetriesCompareAndSwap(t *testing.T) {
+	now := time.Date(2026, 3, 15, 18, 0, 0, 0, time.UTC)
+	run := &IngestRunRecord{
+		ID:          "run-cas",
+		Source:      "tetragon",
+		Status:      IngestRunStatusRunning,
+		Stage:       "ingest",
+		SubmittedAt: now,
+		UpdatedAt:   now,
+	}
+	env, err := runtimeIngestRunEnvelope(run)
+	if err != nil {
+		t.Fatalf("runtimeIngestRunEnvelope: %v", err)
+	}
+
+	fakeStore := &casConflictExecutionStore{env: env}
+	store := NewSQLiteIngestStoreWithExecutionStore(fakeStore)
+
+	checkpoint, err := store.SaveCheckpoint(context.Background(), run.ID, IngestCheckpoint{
+		Cursor:     "cursor-99",
+		RecordedAt: now.Add(time.Minute),
+		Metadata: map[string]string{
+			"stream": "audit",
+		},
+	})
+	if err != nil {
+		t.Fatalf("SaveCheckpoint: %v", err)
+	}
+	if fakeStore.compareCalls != 2 {
+		t.Fatalf("compareCalls = %d, want 2", fakeStore.compareCalls)
+	}
+
+	loaded, err := store.LoadRun(context.Background(), run.ID)
+	if err != nil {
+		t.Fatalf("LoadRun: %v", err)
+	}
+	if loaded == nil || loaded.LastCheckpoint == nil {
+		t.Fatalf("loaded checkpoint missing: %#v", loaded)
+	}
+	if loaded.LastCheckpoint.Cursor != "cursor-99" {
+		t.Fatalf("cursor = %q, want cursor-99", loaded.LastCheckpoint.Cursor)
+	}
+	if checkpoint.Metadata["stream"] != "audit" {
+		t.Fatalf("checkpoint metadata = %#v, want stream=audit", checkpoint.Metadata)
+	}
+
+	events, err := store.LoadEvents(context.Background(), run.ID)
+	if err != nil {
+		t.Fatalf("LoadEvents: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("len(events) = %d, want 1", len(events))
+	}
+	if events[0].Type != "checkpoint_saved" {
+		t.Fatalf("event type = %q, want checkpoint_saved", events[0].Type)
+	}
+
+	var storedRun IngestRunRecord
+	if err := json.Unmarshal(fakeStore.env.Payload, &storedRun); err != nil {
+		t.Fatalf("Unmarshal fake store payload: %v", err)
+	}
+	if storedRun.LastCheckpoint == nil || storedRun.LastCheckpoint.Cursor != "cursor-99" {
+		t.Fatalf("stored payload checkpoint = %#v, want cursor-99", storedRun.LastCheckpoint)
 	}
 }

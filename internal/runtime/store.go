@@ -99,22 +99,11 @@ func (s *SQLiteIngestStore) SaveRun(ctx context.Context, run *IngestRunRecord) e
 	if s == nil || s.store == nil || run == nil {
 		return nil
 	}
-	payload, err := json.Marshal(run)
+	env, err := runtimeIngestRunEnvelope(run)
 	if err != nil {
-		return fmt.Errorf("encode runtime ingest run: %w", err)
+		return err
 	}
-	return s.store.UpsertRun(ctx, executionstore.RunEnvelope{
-		Namespace:   runtimeIngestNamespace,
-		RunID:       strings.TrimSpace(run.ID),
-		Kind:        strings.TrimSpace(run.Source),
-		Status:      string(run.Status),
-		Stage:       strings.TrimSpace(run.Stage),
-		SubmittedAt: run.SubmittedAt,
-		StartedAt:   run.StartedAt,
-		CompletedAt: run.CompletedAt,
-		UpdatedAt:   run.UpdatedAt,
-		Payload:     payload,
-	})
+	return s.store.UpsertRun(ctx, env)
 }
 
 func (s *SQLiteIngestStore) LoadRun(ctx context.Context, runID string) (*IngestRunRecord, error) {
@@ -128,11 +117,7 @@ func (s *SQLiteIngestStore) LoadRun(ctx context.Context, runID string) (*IngestR
 	if env == nil {
 		return nil, nil
 	}
-	var run IngestRunRecord
-	if err := json.Unmarshal(env.Payload, &run); err != nil {
-		return nil, fmt.Errorf("decode runtime ingest run: %w", err)
-	}
-	return &run, nil
+	return runtimeIngestRunFromEnvelope(env)
 }
 
 func (s *SQLiteIngestStore) ListRuns(ctx context.Context, opts IngestRunListOptions) ([]IngestRunRecord, error) {
@@ -154,11 +139,11 @@ func (s *SQLiteIngestStore) ListRuns(ctx context.Context, opts IngestRunListOpti
 	}
 	runs := make([]IngestRunRecord, 0, len(envs))
 	for _, env := range envs {
-		var run IngestRunRecord
-		if err := json.Unmarshal(env.Payload, &run); err != nil {
-			return nil, fmt.Errorf("decode runtime ingest run payload: %w", err)
+		run, err := runtimeIngestRunFromEnvelope(&env)
+		if err != nil {
+			return nil, err
 		}
-		runs = append(runs, run)
+		runs = append(runs, *run)
 	}
 	return runs, nil
 }
@@ -217,34 +202,80 @@ func (s *SQLiteIngestStore) SaveCheckpoint(ctx context.Context, runID string, ch
 	if checkpoint.RecordedAt.IsZero() {
 		checkpoint.RecordedAt = time.Now().UTC()
 	}
-	run, err := s.LoadRun(ctx, runID)
+	runID = strings.TrimSpace(runID)
+	const maxCheckpointAttempts = 8
+	for attempt := 0; attempt < maxCheckpointAttempts; attempt++ {
+		currentEnv, err := s.store.LoadRun(ctx, runtimeIngestNamespace, runID)
+		if err != nil {
+			return checkpoint, err
+		}
+		if currentEnv == nil {
+			return checkpoint, fmt.Errorf("runtime ingest run not found")
+		}
+		run, err := runtimeIngestRunFromEnvelope(currentEnv)
+		if err != nil {
+			return checkpoint, err
+		}
+		run.LastCheckpoint = &IngestCheckpoint{
+			Cursor:     checkpoint.Cursor,
+			RecordedAt: checkpoint.RecordedAt,
+			Metadata:   cloneRuntimeStringMap(checkpoint.Metadata),
+		}
+		run.UpdatedAt = checkpoint.RecordedAt
+		nextEnv, err := runtimeIngestRunEnvelope(run)
+		if err != nil {
+			return checkpoint, err
+		}
+		swapped, err := s.store.CompareAndSwapRun(ctx, *currentEnv, nextEnv)
+		if err != nil {
+			return checkpoint, err
+		}
+		if swapped {
+			_, err = s.AppendEvent(ctx, runID, IngestEvent{
+				Type:       "checkpoint_saved",
+				RecordedAt: checkpoint.RecordedAt,
+				Data: map[string]any{
+					"cursor":   checkpoint.Cursor,
+					"metadata": cloneRuntimeStringMap(checkpoint.Metadata),
+				},
+			})
+			if err != nil {
+				return checkpoint, err
+			}
+			return checkpoint, nil
+		}
+	}
+	return checkpoint, fmt.Errorf("save runtime ingest checkpoint: concurrent update conflict")
+}
+
+func runtimeIngestRunEnvelope(run *IngestRunRecord) (executionstore.RunEnvelope, error) {
+	payload, err := json.Marshal(run)
 	if err != nil {
-		return checkpoint, err
+		return executionstore.RunEnvelope{}, fmt.Errorf("encode runtime ingest run: %w", err)
 	}
-	if run == nil {
-		return checkpoint, fmt.Errorf("runtime ingest run not found")
+	return executionstore.RunEnvelope{
+		Namespace:   runtimeIngestNamespace,
+		RunID:       strings.TrimSpace(run.ID),
+		Kind:        strings.TrimSpace(run.Source),
+		Status:      string(run.Status),
+		Stage:       strings.TrimSpace(run.Stage),
+		SubmittedAt: run.SubmittedAt,
+		StartedAt:   run.StartedAt,
+		CompletedAt: run.CompletedAt,
+		UpdatedAt:   run.UpdatedAt,
+		Payload:     payload,
+	}, nil
+}
+
+func runtimeIngestRunFromEnvelope(env *executionstore.RunEnvelope) (*IngestRunRecord, error) {
+	if env == nil {
+		return nil, nil
 	}
-	run.LastCheckpoint = &IngestCheckpoint{
-		Cursor:     checkpoint.Cursor,
-		RecordedAt: checkpoint.RecordedAt,
-		Metadata:   cloneRuntimeStringMap(checkpoint.Metadata),
+	var run IngestRunRecord
+	if err := json.Unmarshal(env.Payload, &run); err != nil {
+		return nil, fmt.Errorf("decode runtime ingest run: %w", err)
 	}
-	run.UpdatedAt = checkpoint.RecordedAt
-	if err := s.SaveRun(ctx, run); err != nil {
-		return checkpoint, err
-	}
-	_, err = s.AppendEvent(ctx, runID, IngestEvent{
-		Type:       "checkpoint_saved",
-		RecordedAt: checkpoint.RecordedAt,
-		Data: map[string]any{
-			"cursor":   checkpoint.Cursor,
-			"metadata": cloneRuntimeStringMap(checkpoint.Metadata),
-		},
-	})
-	if err != nil {
-		return checkpoint, err
-	}
-	return checkpoint, nil
+	return &run, nil
 }
 
 func (s *SQLiteIngestStore) LoadCheckpoint(ctx context.Context, runID string) (*IngestCheckpoint, error) {
