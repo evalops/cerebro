@@ -69,13 +69,13 @@ Status: executed end-to-end via PR workflow
 - [ ] 035. Add Falco adapter package.
 - [ ] 036. Normalize Falco JSON outputs into observation/finding inputs.
 - [ ] 037. Add Falco adapter tests.
-- [ ] 038. Add a runtime ingest namespace to the execution-store-backed control plane.
-- [ ] 039. Add a runtime ingest run record type.
-- [ ] 040. Add runtime ingest event/checkpoint records.
+- [x] 038. Add a runtime ingest namespace to the execution-store-backed control plane.
+- [x] 039. Add a runtime ingest run record type.
+- [x] 040. Add runtime ingest event/checkpoint records.
 - [ ] 041. Add runtime replay/materialization job records.
-- [ ] 042. Add checkpoint cursor persistence per source.
+- [x] 042. Add checkpoint cursor persistence per source.
 - [ ] 043. Add processed-event dedupe for runtime source payload IDs.
-- [ ] 044. Add runtime ingest store tests.
+- [x] 044. Add runtime ingest store tests.
 - [ ] 045. Add runtime observation validation and normalization helpers.
 - [ ] 046. Reject structurally invalid observations early.
 - [ ] 047. Add bounded raw/provenance payload trimming.
