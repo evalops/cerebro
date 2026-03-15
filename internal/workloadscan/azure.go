@@ -113,8 +113,8 @@ func (p *AzureProvider) CreateSnapshot(ctx context.Context, target VMTarget, vol
 		return nil, fmt.Errorf("get azure snapshot %s: %w", snapshotName, err)
 	}
 	createdAt := p.now().UTC()
-	if snapshotResp.Snapshot.Properties != nil && snapshotResp.Snapshot.Properties.TimeCreated != nil {
-		createdAt = snapshotResp.Snapshot.Properties.TimeCreated.UTC()
+	if snapshotResp.Properties != nil && snapshotResp.Properties.TimeCreated != nil {
+		createdAt = snapshotResp.Properties.TimeCreated.UTC()
 	}
 	readyAt := p.now().UTC()
 	return &SnapshotArtifact{
@@ -128,7 +128,7 @@ func (p *AzureProvider) CreateSnapshot(ctx context.Context, target VMTarget, vol
 			"snapshot_name":    snapshotName,
 			"resource_group":   resourceGroup,
 			"subscription_id":  subscriptionID,
-			"snapshot_id":      ptrString(snapshotResp.Snapshot.ID),
+			"snapshot_id":      ptrString(snapshotResp.ID),
 			"source_disk_id":   volumeSourceID(volume),
 			"source_volume_id": volume.ID,
 		},
@@ -178,20 +178,20 @@ func (p *AzureProvider) CreateInspectionVolume(ctx context.Context, _ VMTarget, 
 		return nil, fmt.Errorf("get azure inspection disk %s: %w", diskName, err)
 	}
 	createdAt := p.now().UTC()
-	if diskResp.Disk.Properties != nil && diskResp.Disk.Properties.TimeCreated != nil {
-		createdAt = diskResp.Disk.Properties.TimeCreated.UTC()
+	if diskResp.Properties != nil && diskResp.Properties.TimeCreated != nil {
+		createdAt = diskResp.Properties.TimeCreated.UTC()
 	}
 	readyAt := p.now().UTC()
 	return &InspectionVolume{
 		ID:         diskName,
 		SnapshotID: snapshot.ID,
 		Region:     strings.TrimSpace(scannerHost.Region),
-		SizeGiB:    diskSizeGiBFromAzure(diskResp.Disk.Properties),
+		SizeGiB:    diskSizeGiBFromAzure(diskResp.Properties),
 		CreatedAt:  createdAt,
 		ReadyAt:    &readyAt,
 		Metadata: map[string]any{
 			"disk_name":       diskName,
-			"disk_id":         ptrString(diskResp.Disk.ID),
+			"disk_id":         ptrString(diskResp.ID),
 			"resource_group":  resourceGroup,
 			"subscription_id": subscriptionID,
 		},
@@ -370,8 +370,8 @@ func (p *AzureProvider) azureSourceVolume(ctx context.Context, diskClient *armco
 		Name:       diskName,
 		DeviceName: devicePath,
 		Region:     strings.TrimSpace(target.Region),
-		SizeGiB:    diskSizeGiBFromAzure(diskResp.Disk.Properties),
-		Encrypted:  diskResp.Disk.Properties != nil && (diskResp.Disk.Properties.Encryption != nil || diskResp.Disk.Properties.EncryptionSettingsCollection != nil),
+		SizeGiB:    diskSizeGiBFromAzure(diskResp.Properties),
+		Encrypted:  diskResp.Properties != nil && (diskResp.Properties.Encryption != nil || diskResp.Properties.EncryptionSettingsCollection != nil),
 		Boot:       boot,
 		Metadata: map[string]any{
 			"disk_id":         diskID,
@@ -379,8 +379,8 @@ func (p *AzureProvider) azureSourceVolume(ctx context.Context, diskClient *armco
 			"subscription_id": strings.TrimSpace(target.SubscriptionID),
 		},
 	}
-	if diskResp.Disk.Properties != nil && diskResp.Disk.Properties.Encryption != nil {
-		volume.KMSKeyID = strings.TrimSpace(ptrString(diskResp.Disk.Properties.Encryption.DiskEncryptionSetID))
+	if diskResp.Properties != nil && diskResp.Properties.Encryption != nil {
+		volume.KMSKeyID = strings.TrimSpace(ptrString(diskResp.Properties.Encryption.DiskEncryptionSetID))
 	}
 	return volume, nil
 }
