@@ -11,13 +11,27 @@ import (
 )
 
 type failingRuntimeIngestStore struct {
-	saveRunErr error
+	saveRunErr       error
+	saveRunErrOnCall int
+	saveRunCalls     int
+
+	appendEventErr       error
+	appendEventErrOnCall int
+	appendEventCalls     int
+
+	saveCheckpointErr       error
+	saveCheckpointErrOnCall int
+	saveCheckpointCalls     int
 }
 
 func (s *failingRuntimeIngestStore) Close() error { return nil }
 
 func (s *failingRuntimeIngestStore) SaveRun(context.Context, *runtime.IngestRunRecord) error {
-	return s.saveRunErr
+	s.saveRunCalls++
+	if s.saveRunErr != nil && (s.saveRunErrOnCall == 0 || s.saveRunErrOnCall == s.saveRunCalls) {
+		return s.saveRunErr
+	}
+	return nil
 }
 
 func (s *failingRuntimeIngestStore) LoadRun(context.Context, string) (*runtime.IngestRunRecord, error) {
@@ -29,6 +43,10 @@ func (s *failingRuntimeIngestStore) ListRuns(context.Context, runtime.IngestRunL
 }
 
 func (s *failingRuntimeIngestStore) AppendEvent(context.Context, string, runtime.IngestEvent) (runtime.IngestEvent, error) {
+	s.appendEventCalls++
+	if s.appendEventErr != nil && (s.appendEventErrOnCall == 0 || s.appendEventErrOnCall == s.appendEventCalls) {
+		return runtime.IngestEvent{}, s.appendEventErr
+	}
 	return runtime.IngestEvent{}, nil
 }
 
@@ -37,6 +55,10 @@ func (s *failingRuntimeIngestStore) LoadEvents(context.Context, string) ([]runti
 }
 
 func (s *failingRuntimeIngestStore) SaveCheckpoint(context.Context, string, runtime.IngestCheckpoint) (runtime.IngestCheckpoint, error) {
+	s.saveCheckpointCalls++
+	if s.saveCheckpointErr != nil && (s.saveCheckpointErrOnCall == 0 || s.saveCheckpointErrOnCall == s.saveCheckpointCalls) {
+		return runtime.IngestCheckpoint{}, s.saveCheckpointErr
+	}
 	return runtime.IngestCheckpoint{}, nil
 }
 
@@ -269,10 +291,10 @@ func TestRuntimeIngestSessionRecordObservationUsesProcessingTimeForRunUpdates(t 
 	}
 }
 
-func TestIngestRuntimeEventReturns500WhenRunPersistenceFails(t *testing.T) {
+func TestIngestRuntimeEventContinuesWhenRunPersistenceFails(t *testing.T) {
 	a := newTestApp(t)
 	deps := newServerDependenciesFromApp(a)
-	deps.RuntimeIngest = &failingRuntimeIngestStore{saveRunErr: errors.New("boom")}
+	deps.RuntimeIngest = &failingRuntimeIngestStore{saveRunErr: errors.New("boom"), saveRunErrOnCall: 1}
 	s := NewServerWithDependencies(deps)
 
 	w := do(t, s, http.MethodPost, "/api/v1/runtime/events", map[string]any{
@@ -283,11 +305,112 @@ func TestIngestRuntimeEventReturns500WhenRunPersistenceFails(t *testing.T) {
 		"resource_type": "pod",
 		"event_type":    "process",
 		"process": map[string]any{
-			"name": "sh",
-			"path": "/bin/sh",
+			"pid":  4242,
+			"name": "xmrig",
+			"path": "/usr/bin/xmrig",
 		},
 	})
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	body := decodeJSON(t, w)
+	if got := body["findings"]; got != float64(1) && got != 1 {
+		t.Fatalf("findings = %#v, want 1", got)
+	}
+	if _, ok := body["run_id"]; ok {
+		t.Fatalf("expected no run_id when ingest run start fails, got %#v", body["run_id"])
+	}
+	if got := len(s.app.RuntimeDetect.RecentFindings(10)); got != 1 {
+		t.Fatalf("recent findings = %d, want 1", got)
+	}
+	if s.app.RuntimeRespond == nil {
+		t.Fatal("expected runtime response engine")
+	}
+	if got := len(s.app.RuntimeRespond.ListExecutions(10)); got != 1 {
+		t.Fatalf("response executions = %d, want 1", got)
+	}
+}
+
+func TestIngestRuntimeEventContinuesWhenObservationPersistenceFails(t *testing.T) {
+	a := newTestApp(t)
+	deps := newServerDependenciesFromApp(a)
+	deps.RuntimeIngest = &failingRuntimeIngestStore{saveRunErr: errors.New("boom"), saveRunErrOnCall: 2}
+	s := NewServerWithDependencies(deps)
+
+	w := do(t, s, http.MethodPost, "/api/v1/runtime/events", map[string]any{
+		"id":            "evt-record-err",
+		"timestamp":     "2026-03-15T19:37:00Z",
+		"source":        "tetragon",
+		"resource_id":   "pod/default/api-0",
+		"resource_type": "pod",
+		"event_type":    "process",
+		"process": map[string]any{
+			"pid":  4242,
+			"name": "xmrig",
+			"path": "/usr/bin/xmrig",
+		},
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	body := decodeJSON(t, w)
+	if got := body["findings"]; got != float64(1) && got != 1 {
+		t.Fatalf("findings = %#v, want 1", got)
+	}
+	if _, ok := body["run_id"]; ok {
+		t.Fatalf("expected run_id to be omitted after ingest persistence degrades, got %#v", body["run_id"])
+	}
+	if got := len(s.app.RuntimeDetect.RecentFindings(10)); got != 1 {
+		t.Fatalf("recent findings = %d, want 1", got)
+	}
+	if got := len(s.app.RuntimeRespond.ListExecutions(10)); got != 1 {
+		t.Fatalf("response executions = %d, want 1", got)
+	}
+}
+
+func TestIngestTelemetryContinuesWhenObservationPersistenceFails(t *testing.T) {
+	a := newTestApp(t)
+	deps := newServerDependenciesFromApp(a)
+	deps.RuntimeIngest = &failingRuntimeIngestStore{saveRunErr: errors.New("boom"), saveRunErrOnCall: 2}
+	s := NewServerWithDependencies(deps)
+
+	w := do(t, s, http.MethodPost, "/api/v1/telemetry/ingest", map[string]any{
+		"cluster":       "prod-west",
+		"node":          "worker-7",
+		"agent_version": "1.4.2",
+		"events": []map[string]any{
+			{
+				"id":            "telemetry-err-1",
+				"timestamp":     "2026-03-15T19:36:05Z",
+				"source":        "runtime-agent",
+				"resource_id":   "pod/default/api-0",
+				"resource_type": "pod",
+				"event_type":    "process",
+				"process": map[string]any{
+					"pid":  101,
+					"name": "xmrig",
+					"path": "/usr/bin/xmrig",
+				},
+			},
+		},
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	body := decodeJSON(t, w)
+	if got := body["processed"]; got != float64(1) && got != 1 {
+		t.Fatalf("processed = %#v, want 1", got)
+	}
+	if got := body["findings"]; got != float64(1) && got != 1 {
+		t.Fatalf("findings = %#v, want 1", got)
+	}
+	if got := len(s.app.RuntimeDetect.RecentFindings(10)); got != 1 {
+		t.Fatalf("recent findings = %d, want 1", got)
+	}
+	if got := len(s.app.RuntimeRespond.ListExecutions(10)); got != 1 {
+		t.Fatalf("response executions = %d, want 1", got)
 	}
 }

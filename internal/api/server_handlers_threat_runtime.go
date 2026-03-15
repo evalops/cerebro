@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -119,16 +120,18 @@ func (s *Server) ingestRuntimeEvent(w http.ResponseWriter, r *http.Request) {
 		"source":        event.Source,
 	})
 	if err != nil {
-		s.error(w, http.StatusInternalServerError, "failed to persist runtime ingest run")
-		return
+		s.warnRuntimeIngestPersistence("start", err, "source", "runtime_event", "event_id", event.ID)
+		session = nil
 	}
 
 	observation := runtime.ObservationFromEvent(&event)
 	findings := s.app.RuntimeDetect.ProcessObservation(r.Context(), observation)
-	if err := session.recordObservation(r.Context(), observation, len(findings), 1); err != nil {
-		session.fail(r.Context(), "detect", err)
-		s.error(w, http.StatusInternalServerError, "failed to persist runtime ingest event")
-		return
+	if session != nil {
+		if err := session.recordObservation(r.Context(), observation, len(findings), 1); err != nil {
+			session.fail(r.Context(), "detect", err)
+			s.warnRuntimeIngestPersistence("record_observation", err, "source", "runtime_event", "event_id", event.ID, "run_id", session.runID())
+			session = nil
+		}
 	}
 
 	if s.app.RuntimeRespond != nil {
@@ -137,16 +140,18 @@ func (s *Server) ingestRuntimeEvent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := session.complete(r.Context(), runtime.IngestCheckpoint{
-		Cursor: observation.ID,
-		Metadata: map[string]string{
-			"processed_events": "1",
-			"finding_count":    strconv.Itoa(len(findings)),
-		},
-	}); err != nil {
-		session.fail(r.Context(), "complete", err)
-		s.error(w, http.StatusInternalServerError, "failed to finalize runtime ingest run")
-		return
+	if session != nil {
+		if err := session.complete(r.Context(), runtime.IngestCheckpoint{
+			Cursor: observation.ID,
+			Metadata: map[string]string{
+				"processed_events": "1",
+				"finding_count":    strconv.Itoa(len(findings)),
+			},
+		}); err != nil {
+			session.fail(r.Context(), "complete", err)
+			s.warnRuntimeIngestPersistence("complete", err, "source", "runtime_event", "event_id", event.ID, "run_id", session.runID())
+			session = nil
+		}
 	}
 
 	if s.app.Webhooks != nil {
@@ -241,8 +246,8 @@ func (s *Server) ingestTelemetry(w http.ResponseWriter, r *http.Request) {
 		"event_count":   strconv.Itoa(len(payload.Events)),
 	})
 	if err != nil {
-		s.error(w, http.StatusInternalServerError, "failed to persist runtime ingest run")
-		return
+		s.warnRuntimeIngestPersistence("start", err, "source", "telemetry", "event_count", len(payload.Events), "cluster", payload.Cluster, "node", payload.Node)
+		session = nil
 	}
 
 	totalFindings := 0
@@ -251,10 +256,12 @@ func (s *Server) ingestTelemetry(w http.ResponseWriter, r *http.Request) {
 			observation := enrichRuntimeObservation(runtime.ObservationFromEvent(&event), payload.Cluster, payload.Node, payload.AgentVersion)
 			findings := s.app.RuntimeDetect.ProcessObservation(r.Context(), observation)
 			totalFindings += len(findings)
-			if err := session.recordObservation(r.Context(), observation, len(findings), idx+1); err != nil {
-				session.fail(r.Context(), "detect", err)
-				s.error(w, http.StatusInternalServerError, "failed to persist runtime ingest event")
-				return
+			if session != nil {
+				if err := session.recordObservation(r.Context(), observation, len(findings), idx+1); err != nil {
+					session.fail(r.Context(), "detect", err)
+					s.warnRuntimeIngestPersistence("record_observation", err, "source", "telemetry", "event_id", event.ID, "index", idx+1, "run_id", session.runID())
+					session = nil
+				}
 			}
 
 			if s.app.RuntimeRespond != nil {
@@ -269,18 +276,20 @@ func (s *Server) ingestTelemetry(w http.ResponseWriter, r *http.Request) {
 	if count := len(payload.Events); count > 0 {
 		lastCursor = payload.Events[count-1].ID
 	}
-	if err := session.complete(r.Context(), runtime.IngestCheckpoint{
-		Cursor: lastCursor,
-		Metadata: map[string]string{
-			"processed_events": strconv.Itoa(len(payload.Events)),
-			"finding_count":    strconv.Itoa(totalFindings),
-			"cluster":          payload.Cluster,
-			"node":             payload.Node,
-		},
-	}); err != nil {
-		session.fail(r.Context(), "complete", err)
-		s.error(w, http.StatusInternalServerError, "failed to finalize runtime ingest run")
-		return
+	if session != nil {
+		if err := session.complete(r.Context(), runtime.IngestCheckpoint{
+			Cursor: lastCursor,
+			Metadata: map[string]string{
+				"processed_events": strconv.Itoa(len(payload.Events)),
+				"finding_count":    strconv.Itoa(totalFindings),
+				"cluster":          payload.Cluster,
+				"node":             payload.Node,
+			},
+		}); err != nil {
+			session.fail(r.Context(), "complete", err)
+			s.warnRuntimeIngestPersistence("complete", err, "source", "telemetry", "event_count", len(payload.Events), "run_id", session.runID())
+			session = nil
+		}
 	}
 
 	if s.app.Webhooks != nil {
@@ -307,4 +316,13 @@ func (s *Server) ingestTelemetry(w http.ResponseWriter, r *http.Request) {
 		response["run_id"] = session.run.ID
 	}
 	s.json(w, http.StatusOK, response)
+}
+
+func (s *Server) warnRuntimeIngestPersistence(stage string, err error, args ...any) {
+	if s == nil || s.app == nil || s.app.Logger == nil || err == nil {
+		return
+	}
+	fields := []any{"stage", strings.TrimSpace(stage), "error", err}
+	fields = append(fields, args...)
+	s.app.Logger.Warn("runtime ingest persistence degraded; continuing detection and response", fields...)
 }

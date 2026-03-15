@@ -17,6 +17,13 @@ type runtimeIngestSession struct {
 	run   *runtime.IngestRunRecord
 }
 
+func (r *runtimeIngestSession) runID() string {
+	if r == nil || r.run == nil {
+		return ""
+	}
+	return r.run.ID
+}
+
 func (s *Server) runtimeIngestStore() runtime.IngestStore {
 	if s == nil || s.app == nil {
 		return nil
