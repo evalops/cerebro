@@ -107,7 +107,14 @@ type layer7Envelope struct {
 }
 
 type dnsEnvelope struct {
-	Query string `json:"query,omitempty"`
+	Query             string   `json:"query,omitempty"`
+	IPs               []string `json:"ips,omitempty"`
+	TTL               uint32   `json:"ttl,omitempty"`
+	CNames            []string `json:"cnames,omitempty"`
+	ObservationSource string   `json:"observation_source,omitempty"`
+	RCode             uint32   `json:"rcode,omitempty"`
+	QTypes            []string `json:"qtypes,omitempty"`
+	RRTypes           []string `json:"rrtypes,omitempty"`
 }
 
 type httpEnvelope struct {
@@ -142,6 +149,9 @@ func observationFromFlow(event payload) (*runtime.RuntimeObservation, error) {
 		return nil, fmt.Errorf("decode hubble payload: missing IP context")
 	}
 	if flow.L7 != nil {
+		if flow.L7.DNS != nil {
+			return dnsObservationFromFlow(event)
+		}
 		return nil, fmt.Errorf("decode hubble payload: unsupported l7 flow")
 	}
 
@@ -221,6 +231,109 @@ func observationFromFlow(event payload) (*runtime.RuntimeObservation, error) {
 		observation.WorkloadRef = workloadRef(primary)
 	}
 
+	return observation, nil
+}
+
+func dnsObservationFromFlow(event payload) (*runtime.RuntimeObservation, error) {
+	flow := event.Flow
+	dns := flow.L7.DNS
+	if dns == nil {
+		return nil, fmt.Errorf("decode hubble payload: missing dns context")
+	}
+	protocol, srcPort, dstPort := protocolFromL4(flow.L4)
+	if protocol == "" {
+		return nil, fmt.Errorf("decode hubble payload: missing supported L4 context")
+	}
+
+	observedAt := firstNonZeroTime(event.Time, flow.Time)
+	nodeName := firstNonEmpty(event.NodeName, flow.NodeName)
+	direction, primary, peer := primaryEndpoints(flow)
+
+	metadata := map[string]any{
+		"node_name":         nodeName,
+		"verdict":           strings.TrimSpace(flow.Verdict),
+		"traffic_direction": strings.TrimSpace(flow.TrafficDirection),
+		"flow_type":         strings.TrimSpace(flow.Type),
+		"ip_version":        strings.TrimSpace(flow.IP.IPVersion),
+		"encrypted":         flow.IP.Encrypted,
+		"l7_type":           strings.TrimSpace(flow.L7.Type),
+		"dns_ttl":           dns.TTL,
+		"dns_rcode":         dns.RCode,
+	}
+	if value := strings.TrimSpace(dns.ObservationSource); value != "" {
+		metadata["dns_observation_source"] = value
+	}
+	if len(dns.IPs) > 0 {
+		metadata["dns_ips"] = append([]string(nil), dns.IPs...)
+	}
+	if len(dns.CNames) > 0 {
+		metadata["dns_cnames"] = append([]string(nil), dns.CNames...)
+	}
+	if len(dns.QTypes) > 0 {
+		metadata["dns_qtypes"] = append([]string(nil), dns.QTypes...)
+	}
+	if len(dns.RRTypes) > 0 {
+		metadata["dns_rrtypes"] = append([]string(nil), dns.RRTypes...)
+	}
+	if value := strings.TrimSpace(flow.DropReasonDesc); value != "" {
+		metadata["drop_reason_desc"] = value
+	}
+	if value := strings.TrimSpace(flow.TraceObservation); value != "" {
+		metadata["trace_observation_point"] = value
+	}
+	if len(flow.SourceNames) > 0 {
+		metadata["source_names"] = append([]string(nil), flow.SourceNames...)
+	}
+	if len(flow.DestinationNames) > 0 {
+		metadata["destination_names"] = append([]string(nil), flow.DestinationNames...)
+	}
+	addEndpointMetadata(metadata, "source", flow.Source)
+	addEndpointMetadata(metadata, "destination", flow.Destination)
+	addServiceMetadata(metadata, "source_service", flow.SourceService)
+	addServiceMetadata(metadata, "destination_service", flow.DestinationService)
+	if peer != nil {
+		if value := strings.TrimSpace(peer.Namespace); value != "" {
+			metadata["peer_namespace"] = value
+		}
+		if value := strings.TrimSpace(peer.PodName); value != "" {
+			metadata["peer_pod_name"] = value
+		}
+		if value := primaryWorkloadName(peer); value != "" {
+			metadata["peer_workload_name"] = value
+		}
+	}
+
+	observation := &runtime.RuntimeObservation{
+		ID:         hubbleObservationID(flow, "dns", observedAt),
+		Kind:       runtime.ObservationKindDNSQuery,
+		Source:     "hubble",
+		ObservedAt: observedAt,
+		NodeName:   nodeName,
+		Cluster:    clusterName(primary, peer),
+		Namespace:  namespace(primary, peer),
+		Network: &runtime.NetworkEvent{
+			Direction: direction,
+			Protocol:  protocol,
+			SrcIP:     strings.TrimSpace(flow.IP.Source),
+			SrcPort:   srcPort,
+			DstIP:     strings.TrimSpace(flow.IP.Destination),
+			DstPort:   dstPort,
+			Domain:    strings.TrimSpace(dns.Query),
+		},
+		Metadata: metadata,
+		Tags: adapters.CompactTags(
+			"hubble",
+			"dns_query",
+			strings.ToLower(strings.TrimSpace(flow.Verdict)),
+			strings.ToLower(strings.TrimSpace(protocol)),
+			strings.ToLower(strings.TrimSpace(flow.L7.Type)),
+		),
+	}
+	if primary != nil {
+		observation.ResourceID = podResourceID(primary.Namespace, primary.PodName)
+		observation.ResourceType = "pod"
+		observation.WorkloadRef = workloadRef(primary)
+	}
 	return observation, nil
 }
 

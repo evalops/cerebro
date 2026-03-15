@@ -2,6 +2,7 @@ package hubble
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -178,7 +179,7 @@ func TestAdapterNormalizeIngressUDPFlowAnchorsDestination(t *testing.T) {
 	}
 }
 
-func TestAdapterNormalizeRejectsDNSFlowsForDedicatedSlice(t *testing.T) {
+func TestAdapterNormalizeDNSFlow(t *testing.T) {
 	raw := []byte(`{
 		"flow": {
 			"time": "2024-07-09T18:01:00Z",
@@ -194,21 +195,94 @@ func TestAdapterNormalizeRejectsDNSFlowsForDedicatedSlice(t *testing.T) {
 					"destination_port": 53
 				}
 			},
+			"source_names": [
+				"xwing.default"
+			],
+			"destination_names": [
+				"api.github.com"
+			],
+			"trace_observation_point": "TO_PROXY",
 			"l7": {
-				"type": "REQUEST",
+				"type": "RESPONSE",
 				"dns": {
-					"query": "api.github.com"
+					"query": "api.github.com.",
+					"ips": [
+						"140.82.114.5"
+					],
+					"ttl": 300,
+					"cnames": [
+						"github.com."
+					],
+					"observation_source": "proxy",
+					"rcode": 0,
+					"qtypes": [
+						"A"
+					],
+					"rrtypes": [
+						"CNAME",
+						"A"
+					]
 				}
-			}
+			},
+			"source": {
+				"identity": 1234,
+				"namespace": "default",
+				"pod_name": "xwing",
+				"workloads": [
+					{
+						"name": "xwing",
+						"kind": "Deployment"
+					}
+				]
+			},
+			"destination": {
+				"identity": 2,
+				"labels": [
+					"reserved:world"
+				]
+			},
+			"traffic_direction": "EGRESS"
 		}
 	}`)
 
-	if _, err := (Adapter{}).Normalize(context.Background(), raw); err == nil || !strings.Contains(err.Error(), "unsupported l7 flow") {
-		t.Fatalf("Normalize error = %v, want unsupported l7 flow", err)
+	observations, err := (Adapter{}).Normalize(context.Background(), raw)
+	if err != nil {
+		t.Fatalf("Normalize: %v", err)
+	}
+	observation := observations[0]
+	if observation.Kind != runtime.ObservationKindDNSQuery {
+		t.Fatalf("kind = %s, want %s", observation.Kind, runtime.ObservationKindDNSQuery)
+	}
+	if observation.ResourceID != "pod:default/xwing" {
+		t.Fatalf("resource_id = %q, want pod:default/xwing", observation.ResourceID)
+	}
+	if observation.Network == nil {
+		t.Fatal("expected network context")
+	}
+	if observation.Network.Domain != "api.github.com." {
+		t.Fatalf("domain = %q, want api.github.com.", observation.Network.Domain)
+	}
+	if got := observation.Metadata["dns_observation_source"]; got != "proxy" {
+		t.Fatalf("dns_observation_source = %#v, want proxy", got)
+	}
+	if got := observation.Metadata["dns_ttl"]; got != float64(300) && got != uint32(300) && got != 300 {
+		t.Fatalf("dns_ttl = %#v, want 300", got)
+	}
+	if got := observation.Metadata["l7_type"]; got != "RESPONSE" {
+		t.Fatalf("l7_type = %#v, want RESPONSE", got)
+	}
+	if got := observation.Metadata["trace_observation_point"]; got != "TO_PROXY" {
+		t.Fatalf("trace_observation_point = %#v, want TO_PROXY", got)
+	}
+	if got := observation.Metadata["source_names"]; !reflect.DeepEqual(got, []string{"xwing.default"}) {
+		t.Fatalf("source_names = %#v, want [xwing.default]", got)
+	}
+	if got := observation.Metadata["destination_names"]; !reflect.DeepEqual(got, []string{"api.github.com"}) {
+		t.Fatalf("destination_names = %#v, want [api.github.com]", got)
 	}
 }
 
-func TestAdapterNormalizeRejectsHTTPFlowsForDedicatedSlice(t *testing.T) {
+func TestAdapterNormalizeRejectsUnsupportedHTTPFlows(t *testing.T) {
 	raw := []byte(`{
 		"flow": {
 			"time": "2024-07-09T18:01:00Z",
