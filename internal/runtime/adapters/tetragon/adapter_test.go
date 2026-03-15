@@ -231,7 +231,7 @@ func TestAdapterNormalizeFileWriteKprobe(t *testing.T) {
 	if got := observation.Metadata["function_name"]; got != "security_file_permission" {
 		t.Fatalf("function_name = %#v, want security_file_permission", got)
 	}
-	if got := observation.Metadata["return_code"]; got != int64(0) && got != 0 {
+	if got := observation.Metadata["return_code"]; got != int64(0) && got != uint64(0) && got != 0 {
 		t.Fatalf("return_code = %#v, want 0", got)
 	}
 }

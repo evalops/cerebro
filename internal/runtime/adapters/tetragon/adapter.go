@@ -170,13 +170,14 @@ func observationFromProcessKprobe(event payload) (*runtime.RuntimeObservation, e
 	functionName := strings.TrimSpace(kprobe.FunctionName)
 
 	var (
-		kind        runtime.RuntimeObservationKind
-		operation   string
-		path        string
-		permission  string
-		accessValue int64
-		accessKey   string
-		metadata    = map[string]any{
+		kind         runtime.RuntimeObservationKind
+		operation    string
+		path         string
+		permission   string
+		accessValue  int64
+		accessValueU uint64
+		accessKey    string
+		metadata     = map[string]any{
 			"exec_id":        kprobe.Process.ExecID,
 			"parent_exec_id": kprobe.Process.ParentExecID,
 			"cwd":            kprobe.Process.CWD,
@@ -199,8 +200,8 @@ func observationFromProcessKprobe(event payload) (*runtime.RuntimeObservation, e
 		accessKey = "access_mask"
 	case "security_mmap_file":
 		path, permission = firstFilePathArg(kprobe.Args)
-		accessValue = int64(firstUnsignedArgValue(kprobe.Args))
-		kind, operation = fileMmapAccess(accessValue)
+		accessValueU = firstUnsignedArgValue(kprobe.Args)
+		kind, operation = fileMmapAccess(accessValueU)
 		accessKey = "prot_flags"
 	case "security_path_truncate":
 		path, permission = firstPathArg(kprobe.Args)
@@ -220,7 +221,11 @@ func observationFromProcessKprobe(event payload) (*runtime.RuntimeObservation, e
 		metadata["file_permission"] = permission
 	}
 	if accessKey != "" {
-		metadata[accessKey] = accessValue
+		if functionName == "security_mmap_file" {
+			metadata[accessKey] = accessValueU
+		} else {
+			metadata[accessKey] = accessValue
+		}
 	}
 	if returnCode, ok := firstReturnCode(kprobe.Return); ok {
 		metadata["return_code"] = returnCode
@@ -377,7 +382,7 @@ func firstUnsignedArgValue(args []kprobeArg) uint64 {
 	return 0
 }
 
-func firstReturnCode(arg *kprobeArg) (int64, bool) {
+func firstReturnCode(arg *kprobeArg) (any, bool) {
 	if arg == nil {
 		return 0, false
 	}
@@ -385,7 +390,7 @@ func firstReturnCode(arg *kprobeArg) (int64, bool) {
 		return *arg.IntArg, true
 	}
 	if arg.UintArg != nil {
-		return int64(*arg.UintArg), true
+		return *arg.UintArg, true
 	}
 	return 0, false
 }
@@ -403,7 +408,7 @@ func filePermissionAccess(mask int64) (runtime.RuntimeObservationKind, string) {
 	}
 }
 
-func fileMmapAccess(protFlags int64) (runtime.RuntimeObservationKind, string) {
+func fileMmapAccess(protFlags uint64) (runtime.RuntimeObservationKind, string) {
 	switch {
 	case protFlags&0x02 != 0:
 		return runtime.ObservationKindFileWrite, "modify"
