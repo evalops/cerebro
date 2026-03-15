@@ -65,6 +65,18 @@ Status: executed end-to-end via PR workflow
 - [x] Persist verified/unverified integration counts plus verification status on vendor nodes.
 - [x] Add TDD coverage for verified-publisher preservation and verified-publisher-based vendor projection merge behavior.
 
+## Deep Review Cycle 117 - Entra Delegated OAuth Grants for Vendor Access Modeling (2026-03-15)
+
+- [x] Gap: Entra app-role assignments only model app-only grants, but issue `#255` explicitly called out OAuth app authorizations and vendor access from identity providers.
+- [x] Gap: Cerebro was not ingesting `oauth2PermissionGrant`, so delegated OAuth consents had no first-class graph representation and vendor dependency breadth missed user-consented SaaS apps entirely.
+- [x] Gap: the right seam is the existing Entra provider + Azure relationship extractor, not a one-off vendor-specific path, so delegated grants become reusable graph substrate.
+
+- [x] Add an `entra_oauth2_permission_grants` provider table for `client_id`, `consent_type`, `principal_id`, `resource_id`, `scope`, `start_time`, and `expiry_time`.
+- [x] Sync delegated OAuth grants from Microsoft Graph with the official `oauth2PermissionGrants` endpoint.
+- [x] Project delegated grant relationships into `resource_relationships` for both client-app-to-resource access and principal-to-client consent edges where applicable.
+- [x] Add TDD coverage for delegated grant relationship extraction and vendor signal aggregation from delegated OAuth consents.
+- [x] Rerun focused and broad graph/provider/sync validation plus lint.
+
 ## Deep Review Cycle 111 - Vulnerability Reachability Prioritization on Workload Scans (2026-03-15)
 
 ### Review findings

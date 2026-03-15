@@ -306,6 +306,58 @@ func TestAppendEntraAppRoleAssignmentRelationships(t *testing.T) {
 	}
 }
 
+func TestAppendEntraOAuth2PermissionGrantRelationships(t *testing.T) {
+	t.Parallel()
+
+	rels := appendEntraOAuth2PermissionGrantRelationships(nil, []map[string]interface{}{
+		{
+			"id":           "grant-1",
+			"client_id":    "sp-client-1",
+			"consent_type": "Principal",
+			"principal_id": "user-1",
+			"resource_id":  "sp-resource-1",
+			"scope":        "Mail.Read Files.Read",
+		},
+		{
+			"id":           "grant-2",
+			"client_id":    "sp-client-2",
+			"consent_type": "AllPrincipals",
+			"resource_id":  "sp-resource-2",
+			"scope":        "User.Read.All",
+		},
+	})
+
+	if len(rels) != 3 {
+		t.Fatalf("expected 3 relationships, got %d", len(rels))
+	}
+
+	if rels[0].SourceType != "entra:service_principal" || rels[0].TargetType != "entra:service_principal" || rels[0].RelType != RelCanAccess {
+		t.Fatalf("unexpected delegated resource relationship: %+v", rels[0])
+	}
+	if rels[1].SourceType != "entra:user" || rels[1].TargetType != "entra:service_principal" || rels[1].RelType != RelCanAccess {
+		t.Fatalf("unexpected principal consent relationship: %+v", rels[1])
+	}
+	if rels[2].SourceType != "entra:service_principal" || rels[2].TargetType != "entra:service_principal" || rels[2].RelType != RelCanAccess {
+		t.Fatalf("unexpected admin consent resource relationship: %+v", rels[2])
+	}
+
+	props := map[string]interface{}{}
+	if err := json.Unmarshal([]byte(rels[0].Properties), &props); err != nil {
+		t.Fatalf("failed to parse relationship properties: %v", err)
+	}
+	if props["grant_type"] != "delegated_permission" || props["scope"] != "Mail.Read Files.Read" {
+		t.Fatalf("unexpected delegated grant properties: %+v", props)
+	}
+
+	props = map[string]interface{}{}
+	if err := json.Unmarshal([]byte(rels[1].Properties), &props); err != nil {
+		t.Fatalf("failed to parse relationship properties: %v", err)
+	}
+	if props["grant_type"] != "delegated_permission_consent" || props["client_id"] != "sp-client-1" {
+		t.Fatalf("unexpected consent relationship properties: %+v", props)
+	}
+}
+
 func TestGCPAssetNodeType(t *testing.T) {
 	if got := gcpAssetNodeType("compute.googleapis.com/Instance"); got != "gcp:compute:instance" {
 		t.Fatalf("unexpected node type: %s", got)

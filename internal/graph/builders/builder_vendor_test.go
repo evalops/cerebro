@@ -400,6 +400,90 @@ func TestBuilder_MergesVendorProjectionsByVerifiedPublisherID(t *testing.T) {
 	}
 }
 
+func TestBuilder_AggregatesVendorSignalsFromDelegatedOAuthGrantRelationships(t *testing.T) {
+	t.Parallel()
+
+	source := newMockDataSource()
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	source.setResult(`SELECT id, display_name, app_id, service_principal_type, account_enabled, app_owner_organization_id, app_role_assignment_required, publisher_name, verified_publisher_display_name, verified_publisher_id, verified_publisher_added_datetime, created_date_time, tags, subscription_id FROM azure_graph_service_principals`, &DataQueryResult{
+		Rows: []map[string]any{
+			{
+				"id":                                "sp-client",
+				"display_name":                      "Slack Enterprise Grid",
+				"app_id":                            "app-slack",
+				"service_principal_type":            "Application",
+				"account_enabled":                   true,
+				"app_owner_organization_id":         "tenant-vendor",
+				"publisher_name":                    "Slack",
+				"verified_publisher_display_name":   "Slack Technologies",
+				"verified_publisher_id":             "slack-publisher",
+				"verified_publisher_added_datetime": "2026-03-02T00:00:00Z",
+				"subscription_id":                   "sub-1",
+			},
+			{
+				"id":                                "sp-resource",
+				"display_name":                      "Microsoft Graph",
+				"app_id":                            "app-msgraph",
+				"service_principal_type":            "Application",
+				"account_enabled":                   true,
+				"publisher_name":                    "Microsoft",
+				"verified_publisher_display_name":   "Microsoft",
+				"verified_publisher_id":             "msft-publisher",
+				"verified_publisher_added_datetime": "2026-03-02T00:00:00Z",
+				"subscription_id":                   "sub-1",
+			},
+		},
+	})
+	source.setResult(`
+		SELECT source_id, source_type, target_id, target_type, rel_type, properties
+		FROM resource_relationships
+	`, &DataQueryResult{
+		Rows: []map[string]any{
+			{
+				"source_id":   "sp-client",
+				"source_type": "entra:service_principal",
+				"target_id":   "sp-resource",
+				"target_type": "entra:service_principal",
+				"rel_type":    "CAN_ACCESS",
+				"properties": map[string]any{
+					"grant_type":   "delegated_permission",
+					"consent_type": "AllPrincipals",
+					"scope":        "Mail.Read Files.Read",
+				},
+			},
+			{
+				"source_id":   "user-alice",
+				"source_type": "entra:user",
+				"target_id":   "sp-client",
+				"target_type": "entra:service_principal",
+				"rel_type":    "CAN_ACCESS",
+				"properties": map[string]any{
+					"grant_type":   "delegated_permission_consent",
+					"consent_type": "Principal",
+				},
+			},
+		},
+	})
+
+	builder := NewBuilder(source, logger)
+	if err := builder.Build(context.Background()); err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+
+	vendor, ok := builder.Graph().GetNode("vendor:slack-technologies")
+	if !ok {
+		t.Fatal("expected vendor node for Slack")
+	}
+	if got := intProperty(t, vendor.Properties, "dependent_user_count"); got != 1 {
+		t.Fatalf("expected delegated consent to count one dependent user, got %d", got)
+	}
+	if got := intProperty(t, vendor.Properties, "accessible_resource_count"); got != 1 {
+		t.Fatalf("expected one accessible downstream API resource, got %d", got)
+	}
+	assertStringSliceProperty(t, vendor.Properties, "accessible_resource_kinds", []string{"service_account"})
+}
+
 func TestBuilder_KeepsDistinctVendorProductAliasesSeparate(t *testing.T) {
 	t.Parallel()
 
