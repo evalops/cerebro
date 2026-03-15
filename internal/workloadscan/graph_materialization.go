@@ -31,6 +31,7 @@ type GraphMaterializationResult struct {
 	SecretTargetEdges        int `json:"secret_target_edges"`
 	CredentialPivotEdges     int `json:"credential_pivot_edges"`
 	ScanPackageEdges         int `json:"scan_package_edges"`
+	PackageDependencyEdges   int `json:"package_dependency_edges"`
 	WorkloadTechnologyEdges  int `json:"workload_technology_edges"`
 	ScanVulnEdges            int `json:"scan_vulnerability_edges"`
 	PackageVulnEdges         int `json:"package_vulnerability_edges"`
@@ -46,6 +47,11 @@ type resolvedRun struct {
 
 type packageAggregate struct {
 	record filesystemanalyzer.PackageRecord
+}
+
+type packageDependencyAggregate struct {
+	parent filesystemanalyzer.PackageRecord
+	child  filesystemanalyzer.PackageRecord
 }
 
 type technologyAggregate struct {
@@ -165,6 +171,7 @@ func MaterializeRunsIntoGraph(g *graph.Graph, runs []RunRecord, now time.Time) G
 			result.SecretTargetEdges += batch.SecretTargetEdges
 			result.CredentialPivotEdges += batch.CredentialPivotEdges
 			result.ScanPackageEdges += batch.ScanPackageEdges
+			result.PackageDependencyEdges += batch.PackageDependencyEdges
 			result.WorkloadTechnologyEdges += batch.WorkloadTechnologyEdges
 			result.ScanVulnEdges += batch.ScanVulnEdges
 			result.PackageVulnEdges += batch.PackageVulnEdges
@@ -195,7 +202,7 @@ func materializeOneRun(g *graph.Graph, target *graph.Node, run RunRecord, validT
 		return result
 	}
 	validFrom := runValidFrom(run, seenAt)
-	summary, findings, secrets, malware, packages, technologies, vulns, relations := summarizeRun(run)
+	summary, findings, secrets, malware, packages, packageDeps, technologies, vulns, relations := summarizeRun(run)
 	sourceEventID := fmt.Sprintf("workload_scan:%s", firstNonEmpty(strings.TrimSpace(run.ID), syntheticRunKey(run)))
 	writeMeta := graph.NormalizeWriteMetadata(
 		seenAt,
@@ -288,16 +295,48 @@ func materializeOneRun(g *graph.Graph, target *graph.Node, run RunRecord, validT
 		pkgNode := buildPackageNode(pkgAgg.record, target, pkgMeta)
 		g.AddNode(pkgNode)
 		result.PackageNodesUpserted++
+		edgeProps := cloneWorkloadAnyMap(writeMeta.PropertyMap())
+		edgeProps["direct_dependency"] = pkgAgg.record.DirectDependency
+		edgeProps["reachable"] = pkgAgg.record.Reachable
+		edgeProps["dependency_depth"] = pkgAgg.record.DependencyDepth
+		edgeProps["import_file_count"] = pkgAgg.record.ImportFileCount
 		if addEdgeIfMissing(g, &graph.Edge{
 			ID:         edgeID(scanNode.ID, pkgNode.ID, graph.EdgeKindContainsPkg),
 			Source:     scanNode.ID,
 			Target:     pkgNode.ID,
 			Kind:       graph.EdgeKindContainsPkg,
 			Effect:     graph.EdgeEffectAllow,
-			Properties: cloneWorkloadAnyMap(writeMeta.PropertyMap()),
+			Properties: edgeProps,
 			Risk:       graph.RiskLow,
 		}) {
 			result.ScanPackageEdges++
+		}
+	}
+
+	for _, depAgg := range packageDeps {
+		parentID := packageNodeID(depAgg.parent)
+		childID := packageNodeID(depAgg.child)
+		if parentID == "" || childID == "" {
+			continue
+		}
+		if addEdgeIfMissing(g, &graph.Edge{
+			ID:     edgeID(parentID, childID, graph.EdgeKindDependsOn),
+			Source: parentID,
+			Target: childID,
+			Kind:   graph.EdgeKindDependsOn,
+			Effect: graph.EdgeEffectAllow,
+			Properties: map[string]any{
+				"source_system":    graphMaterializationSourceSystem,
+				"source_event_id":  fmt.Sprintf("%s:package_dependency:%s", sourceEventID, packageDependencyKey(depAgg.parent, depAgg.child)),
+				"observed_at":      seenAt.UTC().Format(time.RFC3339),
+				"valid_from":       validFrom.UTC().Format(time.RFC3339),
+				"recorded_at":      seenAt.UTC().Format(time.RFC3339),
+				"transaction_from": seenAt.UTC().Format(time.RFC3339),
+				"confidence":       1.0,
+			},
+			Risk: graph.RiskLow,
+		}) {
+			result.PackageDependencyEdges++
 		}
 	}
 
@@ -560,7 +599,7 @@ func resolveTargetNode(g *graph.Graph, run RunRecord) (*graph.Node, bool) {
 	return nil, false
 }
 
-func summarizeRun(run RunRecord) (scanSummary, map[string]configAggregate, map[string]secretAggregate, map[string]malwareAggregate, map[string]packageAggregate, map[string]technologyAggregate, map[string]vulnerabilityAggregate, map[string]packageVulnerabilityAggregate) {
+func summarizeRun(run RunRecord) (scanSummary, map[string]configAggregate, map[string]secretAggregate, map[string]malwareAggregate, map[string]packageAggregate, map[string]packageDependencyAggregate, map[string]technologyAggregate, map[string]vulnerabilityAggregate, map[string]packageVulnerabilityAggregate) {
 	summary := scanSummary{
 		FindingCount: run.Summary.Findings,
 		Risk:         graph.RiskNone,
@@ -569,6 +608,7 @@ func summarizeRun(run RunRecord) (scanSummary, map[string]configAggregate, map[s
 	secrets := make(map[string]secretAggregate)
 	malware := make(map[string]malwareAggregate)
 	packages := make(map[string]packageAggregate)
+	packageDeps := make(map[string]packageDependencyAggregate)
 	technologies := make(map[string]technologyAggregate)
 	vulns := make(map[string]vulnerabilityAggregate)
 	relations := make(map[string]packageVulnerabilityAggregate)
@@ -640,8 +680,34 @@ func summarizeRun(run RunRecord) (scanSummary, map[string]configAggregate, map[s
 			if id == "" {
 				continue
 			}
-			if _, exists := packages[id]; !exists {
+			if existing, exists := packages[id]; exists {
+				packages[id] = packageAggregate{record: mergePackageAggregate(existing.record, pkg)}
+			} else {
 				packages[id] = packageAggregate{record: pkg}
+			}
+		}
+		componentByRef := make(map[string]filesystemanalyzer.PackageRecord, len(catalog.SBOM.Components))
+		for _, component := range catalog.SBOM.Components {
+			pkg := packageFromSBOMComponent(component)
+			if packageNodeID(pkg) == "" {
+				continue
+			}
+			componentByRef[component.BOMRef] = pkg
+		}
+		for _, dep := range catalog.SBOM.Dependencies {
+			parent, ok := componentByRef[strings.TrimSpace(dep.Ref)]
+			if !ok {
+				continue
+			}
+			for _, childRef := range dep.DependsOn {
+				child, ok := componentByRef[strings.TrimSpace(childRef)]
+				if !ok {
+					continue
+				}
+				key := packageDependencyKey(parent, child)
+				if _, exists := packageDeps[key]; !exists {
+					packageDeps[key] = packageDependencyAggregate{parent: parent, child: child}
+				}
 			}
 		}
 		for _, vuln := range catalog.Vulnerabilities {
@@ -698,7 +764,36 @@ func summarizeRun(run RunRecord) (scanSummary, map[string]configAggregate, map[s
 		}
 	}
 	summary.Risk = maxRiskLevel(summary.Risk, summaryRisk(summary))
-	return summary, findings, secrets, malware, packages, technologies, vulns, relations
+	return summary, findings, secrets, malware, packages, packageDeps, technologies, vulns, relations
+}
+
+func mergePackageAggregate(existing, incoming filesystemanalyzer.PackageRecord) filesystemanalyzer.PackageRecord {
+	merged := existing
+	merged.DirectDependency = existing.DirectDependency || incoming.DirectDependency
+	merged.Reachable = existing.Reachable || incoming.Reachable
+	merged.ImportFileCount = maxInt(existing.ImportFileCount, incoming.ImportFileCount)
+	switch {
+	case merged.DependencyDepth == 0:
+		merged.DependencyDepth = incoming.DependencyDepth
+	case incoming.DependencyDepth > 0 && incoming.DependencyDepth < merged.DependencyDepth:
+		merged.DependencyDepth = incoming.DependencyDepth
+	}
+	return merged
+}
+
+func packageFromSBOMComponent(component filesystemanalyzer.SBOMComponent) filesystemanalyzer.PackageRecord {
+	return filesystemanalyzer.PackageRecord{
+		Ecosystem:        strings.TrimSpace(component.Ecosystem),
+		Manager:          strings.TrimSpace(component.Ecosystem),
+		Name:             strings.TrimSpace(component.Name),
+		Version:          strings.TrimSpace(component.Version),
+		PURL:             strings.TrimSpace(component.PURL),
+		Location:         strings.TrimSpace(component.Location),
+		DirectDependency: component.DirectDependency,
+		Reachable:        component.Reachable,
+		DependencyDepth:  component.DependencyDepth,
+		ImportFileCount:  component.ImportFileCount,
+	}
 }
 
 func mergeVulnerabilityRecord(existing, incoming scanner.ImageVulnerability) scanner.ImageVulnerability {
@@ -734,11 +829,15 @@ func mergeVulnerabilityRecord(existing, incoming scanner.ImageVulnerability) sca
 
 func buildPackageNode(pkg filesystemanalyzer.PackageRecord, target *graph.Node, metadata graph.WriteMetadata) *graph.Node {
 	properties := map[string]any{
-		"package_name": pkg.Name,
-		"version":      pkg.Version,
-		"ecosystem":    firstNonEmpty(pkg.Ecosystem, "unknown"),
-		"manager":      strings.TrimSpace(pkg.Manager),
-		"purl":         strings.TrimSpace(pkg.PURL),
+		"package_name":      pkg.Name,
+		"version":           pkg.Version,
+		"ecosystem":         firstNonEmpty(pkg.Ecosystem, "unknown"),
+		"manager":           strings.TrimSpace(pkg.Manager),
+		"purl":              strings.TrimSpace(pkg.PURL),
+		"direct_dependency": pkg.DirectDependency,
+		"reachable":         pkg.Reachable,
+		"dependency_depth":  pkg.DependencyDepth,
+		"import_file_count": pkg.ImportFileCount,
 	}
 	metadata.ApplyTo(properties)
 	return &graph.Node{
@@ -1023,6 +1122,17 @@ func vulnerabilityKey(vuln scanner.ImageVulnerability) string {
 
 func packageVulnerabilityKey(pkg filesystemanalyzer.PackageRecord, vuln scanner.ImageVulnerability) string {
 	return slugify(fmt.Sprintf("%s|%s|%s", packageNodeID(pkg), vulnerabilityNodeID(vuln), firstNonEmpty(vuln.FixedVersion, "none")))
+}
+
+func packageDependencyKey(parent, child filesystemanalyzer.PackageRecord) string {
+	return slugify(fmt.Sprintf("%s|%s", packageNodeID(parent), packageNodeID(child)))
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func malwareKey(finding filesystemanalyzer.MalwareFinding) string {

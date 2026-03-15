@@ -5,6 +5,92 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 102 - Go Module Reachability and Directness Signals (2026-03-14)
+
+### Review findings
+- [x] Gap: `#234` only built dependency depth and reachability for npm lockfiles; Go modules were still a flat `go.sum` inventory.
+- [x] Gap: this left `go.mod` direct vs indirect dependency intent unused, even though the issue explicitly calls out `go.sum` / `go.mod`.
+- [x] Gap: Go source imports were not connected back to module records, so reachable-vs-unreachable vulnerability prioritization was still Node-only.
+- [x] Gap: MIT upstream review sharpened the next slice:
+  - [x] `github/dependency-submission-toolkit` models dependency relationships per manifest rather than as flat package presence.
+  - [x] `samber/go-mod-graph` reinforces that Go module identity should come from explicit module-path semantics, not filename heuristics.
+
+### Execution plan
+- [x] Add TDD coverage for:
+  - [x] `go.mod` direct and indirect requirement classification
+  - [x] Go import reachability from source files
+  - [x] subpackage import matching back to the parent module path
+- [x] Parse `go.mod` requirements into package records and reachability metadata.
+- [x] Scan `.go` files for import statements and map them back to module roots.
+- [x] Reuse the existing dependency prioritization contract:
+  - [x] `direct_dependency`
+  - [x] `dependency_depth`
+  - [x] `reachable`
+  - [x] `import_file_count`
+
+## Deep Review Cycle 99 - npm Lockfile Compatibility and Reachability Evidence (2026-03-14)
+
+### Review findings
+- [x] Gap: the initial `#234` slice only understood npm lockfiles with a `packages[""]` root, so valid npm v1 lockfiles still produced a flat-empty dependency view.
+- [x] Gap: reachability seeding only used declared root dependencies, so directly imported transitive packages were incorrectly marked unreachable even when they were installed at root and imported by source code.
+- [x] Gap: the package contract still lacked import evidence counts, so the issue's prioritization goal of "imported in N files" was still not representable.
+- [x] Gap: extra MIT-licensed upstream review sharpened the contract direction:
+  - [x] `github/dependency-submission-toolkit` models direct vs indirect relationships per manifest/build target instead of flattening dependencies globally.
+  - [x] `advanced-security/github-sbom-toolkit` keeps manifest and package-url identity attached to collected SBOM data for later matching.
+  - [x] `sverweij/dependency-cruiser` and `pahen/madge` both treat import extraction as a first-class graph-building input rather than a post-hoc annotation.
+
+### Execution plan
+- [x] Add TDD coverage for:
+  - [x] npm v1 `package-lock.json` dependency graph extraction
+  - [x] direct source imports of transitive-but-root-resolvable packages
+  - [x] import evidence counts flowing into workload graph usage edges
+- [x] Extend npm graph parsing to support:
+  - [x] v2/v3 `packages[""]` lockfiles
+  - [x] v1 nested `dependencies` lockfiles
+- [x] Change reachability seeding from "declared direct dependency only" to "root-resolvable importable package" so hoisted transitive packages are modeled correctly.
+- [x] Carry `import_file_count` through:
+  - [x] package inventory
+  - [x] SBOM components
+  - [x] workload scan `contains_pkg` edges
+  - [x] canonical package node properties
+- [ ] Next depth cuts after this fix-up:
+  - [ ] add manifest/path identity onto dependency edges so multi-manifest workloads stay separable
+  - [ ] add another ecosystem slice with an explicit lockfile graph, most likely `go.mod`/`go.sum`
+  - [ ] use import evidence counts in vulnerability prioritization once package-vulnerability ranking is wired
+
+## Deep Review Cycle 98 - Node Dependency Graph and Reachability from Workload SBOMs (2026-03-14)
+
+### Review findings
+- [x] Gap: issue `#234` was still open even though the filesystem analyzer already had the right seam to enrich package inventory during the existing manifest walk.
+- [x] Gap: package inventory stayed flat, so workload scans could not represent direct vs transitive package relationships or feed dependency-aware graph traversals.
+- [x] Gap: the cheapest credible reachability slice is Node.js first, because `package-lock.json` gives an explicit dependency tree and JavaScript import scanning can distinguish unused direct dependencies from imported roots.
+- [x] Gap: package nodes are canonical across workloads, so directness/depth/reachability should not be stored on the package node itself; they belong on scan-to-package usage edges and dependency edges.
+- [x] Gap: MIT-licensed upstream patterns reinforce that shape:
+  - [x] `github/dependency-submission-toolkit` groups dependencies by manifest/build target and models relationships explicitly instead of flattening them away.
+  - [x] `advanced-security/github-sbom-toolkit` treats PURLs/SBOM refs as the stable join key for matching and downstream analysis.
+  - [x] `octodemo/sbom-dependency-submission` shows why build-time/lockfile-derived dependency trees surface transitive dependencies that static manifest parsing misses.
+
+### Execution plan
+- [x] Add TDD coverage for:
+  - [x] npm `package-lock.json` dependency graph extraction
+  - [x] direct vs transitive depth tracking
+  - [x] JavaScript import-driven reachability
+  - [x] graph materialization of package usage hints and `package -> package depends_on` edges
+- [x] Extend package/SBOM report contracts with:
+  - [x] direct dependency hint
+  - [x] reachability hint
+  - [x] dependency depth
+  - [x] SBOM dependency edges
+- [x] Parse npm lockfiles into a manifest-scoped dependency graph during the existing filesystem walk.
+- [x] Collect JavaScript/TypeScript imports during the same walk and propagate reachability from imported direct dependencies through the lockfile graph.
+- [x] Materialize dependency-aware graph data by:
+  - [x] carrying direct/depth/reachability hints on `workload_scan --contains_pkg--> package` edges
+  - [x] adding canonical `package --depends_on--> package` edges from SBOM dependency refs
+- [ ] Next depth cuts after this slice:
+  - [ ] add `go.mod` / `go.sum` direct-vs-indirect modeling and selected Python lockfile support
+  - [ ] add scan/report summaries for dependency-edge counts and reachable package counts once the cross-ecosystem contract settles
+  - [ ] tie vulnerability prioritization to reachability/directness without polluting canonical package node properties
+
 ## Deep Review Cycle 101 - Technology Schema Metadata Preservation (2026-03-14)
 
 ### Review findings

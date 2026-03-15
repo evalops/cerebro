@@ -221,6 +221,26 @@ func (a *Analyzer) Analyze(ctx context.Context, rootfsPath string) (*Report, err
 		if shouldParsePackageFile(filePath) {
 			if data, ok, err := readLimitedFile(root, filePath, a.maxFileBytes); err == nil && ok {
 				inv.addPackages(parsePackageRecords(filePath, data)...)
+				if graph := parseNPMDependencyGraph(filePath, data); graph != nil {
+					inv.addNPMDependencyGraph(*graph)
+				}
+				if graph := parseGoDependencyGraph(filePath, data); graph != nil {
+					inv.addGoDependencyGraph(*graph)
+				}
+			} else if err != nil {
+				inv.metadataErrors = append(inv.metadataErrors, err.Error())
+			}
+		}
+		if shouldInspectJSImportFile(filePath, info.Mode(), info.Size(), a.maxFileBytes) {
+			if data, ok, err := readLimitedFile(root, filePath, a.maxFileBytes); err == nil && ok {
+				inv.addJSImportFile(filePath, scanJSImportSpecifiers(data))
+			} else if err != nil {
+				inv.metadataErrors = append(inv.metadataErrors, err.Error())
+			}
+		}
+		if shouldInspectGoImportFile(filePath, info.Mode(), info.Size(), a.maxFileBytes) {
+			if data, ok, err := readLimitedFile(root, filePath, a.maxFileBytes); err == nil && ok {
+				inv.addGoImportFile(filePath, scanGoImportSpecifiers(filePath, data))
 			} else if err != nil {
 				inv.metadataErrors = append(inv.metadataErrors, err.Error())
 			}
@@ -291,6 +311,7 @@ func (a *Analyzer) Analyze(ctx context.Context, rootfsPath string) (*Report, err
 
 	mergeOSInfo(&report.OS, inv.os)
 	report.OS.EOL = isLikelyEOL(report.OS)
+	inv.applyDependencyReachability()
 	report.Packages = inv.sortedPackages()
 	if a.vulnerabilityMatcher != nil && len(report.Packages) > 0 {
 		matchedVulns, err := a.vulnerabilityMatcher.MatchPackages(ctx, report.OS, report.Packages)
@@ -306,10 +327,11 @@ func (a *Analyzer) Analyze(ctx context.Context, rootfsPath string) (*Report, err
 	report.IaCArtifacts = inv.iacArtifacts
 	report.Malware = inv.malware
 	report.Technologies = inv.sortedTechnologies()
-	report.SBOM = buildSBOM(report.GeneratedAt, report.Packages)
+	report.SBOM = buildSBOM(report.GeneratedAt, report.Packages, inv.sortedSBOMDependencies())
 	report.Findings = dedupeFindings(append(report.Findings, inv.findings...))
 	report.Summary = Summary{
 		PackageCount:          len(report.Packages),
+		DependencyCount:       len(report.SBOM.Dependencies),
 		VulnerabilityCount:    len(report.Vulnerabilities),
 		SecretCount:           len(report.Secrets),
 		MisconfigurationCount: len(report.Misconfigurations),
@@ -332,9 +354,14 @@ type inventory struct {
 	generatedAt    time.Time
 	os             OSInfo
 	packages       map[string]PackageRecord
+	packageDeps    map[string]map[string]struct{}
 	iacArtifactIDs map[string]struct{}
 	secretKeys     map[string]struct{}
 	technologyKeys map[string]struct{}
+	npmGraphs      []npmDependencyGraph
+	jsImports      map[string][]string
+	goGraphs       []goDependencyGraph
+	goImports      map[string][]string
 	secrets        []SecretFinding
 	configs        []ConfigFinding
 	iacArtifacts   []IaCArtifact
@@ -350,9 +377,12 @@ func newInventory(now time.Time) *inventory {
 	return &inventory{
 		generatedAt:    now,
 		packages:       make(map[string]PackageRecord),
+		packageDeps:    make(map[string]map[string]struct{}),
 		iacArtifactIDs: make(map[string]struct{}),
 		secretKeys:     make(map[string]struct{}),
 		technologyKeys: make(map[string]struct{}),
+		jsImports:      make(map[string][]string),
+		goImports:      make(map[string][]string),
 	}
 }
 
@@ -366,9 +396,49 @@ func (i *inventory) addPackages(pkgs ...PackageRecord) {
 		pkg.Ecosystem = strings.TrimSpace(pkg.Ecosystem)
 		pkg.Manager = firstNonEmpty(pkg.Manager, pkg.Ecosystem)
 		pkg.PURL = firstNonEmpty(pkg.PURL, buildPURL(pkg))
-		key := pkg.Ecosystem + "|" + pkg.Name + "|" + pkg.Version + "|" + pkg.Location
+		key := packageInventoryKey(pkg)
+		if existing, ok := i.packages[key]; ok {
+			i.packages[key] = mergePackageRecord(existing, pkg)
+			continue
+		}
 		i.packages[key] = pkg
 	}
+}
+
+func (i *inventory) addNPMDependencyGraph(graph npmDependencyGraph) {
+	if len(graph.Packages) > 0 {
+		i.addPackages(graph.Packages...)
+	}
+	for parentKey, children := range graph.DependencyKeys {
+		if _, ok := i.packageDeps[parentKey]; !ok {
+			i.packageDeps[parentKey] = make(map[string]struct{})
+		}
+		for childKey := range children {
+			i.packageDeps[parentKey][childKey] = struct{}{}
+		}
+	}
+	i.npmGraphs = append(i.npmGraphs, graph)
+}
+
+func (i *inventory) addGoDependencyGraph(graph goDependencyGraph) {
+	if len(graph.Packages) > 0 {
+		i.addPackages(graph.Packages...)
+	}
+	i.goGraphs = append(i.goGraphs, graph)
+}
+
+func (i *inventory) addJSImportFile(filePath string, imports []string) {
+	if len(imports) == 0 {
+		return
+	}
+	i.jsImports[filePath] = append(i.jsImports[filePath], imports...)
+}
+
+func (i *inventory) addGoImportFile(filePath string, imports []string) {
+	if len(imports) == 0 {
+		return
+	}
+	i.goImports[filePath] = append(i.goImports[filePath], imports...)
 }
 
 func (i *inventory) addSecrets(findings ...SecretFinding) {
@@ -474,6 +544,33 @@ func (i *inventory) sortedPackages() []PackageRecord {
 	return pkgs
 }
 
+func (i *inventory) sortedSBOMDependencies() []SBOMDependency {
+	out := make([]SBOMDependency, 0, len(i.packageDeps))
+	for parentKey, children := range i.packageDeps {
+		parent, ok := i.packages[parentKey]
+		if !ok {
+			continue
+		}
+		dep := SBOMDependency{Ref: sbomComponentRef(parent)}
+		for childKey := range children {
+			child, ok := i.packages[childKey]
+			if !ok {
+				continue
+			}
+			dep.DependsOn = append(dep.DependsOn, sbomComponentRef(child))
+		}
+		sort.Strings(dep.DependsOn)
+		if len(dep.DependsOn) == 0 {
+			continue
+		}
+		out = append(out, dep)
+	}
+	sort.Slice(out, func(a, b int) bool {
+		return out[a].Ref < out[b].Ref
+	})
+	return out
+}
+
 func (i *inventory) sortedTechnologies() []TechnologyRecord {
 	records := make([]TechnologyRecord, len(i.technologies))
 	copy(records, i.technologies)
@@ -492,6 +589,80 @@ func (i *inventory) sortedTechnologies() []TechnologyRecord {
 		return left.Path < right.Path
 	})
 	return records
+}
+
+func (i *inventory) applyDependencyReachability() {
+	for _, graph := range i.npmGraphs {
+		reachable := make(map[string]map[string]struct{})
+		for filePath, imports := range i.jsImports {
+			if graph.BaseDir != "" && !strings.HasPrefix(filePath, graph.BaseDir+"/") && filePath != graph.BaseDir {
+				continue
+			}
+			for _, imp := range imports {
+				for key := range graph.ImportableKeys[imp] {
+					if _, ok := reachable[key]; !ok {
+						reachable[key] = make(map[string]struct{})
+					}
+					reachable[key][filePath] = struct{}{}
+				}
+			}
+		}
+		type queueItem struct {
+			key      string
+			filePath string
+		}
+		queue := make([]queueItem, 0, len(reachable))
+		for key, fileSet := range reachable {
+			for filePath := range fileSet {
+				queue = append(queue, queueItem{key: key, filePath: filePath})
+			}
+		}
+		for len(queue) > 0 {
+			current := queue[0]
+			queue = queue[1:]
+			pkg, ok := i.packages[current.key]
+			if ok {
+				pkg.Reachable = true
+				pkg.ImportFileCount = maxInt(pkg.ImportFileCount, len(reachable[current.key]))
+				i.packages[current.key] = pkg
+			}
+			for child := range graph.DependencyKeys[current.key] {
+				if _, ok := reachable[child]; !ok {
+					reachable[child] = make(map[string]struct{})
+				}
+				if _, seen := reachable[child][current.filePath]; seen {
+					continue
+				}
+				reachable[child][current.filePath] = struct{}{}
+				queue = append(queue, queueItem{key: child, filePath: current.filePath})
+			}
+		}
+	}
+	for _, graph := range i.goGraphs {
+		reachable := make(map[string]map[string]struct{})
+		for filePath, imports := range i.goImports {
+			if graph.BaseDir != "" && !strings.HasPrefix(filePath, graph.BaseDir+"/") && filePath != graph.BaseDir {
+				continue
+			}
+			for _, imp := range imports {
+				for _, key := range matchGoImportablePackageKeys(graph.ImportableKeys, imp) {
+					if _, ok := reachable[key]; !ok {
+						reachable[key] = make(map[string]struct{})
+					}
+					reachable[key][filePath] = struct{}{}
+				}
+			}
+		}
+		for key, fileSet := range reachable {
+			pkg, ok := i.packages[key]
+			if !ok {
+				continue
+			}
+			pkg.Reachable = true
+			pkg.ImportFileCount = maxInt(pkg.ImportFileCount, len(fileSet))
+			i.packages[key] = pkg
+		}
+	}
 }
 
 func readLimitedFile(root *os.Root, filePath string, limit int64) ([]byte, bool, error) {
@@ -543,6 +714,12 @@ func shouldParsePackageFile(filePath string) bool {
 		return true
 	case strings.Contains(filePath, "/node_modules/") && strings.HasSuffix(filePath, "/package.json"):
 		return true
+	case path.Base(filePath) == "package-lock.json":
+		return true
+	case path.Base(filePath) == "npm-shrinkwrap.json":
+		return true
+	case path.Base(filePath) == "go.mod":
+		return true
 	case path.Base(filePath) == "go.sum":
 		return true
 	case path.Base(filePath) == "Cargo.lock":
@@ -565,6 +742,31 @@ func shouldParseOSFile(filePath string) bool {
 	default:
 		return false
 	}
+}
+
+func shouldInspectJSImportFile(filePath string, mode fs.FileMode, size int64, maxBytes int64) bool {
+	if mode&fs.ModeSymlink != 0 || mode.IsDir() || size <= 0 || size > maxBytes {
+		return false
+	}
+	if strings.Contains(filePath, "/node_modules/") || strings.Contains(filePath, "/vendor/") || strings.Contains(filePath, "/dist/") || strings.Contains(filePath, "/build/") {
+		return false
+	}
+	switch strings.ToLower(path.Ext(filePath)) {
+	case ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs":
+		return true
+	default:
+		return false
+	}
+}
+
+func shouldInspectGoImportFile(filePath string, mode fs.FileMode, size int64, maxBytes int64) bool {
+	if mode&fs.ModeSymlink != 0 || mode.IsDir() || size <= 0 || size > maxBytes {
+		return false
+	}
+	if strings.Contains(filePath, "/vendor/") || strings.Contains(filePath, "/testdata/") || strings.Contains(filePath, "/fixtures/") {
+		return false
+	}
+	return strings.EqualFold(path.Ext(filePath), ".go")
 }
 
 func shouldParseConfigFile(filePath string) bool {
@@ -728,6 +930,10 @@ func parsePackageRecords(filePath string, data []byte) []PackageRecord {
 		return parsePythonMetadata(filePath, data)
 	case strings.HasSuffix(filePath, "/package.json") && strings.Contains(filePath, "/node_modules/"):
 		return parseNPMPackage(filePath, data)
+	case path.Base(filePath) == "package-lock.json", path.Base(filePath) == "npm-shrinkwrap.json":
+		return parseNPMLockPackages(filePath, data)
+	case path.Base(filePath) == "go.mod":
+		return parseGoModPackages(filePath, data)
 	case path.Base(filePath) == "go.sum":
 		return parseGoSum(filePath, data)
 	case path.Base(filePath) == "Cargo.lock":
@@ -1739,25 +1945,62 @@ func parseAzureStorageConnectionReference(raw string) (SecretReference, bool) {
 	}, true
 }
 
-func buildSBOM(generatedAt time.Time, packages []PackageRecord) SBOMDocument {
+func buildSBOM(generatedAt time.Time, packages []PackageRecord, dependencies []SBOMDependency) SBOMDocument {
 	components := make([]SBOMComponent, 0, len(packages))
 	for _, pkg := range packages {
 		components = append(components, SBOMComponent{
-			BOMRef:    findingID("pkg", pkg.Ecosystem+":"+pkg.Name+":"+pkg.Version+":"+pkg.Location),
-			Type:      "library",
-			Name:      pkg.Name,
-			Version:   pkg.Version,
-			PURL:      pkg.PURL,
-			Ecosystem: pkg.Ecosystem,
-			Location:  pkg.Location,
+			BOMRef:           sbomComponentRef(pkg),
+			Type:             "library",
+			Name:             pkg.Name,
+			Version:          pkg.Version,
+			PURL:             pkg.PURL,
+			Ecosystem:        pkg.Ecosystem,
+			Location:         pkg.Location,
+			DirectDependency: pkg.DirectDependency,
+			Reachable:        pkg.Reachable,
+			DependencyDepth:  pkg.DependencyDepth,
+			ImportFileCount:  pkg.ImportFileCount,
 		})
 	}
 	return SBOMDocument{
-		Format:      "cyclonedx-json",
-		SpecVersion: "1.5",
-		GeneratedAt: generatedAt.UTC(),
-		Components:  components,
+		Format:       "cyclonedx-json",
+		SpecVersion:  "1.5",
+		GeneratedAt:  generatedAt.UTC(),
+		Components:   components,
+		Dependencies: dependencies,
 	}
+}
+
+func sbomComponentRef(pkg PackageRecord) string {
+	return findingID("pkg", packageInventoryKey(pkg))
+}
+
+func packageInventoryKey(pkg PackageRecord) string {
+	return pkg.Ecosystem + "|" + pkg.Name + "|" + pkg.Version + "|" + pkg.Location
+}
+
+func mergePackageRecord(existing, incoming PackageRecord) PackageRecord {
+	merged := existing
+	merged.Manager = firstNonEmpty(existing.Manager, incoming.Manager)
+	merged.PURL = firstNonEmpty(existing.PURL, incoming.PURL)
+	merged.Location = firstNonEmpty(existing.Location, incoming.Location)
+	merged.DirectDependency = existing.DirectDependency || incoming.DirectDependency
+	merged.Reachable = existing.Reachable || incoming.Reachable
+	merged.ImportFileCount = maxInt(existing.ImportFileCount, incoming.ImportFileCount)
+	switch {
+	case merged.DependencyDepth == 0:
+		merged.DependencyDepth = incoming.DependencyDepth
+	case incoming.DependencyDepth > 0 && incoming.DependencyDepth < merged.DependencyDepth:
+		merged.DependencyDepth = incoming.DependencyDepth
+	}
+	return merged
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func dedupeFindings(findings []scanner.ContainerFinding) []scanner.ContainerFinding {

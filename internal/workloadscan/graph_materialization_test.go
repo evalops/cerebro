@@ -44,6 +44,105 @@ func TestMaterializeRunsIntoGraphAddsWorkloadScanNodes(t *testing.T) {
 	}
 }
 
+func TestMaterializeRunsIntoGraphAddsPackageDependencyEdgesAndUsageHints(t *testing.T) {
+	now := time.Date(2026, 3, 12, 18, 0, 0, 0, time.UTC)
+	g := graph.New()
+	g.AddNode(&graph.Node{
+		ID:       "arn:aws:ec2:us-east-1:123456789012:instance/i-abc123",
+		Kind:     graph.NodeKindInstance,
+		Name:     "i-abc123",
+		Provider: "aws",
+		Account:  "123456789012",
+		Region:   "us-east-1",
+	})
+	g.BuildIndex()
+
+	express := filesystemanalyzer.PackageRecord{
+		Ecosystem:        "npm",
+		Manager:          "npm",
+		Name:             "express",
+		Version:          "4.18.2",
+		PURL:             "pkg:npm/express@4.18.2",
+		Location:         "srv/app/package-lock.json",
+		DirectDependency: true,
+		Reachable:        true,
+		DependencyDepth:  1,
+	}
+	bodyParser := filesystemanalyzer.PackageRecord{
+		Ecosystem:        "npm",
+		Manager:          "npm",
+		Name:             "body-parser",
+		Version:          "1.20.2",
+		PURL:             "pkg:npm/body-parser@1.20.2",
+		Location:         "srv/app/package-lock.json",
+		DirectDependency: false,
+		Reachable:        true,
+		DependencyDepth:  2,
+	}
+	lodash := filesystemanalyzer.PackageRecord{
+		Ecosystem:        "npm",
+		Manager:          "npm",
+		Name:             "lodash",
+		Version:          "4.17.21",
+		PURL:             "pkg:npm/lodash@4.17.21",
+		Location:         "srv/app/package-lock.json",
+		DirectDependency: true,
+		Reachable:        false,
+		DependencyDepth:  1,
+	}
+
+	run := buildGraphMaterializationTestRun("workload_scan:run-dependency-graph", now.Add(-2*time.Hour), 0)
+	run.Volumes[0].Analysis.Catalog.Packages = []filesystemanalyzer.PackageRecord{express, bodyParser, lodash}
+	run.Volumes[0].Analysis.Catalog.SBOM = filesystemanalyzer.SBOMDocument{
+		Format:      "cyclonedx-json",
+		SpecVersion: "1.5",
+		GeneratedAt: now.Add(-2 * time.Hour),
+		Components: []filesystemanalyzer.SBOMComponent{
+			{BOMRef: testSBOMComponentRef(express), Type: "library", Name: express.Name, Version: express.Version, PURL: express.PURL, Ecosystem: express.Ecosystem, Location: express.Location, DirectDependency: express.DirectDependency, Reachable: express.Reachable, DependencyDepth: express.DependencyDepth},
+			{BOMRef: testSBOMComponentRef(bodyParser), Type: "library", Name: bodyParser.Name, Version: bodyParser.Version, PURL: bodyParser.PURL, Ecosystem: bodyParser.Ecosystem, Location: bodyParser.Location, DirectDependency: bodyParser.DirectDependency, Reachable: bodyParser.Reachable, DependencyDepth: bodyParser.DependencyDepth},
+			{BOMRef: testSBOMComponentRef(lodash), Type: "library", Name: lodash.Name, Version: lodash.Version, PURL: lodash.PURL, Ecosystem: lodash.Ecosystem, Location: lodash.Location, DirectDependency: lodash.DirectDependency, Reachable: lodash.Reachable, DependencyDepth: lodash.DependencyDepth},
+		},
+		Dependencies: []filesystemanalyzer.SBOMDependency{
+			{Ref: testSBOMComponentRef(express), DependsOn: []string{testSBOMComponentRef(bodyParser)}},
+		},
+	}
+
+	summary := MaterializeRunsIntoGraph(g, []RunRecord{run}, now)
+	if summary.PackageDependencyEdges != 1 {
+		t.Fatalf("expected one package dependency edge, got %#v", summary)
+	}
+
+	scanToExpress := findOutEdge(g, run.ID, graph.EdgeKindContainsPkg, packageNodeID(express))
+	if scanToExpress == nil {
+		t.Fatalf("expected scan -> express edge")
+	}
+	if got := graphValueBool(scanToExpress.Properties["direct_dependency"]); !got {
+		t.Fatalf("expected direct_dependency=true, got %#v", scanToExpress.Properties)
+	}
+	if got := graphValueBool(scanToExpress.Properties["reachable"]); !got {
+		t.Fatalf("expected reachable=true, got %#v", scanToExpress.Properties)
+	}
+	if got := graphValueInt(scanToExpress.Properties["dependency_depth"]); got != 1 {
+		t.Fatalf("expected dependency_depth=1, got %#v", scanToExpress.Properties)
+	}
+
+	scanToBodyParser := findOutEdge(g, run.ID, graph.EdgeKindContainsPkg, packageNodeID(bodyParser))
+	if scanToBodyParser == nil {
+		t.Fatalf("expected scan -> body-parser edge")
+	}
+	if got := graphValueBool(scanToBodyParser.Properties["direct_dependency"]); got {
+		t.Fatalf("expected direct_dependency=false, got %#v", scanToBodyParser.Properties)
+	}
+	if got := graphValueInt(scanToBodyParser.Properties["dependency_depth"]); got != 2 {
+		t.Fatalf("expected dependency_depth=2, got %#v", scanToBodyParser.Properties)
+	}
+
+	depEdge := findOutEdge(g, packageNodeID(express), graph.EdgeKindDependsOn, packageNodeID(bodyParser))
+	if depEdge == nil {
+		t.Fatalf("expected express -> body-parser depends_on edge")
+	}
+}
+
 func TestMaterializeRunsIntoGraphCarriesPriorityAssessment(t *testing.T) {
 	now := time.Date(2026, 3, 12, 18, 0, 0, 0, time.UTC)
 	g := graph.New()
@@ -880,4 +979,19 @@ func graphValueInt(value any) int {
 	default:
 		return 0
 	}
+}
+
+func graphValueBool(value any) bool {
+	switch typed := value.(type) {
+	case bool:
+		return typed
+	default:
+		return false
+	}
+}
+
+func testSBOMComponentRef(pkg filesystemanalyzer.PackageRecord) string {
+	value := strings.ToLower(strings.TrimSpace(pkg.Ecosystem + "|" + pkg.Name + "|" + pkg.Version + "|" + pkg.Location))
+	replacer := strings.NewReplacer("/", "_", "\\", "_", ":", "_", " ", "_", "@", "_", ".", "_", "=", "_", "|", "_")
+	return "pkg:" + replacer.Replace(value)
 }
