@@ -23,6 +23,19 @@ Status: executed end-to-end via PR workflow
 - [x] Keep npm/package dependency edges unchanged while merging both dependency sources into the final SBOM.
 - [x] Rerun focused filesystem/workload tests, lint, and full `go test ./...`.
 
+## Deep Review Cycle 108 - Package Merge Contract Reuse (2026-03-15)
+
+### Review findings
+- [x] Gap: workload graph materialization still duplicated `PackageRecord` merge semantics instead of reusing the canonical analyzer merge logic.
+- [x] Gap: that duplication made dependency-depth and reachability rules vulnerable to silent drift across two packages.
+- [x] Gap: both packages also carried redundant `maxInt` helpers even though the repo targets a Go version with builtin `max`.
+
+### Execution plan
+- [x] Export the canonical package merge helper from `filesystemanalyzer`.
+- [x] Route workload package aggregation through that shared helper instead of a duplicate merge function.
+- [x] Replace the redundant `maxInt` helpers with builtin `max`.
+- [x] Rerun focused tests/lint and keep the PR review loop on the updated head.
+
 ## Deep Review Cycle 106 - Dependency Parser Cleanup After Review Pass (2026-03-14)
 
 ### Review findings

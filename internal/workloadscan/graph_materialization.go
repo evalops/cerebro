@@ -681,7 +681,7 @@ func summarizeRun(run RunRecord) (scanSummary, map[string]configAggregate, map[s
 				continue
 			}
 			if existing, exists := packages[id]; exists {
-				packages[id] = packageAggregate{record: mergePackageAggregate(existing.record, pkg)}
+				packages[id] = packageAggregate{record: filesystemanalyzer.MergePackageRecord(existing.record, pkg)}
 			} else {
 				packages[id] = packageAggregate{record: pkg}
 			}
@@ -765,20 +765,6 @@ func summarizeRun(run RunRecord) (scanSummary, map[string]configAggregate, map[s
 	}
 	summary.Risk = maxRiskLevel(summary.Risk, summaryRisk(summary))
 	return summary, findings, secrets, malware, packages, packageDeps, technologies, vulns, relations
-}
-
-func mergePackageAggregate(existing, incoming filesystemanalyzer.PackageRecord) filesystemanalyzer.PackageRecord {
-	merged := existing
-	merged.DirectDependency = existing.DirectDependency || incoming.DirectDependency
-	merged.Reachable = existing.Reachable || incoming.Reachable
-	merged.ImportFileCount = maxInt(existing.ImportFileCount, incoming.ImportFileCount)
-	switch {
-	case merged.DependencyDepth == 0:
-		merged.DependencyDepth = incoming.DependencyDepth
-	case incoming.DependencyDepth > 0 && incoming.DependencyDepth < merged.DependencyDepth:
-		merged.DependencyDepth = incoming.DependencyDepth
-	}
-	return merged
 }
 
 func packageFromSBOMComponent(component filesystemanalyzer.SBOMComponent) filesystemanalyzer.PackageRecord {
@@ -1139,13 +1125,6 @@ func packageVulnerabilityKey(pkg filesystemanalyzer.PackageRecord, vuln scanner.
 
 func packageDependencyKey(parent, child filesystemanalyzer.PackageRecord) string {
 	return slugify(fmt.Sprintf("%s|%s", packageNodeID(parent), packageNodeID(child)))
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 func malwareKey(finding filesystemanalyzer.MalwareFinding) string {

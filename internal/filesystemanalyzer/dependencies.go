@@ -129,7 +129,7 @@ func parseNPMDependencyGraphV2(filePath string, lock npmLockDocument) *npmDepend
 		record.PURL = buildPURL(record)
 		key := packageInventoryKey(record)
 		if existing, ok := packages[key]; ok {
-			packages[key] = mergePackageRecord(existing, record)
+			packages[key] = MergePackageRecord(existing, record)
 		} else {
 			packages[key] = record
 		}
@@ -228,7 +228,7 @@ func parseNPMDependencyGraphV1(filePath string, lock npmLockV1Document) *npmDepe
 		record.PURL = buildPURL(record)
 		key := packageInventoryKey(record)
 		if existing, ok := packages[key]; ok {
-			packages[key] = mergePackageRecord(existing, record)
+			packages[key] = MergePackageRecord(existing, record)
 		} else {
 			packages[key] = record
 		}
@@ -466,7 +466,7 @@ func parseGoDependencyGraph(filePath string, data []byte) *goDependencyGraph {
 		record.PURL = buildPURL(record)
 		key := packageInventoryKey(record)
 		if existing, ok := packages[key]; ok {
-			packages[key] = mergePackageRecord(existing, record)
+			packages[key] = MergePackageRecord(existing, record)
 		} else {
 			packages[key] = record
 		}

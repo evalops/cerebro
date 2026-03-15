@@ -402,7 +402,7 @@ func (i *inventory) addPackages(pkgs ...PackageRecord) {
 		pkg.PURL = firstNonEmpty(pkg.PURL, buildPURL(pkg))
 		key := packageInventoryKey(pkg)
 		if existing, ok := i.packages[key]; ok {
-			i.packages[key] = mergePackageRecord(existing, pkg)
+			i.packages[key] = MergePackageRecord(existing, pkg)
 			continue
 		}
 		i.packages[key] = pkg
@@ -693,7 +693,7 @@ func (i *inventory) applyDependencyReachability() {
 			pkg, ok := i.packages[current.key]
 			if ok {
 				pkg.Reachable = true
-				pkg.ImportFileCount = maxInt(pkg.ImportFileCount, len(reachable[current.key]))
+				pkg.ImportFileCount = max(pkg.ImportFileCount, len(reachable[current.key]))
 				i.packages[current.key] = pkg
 			}
 			for child := range graph.DependencyKeys[current.key] {
@@ -730,7 +730,7 @@ func (i *inventory) applyDependencyReachability() {
 				continue
 			}
 			pkg.Reachable = true
-			pkg.ImportFileCount = maxInt(pkg.ImportFileCount, len(fileSet))
+			pkg.ImportFileCount = max(pkg.ImportFileCount, len(fileSet))
 			i.packages[key] = pkg
 		}
 	}
@@ -2119,14 +2119,15 @@ func packageInventoryKey(pkg PackageRecord) string {
 	return pkg.Ecosystem + "|" + pkg.Name + "|" + pkg.Version + "|" + pkg.Location
 }
 
-func mergePackageRecord(existing, incoming PackageRecord) PackageRecord {
+// MergePackageRecord applies the analyzer's canonical merge semantics for package inventory.
+func MergePackageRecord(existing, incoming PackageRecord) PackageRecord {
 	merged := existing
 	merged.Manager = firstNonEmpty(existing.Manager, incoming.Manager)
 	merged.PURL = firstNonEmpty(existing.PURL, incoming.PURL)
 	merged.Location = firstNonEmpty(existing.Location, incoming.Location)
 	merged.DirectDependency = existing.DirectDependency || incoming.DirectDependency
 	merged.Reachable = existing.Reachable || incoming.Reachable
-	merged.ImportFileCount = maxInt(existing.ImportFileCount, incoming.ImportFileCount)
+	merged.ImportFileCount = max(existing.ImportFileCount, incoming.ImportFileCount)
 	switch {
 	case merged.DependencyDepth == 0:
 		merged.DependencyDepth = incoming.DependencyDepth
@@ -2134,13 +2135,6 @@ func mergePackageRecord(existing, incoming PackageRecord) PackageRecord {
 		merged.DependencyDepth = incoming.DependencyDepth
 	}
 	return merged
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 func dedupeFindings(findings []scanner.ContainerFinding) []scanner.ContainerFinding {
