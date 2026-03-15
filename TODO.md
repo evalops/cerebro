@@ -201,6 +201,29 @@ Status: executed end-to-end via PR workflow
   - [ ] emit import-block/state-reconciliation guidance in a structured artifact model once Terraform v1.5+ import surfaces become first-class in generated output
   - [ ] add the next Terraform-backed safe actions: public security-group ingress restriction and selected encryption defaults beyond S3
 
+## Deep Review Cycle 80 - AWS Network Reachability Edge Correctness (2026-03-14)
+
+### Review findings
+- [x] Gap: issue `#272` was directionally correct, but the initial implementation treated security-group completeness as a prerequisite for both positive and negative reachability inference.
+- [x] Gap: AWS network reachability is asymmetric. One observed public security-group rule plus one observed public subnet path is enough to prove exposure, while one fully observed private side of the path is enough to disprove it.
+- [x] Gap: the original gating caused both false negatives and false positives:
+  - [x] a resource with one observed public security group and one unobserved extra group fell back to the generic heuristic instead of emitting the intended path-aware edge
+  - [x] a resource in a fully observed private subnet still fell through to heuristic public exposure if its security-group rows were missing
+  - [x] partial subnet observation could suppress heuristic exposure entirely even when topology evidence was incomplete
+- [x] Gap: the PR also claimed incremental/full-build parity, but that behavior was not explicitly locked down with a CDC-path regression.
+
+### Execution plan
+- [x] Add TDD regressions for the incorrect inference cases:
+  - [x] positive inference with one observed public SG and one missing SG
+  - [x] negative suppression from fully observed private subnet topology with missing SG rows
+  - [x] heuristic fallback when subnet coverage is partial
+- [x] Refactor AWS network exposure inference semantics:
+  - [x] allow positive path-aware inference from any observed public SG rule plus any observed public subnet path
+  - [x] suppress heuristic exposure when either side of the path is fully observed and definitively private
+  - [x] avoid suppressing heuristic exposure when the topology evidence is incomplete
+- [x] Add incremental rebuild coverage:
+  - [x] prove `ApplyChanges` uses the same private-subnet suppression semantics as full builds
+
 ## Deep Review Cycle 79 - Filesystem IaC Detection During Workload Scans (2026-03-13)
 
 ### Review findings

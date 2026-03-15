@@ -42,12 +42,8 @@ type awsPublicSubnetPath struct {
 
 func (b *Builder) buildAWSNetworkExposureEdges(ctx context.Context) (map[string]struct{}, int) {
 	sgRules, sgObserved, sgReady := b.loadAWSPublicSecurityGroupRules(ctx)
-	if !sgReady {
-		return map[string]struct{}{}, 0
-	}
-
 	publicSubnets, subnetObserved, subnetsReady := b.loadAWSPublicSubnetPaths(ctx)
-	if !subnetsReady {
+	if !sgReady && !subnetsReady {
 		return map[string]struct{}{}, 0
 	}
 
@@ -65,19 +61,24 @@ func (b *Builder) buildAWSNetworkExposureEdges(ctx context.Context) (map[string]
 			continue
 		}
 
-		if !awsAllObserved(securityGroups, sgObserved) || !awsAnyObserved(subnets, subnetObserved) {
-			continue
-		}
-
-		handled[node.ID] = struct{}{}
-
-		subnetPath, ok := awsFirstPublicSubnetPath(subnets, publicSubnets)
-		if !ok {
-			continue
-		}
-
 		matchedRules := awsCollectIngressRules(securityGroups, sgRules)
-		if len(matchedRules) == 0 {
+		subnetPath, hasPublicSubnet := awsFirstPublicSubnetPath(subnets, publicSubnets)
+		sgFullyObserved := sgReady && awsAllObserved(securityGroups, sgObserved)
+		subnetsFullyObserved := subnetsReady && awsAllObserved(subnets, subnetObserved)
+
+		// Positive inference only needs one observed public SG rule and one observed
+		// public subnet path. Negative suppression only needs a fully observed side
+		// of the path to conclusively rule internet reachability out.
+		switch {
+		case len(matchedRules) > 0 && hasPublicSubnet:
+			handled[node.ID] = struct{}{}
+		case sgFullyObserved && len(matchedRules) == 0:
+			handled[node.ID] = struct{}{}
+			continue
+		case subnetsFullyObserved && !hasPublicSubnet:
+			handled[node.ID] = struct{}{}
+			continue
+		default:
 			continue
 		}
 
@@ -383,18 +384,6 @@ func awsAllObserved(values []string, observed map[string]struct{}) bool {
 		}
 	}
 	return true
-}
-
-func awsAnyObserved(values []string, observed map[string]struct{}) bool {
-	if len(values) == 0 || len(observed) == 0 {
-		return false
-	}
-	for _, value := range values {
-		if _, ok := observed[value]; ok {
-			return true
-		}
-	}
-	return false
 }
 
 func awsInternetGatewayRoute(routes any) (string, bool) {
