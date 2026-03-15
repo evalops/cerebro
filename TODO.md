@@ -5,6 +5,17 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 106 - Dependency Parser Cleanup After Review Pass (2026-03-14)
+
+### Review findings
+- [x] Gap: after the dependency-graph-first analyzer flow landed, the old `parsePackageRecords` cases for `package-lock.json`, `npm-shrinkwrap.json`, and `go.mod` were dead fallback code.
+- [x] Gap: leaving those branches in place obscured the real parser control flow and suggested a fallback path that could never actually produce package records.
+
+### Execution plan
+- [x] remove dead `parsePackageRecords` cases for npm lockfiles and `go.mod`
+- [x] remove the now-unused package-only helper wrappers in `dependencies.go`
+- [x] rerun focused filesystem/workload tests and lint
+
 ## Deep Review Cycle 105 - Dependency Parser Edge Cases and Manifest Hygiene (2026-03-14)
 
 ### Review findings

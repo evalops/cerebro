@@ -1009,10 +1009,6 @@ func parsePackageRecords(filePath string, data []byte) []PackageRecord {
 		return parsePythonMetadata(filePath, data)
 	case strings.HasSuffix(filePath, "/package.json") && strings.Contains(filePath, "/node_modules/"):
 		return parseNPMPackage(filePath, data)
-	case path.Base(filePath) == "package-lock.json", path.Base(filePath) == "npm-shrinkwrap.json":
-		return parseNPMLockPackages(filePath, data)
-	case path.Base(filePath) == "go.mod":
-		return parseGoModPackages(filePath, data)
 	case path.Base(filePath) == "go.sum":
 		return parseGoSum(filePath, data)
 	case path.Base(filePath) == "Cargo.lock":

@@ -62,22 +62,6 @@ var (
 	jsImportCallPattern = regexp.MustCompile(`import\(\s*['"]([^'"]+)['"]\s*\)`)
 )
 
-func parseNPMLockPackages(filePath string, data []byte) []PackageRecord {
-	graph := parseNPMDependencyGraph(filePath, data)
-	if graph == nil {
-		return nil
-	}
-	return graph.Packages
-}
-
-func parseGoModPackages(filePath string, data []byte) []PackageRecord {
-	graph := parseGoDependencyGraph(filePath, data)
-	if graph == nil {
-		return nil
-	}
-	return graph.Packages
-}
-
 func parseNPMDependencyGraph(filePath string, data []byte) *npmDependencyGraph {
 	var lock npmLockDocument
 	if err := json.Unmarshal(data, &lock); err == nil && len(lock.Packages) > 0 {
