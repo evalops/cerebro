@@ -92,7 +92,59 @@ func (Adapter) Normalize(_ context.Context, raw []byte) ([]*runtime.RuntimeObser
 func observationFromProcessExec(event payload) *runtime.RuntimeObservation {
 	process := event.ProcessExec.Process
 	parent := event.ProcessExec.Parent
-	observedAt := event.Time
+	return newProcessObservation(
+		runtime.ObservationKindProcessExec,
+		"process_exec",
+		event.Time,
+		event.NodeName,
+		process,
+		parent,
+		map[string]any{
+			"exec_id":        process.ExecID,
+			"parent_exec_id": process.ParentExecID,
+			"cwd":            process.CWD,
+			"flags":          process.Flags,
+			"workload_name":  process.Pod.Workload,
+			"pod_labels":     runtime.CloneStringMap(process.Pod.Labels),
+			"node_name":      event.NodeName,
+		},
+	)
+}
+
+func observationFromProcessExit(event payload) *runtime.RuntimeObservation {
+	process := event.ProcessExit.Process
+	parent := event.ProcessExit.Parent
+	return newProcessObservation(
+		runtime.ObservationKindProcessExit,
+		"process_exit",
+		event.Time,
+		event.NodeName,
+		process,
+		parent,
+		map[string]any{
+			"exec_id":        process.ExecID,
+			"parent_exec_id": process.ParentExecID,
+			"cwd":            process.CWD,
+			"flags":          process.Flags,
+			"workload_name":  process.Pod.Workload,
+			"pod_labels":     runtime.CloneStringMap(process.Pod.Labels),
+			"node_name":      event.NodeName,
+			"exit_signal":    strings.TrimSpace(event.ProcessExit.Signal),
+			"exit_status":    event.ProcessExit.Status,
+		},
+	)
+}
+
+func newProcessObservation(
+	kind runtime.RuntimeObservationKind,
+	tag string,
+	eventTime time.Time,
+	nodeName string,
+	process processInfo,
+	parent processInfo,
+	metadata map[string]any,
+) *runtime.RuntimeObservation {
+	observedAt := eventTime
 	if observedAt.IsZero() {
 		observedAt = process.StartTime
 	}
@@ -101,15 +153,6 @@ func observationFromProcessExec(event payload) *runtime.RuntimeObservation {
 	parentName := baseNameOrEmpty(parent.Binary)
 	cmdline := strings.TrimSpace(strings.Join([]string{process.Binary, process.Arguments}, " "))
 	resourceID := podResourceID(process.Pod.Namespace, process.Pod.Name)
-	metadata := map[string]any{
-		"exec_id":        process.ExecID,
-		"parent_exec_id": process.ParentExecID,
-		"cwd":            process.CWD,
-		"flags":          process.Flags,
-		"workload_name":  process.Pod.Workload,
-		"pod_labels":     runtime.CloneStringMap(process.Pod.Labels),
-		"node_name":      event.NodeName,
-	}
 
 	workloadRef := ""
 	if process.Pod.Namespace != "" && process.Pod.Workload != "" {
@@ -117,14 +160,14 @@ func observationFromProcessExec(event payload) *runtime.RuntimeObservation {
 	}
 
 	return &runtime.RuntimeObservation{
-		ID:           process.ExecID,
-		Kind:         runtime.ObservationKindProcessExec,
+		ID:           processObservationID(process.ExecID, kind, process),
+		Kind:         kind,
 		Source:       sourceName,
 		ObservedAt:   observedAt,
 		ResourceID:   resourceID,
 		ResourceType: "pod",
 		Namespace:    process.Pod.Namespace,
-		NodeName:     event.NodeName,
+		NodeName:     nodeName,
 		WorkloadRef:  workloadRef,
 		ContainerID:  runtime.FirstNonEmpty(process.Pod.Container.ID, process.Docker),
 		ImageRef:     process.Pod.Container.Image.Name,
@@ -146,71 +189,22 @@ func observationFromProcessExec(event payload) *runtime.RuntimeObservation {
 			PodName:       process.Pod.Name,
 		},
 		Metadata: metadata,
-		Tags:     []string{"tetragon", "process_exec"},
+		Tags:     []string{"tetragon", tag},
 	}
 }
 
-func observationFromProcessExit(event payload) *runtime.RuntimeObservation {
-	process := event.ProcessExit.Process
-	parent := event.ProcessExit.Parent
-	observedAt := event.Time
-	if observedAt.IsZero() {
-		observedAt = process.StartTime
+func processObservationID(execID string, kind runtime.RuntimeObservationKind, process processInfo) string {
+	if execID = strings.TrimSpace(execID); execID != "" {
+		return execID + ":" + string(kind)
 	}
-
-	processName := baseNameOrEmpty(process.Binary)
-	parentName := baseNameOrEmpty(parent.Binary)
-	cmdline := strings.TrimSpace(strings.Join([]string{process.Binary, process.Arguments}, " "))
-	resourceID := podResourceID(process.Pod.Namespace, process.Pod.Name)
-	metadata := map[string]any{
-		"exec_id":        process.ExecID,
-		"parent_exec_id": process.ParentExecID,
-		"cwd":            process.CWD,
-		"flags":          process.Flags,
-		"workload_name":  process.Pod.Workload,
-		"pod_labels":     cloneStringMap(process.Pod.Labels),
-		"node_name":      event.NodeName,
-		"exit_signal":    strings.TrimSpace(event.ProcessExit.Signal),
-		"exit_status":    event.ProcessExit.Status,
+	fallback := []string{
+		string(kind),
+		strings.TrimSpace(process.Binary),
+		strings.TrimSpace(process.Pod.Namespace),
+		strings.TrimSpace(process.Pod.Name),
+		process.StartTime.UTC().Format(time.RFC3339Nano),
 	}
-
-	workloadRef := ""
-	if process.Pod.Namespace != "" && process.Pod.Workload != "" {
-		workloadRef = "workload:" + process.Pod.Namespace + "/" + process.Pod.Workload
-	}
-
-	return &runtime.RuntimeObservation{
-		ID:           process.ExecID,
-		Kind:         runtime.ObservationKindProcessExit,
-		Source:       sourceName,
-		ObservedAt:   observedAt,
-		ResourceID:   resourceID,
-		ResourceType: "pod",
-		Namespace:    process.Pod.Namespace,
-		NodeName:     event.NodeName,
-		WorkloadRef:  workloadRef,
-		ContainerID:  firstNonEmpty(process.Pod.Container.ID, process.Docker),
-		ImageRef:     process.Pod.Container.Image.Name,
-		ImageID:      process.Pod.Container.Image.ID,
-		Process: &runtime.ProcessEvent{
-			PID:        process.PID,
-			Name:       processName,
-			Path:       process.Binary,
-			Cmdline:    cmdline,
-			UID:        process.UID,
-			ParentName: parentName,
-		},
-		Container: &runtime.ContainerEvent{
-			ContainerID:   firstNonEmpty(process.Pod.Container.ID, process.Docker),
-			ContainerName: process.Pod.Container.Name,
-			Image:         process.Pod.Container.Image.Name,
-			ImageID:       process.Pod.Container.Image.ID,
-			Namespace:     process.Pod.Namespace,
-			PodName:       process.Pod.Name,
-		},
-		Metadata: metadata,
-		Tags:     []string{"tetragon", "process_exit"},
-	}
+	return strings.Join(fallback, ":")
 }
 
 func podResourceID(namespace, name string) string {

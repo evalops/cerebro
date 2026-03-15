@@ -58,6 +58,9 @@ func TestAdapterNormalizeProcessExec(t *testing.T) {
 	if observation.Kind != runtime.ObservationKindProcessExec {
 		t.Fatalf("kind = %s, want %s", observation.Kind, runtime.ObservationKindProcessExec)
 	}
+	if observation.ID != "exec-1:process_exec" {
+		t.Fatalf("id = %q, want %q", observation.ID, "exec-1:process_exec")
+	}
 	if observation.ResourceID != "pod:default/xwing" {
 		t.Fatalf("resource_id = %q, want %q", observation.ResourceID, "pod:default/xwing")
 	}
@@ -125,6 +128,9 @@ func TestAdapterNormalizeProcessExit(t *testing.T) {
 	if observation.Kind != runtime.ObservationKindProcessExit {
 		t.Fatalf("kind = %s, want %s", observation.Kind, runtime.ObservationKindProcessExit)
 	}
+	if observation.ID != "exec-exit-1:process_exit" {
+		t.Fatalf("id = %q, want %q", observation.ID, "exec-exit-1:process_exit")
+	}
 	if observation.Process == nil || observation.Process.Name != "whoami" {
 		t.Fatalf("process = %#v, want whoami", observation.Process)
 	}
@@ -191,5 +197,71 @@ func TestAdapterNormalizeEmptyBinaryDoesNotEmitDotNames(t *testing.T) {
 	}
 	if observation.Process.ParentName != "" {
 		t.Fatalf("parent name = %q, want empty", observation.Process.ParentName)
+	}
+}
+
+func TestProcessExecAndExitObservationsUseDistinctIDs(t *testing.T) {
+	execRaw := []byte(`{
+		"process_exec": {
+			"process": {
+				"exec_id": "shared-exec-id",
+				"pid": 42,
+				"uid": 0,
+				"binary": "/usr/bin/sh",
+				"pod": {
+					"namespace": "default",
+					"name": "api-0",
+					"container": {
+						"id": "containerd://abc",
+						"name": "api",
+						"image": {
+							"id": "sha256:abc",
+							"name": "ghcr.io/acme/api:latest"
+						}
+					}
+				}
+			},
+			"parent": {
+				"binary": "/bin/bash"
+			}
+		}
+	}`)
+	exitRaw := []byte(`{
+		"process_exit": {
+			"process": {
+				"exec_id": "shared-exec-id",
+				"pid": 42,
+				"uid": 0,
+				"binary": "/usr/bin/sh",
+				"pod": {
+					"namespace": "default",
+					"name": "api-0",
+					"container": {
+						"id": "containerd://abc",
+						"name": "api",
+						"image": {
+							"id": "sha256:abc",
+							"name": "ghcr.io/acme/api:latest"
+						}
+					}
+				}
+			},
+			"parent": {
+				"binary": "/bin/bash"
+			},
+			"status": 0
+		}
+	}`)
+
+	execObservations, err := (Adapter{}).Normalize(context.Background(), execRaw)
+	if err != nil {
+		t.Fatalf("Normalize exec: %v", err)
+	}
+	exitObservations, err := (Adapter{}).Normalize(context.Background(), exitRaw)
+	if err != nil {
+		t.Fatalf("Normalize exit: %v", err)
+	}
+	if execObservations[0].ID == exitObservations[0].ID {
+		t.Fatalf("observation IDs collided: %q", execObservations[0].ID)
 	}
 }
