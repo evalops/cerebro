@@ -55,6 +55,91 @@ func TestObservationRoundTripPreservesDetectionFields(t *testing.T) {
 	}
 }
 
+func TestObservationRoundTripDoesNotAliasMutableFields(t *testing.T) {
+	event := &RuntimeEvent{
+		ID:           "event-1",
+		Timestamp:    time.Date(2026, 3, 15, 20, 0, 0, 0, time.UTC),
+		Source:       "agent-1",
+		ResourceID:   "pod:prod/web",
+		ResourceType: "pod",
+		EventType:    "process",
+		Process: &ProcessEvent{
+			Name:      "xmrig",
+			Ancestors: []string{"containerd", "bash"},
+		},
+		Network: &NetworkEvent{
+			DstIP:   "203.0.113.10",
+			DstPort: 443,
+		},
+		File: &FileEvent{
+			Operation: "write",
+			Path:      "/tmp/miner",
+		},
+		Container: &ContainerEvent{
+			ContainerID:  "ctr-1",
+			Namespace:    "prod",
+			Capabilities: []string{"CAP_NET_RAW"},
+		},
+		Metadata: map[string]any{
+			"cluster": "prod-west",
+		},
+	}
+
+	observation := ObservationFromEvent(event)
+	if observation == nil {
+		t.Fatal("expected observation")
+	}
+	if observation.Process == event.Process || observation.Network == event.Network || observation.File == event.File || observation.Container == event.Container {
+		t.Fatal("expected observation conversion to clone mutable event sub-structs")
+	}
+
+	event.Process.Name = "bash"
+	event.Process.Ancestors[0] = "mutated"
+	event.Network.DstIP = "198.51.100.10"
+	event.File.Path = "/tmp/other"
+	event.Container.Namespace = "other"
+	event.Container.Capabilities[0] = "CAP_SYS_ADMIN"
+	if observation.Process.Name != "xmrig" || observation.Process.Ancestors[0] != "containerd" {
+		t.Fatalf("observation process mutated with event: %#v", observation.Process)
+	}
+	if observation.Network.DstIP != "203.0.113.10" {
+		t.Fatalf("observation network mutated with event: %#v", observation.Network)
+	}
+	if observation.File.Path != "/tmp/miner" {
+		t.Fatalf("observation file mutated with event: %#v", observation.File)
+	}
+	if observation.Container.Namespace != "prod" || observation.Container.Capabilities[0] != "CAP_NET_RAW" {
+		t.Fatalf("observation container mutated with event: %#v", observation.Container)
+	}
+
+	roundTrip := observation.AsRuntimeEvent()
+	if roundTrip == nil {
+		t.Fatal("expected round-trip event")
+	}
+	if roundTrip.Process == observation.Process || roundTrip.Network == observation.Network || roundTrip.File == observation.File || roundTrip.Container == observation.Container {
+		t.Fatal("expected runtime event conversion to clone mutable observation sub-structs")
+	}
+
+	observation.Process.Name = "curl"
+	observation.Process.Ancestors[0] = "changed"
+	observation.Network.DstIP = "192.0.2.1"
+	observation.File.Path = "/tmp/final"
+	observation.Container.Namespace = "staging"
+	observation.Container.Capabilities[0] = "CAP_CHOWN"
+	if roundTrip.Process.Name != "xmrig" || roundTrip.Process.Ancestors[0] != "containerd" {
+		t.Fatalf("round-trip process mutated with observation: %#v", roundTrip.Process)
+	}
+	if roundTrip.Network.DstIP != "203.0.113.10" {
+		t.Fatalf("round-trip network mutated with observation: %#v", roundTrip.Network)
+	}
+	if roundTrip.File.Path != "/tmp/miner" {
+		t.Fatalf("round-trip file mutated with observation: %#v", roundTrip.File)
+	}
+	if roundTrip.Container.Namespace != "prod" || roundTrip.Container.Capabilities[0] != "CAP_NET_RAW" {
+		t.Fatalf("round-trip container mutated with observation: %#v", roundTrip.Container)
+	}
+}
+
 func TestDetectionEngineProcessObservation(t *testing.T) {
 	engine := NewDetectionEngine()
 	observation := &RuntimeObservation{
@@ -80,6 +165,9 @@ func TestDetectionEngineProcessObservation(t *testing.T) {
 	}
 	if findings[0].Event == nil || findings[0].Event.Process == nil {
 		t.Fatalf("expected legacy event compatibility on finding, got %#v", findings[0].Event)
+	}
+	if findings[0].Event.Process == findings[0].Observation.Process {
+		t.Fatal("expected finding event and observation to keep independent process structs")
 	}
 }
 

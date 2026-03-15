@@ -21,13 +21,7 @@ func (s *Server) runtimeIngestStore() runtime.IngestStore {
 	if s == nil || s.app == nil {
 		return nil
 	}
-	if s.app.RuntimeIngest != nil {
-		return s.app.RuntimeIngest
-	}
-	if s.app.ExecutionStore != nil {
-		return runtime.NewSQLiteIngestStoreWithExecutionStore(s.app.ExecutionStore)
-	}
-	return nil
+	return s.app.RuntimeIngest
 }
 
 func (s *Server) startRuntimeIngestSession(ctx context.Context, source string, metadata map[string]string) (*runtimeIngestSession, error) {

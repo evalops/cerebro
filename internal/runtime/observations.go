@@ -86,10 +86,10 @@ func ObservationFromEvent(event *RuntimeEvent) *RuntimeObservation {
 		ObservedAt:   event.Timestamp,
 		ResourceID:   event.ResourceID,
 		ResourceType: event.ResourceType,
-		Process:      event.Process,
-		Network:      event.Network,
-		File:         event.File,
-		Container:    event.Container,
+		Process:      cloneProcessEvent(event.Process),
+		Network:      cloneNetworkEvent(event.Network),
+		File:         cloneFileEvent(event.File),
+		Container:    cloneContainerEvent(event.Container),
 		Metadata:     cloneRuntimeAnyMap(event.Metadata),
 	}
 
@@ -133,10 +133,10 @@ func (o *RuntimeObservation) AsRuntimeEvent() *RuntimeEvent {
 		ResourceID:   firstNonEmptyRuntime(o.ResourceID, o.WorkloadRef, o.ContainerID),
 		ResourceType: firstNonEmptyRuntime(o.ResourceType, observationResourceType(o)),
 		EventType:    legacyEventTypeFromObservation(o),
-		Process:      o.Process,
-		Network:      o.Network,
-		File:         o.File,
-		Container:    o.Container,
+		Process:      cloneProcessEvent(o.Process),
+		Network:      cloneNetworkEvent(o.Network),
+		File:         cloneFileEvent(o.File),
+		Container:    cloneContainerEvent(o.Container),
 		Metadata:     cloneRuntimeAnyMap(o.Metadata),
 	}
 
@@ -302,4 +302,38 @@ func stringMapValue(metadata map[string]any, key string) string {
 	default:
 		return ""
 	}
+}
+
+func cloneProcessEvent(input *ProcessEvent) *ProcessEvent {
+	if input == nil {
+		return nil
+	}
+	cloned := *input
+	cloned.Ancestors = append([]string(nil), input.Ancestors...)
+	return &cloned
+}
+
+func cloneNetworkEvent(input *NetworkEvent) *NetworkEvent {
+	if input == nil {
+		return nil
+	}
+	cloned := *input
+	return &cloned
+}
+
+func cloneFileEvent(input *FileEvent) *FileEvent {
+	if input == nil {
+		return nil
+	}
+	cloned := *input
+	return &cloned
+}
+
+func cloneContainerEvent(input *ContainerEvent) *ContainerEvent {
+	if input == nil {
+		return nil
+	}
+	cloned := *input
+	cloned.Capabilities = append([]string(nil), input.Capabilities...)
+	return &cloned
 }
