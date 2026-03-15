@@ -1237,11 +1237,8 @@ paths:
                     type: string
                 validate:
                   type: boolean
-              anyOf:
-                - required:
-                    - projects
-                - required:
-                    - organization
+              required:
+                - projects
       responses:
         '200':
           description: GCP asset sync run complete

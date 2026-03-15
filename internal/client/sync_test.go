@@ -845,8 +845,9 @@ func TestRunGCPAssetSync_SendsOrganizationScope(t *testing.T) {
 		if req["organization"] != "1234567890" {
 			t.Fatalf("expected organization 1234567890, got %#v", req["organization"])
 		}
-		if _, ok := req["projects"]; ok {
-			t.Fatalf("did not expect explicit projects in organization request: %#v", req)
+		projects, ok := req["projects"].([]interface{})
+		if !ok || len(projects) != 0 {
+			t.Fatalf("expected explicit empty projects array in organization request: %#v", req["projects"])
 		}
 
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{

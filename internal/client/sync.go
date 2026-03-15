@@ -59,7 +59,10 @@ func (c *Client) RunAzureSync(ctx context.Context, req AzureSyncRequest) (*SyncR
 				subscriptions = append(subscriptions, trimmed)
 			}
 		}
-		if len(subscriptions) > 0 && !(len(subscriptions) == 1 && strings.TrimSpace(req.Subscription) != "" && strings.EqualFold(subscriptions[0], strings.TrimSpace(req.Subscription))) {
+		singleExplicitSubscription := len(subscriptions) == 1 &&
+			strings.TrimSpace(req.Subscription) != "" &&
+			strings.EqualFold(subscriptions[0], strings.TrimSpace(req.Subscription))
+		if len(subscriptions) > 0 && !singleExplicitSubscription {
 			if reqBody == nil {
 				reqBody = make(map[string]interface{}, 1)
 			}
@@ -302,6 +305,7 @@ type GCPAssetSyncRequest struct {
 
 func (c *Client) RunGCPAssetSync(ctx context.Context, req GCPAssetSyncRequest) (*SyncRunResponse, error) {
 	var reqBody map[string]interface{}
+	organization := strings.TrimSpace(req.Organization)
 	if len(req.Projects) > 0 {
 		projects := make([]string, 0, len(req.Projects))
 		for _, project := range req.Projects {
@@ -312,8 +316,10 @@ func (c *Client) RunGCPAssetSync(ctx context.Context, req GCPAssetSyncRequest) (
 		if len(projects) > 0 {
 			reqBody = map[string]interface{}{"projects": projects}
 		}
+	} else if organization != "" {
+		reqBody = map[string]interface{}{"projects": []string{}}
 	}
-	if organization := strings.TrimSpace(req.Organization); organization != "" {
+	if organization != "" {
 		if reqBody == nil {
 			reqBody = make(map[string]interface{}, 1)
 		}

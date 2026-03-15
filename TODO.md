@@ -36,6 +36,19 @@ Status: executed end-to-end via PR workflow
 - [x] Check management-group HTTP status before decoding the response body.
 - [x] Replace duplicate API subscription normalization with the shared sync-layer helper.
 
+## Deep Review Cycle 96 - GCP Asset Sync Contract Compatibility for Org Scope (2026-03-14)
+
+### Review findings
+- [x] Gap: issue `#279` was correctly trying to add organization-scoped GCP Asset sync, but the OpenAPI request schema silently removed the pre-existing required `projects` field.
+- [x] Gap: the API contract compatibility gate treated that as a breaking change for `POST /api/v1/sync/gcp-asset`, which would block push/merge and also break generated clients that rely on the existing schema contract.
+- [x] Gap: the internal API client also omitted `projects` entirely for organization-scoped requests, so the implementation and contract drifted in the same direction.
+
+### Execution plan
+- [x] Preserve the existing `projects` request-field contract in OpenAPI for `POST /api/v1/sync/gcp-asset`.
+- [x] Represent organization-scoped asset sync as `projects: []` plus `organization`, so new org-scope behavior works without removing the old field contract.
+- [x] Add/update client tests to lock the explicit-empty-projects payload for organization-scoped requests.
+- [x] Re-run the contract-compatibility and OpenAPI checks before push.
+
 ## Deep Review Cycle 93 - Azure Key Vault Key Lineage and Scope Cleanup Follow-through (2026-03-14)
 
 ### Review findings
