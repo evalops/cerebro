@@ -1051,15 +1051,9 @@ func (b *Builder) loadAzurePreferredIdentityNodes(ctx context.Context, candidate
 		rows, err := b.queryIfExists(ctx, candidate.table, candidate.query)
 		if err != nil {
 			b.logger.Warn("failed to query "+candidate.table, "error", err)
-			if discoveryAvailable {
-				return
-			}
 			continue
 		}
 		if len(rows.Rows) == 0 {
-			if discoveryAvailable {
-				return
-			}
 			continue
 		}
 		nodes := candidate.parse(rows.Rows)
@@ -1143,21 +1137,39 @@ func parseAzureUserNodes(rows []map[string]any) []*Node {
 }
 
 func (b *Builder) queryAzureRBACRoleAssignments(ctx context.Context) ([]map[string]any, error) {
-	if b.hasTable("azure_rbac_role_assignments") {
-		result, err := b.queryIfExists(ctx, "azure_rbac_role_assignments",
-			`SELECT id, principal_id, principal_type, role_definition_id, scope, condition, can_delegate, delegated_managed_identity_id, description, subscription_id FROM azure_rbac_role_assignments`)
+	candidates := []struct {
+		table string
+		query string
+	}{
+		{
+			table: "azure_rbac_role_assignments",
+			query: `SELECT id, principal_id, principal_type, role_definition_id, scope, condition, can_delegate, delegated_managed_identity_id, description, subscription_id FROM azure_rbac_role_assignments`,
+		},
+		{
+			table: "azure_authorization_role_assignments",
+			query: `SELECT id, principal_id, principal_type, role_definition_id, role_definition_name, scope, condition, can_delegate, delegated_managed_identity_id, description, subscription_id FROM azure_authorization_role_assignments`,
+		},
+	}
+
+	var lastErr error
+	discoveryAvailable := b.availableTables != nil
+	for _, candidate := range candidates {
+		if discoveryAvailable && !b.hasTable(candidate.table) {
+			continue
+		}
+		result, err := b.queryIfExists(ctx, candidate.table, candidate.query)
 		if err != nil {
-			return nil, err
+			lastErr = err
+			b.logger.Warn("failed to query "+candidate.table, "error", err)
+			continue
+		}
+		if len(result.Rows) == 0 {
+			continue
 		}
 		return result.Rows, nil
 	}
-	if b.hasTable("azure_authorization_role_assignments") {
-		result, err := b.queryIfExists(ctx, "azure_authorization_role_assignments",
-			`SELECT id, principal_id, principal_type, role_definition_id, role_definition_name, scope, condition, can_delegate, delegated_managed_identity_id, description, subscription_id FROM azure_authorization_role_assignments`)
-		if err != nil {
-			return nil, err
-		}
-		return result.Rows, nil
+	if lastErr != nil {
+		return nil, lastErr
 	}
 	return nil, nil
 }
@@ -1501,7 +1513,7 @@ func azureNodeWithinScope(node *Node, scope string) bool {
 		return false
 	}
 
-	scope = strings.TrimSpace(scope)
+	scope = strings.TrimRight(strings.TrimSpace(scope), "/")
 	if scope == "" {
 		return false
 	}
@@ -1514,23 +1526,30 @@ func azureNodeWithinScope(node *Node, scope string) bool {
 
 	scopeLower := strings.ToLower(scope)
 	nodeIDLower := strings.ToLower(node.ID)
-	if strings.HasPrefix(nodeIDLower, strings.ToLower(strings.TrimRight(scope, "/"))+"/") {
+	if strings.HasPrefix(nodeIDLower, scopeLower+"/") {
 		return true
 	}
 
-	if subscriptionID := azureIDSegment(scope, "subscriptions"); subscriptionID != "" {
-		if node.Account == subscriptionID || azureIDSegment(node.ID, "subscriptions") == subscriptionID {
-			if azureScopeType(scope) == "subscription" {
-				return true
-			}
-			if resourceGroup := azureIDSegment(scope, "resourceGroups"); resourceGroup != "" {
-				return strings.EqualFold(queryRowString(node.Properties, "resource_group"), resourceGroup) ||
-					strings.EqualFold(azureIDSegment(node.ID, "resourceGroups"), resourceGroup)
-			}
-		}
+	scopeType := azureScopeType(scope)
+	subscriptionID := azureIDSegment(scope, "subscriptions")
+	if subscriptionID == "" {
+		return false
 	}
-
-	return strings.Contains(nodeIDLower, scopeLower)
+	if node.Account != subscriptionID && !strings.EqualFold(azureIDSegment(node.ID, "subscriptions"), subscriptionID) {
+		return false
+	}
+	switch scopeType {
+	case "subscription":
+		return true
+	case "resource_group":
+		resourceGroup := azureIDSegment(scope, "resourceGroups")
+		if resourceGroup == "" {
+			return false
+		}
+		return strings.EqualFold(queryRowString(node.Properties, "resource_group"), resourceGroup) ||
+			strings.EqualFold(azureIDSegment(node.ID, "resourceGroups"), resourceGroup)
+	}
+	return false
 }
 
 func azureResourceDisplayName(id string) string {

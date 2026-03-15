@@ -2,6 +2,7 @@ package builders
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"testing"
@@ -265,5 +266,227 @@ func TestCDCEventToNode_AzureModernTables(t *testing.T) {
 	}
 	if got := queryRowString(policyNode.Properties, "scope"); got != "/subscriptions/sub-1" {
 		t.Fatalf("expected policy assignment scope to be preserved, got %#v", policyNode.Properties)
+	}
+}
+
+func TestBuilder_AzureRBACResourceScopeDoesNotOvergrantResourceGroup(t *testing.T) {
+	t.Parallel()
+
+	source := newMockDataSource()
+	builder := NewBuilder(source, nil)
+
+	vaultID := "/subscriptions/sub-1/resourceGroups/rg-app/providers/Microsoft.KeyVault/vaults/vault-1"
+	keyID := vaultID + "/keys/key-1"
+	vmID := "/subscriptions/sub-1/resourceGroups/rg-app/providers/Microsoft.Compute/virtualMachines/vm-1"
+
+	source.setResult(`SELECT id, display_name, app_id, service_principal_type, account_enabled, app_owner_organization_id, publisher_name, created_date_time, tags, subscription_id FROM azure_graph_service_principals`, &DataQueryResult{
+		Rows: []map[string]any{{
+			"id":                     "sp-managed",
+			"display_name":           "vm-managed-identity",
+			"service_principal_type": "ManagedIdentity",
+			"subscription_id":        "sub-1",
+		}},
+	})
+	source.setResult(`SELECT id, name, subscription_id, resource_group, location, vm_size, os_type, provisioning_state, identity FROM azure_compute_virtual_machines`, &DataQueryResult{
+		Rows: []map[string]any{{
+			"id":              vmID,
+			"name":            "vm-1",
+			"subscription_id": "sub-1",
+			"resource_group":  "rg-app",
+			"location":        "eastus",
+		}},
+	})
+	source.setResult(`SELECT id, name, subscription_id, resource_group, location, tenant_id, vault_uri, access_policies, enable_purge_protection, enable_soft_delete FROM azure_keyvault_vaults`, &DataQueryResult{
+		Rows: []map[string]any{{
+			"id":              vaultID,
+			"name":            "vault-1",
+			"subscription_id": "sub-1",
+			"resource_group":  "rg-app",
+			"location":        "eastus",
+			"vault_uri":       "https://vault-1.vault.azure.net/",
+		}},
+	})
+	source.setResult(`SELECT id, name, subscription_id, vault_uri, managed, attributes FROM azure_keyvault_keys`, &DataQueryResult{
+		Rows: []map[string]any{{
+			"id":              keyID,
+			"name":            "key-1",
+			"subscription_id": "sub-1",
+			"vault_uri":       "https://vault-1.vault.azure.net/",
+		}},
+	})
+	source.setResult(`SELECT id, principal_id, principal_type, role_definition_id, scope, condition, can_delegate, delegated_managed_identity_id, description, subscription_id FROM azure_rbac_role_assignments`, &DataQueryResult{
+		Rows: []map[string]any{{
+			"id":                 "ra-1",
+			"principal_id":       "sp-managed",
+			"principal_type":     "ServicePrincipal",
+			"role_definition_id": "/subscriptions/sub-1/providers/Microsoft.Authorization/roleDefinitions/8e3af657-a8ff-443c-a75c-2fe8c4bcb635",
+			"scope":              vaultID,
+			"subscription_id":    "sub-1",
+		}},
+	})
+
+	if err := builder.Build(context.Background()); err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+
+	g := builder.Graph()
+	assertEdgeExists(t, g, "sp-managed", vaultID, EdgeKindCanAdmin)
+	assertEdgeExists(t, g, "sp-managed", keyID, EdgeKindCanAdmin)
+	assertEdgeAbsent(t, g, "sp-managed", vmID, EdgeKindCanAdmin)
+}
+
+func TestBuilder_LoadAzurePreferredIdentityNodesContinuesAfterEmptyDiscoveredTable(t *testing.T) {
+	t.Parallel()
+
+	source := newMockDataSource()
+	builder := NewBuilder(source, nil)
+	builder.availableTables = map[string]bool{
+		"ENTRA_USERS":    true,
+		"AZURE_AD_USERS": true,
+	}
+
+	source.setResult(`SELECT id, user_principal_name, display_name, mail, department, job_title, account_enabled, user_type, last_sign_in_datetime FROM entra_users`, &DataQueryResult{
+		Rows: []map[string]any{},
+	})
+	source.setResult(`SELECT id, user_principal_name, display_name, mail FROM azure_ad_users`, &DataQueryResult{
+		Rows: []map[string]any{{
+			"id":                  "user-1",
+			"user_principal_name": "alice@example.com",
+			"display_name":        "Alice",
+			"mail":                "alice@example.com",
+		}},
+	})
+
+	builder.loadAzurePreferredIdentityNodes(context.Background(), []nodeQuery{
+		{
+			table: "entra_users",
+			query: `SELECT id, user_principal_name, display_name, mail, department, job_title, account_enabled, user_type, last_sign_in_datetime FROM entra_users`,
+			parse: parseAzureUserNodes,
+		},
+		{
+			table: "azure_ad_users",
+			query: `SELECT id, user_principal_name, display_name, mail FROM azure_ad_users`,
+			parse: parseAzureUserNodes,
+		},
+	})
+
+	if node, ok := builder.Graph().GetNode("user-1"); !ok || node == nil {
+		t.Fatal("expected fallback identity table rows to be loaded")
+	}
+}
+
+func TestBuilder_QueryAzureRBACRoleAssignmentsFallsBackWithoutDiscovery(t *testing.T) {
+	t.Parallel()
+
+	source := &azureQueryErrorSource{
+		results: map[string]*DataQueryResult{
+			`SELECT id, principal_id, principal_type, role_definition_id, role_definition_name, scope, condition, can_delegate, delegated_managed_identity_id, description, subscription_id FROM azure_authorization_role_assignments`: {
+				Rows: []map[string]any{{
+					"id":                   "ra-legacy",
+					"principal_id":         "sp-managed",
+					"principal_type":       "ServicePrincipal",
+					"role_definition_id":   "8e3af657-a8ff-443c-a75c-2fe8c4bcb635",
+					"role_definition_name": "Owner",
+					"scope":                "/subscriptions/sub-1",
+					"subscription_id":      "sub-1",
+				}},
+			},
+		},
+		errors: map[string]error{
+			`SELECT id, principal_id, principal_type, role_definition_id, scope, condition, can_delegate, delegated_managed_identity_id, description, subscription_id FROM azure_rbac_role_assignments`: errors.New("table not found"),
+		},
+	}
+	builder := NewBuilder(source, nil)
+
+	rows, err := builder.queryAzureRBACRoleAssignments(context.Background())
+	if err != nil {
+		t.Fatalf("expected legacy fallback rows, got error %v", err)
+	}
+	if len(rows) != 1 || queryRowString(rows[0], "id") != "ra-legacy" {
+		t.Fatalf("expected legacy RBAC fallback rows, got %#v", rows)
+	}
+}
+
+func TestAzureNodeWithinScope(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		node  *Node
+		scope string
+		want  bool
+	}{
+		{
+			name: "resource scope does not match sibling resource in same group",
+			node: &Node{
+				ID:         "/subscriptions/sub-1/resourceGroups/rg-app/providers/Microsoft.Compute/virtualMachines/vm-1",
+				Kind:       NodeKindInstance,
+				Provider:   "azure",
+				Account:    "sub-1",
+				Properties: map[string]any{"resource_group": "rg-app"},
+			},
+			scope: "/subscriptions/sub-1/resourceGroups/rg-app/providers/Microsoft.KeyVault/vaults/vault-1",
+			want:  false,
+		},
+		{
+			name: "subscription scope does not match similar subscription identifier",
+			node: &Node{
+				ID:         "/subscriptions/sub-10/resourceGroups/rg-app/providers/Microsoft.Compute/virtualMachines/vm-1",
+				Kind:       NodeKindInstance,
+				Provider:   "azure",
+				Account:    "sub-10",
+				Properties: map[string]any{"resource_group": "rg-app"},
+			},
+			scope: "/subscriptions/sub-1",
+			want:  false,
+		},
+		{
+			name: "resource scope still matches descendants",
+			node: &Node{
+				ID:         "/subscriptions/sub-1/resourceGroups/rg-app/providers/Microsoft.KeyVault/vaults/vault-1/keys/key-1",
+				Kind:       NodeKindSecret,
+				Provider:   "azure",
+				Account:    "sub-1",
+				Properties: map[string]any{"resource_group": "rg-app"},
+			},
+			scope: "/subscriptions/sub-1/resourceGroups/rg-app/providers/Microsoft.KeyVault/vaults/vault-1",
+			want:  true,
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := azureNodeWithinScope(tc.node, tc.scope); got != tc.want {
+				t.Fatalf("azureNodeWithinScope(%q, %q) = %v, want %v", tc.node.ID, tc.scope, got, tc.want)
+			}
+		})
+	}
+}
+
+type azureQueryErrorSource struct {
+	results map[string]*DataQueryResult
+	errors  map[string]error
+}
+
+func (s *azureQueryErrorSource) Query(ctx context.Context, query string, args ...any) (*DataQueryResult, error) {
+	_ = ctx
+	_ = args
+	if err := s.errors[query]; err != nil {
+		return nil, err
+	}
+	if result := s.results[query]; result != nil {
+		return result, nil
+	}
+	return &DataQueryResult{Rows: []map[string]any{}}, nil
+}
+
+func assertEdgeAbsent(t *testing.T, g *Graph, source string, target string, kind EdgeKind) {
+	t.Helper()
+	for _, edge := range g.GetOutEdges(source) {
+		if edge.Target == target && edge.Kind == kind {
+			t.Fatalf("did not expect edge %s --%s--> %s", source, kind, target)
+		}
 	}
 }

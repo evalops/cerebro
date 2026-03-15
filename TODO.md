@@ -5,6 +5,27 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 92 - Azure RBAC Scope Boundaries and Fallback Table Correctness (2026-03-14)
+
+### Review findings
+- [x] Gap: issue `#275` was correctly trying to add first-class Azure RBAC graph modeling, but `azureNodeWithinScope` still had an over-broad substring fallback that could match sibling resources and similarly named subscriptions/resource groups.
+- [x] Gap: resource-scoped Azure RBAC assignments could therefore over-grant `Can*` edges to unrelated resources in the same resource group instead of staying bounded to the scoped resource and its descendants.
+- [x] Gap: `loadAzurePreferredIdentityNodes` stopped on the first discovered table with zero rows, which prevented fallback identity tables from loading in racey or partially populated environments.
+- [x] Gap: `queryAzureRBACRoleAssignments` could not fall back from `azure_rbac_role_assignments` to `azure_authorization_role_assignments` when table discovery was unavailable and the preferred table query failed.
+
+### Execution plan
+- [x] Add TDD coverage for:
+  - [x] resource-scoped Azure RBAC staying out of sibling resources in the same group
+  - [x] direct scope matching rejecting similar subscription/resource-group substrings
+  - [x] discovered-table identity fallback after an empty first result
+  - [x] RBAC table fallback when discovery is unavailable and the preferred query fails
+- [x] Remove the broad substring fallback from `azureNodeWithinScope` and keep matching boundary-aware:
+  - [x] exact resource match
+  - [x] descendant prefix match
+  - [x] explicit subscription/resource-group scope handling
+- [x] Continue across Azure identity fallback candidates on empty/error results instead of returning early.
+- [x] Make Azure RBAC assignment loading iterate preferred tables in order and fall through to the legacy table when the preferred query is unavailable or empty.
+
 ## Deep Review Cycle 91 - Conditional Resource Enforcement in IAM Boundary and SCP Evaluation (2026-03-14)
 
 ### Review findings
