@@ -132,6 +132,23 @@ func TestWorkloadSecurityPrioritizedRiskPrefersReachableVulnerabilityCounts(t *t
 		t.Fatalf("expected reachable low vulnerability to remain low, got %q", got)
 	}
 
+	unreachableKEV := &Node{Properties: map[string]any{
+		"vulnerability_count":                    1,
+		"critical_vulnerability_count":           0,
+		"high_vulnerability_count":               1,
+		"medium_vulnerability_count":             0,
+		"low_vulnerability_count":                0,
+		"known_exploited_count":                  1,
+		"reachable_vulnerability_count":          0,
+		"reachable_critical_vulnerability_count": 0,
+		"reachable_high_vulnerability_count":     0,
+		"reachable_known_exploited_count":        0,
+		"direct_reachable_vulnerability_count":   0,
+	}}
+	if got := workloadSecurityPrioritizedRisk(unreachableKEV, false, 0, 0, false); got != RiskCritical {
+		t.Fatalf("expected known-exploited vulnerability to remain critical without reachability context, got %q", got)
+	}
+
 	zeroVulns := &Node{Properties: map[string]any{
 		"vulnerability_count":                    0,
 		"critical_vulnerability_count":           0,

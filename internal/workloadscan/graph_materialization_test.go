@@ -740,6 +740,67 @@ func TestMaterializeRunsIntoGraphDownranksUnreachableCriticalVulnerabilities(t *
 	}
 }
 
+func TestMaterializeRunsIntoGraphKeepsKnownExploitedVulnerabilitiesCriticalWithoutReachability(t *testing.T) {
+	now := time.Date(2026, 3, 12, 18, 0, 0, 0, time.UTC)
+	g := graph.New()
+	g.AddNode(&graph.Node{
+		ID:       "arn:aws:ec2:us-east-1:123456789012:instance/i-abc123",
+		Kind:     graph.NodeKindInstance,
+		Name:     "i-abc123",
+		Provider: "aws",
+		Account:  "123456789012",
+		Region:   "us-east-1",
+	})
+	g.BuildIndex()
+
+	run := buildGraphMaterializationTestRun("workload_scan:run-unreachable-kev", now.Add(-2*time.Hour), 0)
+	pkg := filesystemanalyzer.PackageRecord{
+		Ecosystem:        "npm",
+		Manager:          "npm",
+		Name:             "lodash",
+		Version:          "4.17.21",
+		PURL:             "pkg:npm/lodash@4.17.21",
+		Location:         "srv/app/package-lock.json",
+		DirectDependency: true,
+		Reachable:        false,
+		DependencyDepth:  1,
+	}
+	vuln := scanner.ImageVulnerability{
+		CVE:              "CVE-2026-3150",
+		Severity:         "HIGH",
+		Package:          "lodash",
+		InstalledVersion: "4.17.21",
+		FixedVersion:     "4.17.22",
+		InKEV:            true,
+	}
+	run.Volumes[0].Analysis.Catalog.Packages = []filesystemanalyzer.PackageRecord{pkg}
+	run.Volumes[0].Analysis.Catalog.Vulnerabilities = []scanner.ImageVulnerability{vuln}
+
+	MaterializeRunsIntoGraph(g, []RunRecord{run}, now)
+
+	scanNode, ok := g.GetNode(run.ID)
+	if !ok {
+		t.Fatalf("expected workload scan node %q", run.ID)
+	}
+	if scanNode.Risk != graph.RiskCritical {
+		t.Fatalf("expected known-exploited vulnerability to keep scan risk critical, got %#v", scanNode)
+	}
+	scanEdge := findOutEdge(g, run.ID, graph.EdgeKindFoundVuln, vulnerabilityNodeID(vuln))
+	if scanEdge == nil {
+		t.Fatalf("expected scan -> vulnerability edge")
+	}
+	if scanEdge.Risk != graph.RiskCritical {
+		t.Fatalf("expected known-exploited scan edge to remain critical, got %#v", scanEdge)
+	}
+	pkgEdge := findOutEdge(g, packageNodeID(pkg), graph.EdgeKindAffectedBy, vulnerabilityNodeID(vuln))
+	if pkgEdge == nil {
+		t.Fatalf("expected package -> vulnerability edge")
+	}
+	if pkgEdge.Risk != graph.RiskCritical {
+		t.Fatalf("expected known-exploited package edge to remain critical, got %#v", pkgEdge)
+	}
+}
+
 func TestMaterializeRunsIntoGraphKeepsReachableLowVulnerabilitiesLowRisk(t *testing.T) {
 	now := time.Date(2026, 3, 12, 18, 0, 0, 0, time.UTC)
 	g := graph.New()

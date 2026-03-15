@@ -1172,12 +1172,12 @@ func packageVulnerabilityAggregateKey(pkg filesystemanalyzer.PackageRecord, vuln
 }
 
 func vulnerabilityAggregateKey(vuln scanner.ImageVulnerability, aliasIndex map[string]string) string {
-	for _, alias := range vulnerabilityAliases(vuln) {
+	aliases := vulnerabilityAliases(vuln)
+	for _, alias := range aliases {
 		if key, ok := aliasIndex[alias]; ok {
 			return key
 		}
 	}
-	aliases := vulnerabilityAliases(vuln)
 	if len(aliases) == 0 {
 		return ""
 	}
@@ -1294,10 +1294,10 @@ func severityToRisk(severity string, knownExploited bool) graph.RiskLevel {
 }
 
 func summaryRisk(summary scanSummary) graph.RiskLevel {
-	if summary.ReachableKnownExploitedCount > 0 || summary.ReachableCriticalVulnerabilityCount > 0 {
+	if summary.KnownExploitedCount > 0 || summary.ReachableCriticalVulnerabilityCount > 0 {
 		return graph.RiskCritical
 	}
-	if summary.KnownExploitedCount > 0 || summary.CriticalVulnerabilityCount > 0 || summary.ReachableHighVulnerabilityCount > 0 {
+	if summary.CriticalVulnerabilityCount > 0 || summary.ReachableHighVulnerabilityCount > 0 {
 		return graph.RiskHigh
 	}
 	if summary.HighVulnerabilityCount > 0 || summary.MediumVulnerabilityCount > 0 {
@@ -1311,6 +1311,9 @@ func summaryRisk(summary scanSummary) graph.RiskLevel {
 
 func prioritizePackageVulnerabilityRisk(vuln scanner.ImageVulnerability, pkg filesystemanalyzer.PackageRecord) graph.RiskLevel {
 	risk := severityToRisk(vuln.Severity, vuln.InKEV)
+	if vuln.InKEV {
+		return graph.RiskCritical
+	}
 	if pkg.Reachable {
 		return risk
 	}

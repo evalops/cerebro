@@ -868,11 +868,10 @@ func workloadSecurityPrioritizedRisk(scanNode *Node, internetExposed bool, admin
 	reachableCount := readInt(scanNode.Properties, "reachable_vulnerability_count")
 	reachableCriticalCount := readInt(scanNode.Properties, "reachable_critical_vulnerability_count")
 	reachableHighCount := readInt(scanNode.Properties, "reachable_high_vulnerability_count")
-	reachableKEVCount := readInt(scanNode.Properties, "reachable_known_exploited_count")
 	criticalCount := readInt(scanNode.Properties, "critical_vulnerability_count")
 	highCount := readInt(scanNode.Properties, "high_vulnerability_count")
 	kevCount := readInt(scanNode.Properties, "known_exploited_count")
-	if reachableKEVCount > 0 && (internetExposed || adminReachable > 0 || sensitiveDataPaths > 0) {
+	if kevCount > 0 {
 		return RiskCritical
 	}
 	if reachableCriticalCount > 0 && (internetExposed || adminReachable > 0 || sensitiveDataPaths > 0 || crossAccountRisk) {
