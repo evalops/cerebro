@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestAnalyzerBuildsNPMDependencyGraphAndReachability(t *testing.T) {
@@ -202,6 +203,46 @@ func TestAnalyzerResolvesHoistedAncestorNPMPackages(t *testing.T) {
 	}
 }
 
+func TestParseNPMDependencyGraphHandlesCircularDependencies(t *testing.T) {
+	done := make(chan *npmDependencyGraph, 1)
+	go func() {
+		done <- parseNPMDependencyGraph("workspace/package-lock.json", []byte(`{
+  "name": "demo",
+  "lockfileVersion": 2,
+  "packages": {
+    "": {
+      "name": "demo",
+      "version": "1.0.0",
+      "dependencies": {
+        "a": "1.0.0"
+      }
+    },
+    "node_modules/a": {
+      "version": "1.0.0",
+      "dependencies": {
+        "b": "1.0.0"
+      }
+    },
+    "node_modules/b": {
+      "version": "1.0.0",
+      "dependencies": {
+        "a": "1.0.0"
+      }
+    }
+  }
+}`))
+	}()
+
+	select {
+	case graph := <-done:
+		if graph == nil || len(graph.Packages) != 2 {
+			t.Fatalf("expected circular lockfile to resolve two packages, got %#v", graph)
+		}
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("parseNPMDependencyGraph did not terminate for circular dependencies")
+	}
+}
+
 func TestAnalyzerBuildsGoDependencyReachabilityFromGoMod(t *testing.T) {
 	root := t.TempDir()
 	mustWriteFile(t, filepath.Join(root, "workspace", "go.mod"), `module example.com/demo
@@ -238,6 +279,9 @@ func main() {
 	if uuid == nil {
 		t.Fatalf("expected uuid package in %#v", report.Packages)
 	}
+	if got := countPackageRecords(report.Packages, "golang", "github.com/google/uuid", "v1.6.0"); got != 1 {
+		t.Fatalf("expected one uuid package record, got %d in %#v", got, report.Packages)
+	}
 	if !uuid.DirectDependency || uuid.DependencyDepth != 1 || !uuid.Reachable || uuid.ImportFileCount != 1 {
 		t.Fatalf("expected uuid to be direct depth=1 reachable, got %#v", *uuid)
 	}
@@ -245,6 +289,9 @@ func main() {
 	text := findPackageRecord(report.Packages, "golang", "golang.org/x/text", "v0.14.0")
 	if text == nil {
 		t.Fatalf("expected x/text package in %#v", report.Packages)
+	}
+	if got := countPackageRecords(report.Packages, "golang", "golang.org/x/text", "v0.14.0"); got != 1 {
+		t.Fatalf("expected one x/text package record, got %d in %#v", got, report.Packages)
 	}
 	if text.DirectDependency || text.DependencyDepth != 2 || text.Reachable || text.ImportFileCount != 0 {
 		t.Fatalf("expected x/text to be indirect depth=2 and not reachable, got %#v", *text)
@@ -391,6 +438,69 @@ func main() {
 	}
 }
 
+func TestAnalyzerIgnoresTopLevelNodeModulesForJSImportReachability(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "package-lock.json"), `{
+  "name": "demo",
+  "lockfileVersion": 2,
+  "packages": {
+    "": {
+      "name": "demo",
+      "version": "1.0.0",
+      "dependencies": {
+        "lodash": "4.17.21"
+      }
+    },
+    "node_modules/lodash": {
+      "version": "4.17.21"
+    }
+  }
+}`)
+	mustWriteFile(t, filepath.Join(root, "node_modules", "rogue", "index.js"), "import _ from 'lodash'\n")
+
+	report, err := New(Options{}).Analyze(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+
+	lodash := findPackageRecord(report.Packages, "npm", "lodash", "4.17.21")
+	if lodash == nil {
+		t.Fatalf("expected lodash package in %#v", report.Packages)
+	}
+	if lodash.Reachable || lodash.ImportFileCount != 0 {
+		t.Fatalf("expected node_modules import to be ignored, got %#v", *lodash)
+	}
+}
+
+func TestAnalyzerIgnoresTopLevelVendorForGoReachability(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "go.mod"), `module example.com/demo
+
+go 1.22
+
+require golang.org/x/text v0.14.0
+`)
+	mustWriteFile(t, filepath.Join(root, "go.sum"), `golang.org/x/text v0.14.0
+`)
+	mustWriteFile(t, filepath.Join(root, "vendor", "rogue.go"), `package vendor
+
+import "golang.org/x/text/cases"
+`)
+
+	report, err := New(Options{}).Analyze(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+
+	text := findPackageRecord(report.Packages, "golang", "golang.org/x/text", "v0.14.0")
+	if text == nil {
+		t.Fatalf("expected x/text package in %#v", report.Packages)
+	}
+	if text.Reachable || text.ImportFileCount != 0 {
+		t.Fatalf("expected vendor import to be ignored, got %#v", *text)
+	}
+}
+
 func findPackageRecord(pkgs []PackageRecord, ecosystem, name, version string) *PackageRecord {
 	for i := range pkgs {
 		pkg := &pkgs[i]
@@ -409,4 +519,14 @@ func findPackageRecordByLocation(pkgs []PackageRecord, ecosystem, name, version,
 		}
 	}
 	return nil
+}
+
+func countPackageRecords(pkgs []PackageRecord, ecosystem, name, version string) int {
+	count := 0
+	for _, pkg := range pkgs {
+		if pkg.Ecosystem == ecosystem && pkg.Name == name && pkg.Version == version {
+			count++
+		}
+	}
+	return count
 }

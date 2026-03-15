@@ -114,6 +114,7 @@ func parseNPMDependencyGraphV2(filePath string, lock npmLockDocument) *npmDepend
 	packages := make(map[string]PackageRecord)
 	dependencies := make(map[string]map[string]struct{})
 	importableKeys := make(map[string]map[string]struct{})
+	expandedPaths := make(map[string]struct{})
 	queue := make([]queueItem, 0, len(root.Dependencies))
 	for depName := range root.Dependencies {
 		queue = append(queue, queueItem{name: depName, depth: 1})
@@ -155,6 +156,10 @@ func parseNPMDependencyGraphV2(filePath string, lock npmLockDocument) *npmDepend
 			}
 			dependencies[item.parentKey][key] = struct{}{}
 		}
+		if _, seen := expandedPaths[resolvedPath]; seen {
+			continue
+		}
+		expandedPaths[resolvedPath] = struct{}{}
 		for childName := range dep.Dependencies {
 			queue = append(queue, queueItem{
 				parentKey:  key,
@@ -207,6 +212,7 @@ func parseNPMDependencyGraphV1(filePath string, lock npmLockV1Document) *npmDepe
 	packages := make(map[string]PackageRecord)
 	dependencies := make(map[string]map[string]struct{})
 	importableKeys := make(map[string]map[string]struct{})
+	expandedPaths := make(map[string]struct{})
 	queue := make([]queueItem, 0, len(lock.Dependencies))
 	for depName, dep := range lock.Dependencies {
 		queue = append(queue, queueItem{
@@ -249,6 +255,10 @@ func parseNPMDependencyGraphV1(filePath string, lock npmLockV1Document) *npmDepe
 			}
 			dependencies[item.parentKey][key] = struct{}{}
 		}
+		if _, seen := expandedPaths[item.packagePath]; seen {
+			continue
+		}
+		expandedPaths[item.packagePath] = struct{}{}
 		for childName, child := range item.pkg.Dependencies {
 			queue = append(queue, queueItem{
 				parentKey:   key,

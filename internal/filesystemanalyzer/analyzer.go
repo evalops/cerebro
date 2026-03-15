@@ -812,7 +812,7 @@ func shouldInspectJSImportFile(filePath string, mode fs.FileMode, size int64, ma
 	if mode&fs.ModeSymlink != 0 || mode.IsDir() || size <= 0 || size > maxBytes {
 		return false
 	}
-	if strings.Contains(filePath, "/node_modules/") || strings.Contains(filePath, "/vendor/") || strings.Contains(filePath, "/dist/") || strings.Contains(filePath, "/build/") {
+	if pathHasSegment(filePath, "node_modules") || pathHasSegment(filePath, "vendor") || pathHasSegment(filePath, "dist") || pathHasSegment(filePath, "build") {
 		return false
 	}
 	switch strings.ToLower(path.Ext(filePath)) {
@@ -827,10 +827,25 @@ func shouldInspectGoImportFile(filePath string, mode fs.FileMode, size int64, ma
 	if mode&fs.ModeSymlink != 0 || mode.IsDir() || size <= 0 || size > maxBytes {
 		return false
 	}
-	if strings.Contains(filePath, "/vendor/") || strings.Contains(filePath, "/testdata/") || strings.Contains(filePath, "/fixtures/") {
+	if pathHasSegment(filePath, "vendor") || pathHasSegment(filePath, "testdata") || pathHasSegment(filePath, "fixtures") {
 		return false
 	}
 	return strings.EqualFold(path.Ext(filePath), ".go")
+}
+
+func pathHasSegment(filePath, segment string) bool {
+	filePath = strings.Trim(strings.TrimSpace(filePath), "/")
+	segment = strings.Trim(strings.TrimSpace(segment), "/")
+	if filePath == "" || segment == "" {
+		return false
+	}
+	parts := strings.Split(filePath, "/")
+	for _, part := range parts {
+		if part == segment {
+			return true
+		}
+	}
+	return false
 }
 
 func shouldParseConfigFile(filePath string) bool {
@@ -1088,6 +1103,10 @@ func parseNPMPackage(filePath string, data []byte) []PackageRecord {
 func parseGoSum(filePath string, data []byte) []PackageRecord {
 	seen := make(map[string]struct{})
 	pkgs := make([]PackageRecord, 0)
+	location := strings.TrimSpace(filePath)
+	if path.Base(location) == "go.sum" {
+		location = path.Join(path.Dir(location), "go.mod")
+	}
 	scanner := bufio.NewScanner(bytes.NewReader(data))
 	for scanner.Scan() {
 		parts := strings.Fields(scanner.Text())
@@ -1104,7 +1123,7 @@ func parseGoSum(filePath string, data []byte) []PackageRecord {
 			continue
 		}
 		seen[key] = struct{}{}
-		pkgs = append(pkgs, PackageRecord{Ecosystem: "golang", Manager: "go", Name: name, Version: version, Location: filePath})
+		pkgs = append(pkgs, PackageRecord{Ecosystem: "golang", Manager: "go", Name: name, Version: version, Location: location})
 	}
 	return pkgs
 }

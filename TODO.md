@@ -5,6 +5,22 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 105 - Dependency Parser Edge Cases and Manifest Hygiene (2026-03-14)
+
+### Review findings
+- [x] Gap: `go.mod` and `go.sum` were still producing duplicate Go package records because the inventory key included different manifest locations.
+- [x] Gap: the npm dependency-graph BFS could loop forever on circular lockfiles because it never stopped re-expanding already-seen package paths.
+- [x] Gap: top-level `node_modules`, `vendor`, `dist`, `build`, `testdata`, and `fixtures` paths were still scanned as if they were first-party source files because the exclusion checks only matched slash-delimited interior segments.
+
+### Execution plan
+- [x] Add TDD coverage for:
+  - [x] deduped Go module records across `go.mod` and `go.sum`
+  - [x] circular npm lockfile parsing terminating cleanly
+  - [x] ignoring top-level third-party/import-excluded directories for JS and Go reachability
+- [x] normalize `go.sum` package locations onto the sibling `go.mod` manifest path
+- [x] stop re-expanding already-visited npm package paths while still retaining dependency edges
+- [x] switch import-file exclusion checks from substring matching to path-segment matching
+
 ## Deep Review Cycle 104 - Dependency Graph Review Follow-through (2026-03-14)
 
 ### Review findings
