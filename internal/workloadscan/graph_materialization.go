@@ -316,7 +316,8 @@ func materializeOneRun(g *graph.Graph, target *graph.Node, run RunRecord, validT
 				SourceSystem:    graphMaterializationSourceSystem,
 			},
 		)
-		techNode := buildTechnologyNode(techAgg.record)
+		existingTechNode, _ := g.GetNode(technologyNodeID(techAgg.record))
+		techNode := buildTechnologyNode(techAgg.record, techMeta, existingTechNode)
 		g.AddNode(techNode)
 		result.TechnologyNodesUpserted++
 		techEdgeProperties := cloneWorkloadAnyMap(techMeta.PropertyMap())
@@ -752,13 +753,14 @@ func buildPackageNode(pkg filesystemanalyzer.PackageRecord, target *graph.Node, 
 	}
 }
 
-func buildTechnologyNode(tech filesystemanalyzer.TechnologyRecord) *graph.Node {
+func buildTechnologyNode(tech filesystemanalyzer.TechnologyRecord, metadata graph.WriteMetadata, existing *graph.Node) *graph.Node {
 	properties := map[string]any{
 		"technology_id":   technologyNodeID(tech),
 		"technology_name": strings.TrimSpace(tech.Name),
 		"category":        strings.TrimSpace(tech.Category),
 		"version":         strings.TrimSpace(tech.Version),
 	}
+	applyCanonicalTechnologyMetadata(properties, metadata, existing)
 	return &graph.Node{
 		ID:         technologyNodeID(tech),
 		Kind:       graph.NodeKindTechnology,
@@ -766,6 +768,77 @@ func buildTechnologyNode(tech filesystemanalyzer.TechnologyRecord) *graph.Node {
 		Risk:       graph.RiskNone,
 		Properties: properties,
 	}
+}
+
+func applyCanonicalTechnologyMetadata(properties map[string]any, metadata graph.WriteMetadata, existing *graph.Node) {
+	if properties == nil {
+		return
+	}
+	if sourceSystem := strings.TrimSpace(metadata.SourceSystem); sourceSystem != "" {
+		properties["source_system"] = sourceSystem
+	}
+	properties["observed_at"] = earliestMetadataTimestamp(existing, "observed_at", metadata.ObservedAt)
+	properties["valid_from"] = earliestMetadataTimestamp(existing, "valid_from", metadata.ValidFrom)
+	properties["recorded_at"] = earliestMetadataTimestamp(existing, "recorded_at", metadata.RecordedAt)
+	properties["transaction_from"] = earliestMetadataTimestamp(existing, "transaction_from", metadata.TransactionFrom)
+	properties["confidence"] = highestMetadataConfidence(existing, metadata.Confidence)
+}
+
+func earliestMetadataTimestamp(existing *graph.Node, key string, incoming time.Time) string {
+	best := incoming.UTC()
+	if existingTime, ok := existingNodePropertyTime(existing, key); ok && (best.IsZero() || existingTime.Before(best)) {
+		best = existingTime
+	}
+	return formatTime(best)
+}
+
+func highestMetadataConfidence(existing *graph.Node, incoming float64) float64 {
+	best := incoming
+	if existing == nil || existing.Properties == nil {
+		return best
+	}
+	raw, ok := existing.Properties["confidence"]
+	if !ok || raw == nil {
+		return best
+	}
+	switch value := raw.(type) {
+	case float64:
+		if value > best {
+			return value
+		}
+	case float32:
+		if float64(value) > best {
+			return float64(value)
+		}
+	case int:
+		if float64(value) > best {
+			return float64(value)
+		}
+	case int64:
+		if float64(value) > best {
+			return float64(value)
+		}
+	}
+	return best
+}
+
+func existingNodePropertyTime(node *graph.Node, key string) (time.Time, bool) {
+	if node == nil || node.Properties == nil {
+		return time.Time{}, false
+	}
+	raw, ok := node.Properties[key]
+	if !ok || raw == nil {
+		return time.Time{}, false
+	}
+	text, ok := raw.(string)
+	if !ok {
+		return time.Time{}, false
+	}
+	parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(text))
+	if err != nil {
+		return time.Time{}, false
+	}
+	return parsed.UTC(), true
 }
 
 func buildVulnerabilityNode(vuln scanner.ImageVulnerability, target *graph.Node, metadata graph.WriteMetadata) *graph.Node {

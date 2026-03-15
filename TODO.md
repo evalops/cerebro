@@ -5,6 +5,19 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 101 - Technology Schema Metadata Preservation (2026-03-14)
+
+### Review findings
+- [x] Gap: the canonical-technology-node fix on `#308` removed all write metadata from `technology` nodes.
+- [x] Gap: `technology` is a schema-registered node kind that still requires canonical write metadata fields: `source_system`, `observed_at`, `valid_from`, `recorded_at`, and `transaction_from`.
+- [x] Gap: under schema enforcement, workload materialization could reject every technology node even though the canonical-node refactor was otherwise correct.
+
+### Execution plan
+- [x] Add TDD coverage that exercises technology materialization under `SchemaValidationEnforce`.
+- [x] Restore schema-required metadata on canonical technology nodes without reintroducing workload-specific provenance like `source_event_id` or `file_path`.
+- [x] Preserve the earliest canonical timestamps across repeated upserts from multiple workloads.
+- [x] Rerun targeted workload/graph tests and lint before pushing the fix.
+
 ## Deep Review Cycle 100 - Canonical Technology Node Integrity (2026-03-14)
 
 ### Review findings
