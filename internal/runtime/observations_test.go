@@ -97,6 +97,12 @@ func TestObservationRoundTripPreservesCustomEventType(t *testing.T) {
 	}
 }
 
+func TestLegacyEventTypeFromObservationNil(t *testing.T) {
+	if got := legacyEventTypeFromObservation(nil); got != "" {
+		t.Fatalf("legacyEventTypeFromObservation(nil) = %q, want empty string", got)
+	}
+}
+
 func TestObservationRoundTripDoesNotAliasMutableFields(t *testing.T) {
 	event := &RuntimeEvent{
 		ID:           "event-1",

@@ -255,10 +255,11 @@ func observationKindFromEvent(event *RuntimeEvent) RuntimeObservationKind {
 }
 
 func legacyEventTypeFromObservation(observation *RuntimeObservation) string {
-	if observation != nil {
-		if eventType := stringMapValue(observation.Metadata, runtimeObservationLegacyEventTypeKey); eventType != "" {
-			return eventType
-		}
+	if observation == nil {
+		return ""
+	}
+	if eventType := stringMapValue(observation.Metadata, runtimeObservationLegacyEventTypeKey); eventType != "" {
+		return eventType
 	}
 	switch observation.Kind {
 	case ObservationKindProcessExec, ObservationKindProcessExit:
