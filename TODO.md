@@ -5,6 +5,35 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 121 - Vendor Grant Monitoring Signals for Okta and Google Workspace (2026-03-15)
+
+### Review findings
+- [x] Gap: after `#319`, vendor nodes could score live OAuth grants, but they still had no lifecycle or recent-activity signal to distinguish dormant access from freshly changing integrations.
+- [x] Gap: the first Google Workspace monitoring cut only enriched already-inventoried token applications, so apps that appeared only in audit activity would disappear from the graph entirely even though recent authorization/revocation activity is material vendor evidence.
+- [x] Gap: the Google token activity parser assumed JSON-decoded `[]interface{}` shapes for events and parameters, which made direct normalized/provider-fed map slices easy to drop or panic on in tests and future ingestion paths.
+- [x] Gap: Okta application grants already carry stable lifecycle fields (`status`, `source`, `created`, `lastUpdated`), but vendor nodes were not summarizing that lifecycle metadata on the application/vendor surface at all.
+
+### Execution plan
+- [x] Add Google Workspace provider coverage for recent token audit activity from Admin Reports `applications/token`.
+- [x] Build Google Workspace application monitoring enrichment that persists recent activity counts and newest activity timestamp on application nodes.
+- [x] Materialize audit-only Google Workspace OAuth applications into the graph so recent authorize/revoke events still project vendors even when there is no current token inventory row.
+- [x] Add Okta application grant monitoring enrichment that summarizes active/admin/principal grant counts plus newest grant timestamp on application nodes.
+- [x] Roll the new Okta/Google monitoring signals up onto vendor nodes:
+  - [x] `active_grant_count`
+  - [x] `admin_grant_count`
+  - [x] `principal_grant_count`
+  - [x] `recent_oauth_activity_count`
+  - [x] `recent_oauth_authorize_event_count`
+  - [x] `recent_oauth_revoke_event_count`
+  - [x] `last_grant_updated_at`
+  - [x] `last_oauth_activity_at`
+- [x] Add TDD coverage for:
+  - [x] malformed Google token activity event payloads being ignored safely
+  - [x] audit-only Google OAuth apps still projecting application and vendor nodes
+  - [x] newest Okta grant / Google activity timestamp aggregation
+  - [x] recent authorize vs revoke event counting
+- [x] Rerun focused provider/sync/builder validation, full `go test ./... -count=1`, and changed-package lint.
+
 ## Deep Review Cycle 112 - Explicit Vendor Ontology + Identity Integration Projection (2026-03-15)
 
 ### Review findings
