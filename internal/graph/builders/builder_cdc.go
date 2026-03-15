@@ -793,29 +793,6 @@ func cdcEventToNode(table string, event cdcEvent) *Node {
 				"azure_resource_type": "function_app",
 			},
 		}
-	case "azure_network_security_groups":
-		public := azureNSGAllowsInternet(queryRow(payload, "security_rules"), queryRow(payload, "default_security_rules"))
-		risk := RiskNone
-		if public {
-			risk = RiskHigh
-		}
-		id := cdcNodeID(table, payload, event.ResourceID)
-		return &Node{
-			ID:       id,
-			Kind:     NodeKindNetwork,
-			Name:     firstNonEmpty(queryRowString(payload, "name"), id),
-			Provider: firstNonEmpty(provider, "azure"),
-			Account:  firstNonEmpty(queryRowString(payload, "subscription_id"), account),
-			Region:   firstNonEmpty(queryRowString(payload, "location"), region),
-			Risk:     risk,
-			Properties: map[string]any{
-				"resource_group":         queryRow(payload, "resource_group"),
-				"security_rules":         queryRow(payload, "security_rules"),
-				"default_security_rules": queryRow(payload, "default_security_rules"),
-				"public":                 public,
-				"azure_resource_type":    "network_security_group",
-			},
-		}
 	case "azure_network_virtual_networks":
 		id := cdcNodeID(table, payload, event.ResourceID)
 		return &Node{
@@ -1054,6 +1031,11 @@ func cdcNodeID(table string, payload map[string]any, fallback string) string {
 			return id
 		}
 		return firstNonEmpty(queryRowString(payload, "id"), queryRowString(payload, "name"))
+	case "azure_network_security_groups":
+		if id := strings.TrimSpace(fallback); id != "" {
+			return id
+		}
+		return azureNetworkSecurityGroupNodeID(payload)
 	case "azure_graph_service_principals", "entra_service_principals", "azure_ad_service_principals",
 		"entra_users", "azure_ad_users", "entra_groups", "entra_directory_roles",
 		"azure_compute_virtual_machines", "azure_aks_clusters",
@@ -1061,7 +1043,7 @@ func cdcNodeID(table string, payload map[string]any, fallback string) string {
 		"azure_sql_servers", "azure_sql_databases",
 		"azure_keyvault_vaults", "azure_keyvault_keys",
 		"azure_functions_apps",
-		"azure_network_security_groups", "azure_network_virtual_networks", "azure_network_public_ip_addresses",
+		"azure_network_virtual_networks", "azure_network_public_ip_addresses",
 		"azure_network_load_balancers", "azure_network_interfaces",
 		"azure_compute_disks", "azure_policy_assignments",
 		"okta_users", "okta_groups", "okta_applications":
