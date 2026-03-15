@@ -210,6 +210,7 @@ Status: executed end-to-end via PR workflow
   - [x] a resource with one observed public security group and one unobserved extra group fell back to the generic heuristic instead of emitting the intended path-aware edge
   - [x] a resource in a fully observed private subnet still fell through to heuristic public exposure if its security-group rows were missing
   - [x] partial subnet observation could suppress heuristic exposure entirely even when topology evidence was incomplete
+- [x] Gap: subnet inventory alone is not route-topology coverage. Treating a subnet row as sufficient negative evidence can suppress heuristic exposure even when no applicable route table association is known for that subnet.
 - [x] Gap: the PR also claimed incremental/full-build parity, but that behavior was not explicitly locked down with a CDC-path regression.
 
 ### Execution plan
@@ -221,6 +222,9 @@ Status: executed end-to-end via PR workflow
   - [x] allow positive path-aware inference from any observed public SG rule plus any observed public subnet path
   - [x] suppress heuristic exposure when either side of the path is fully observed and definitively private
   - [x] avoid suppressing heuristic exposure when the topology evidence is incomplete
+- [x] Separate subnet inventory from route-topology coverage:
+  - [x] track subnet route applicability from explicit or main route-table associations
+  - [x] only use subnet-based negative suppression when every attached subnet has applicable route-topology coverage
 - [x] Add incremental rebuild coverage:
   - [x] prove `ApplyChanges` uses the same private-subnet suppression semantics as full builds
 

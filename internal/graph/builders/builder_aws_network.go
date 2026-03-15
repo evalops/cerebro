@@ -40,9 +40,15 @@ type awsPublicSubnetPath struct {
 	InternetGatewayID string
 }
 
+type awsSubnetRoutePath struct {
+	RouteTableID      string
+	InternetGatewayID string
+	IsPublic          bool
+}
+
 func (b *Builder) buildAWSNetworkExposureEdges(ctx context.Context) (map[string]struct{}, int) {
 	sgRules, sgObserved, sgReady := b.loadAWSPublicSecurityGroupRules(ctx)
-	publicSubnets, subnetObserved, subnetsReady := b.loadAWSPublicSubnetPaths(ctx)
+	publicSubnets, subnetTopologyObserved, subnetsReady := b.loadAWSPublicSubnetPaths(ctx)
 	if !sgReady && !subnetsReady {
 		return map[string]struct{}{}, 0
 	}
@@ -64,7 +70,7 @@ func (b *Builder) buildAWSNetworkExposureEdges(ctx context.Context) (map[string]
 		matchedRules := awsCollectIngressRules(securityGroups, sgRules)
 		subnetPath, hasPublicSubnet := awsFirstPublicSubnetPath(subnets, publicSubnets)
 		sgFullyObserved := sgReady && awsAllObserved(securityGroups, sgObserved)
-		subnetsFullyObserved := subnetsReady && awsAllObserved(subnets, subnetObserved)
+		subnetsFullyObserved := subnetsReady && awsAllObserved(subnets, subnetTopologyObserved)
 
 		// Positive inference only needs one observed public SG rule and one observed
 		// public subnet path. Negative suppression only needs a fully observed side
@@ -177,14 +183,13 @@ func (b *Builder) loadAWSPublicSubnetPaths(ctx context.Context) (map[string]awsP
 	routeTables, err := b.queryIfExists(ctx, "aws_ec2_route_tables", awsRouteTableExposureQuery)
 	if err != nil {
 		b.logger.Warn("failed to query aws route tables", "error", err)
-		return nil, nil, false
+		return nil, nil, len(subnets.Rows) > 0
 	}
-	if len(subnets.Rows) == 0 || len(routeTables.Rows) == 0 {
+	if len(subnets.Rows) == 0 {
 		return nil, nil, false
 	}
 
 	subnetMetadata := make(map[string]awsPublicSubnetPath, len(subnets.Rows))
-	subnetObserved := make(map[string]struct{}, len(subnets.Rows))
 	for _, row := range subnets.Rows {
 		subnetARN := queryRowString(row, "arn")
 		subnetID := queryRowString(row, "subnet_id")
@@ -203,22 +208,16 @@ func (b *Builder) loadAWSPublicSubnetPaths(ctx context.Context) (map[string]awsP
 			SubnetID:  subnetID,
 			VPCID:     vpcID,
 		}
-		subnetObserved[subnetARN] = struct{}{}
 	}
 
 	if len(subnetMetadata) == 0 {
 		return nil, nil, false
 	}
 
-	explicitPublic := make(map[string]awsPublicSubnetPath)
-	mainPublicByVPC := make(map[string]awsPublicSubnetPath)
+	explicitRoutes := make(map[string]awsSubnetRoutePath)
+	mainRoutesByVPC := make(map[string]awsSubnetRoutePath)
 
 	for _, row := range routeTables.Rows {
-		igwID, ok := awsInternetGatewayRoute(queryRow(row, "routes"))
-		if !ok {
-			continue
-		}
-
 		routeTableID := queryRowString(row, "route_table_id")
 		accountID := queryRowString(row, "account_id")
 		region := queryRowString(row, "region")
@@ -226,6 +225,7 @@ func (b *Builder) loadAWSPublicSubnetPaths(ctx context.Context) (map[string]awsP
 		if routeTableID == "" || accountID == "" || region == "" || vpcID == "" {
 			continue
 		}
+		igwID, isPublic := awsInternetGatewayRoute(queryRow(row, "routes"))
 
 		for _, assoc := range awsAsSlice(queryRow(row, "associations")) {
 			assocMap := awsAsMap(assoc)
@@ -235,40 +235,50 @@ func (b *Builder) loadAWSPublicSubnetPaths(ctx context.Context) (map[string]awsP
 
 			if subnetID := awsGetStringAny(assocMap, "SubnetId", "subnet_id", "subnetId"); subnetID != "" {
 				subnetARN := awsSubnetARN(region, accountID, subnetID)
-				explicitPublic[subnetARN] = awsPublicSubnetPath{
-					SubnetARN:         subnetARN,
-					SubnetID:          subnetID,
-					VPCID:             vpcID,
+				explicitRoutes[subnetARN] = awsSubnetRoutePath{
 					RouteTableID:      routeTableID,
 					InternetGatewayID: igwID,
+					IsPublic:          isPublic,
 				}
 				continue
 			}
 
 			if awsGetBoolAny(assocMap, "Main", "main") {
-				mainPublicByVPC[vpcID] = awsPublicSubnetPath{
-					VPCID:             vpcID,
+				mainRoutesByVPC[vpcID] = awsSubnetRoutePath{
 					RouteTableID:      routeTableID,
 					InternetGatewayID: igwID,
+					IsPublic:          isPublic,
 				}
 			}
 		}
 	}
 
 	publicSubnets := make(map[string]awsPublicSubnetPath)
+	topologyObserved := make(map[string]struct{})
 	for subnetARN, subnet := range subnetMetadata {
-		if path, ok := explicitPublic[subnetARN]; ok {
-			publicSubnets[subnetARN] = path
+		routePath, ok := explicitRoutes[subnetARN]
+		if !ok {
+			routePath, ok = mainRoutesByVPC[subnet.VPCID]
+		}
+		if !ok {
 			continue
 		}
-		if mainPath, ok := mainPublicByVPC[subnet.VPCID]; ok {
-			mainPath.SubnetARN = subnetARN
-			mainPath.SubnetID = subnet.SubnetID
-			publicSubnets[subnetARN] = mainPath
+
+		topologyObserved[subnetARN] = struct{}{}
+		if !routePath.IsPublic {
+			continue
+		}
+
+		publicSubnets[subnetARN] = awsPublicSubnetPath{
+			SubnetARN:         subnetARN,
+			SubnetID:          subnet.SubnetID,
+			VPCID:             subnet.VPCID,
+			RouteTableID:      routePath.RouteTableID,
+			InternetGatewayID: routePath.InternetGatewayID,
 		}
 	}
 
-	return publicSubnets, subnetObserved, true
+	return publicSubnets, topologyObserved, true
 }
 
 func awsDirectInternetCandidate(node *Node) bool {

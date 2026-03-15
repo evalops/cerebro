@@ -509,6 +509,88 @@ func TestBuilderBuild_AWSNetworkExposureFallsBackToHeuristicWhenSubnetCoverageIs
 	}
 }
 
+func TestBuilderBuild_AWSNetworkExposureFallsBackToHeuristicWhenSubnetRouteTopologyIsUnknown(t *testing.T) {
+	t.Parallel()
+
+	source := newCDCRoutingSource()
+	source.routes["from aws_ec2_instances"] = &DataQueryResult{Rows: []map[string]any{
+		{
+			"arn":               "arn:aws:ec2:us-east-1:111111111111:instance/i-unknown-topology",
+			"instance_id":       "i-unknown-topology",
+			"account_id":        "111111111111",
+			"region":            "us-east-1",
+			"public_ip_address": "203.0.113.60",
+		},
+	}}
+	source.routes["from resource_relationships"] = &DataQueryResult{Rows: []map[string]any{
+		{
+			"source_id":   "arn:aws:ec2:us-east-1:111111111111:instance/i-unknown-topology",
+			"source_type": "aws:ec2:instance",
+			"target_id":   "arn:aws:ec2:us-east-1:111111111111:security-group/sg-missing",
+			"target_type": "aws:ec2:security_group",
+			"rel_type":    "MEMBER_OF",
+		},
+		{
+			"source_id":   "arn:aws:ec2:us-east-1:111111111111:instance/i-unknown-topology",
+			"source_type": "aws:ec2:instance",
+			"target_id":   "arn:aws:ec2:us-east-1:111111111111:subnet/subnet-unknown",
+			"target_type": "aws:ec2:subnet",
+			"rel_type":    "IN_SUBNET",
+		},
+	}}
+	source.routes["from aws_ec2_security_group_rules"] = &DataQueryResult{Rows: []map[string]any{
+		{
+			"account_id":        "111111111111",
+			"region":            "us-east-1",
+			"security_group_id": "sg-other",
+			"direction":         "ingress",
+			"protocol":          "tcp",
+			"from_port":         80,
+			"to_port":           80,
+			"ip_ranges":         []any{map[string]any{"CidrIp": "10.0.0.0/8"}},
+			"ipv6_ranges":       []any{},
+		},
+	}}
+	source.routes["from aws_ec2_subnets"] = &DataQueryResult{Rows: []map[string]any{
+		{
+			"arn":        "arn:aws:ec2:us-east-1:111111111111:subnet/subnet-unknown",
+			"subnet_id":  "subnet-unknown",
+			"account_id": "111111111111",
+			"region":     "us-east-1",
+			"vpc_id":     "vpc-123",
+		},
+	}}
+	source.routes["from aws_ec2_route_tables"] = &DataQueryResult{Rows: []map[string]any{
+		{
+			"route_table_id": "rtb-other",
+			"account_id":     "111111111111",
+			"region":         "us-east-1",
+			"vpc_id":         "vpc-other",
+			"routes": []any{
+				map[string]any{
+					"DestinationCidrBlock": "0.0.0.0/0",
+					"GatewayId":            "nat-123",
+					"State":                "active",
+				},
+			},
+			"associations": []any{map[string]any{"SubnetId": "subnet-other"}},
+		},
+	}}
+
+	builder := NewBuilder(source, nil)
+	if err := builder.Build(context.Background()); err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+
+	edge := findNetworkEdge(builder.Graph(), "internet", "arn:aws:ec2:us-east-1:111111111111:instance/i-unknown-topology", EdgeKindExposedTo)
+	if edge == nil {
+		t.Fatal("expected heuristic internet exposure edge when route-table coverage is missing for the subnet")
+	}
+	if got := toString(edge.Properties["exposure_source"]); got != "" {
+		t.Fatalf("expected heuristic fallback edge without network metadata, got exposure_source=%q properties=%#v", got, edge.Properties)
+	}
+}
+
 func findNetworkEdge(g *Graph, source, target string, kind EdgeKind) *Edge {
 	for _, edge := range g.GetOutEdges(source) {
 		if edge.Target == target && edge.Kind == kind {
