@@ -291,6 +291,53 @@ func TestAdapterNormalizeFileReadAndTruncateKprobes(t *testing.T) {
 			wantOperation: "read",
 		},
 		{
+			name: "append",
+			raw: `{
+				"process_kprobe": {
+					"process": {
+						"exec_id": "exec-file-append-1",
+						"pid": 124,
+						"uid": 0,
+						"binary": "/usr/bin/tee",
+						"start_time": "2024-04-14T02:18:02.240856427Z",
+						"pod": {
+							"namespace": "default",
+							"name": "file-access",
+							"container": {
+								"id": "containerd://append",
+								"name": "file-access",
+								"image": {
+									"id": "sha256:append",
+									"name": "busybox:latest"
+								}
+							}
+						}
+					},
+					"parent": {
+						"binary": "/bin/sh"
+					},
+					"function_name": "security_file_permission",
+					"args": [
+						{
+							"file_arg": {
+								"path": "/var/log/app.log",
+								"permission": "-rw-r--r--"
+							}
+						},
+						{
+							"int_arg": 8
+						}
+					],
+					"return": {
+						"int_arg": 0
+					}
+				},
+				"time": "2024-04-14T02:18:14.376304204Z"
+			}`,
+			wantKind:      runtime.ObservationKindFileWrite,
+			wantOperation: "modify",
+		},
+		{
 			name: "truncate",
 			raw: `{
 				"process_kprobe": {

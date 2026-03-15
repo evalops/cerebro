@@ -397,7 +397,7 @@ func firstReturnCode(arg *kprobeArg) (any, bool) {
 
 func filePermissionAccess(mask int64) (runtime.RuntimeObservationKind, string) {
 	switch {
-	case mask&0x02 != 0:
+	case mask&(0x02|0x08) != 0:
 		return runtime.ObservationKindFileWrite, "modify"
 	case mask&0x04 != 0:
 		return runtime.ObservationKindFileOpen, "read"
