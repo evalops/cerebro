@@ -5,6 +5,36 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 89 - Audit CDC Graph Ingestion Identity and Consumer Upgrade Correctness (2026-03-14)
+
+### Review findings
+- [x] Gap: issue `#276` was correctly trying to ingest cloud audit mutation events into CDC and then materialize them into the live graph, but the ID contract was not consistent end to end.
+- [x] Gap: audit mutation fallback `resource_id` selection did not match graph node ID selection for network assets, so persisted CDC removals could target a different identifier than the one used to create the node.
+- [x] Gap: the three network-asset CDC node cases bypassed the normal `event.ResourceID` path and built IDs directly from payload fields, which left add/remove behavior asymmetric when audit events carried a canonical top-level resource ID.
+- [x] Gap: Azure NSG public-ingress detection was still using string heuristics over serialized rule blobs, which is too fragile for structured rule arrays and misses plural-prefix wildcard cases.
+- [x] Gap: JetStream upgrade safety was incomplete for the new multi-subject audit ingestion path:
+  - [x] existing streams were not updated to include newly configured subjects
+  - [x] existing single-subject durable consumers could remain incompatible with multi-subject configs
+
+### Execution plan
+- [x] Unify audit CDC resource identity with graph identity:
+  - [x] export table-aware CDC resource-ID resolution from graph builders
+  - [x] route audit mutation fallback `resource_id` derivation through that shared resolver
+- [x] Make network-asset CDC node creation honor the resolved/event resource ID:
+  - [x] apply resolved IDs to AWS security-group CDC nodes
+  - [x] apply resolved IDs to GCP firewall CDC nodes
+  - [x] apply resolved IDs to Azure NSG CDC nodes
+- [x] Replace Azure NSG public-exposure string heuristics with structured rule parsing first, plus string fallback only for unstructured inputs.
+- [x] Harden JetStream consumer upgrade behavior for the new audit sources:
+  - [x] update existing streams to include missing configured subjects
+  - [x] delete/recreate incompatible durable consumers before multi-subject resubscribe
+  - [x] add end-to-end JetStream upgrade tests once `nats-server` is available locally
+- [x] Add TDD coverage for:
+  - [x] table-aware audit mutation resource IDs for AWS/GCP/Azure network assets
+  - [x] add/remove symmetry for network-asset CDC nodes
+  - [x] structured Azure NSG wildcard prefix lists
+  - [x] stream-subject and durable-consumer JetStream upgrade paths
+
 ## Deep Review Cycle 86 - Reuse Existing Terraform Subresource Addresses for Bucket Remediations (2026-03-14)
 
 ### Review findings
