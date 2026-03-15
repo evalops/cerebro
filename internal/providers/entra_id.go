@@ -127,8 +127,6 @@ func (e *EntraIDProvider) Schema() []TableSchema {
 				{Name: "principal_id", Type: "string"},
 				{Name: "resource_id", Type: "string"},
 				{Name: "scope", Type: "string"},
-				{Name: "start_time", Type: "timestamp"},
-				{Name: "expiry_time", Type: "timestamp"},
 			},
 			PrimaryKey: []string{"id"},
 		},
@@ -503,7 +501,7 @@ func (e *EntraIDProvider) syncOAuth2PermissionGrants(ctx context.Context) (*Tabl
 		return result, err
 	}
 
-	grants, err := e.listAll(ctx, "/v1.0/oauth2PermissionGrants?$select=id,clientId,consentType,principalId,resourceId,scope,startTime,expiryTime")
+	grants, err := e.listAll(ctx, "/v1.0/oauth2PermissionGrants?$select=id,clientId,consentType,principalId,resourceId,scope")
 	if err != nil {
 		return result, err
 	}

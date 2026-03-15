@@ -88,6 +88,16 @@ Status: executed end-to-end via PR workflow
 - [x] Persist delegated-grant counts, admin-consent counts, principal-consent counts, and unique delegated scopes on vendor nodes.
 - [x] Lift vendor risk scoring when tenant-wide delegated admin consent and broad delegated scope sets are present.
 
+## Deep Review Cycle 119 - Entra OAuth Grant v1.0 API Contract Fix (2026-03-15)
+
+- [x] Gap: the new delegated-grant sync was requesting `startTime` and `expiryTime` from the Microsoft Graph v1.0 `oauth2PermissionGrants` endpoint even though those fields are beta-only.
+- [x] Gap: leaving those fields in the stable v1.0 request would make delegated-grant ingestion fail at runtime with a `400`, which would invalidate the whole vendor OAuth modeling cut.
+- [x] Gap: relationship payloads and schema metadata also needed to match the stable v1.0 contract instead of preserving unsupported columns that will never populate.
+
+- [x] Add a provider regression test that asserts the v1.0 delegated-grant sync query only requests supported fields.
+- [x] Remove beta-only grant timestamps from the Entra provider schema, request path, and relationship payload projection.
+- [x] Rerun provider, sync, builder, lint, and full-repo validation on the corrected v1.0 contract.
+
 ## Deep Review Cycle 111 - Vulnerability Reachability Prioritization on Workload Scans (2026-03-15)
 
 ### Review findings

@@ -629,8 +629,6 @@ func appendEntraOAuth2PermissionGrantRelationships(rels []Relationship, rows []m
 			"consent_type": toString(queryRow(row, "consent_type")),
 			"scope":        toString(queryRow(row, "scope")),
 			"principal_id": toString(queryRow(row, "principal_id")),
-			"start_time":   queryRow(row, "start_time"),
-			"expiry_time":  queryRow(row, "expiry_time"),
 			"resource_id":  resourceID,
 			"client_id":    clientID,
 		})

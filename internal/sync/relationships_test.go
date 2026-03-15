@@ -348,6 +348,12 @@ func TestAppendEntraOAuth2PermissionGrantRelationships(t *testing.T) {
 	if props["grant_type"] != "delegated_permission" || props["scope"] != "Mail.Read Files.Read" {
 		t.Fatalf("unexpected delegated grant properties: %+v", props)
 	}
+	if _, ok := props["start_time"]; ok {
+		t.Fatalf("expected delegated grant properties to avoid unsupported start_time field: %+v", props)
+	}
+	if _, ok := props["expiry_time"]; ok {
+		t.Fatalf("expected delegated grant properties to avoid unsupported expiry_time field: %+v", props)
+	}
 
 	props = map[string]interface{}{}
 	if err := json.Unmarshal([]byte(rels[1].Properties), &props); err != nil {
