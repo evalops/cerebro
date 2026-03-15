@@ -477,6 +477,159 @@ func TestEffectivePermissionsCalculator_PermissionBoundary(t *testing.T) {
 			t.Error("expected charlie to have read access to bucket:data (allowed by boundary)")
 		}
 	})
+
+	t.Run("permission boundary strips conditional-only resources", func(t *testing.T) {
+		g := New()
+		g.AddNode(&Node{
+			ID:       "user:bounded",
+			Kind:     NodeKindUser,
+			Name:     "bounded",
+			Account:  "111111111111",
+			Provider: "aws",
+			Properties: map[string]any{
+				"permission_boundary": "boundary:read-only",
+			},
+		})
+		g.AddNode(&Node{
+			ID:       "boundary:read-only",
+			Kind:     NodeKindPermissionBoundary,
+			Name:     "read-only",
+			Account:  "111111111111",
+			Provider: "aws",
+		})
+		g.AddNode(&Node{
+			ID:       "bucket:conditional",
+			Kind:     NodeKindBucket,
+			Name:     "conditional",
+			Account:  "111111111111",
+			Provider: "aws",
+		})
+		g.AddEdge(&Edge{
+			ID:     "conditional-write",
+			Source: "user:bounded",
+			Target: "bucket:conditional",
+			Kind:   EdgeKindCanWrite,
+			Effect: EdgeEffectAllow,
+			Properties: map[string]any{
+				"actions":    []string{"s3:PutObject"},
+				"conditions": map[string]any{"StringEquals": map[string]any{"aws:SourceVpce": "vpce-123"}},
+			},
+		})
+		g.AddEdge(&Edge{
+			ID:     "boundary-read",
+			Source: "boundary:read-only",
+			Target: "*",
+			Kind:   EdgeKindCanRead,
+			Effect: EdgeEffectAllow,
+			Properties: map[string]any{
+				"actions": []string{"s3:GetObject"},
+			},
+		})
+
+		calc := NewEffectivePermissionsCalculator(g)
+
+		ep := calc.Calculate("user:bounded")
+		if ep == nil {
+			t.Fatal("expected effective permissions, got nil")
+		}
+		if _, ok := ep.Resources["bucket:conditional"]; ok {
+			t.Fatalf("expected no unconditional resource access, got %#v", ep.Resources["bucket:conditional"])
+		}
+		if _, ok := ep.Conditional["bucket:conditional"]; ok {
+			t.Fatalf("expected permission boundary to remove conditional-only write access, got %#v", ep.Conditional["bucket:conditional"])
+		}
+
+		withContext := calc.CalculateWithContext("user:bounded", &PermissionEvaluationContext{
+			SourceVPCe: "vpce-123",
+		})
+		if withContext == nil {
+			t.Fatal("expected contextual effective permissions, got nil")
+		}
+		if _, ok := withContext.Resources["bucket:conditional"]; ok {
+			t.Fatalf("expected permission boundary to block contextual write access, got %#v", withContext.Resources["bucket:conditional"])
+		}
+	})
+}
+
+func TestEffectivePermissionsCalculator_EvaluatesWildcardSCPConditionsPerResource(t *testing.T) {
+	g := New()
+	g.AddNode(&Node{
+		ID:       "user:alice",
+		Kind:     NodeKindUser,
+		Name:     "alice",
+		Account:  "111111111111",
+		Provider: "aws",
+	})
+	g.AddNode(&Node{
+		ID:       "bucket:owned",
+		Kind:     NodeKindBucket,
+		Name:     "owned",
+		Account:  "111111111111",
+		Provider: "aws",
+	})
+	g.AddNode(&Node{
+		ID:       "bucket:external",
+		Kind:     NodeKindBucket,
+		Name:     "external",
+		Account:  "222222222222",
+		Provider: "aws",
+	})
+	g.AddNode(&Node{
+		ID:       "scp:resource-account",
+		Kind:     NodeKindSCP,
+		Name:     "resource-account",
+		Provider: "aws",
+		Properties: map[string]any{
+			"target_accounts": []string{"111111111111"},
+		},
+	})
+	g.AddEdge(&Edge{
+		ID:     "user-delete-owned",
+		Source: "user:alice",
+		Target: "bucket:owned",
+		Kind:   EdgeKindCanDelete,
+		Effect: EdgeEffectAllow,
+		Properties: map[string]any{
+			"actions": []string{"s3:DeleteObject"},
+		},
+	})
+	g.AddEdge(&Edge{
+		ID:     "user-delete-external",
+		Source: "user:alice",
+		Target: "bucket:external",
+		Kind:   EdgeKindCanDelete,
+		Effect: EdgeEffectAllow,
+		Properties: map[string]any{
+			"actions": []string{"s3:DeleteObject"},
+		},
+	})
+	g.AddEdge(&Edge{
+		ID:       "scp-deny-owned-account",
+		Source:   "scp:resource-account",
+		Target:   "*",
+		Kind:     EdgeKindCanDelete,
+		Effect:   EdgeEffectDeny,
+		Priority: 200,
+		Properties: map[string]any{
+			"actions":    []string{"s3:DeleteObject"},
+			"conditions": map[string]any{"StringEquals": map[string]any{"aws:ResourceAccount": "111111111111"}},
+		},
+	})
+
+	ep := NewEffectivePermissionsCalculator(g).Calculate("user:alice")
+	if ep == nil {
+		t.Fatal("expected effective permissions, got nil")
+	}
+	if _, ok := ep.Resources["bucket:owned"]; ok {
+		t.Fatalf("expected wildcard SCP condition to deny owned-account bucket delete, got %#v", ep.Resources["bucket:owned"])
+	}
+	access, ok := ep.Resources["bucket:external"]
+	if !ok {
+		t.Fatal("expected external bucket delete to remain allowed")
+	}
+	if !containsString(access.Actions, "s3:DeleteObject") {
+		t.Fatalf("expected external bucket delete action to remain, got %#v", access.Actions)
+	}
 }
 
 func TestEffectivePermissionsCalculator_Summary(t *testing.T) {

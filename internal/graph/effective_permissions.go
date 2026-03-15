@@ -532,21 +532,13 @@ func (c *EffectivePermissionsCalculator) applyServiceControlPolicies(
 			if !edge.IsDeny() {
 				continue
 			}
-			targetNode, _ := c.graph.GetNode(edge.Target)
-			if evaluateEdgeConditions(edge, principal, targetNode, ctx) != conditionMatchYes {
-				continue
-			}
-
-			// SCPs can deny access to services/actions globally
-			// Apply to all matching resources
 			actions := permissionActionsForEdge(edge)
-			if edge.Target == "*" {
-				// Deny applies to all resources
-				for resourceID := range ep.Resources {
-					denies[resourceID] = append(denies[resourceID], actions...)
+			for _, resourceID := range effectivePermissionTargetIDs(ep, edge.Target) {
+				targetNode, _ := c.graph.GetNode(resourceID)
+				if evaluateEdgeConditions(edge, principal, targetNode, ctx) != conditionMatchYes {
+					continue
 				}
-			} else {
-				denies[edge.Target] = append(denies[edge.Target], actions...)
+				denies[resourceID] = append(denies[resourceID], actions...)
 			}
 
 			ep.InheritanceChain = append(ep.InheritanceChain, &PermissionSource{
@@ -565,21 +557,18 @@ func (c *EffectivePermissionsCalculator) applyServiceControlPolicies(
 				if edge.IsDeny() {
 					continue
 				}
-				targetNode, _ := c.graph.GetNode(edge.Target)
-				if evaluateEdgeConditions(edge, principal, targetNode, ctx) != conditionMatchYes {
-					continue
-				}
 				actions := permissionActionsForEdge(edge)
-				if allowedActions[edge.Target] == nil {
-					allowedActions[edge.Target] = make(map[string]bool)
-				}
-				for _, a := range actions {
-					allowedActions[edge.Target][a] = true
+				for _, resourceID := range effectivePermissionTargetIDs(ep, edge.Target) {
+					targetNode, _ := c.graph.GetNode(resourceID)
+					if evaluateEdgeConditions(edge, principal, targetNode, ctx) != conditionMatchYes {
+						continue
+					}
+					addAllowedActions(allowedActions, resourceID, actions)
 				}
 			}
 
 			// Everything not explicitly allowed is denied
-			for resourceID, access := range ep.Resources {
+			forEachEffectivePermissionAccess(ep, func(resourceID string, access *ResourceAccess) {
 				allowed := allowedActions[resourceID]
 				if allowed == nil {
 					allowed = allowedActions["*"]
@@ -595,7 +584,7 @@ func (c *EffectivePermissionsCalculator) applyServiceControlPolicies(
 						}
 					}
 				}
-			}
+			})
 		}
 	}
 }
@@ -631,21 +620,18 @@ func (c *EffectivePermissionsCalculator) applyPermissionBoundaries(
 		if edge.IsDeny() {
 			continue
 		}
-		targetNode, _ := c.graph.GetNode(edge.Target)
-		if evaluateEdgeConditions(edge, principal, targetNode, ctx) != conditionMatchYes {
-			continue
-		}
 		actions := permissionActionsForEdge(edge)
-		if allowedActions[edge.Target] == nil {
-			allowedActions[edge.Target] = make(map[string]bool)
-		}
-		for _, a := range actions {
-			allowedActions[edge.Target][a] = true
+		for _, resourceID := range effectivePermissionTargetIDs(ep, edge.Target) {
+			targetNode, _ := c.graph.GetNode(resourceID)
+			if evaluateEdgeConditions(edge, principal, targetNode, ctx) != conditionMatchYes {
+				continue
+			}
+			addAllowedActions(allowedActions, resourceID, actions)
 		}
 	}
 
 	// If boundary exists, everything not in the boundary is implicitly denied
-	for resourceID, access := range ep.Resources {
+	forEachEffectivePermissionAccess(ep, func(resourceID string, access *ResourceAccess) {
 		allowed := allowedActions[resourceID]
 		if allowed == nil {
 			allowed = allowedActions["*"]
@@ -661,7 +647,7 @@ func (c *EffectivePermissionsCalculator) applyPermissionBoundaries(
 				}
 			}
 		}
-	}
+	})
 
 	ep.InheritanceChain = append(ep.InheritanceChain, &PermissionSource{
 		Type:       "permission_boundary",
@@ -1006,6 +992,52 @@ func resourceBucket(ep *EffectivePermissions, match conditionMatchResult) map[st
 		return ep.Conditional
 	}
 	return ep.Resources
+}
+
+func effectivePermissionTargetIDs(ep *EffectivePermissions, target string) []string {
+	target = strings.TrimSpace(target)
+	if target != "" && target != "*" {
+		return []string{target}
+	}
+	seen := make(map[string]struct{})
+	out := make([]string, 0, len(ep.Resources)+len(ep.Conditional))
+	appendIDs := func(bucket map[string]*ResourceAccess) {
+		for resourceID := range bucket {
+			if _, ok := seen[resourceID]; ok {
+				continue
+			}
+			seen[resourceID] = struct{}{}
+			out = append(out, resourceID)
+		}
+	}
+	appendIDs(ep.Resources)
+	appendIDs(ep.Conditional)
+	return out
+}
+
+func forEachEffectivePermissionAccess(ep *EffectivePermissions, fn func(resourceID string, access *ResourceAccess)) {
+	if ep == nil || fn == nil {
+		return
+	}
+	for resourceID, access := range ep.Resources {
+		if access != nil {
+			fn(resourceID, access)
+		}
+	}
+	for resourceID, access := range ep.Conditional {
+		if access != nil {
+			fn(resourceID, access)
+		}
+	}
+}
+
+func addAllowedActions(allowedActions map[string]map[string]bool, resourceID string, actions []string) {
+	if allowedActions[resourceID] == nil {
+		allowedActions[resourceID] = make(map[string]bool)
+	}
+	for _, action := range actions {
+		allowedActions[resourceID][action] = true
+	}
 }
 
 func upsertResourceAccess(
