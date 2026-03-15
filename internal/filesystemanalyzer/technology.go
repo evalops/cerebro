@@ -41,8 +41,6 @@ func shouldInspectTechnologyFile(filePath string, mode fs.FileMode, size int64, 
 		strings.HasSuffix(lowerPath, ".fsproj"),
 		strings.HasSuffix(lowerPath, ".vbproj"):
 		return true
-	case strings.Contains(lowerPath, "/postgresql/") && base == "pg_version":
-		return true
 	case strings.Contains(lowerPath, "/kafka/") && base == "server.properties":
 		return true
 	case strings.Contains(lowerPath, "/datadog/") && base == "datadog.yaml":
@@ -68,7 +66,7 @@ func detectTechnologies(filePath string, data []byte) []TechnologyRecord {
 		return []TechnologyRecord{{Name: "nginx", Category: "web_server", Path: filePath}}
 	case base == "redis.conf":
 		return []TechnologyRecord{{Name: "redis", Category: "cache", Path: filePath}}
-	case (strings.Contains(lowerPath, "/postgresql/") && base == "pg_version") || base == "pg_version":
+	case base == "pg_version":
 		if tech := detectPostgreSQLTechnology(filePath, data); tech != nil {
 			return []TechnologyRecord{*tech}
 		}
