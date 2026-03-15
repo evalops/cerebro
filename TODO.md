@@ -553,6 +553,30 @@ Status: executed end-to-end via PR workflow
   - [ ] emit import-block/state-reconciliation guidance in a structured artifact model once Terraform v1.5+ import surfaces become first-class in generated output
   - [ ] add the next Terraform-backed safe actions: public security-group ingress restriction and selected encryption defaults beyond S3
 
+## Deep Review Cycle 83 - Identity-Provider Application Access Edge Fidelity (2026-03-15)
+
+### Review findings
+- [x] Gap: vendor and third-party risk issue `#255` needs graph-native application access signals, but the current relationship builder silently degrades `CAN_ACCESS` relationships into generic `connects_to` edges.
+- [x] Gap: that means Okta app assignments are present in `resource_relationships` but under-modeled in the graph itself, so downstream access review, risk scoring, and future vendor inventory logic start from lossy data.
+- [x] Gap: Entra app-role assignments were not being extracted into `resource_relationships` at all, leaving a second major identity-provider application-access surface completely absent from the graph substrate.
+- [x] Gap: adjacent MIT graph/risk tools reinforce the right structure here:
+  - [x] `sverweij/dependency-cruiser` keeps dependency semantics explicit instead of flattening everything into one generic edge class.
+  - [x] `Michal256/ESVerdict` and similar runtime-correlation tooling get leverage by preserving which package or component is actually used, not just that “something is connected”.
+  - [x] blast-radius style tooling like `GuitaristForEver/tf-blast-radius-modern` and `texasbe2trill/constellation-engine` shows why risk scoring quality depends on preserving dependency/access semantics before aggregation.
+
+### Execution plan
+- [x] Add TDD regressions for the current graph/substrate loss:
+  - [x] prove `CAN_ACCESS` must materialize as a permission edge instead of `connects_to`
+  - [x] prove Entra app-role assignments should be extracted as `RelCanAccess` relationships with preserved assignment metadata
+- [x] Fix relationship projection:
+  - [x] map `CAN_ACCESS` to `can_read` in the generic relationship-edge builder
+  - [x] extract `ENTRA_APP_ROLE_ASSIGNMENTS` into `resource_relationships`
+  - [x] preserve `assignment_id`, `app_role_id`, and `resource_display_name` on Entra application-access relationships
+- [ ] Next vendor-risk depth cuts after this slice:
+  - [ ] project vendor inventory from application/service-principal access edges with provider-specific normalization
+  - [ ] score vendors from graph-derived blast radius, sensitive-resource reach, and privilege depth rather than questionnaire-only metadata
+  - [ ] add continuous vendor-risk drift detection from new application grants and cross-account/vendor trust changes
+
 ## Deep Review Cycle 82 - Terraform Renderer Registry by Action, Provider, and Resource Family (2026-03-14)
 
 ### Review findings
