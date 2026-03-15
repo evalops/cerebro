@@ -5,6 +5,19 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 110 - Lockfile-Owned npm Package Deduplication (2026-03-15)
+
+### Review findings
+- [x] Gap: once a `package-lock.json` dependency graph existed, the generic package parser could still inventory the same installed package again from `node_modules/*/package.json`.
+- [x] Gap: because npm package identity includes `Location`, those duplicate installed-package records survived merge and could inflate package counts, SBOM components, and downstream vulnerability matches for the same manifest tree.
+- [x] Gap: the right fix is not to disable installed-package parsing globally, because that fallback is still useful when no lockfile graph exists.
+
+### Execution plan
+- [x] Add TDD coverage for a lockfile-managed npm tree that also contains installed `node_modules/*/package.json`.
+- [x] Canonicalize installed npm package records onto the owning lockfile-backed package identity when a dependency graph already owns that manifest tree.
+- [x] Preserve fallback package parsing for npm trees that do not have a lockfile graph.
+- [x] Rerun focused filesystem/workload tests and changed-package lint before pushing the updated head.
+
 ## Deep Review Cycle 107 - Go SBOM Root Dependencies + Non-Library Materialization Guard (2026-03-15)
 
 ### Review findings

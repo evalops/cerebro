@@ -203,6 +203,47 @@ func TestAnalyzerResolvesHoistedAncestorNPMPackages(t *testing.T) {
 	}
 }
 
+func TestAnalyzerDedupesInstalledNPMPackagesWhenLockfileOwnsTree(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "workspace", "package-lock.json"), `{
+  "name": "demo",
+  "lockfileVersion": 2,
+  "packages": {
+    "": {
+      "name": "demo",
+      "version": "1.0.0",
+      "dependencies": {
+        "lodash": "4.17.21"
+      }
+    },
+    "node_modules/lodash": {
+      "version": "4.17.21"
+    }
+  }
+}`)
+	mustWriteFile(t, filepath.Join(root, "workspace", "node_modules", "lodash", "package.json"), `{"name":"lodash","version":"4.17.21"}`)
+	mustWriteFile(t, filepath.Join(root, "workspace", "src", "index.js"), "import _ from 'lodash'\nconsole.log(_.camelCase('x'))\n")
+
+	report, err := New(Options{}).Analyze(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+
+	if got := countPackageRecords(report.Packages, "npm", "lodash", "4.17.21"); got != 1 {
+		t.Fatalf("expected lockfile-owned npm package to dedupe installed package.json records, got %d in %#v", got, report.Packages)
+	}
+	lockfilePkg := findPackageRecordByLocation(report.Packages, "npm", "lodash", "4.17.21", "workspace/package-lock.json")
+	if lockfilePkg == nil {
+		t.Fatalf("expected canonical lockfile-backed package record in %#v", report.Packages)
+	}
+	if !lockfilePkg.Reachable || lockfilePkg.ImportFileCount != 1 {
+		t.Fatalf("expected canonical lockfile-backed package to retain reachability, got %#v", *lockfilePkg)
+	}
+	if installedPkg := findPackageRecordByLocation(report.Packages, "npm", "lodash", "4.17.21", "workspace/node_modules/lodash/package.json"); installedPkg != nil {
+		t.Fatalf("expected installed package.json duplicate to be removed, got %#v", *installedPkg)
+	}
+}
+
 func TestParseNPMDependencyGraphHandlesCircularDependencies(t *testing.T) {
 	done := make(chan *npmDependencyGraph, 1)
 	go func() {

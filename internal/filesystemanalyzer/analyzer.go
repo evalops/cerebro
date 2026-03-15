@@ -312,6 +312,7 @@ func (a *Analyzer) Analyze(ctx context.Context, rootfsPath string) (*Report, err
 	mergeOSInfo(&report.OS, inv.os)
 	report.OS.EOL = isLikelyEOL(report.OS)
 	inv.applyDependencyReachability()
+	inv.canonicalizeGraphBackedPackages()
 	report.Packages = inv.sortedPackages()
 	if a.vulnerabilityMatcher != nil && len(report.Packages) > 0 {
 		matchedVulns, err := a.vulnerabilityMatcher.MatchPackages(ctx, report.OS, report.Packages)
@@ -732,6 +733,90 @@ func (i *inventory) applyDependencyReachability() {
 			pkg.Reachable = true
 			pkg.ImportFileCount = max(pkg.ImportFileCount, len(fileSet))
 			i.packages[key] = pkg
+		}
+	}
+}
+
+func (i *inventory) canonicalizeGraphBackedPackages() {
+	if len(i.packages) == 0 {
+		return
+	}
+	i.canonicalizeNPMGraphBackedPackages()
+}
+
+func (i *inventory) canonicalizeNPMGraphBackedPackages() {
+	if len(i.npmGraphs) == 0 {
+		return
+	}
+	baseDirs := collectManifestBaseDirs(i.npmGraphs)
+	canonicalKeys := make(map[string]string, len(i.npmGraphs))
+	manifestPaths := make(map[string]string, len(i.npmGraphs))
+	for _, graph := range i.npmGraphs {
+		manifestPaths[graph.BaseDir] = graph.ManifestPath
+		for _, pkg := range graph.Packages {
+			canonicalKeys[npmGraphCanonicalKey(graph.BaseDir, pkg.Name, pkg.Version)] = packageInventoryKey(pkg)
+		}
+	}
+	for oldKey, pkg := range i.packages {
+		if !isInstalledNPMPackageLocation(pkg.Location) {
+			continue
+		}
+		baseDir := nearestManifestBaseDir(pkg.Location, baseDirs)
+		manifestPath := manifestPaths[baseDir]
+		if manifestPath == "" {
+			continue
+		}
+		newKey := canonicalKeys[npmGraphCanonicalKey(baseDir, pkg.Name, pkg.Version)]
+		if newKey == "" || newKey == oldKey {
+			continue
+		}
+		existing, ok := i.packages[newKey]
+		if !ok {
+			continue
+		}
+		i.packages[newKey] = MergePackageRecord(existing, pkg)
+		delete(i.packages, oldKey)
+		i.remapPackageDependencyKey(oldKey, newKey)
+	}
+}
+
+func npmGraphCanonicalKey(baseDir, name, version string) string {
+	return strings.Join([]string{
+		normalizeManifestBaseDir(baseDir),
+		strings.TrimSpace(name),
+		strings.TrimSpace(version),
+	}, "|")
+}
+
+func isInstalledNPMPackageLocation(location string) bool {
+	location = strings.TrimSpace(location)
+	return strings.HasSuffix(location, "/package.json") && strings.Contains(location, "/node_modules/")
+}
+
+func (i *inventory) remapPackageDependencyKey(oldKey, newKey string) {
+	if oldKey == "" || newKey == "" || oldKey == newKey {
+		return
+	}
+	if children, ok := i.packageDeps[oldKey]; ok {
+		if _, exists := i.packageDeps[newKey]; !exists {
+			i.packageDeps[newKey] = make(map[string]struct{}, len(children))
+		}
+		for childKey := range children {
+			if childKey == oldKey {
+				childKey = newKey
+			}
+			i.packageDeps[newKey][childKey] = struct{}{}
+		}
+		delete(i.packageDeps, oldKey)
+	}
+	for parentKey, children := range i.packageDeps {
+		if _, ok := children[oldKey]; !ok {
+			continue
+		}
+		delete(children, oldKey)
+		children[newKey] = struct{}{}
+		if len(children) == 0 {
+			delete(i.packageDeps, parentKey)
 		}
 	}
 }
