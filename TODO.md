@@ -5,6 +5,23 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 100 - Canonical Technology Node Integrity (2026-03-14)
+
+### Review findings
+- [x] Gap: `#308` modeled `technology` nodes as canonical global entities by name/category/version, but still stamped them with per-scan write metadata like `source_event_id`, `observed_at`, and workload-specific `file_path`.
+- [x] Gap: when multiple workloads reported the same technology, the later scan overwrote the canonical node properties and erased earlier observation metadata.
+- [x] Gap: that workload-specific context belongs on the `workload -> technology` observation edge, not on the canonical technology node itself.
+
+### Execution plan
+- [x] Add TDD coverage for the multi-workload collision case where two workloads report the same technology version.
+- [x] Keep canonical technology node properties stable:
+  - [x] retain only technology identity fields on the node
+  - [x] remove per-workload/per-scan metadata from the node
+- [x] move workload-specific evidence to the `runs` edge:
+  - [x] file path
+  - [x] temporal/source metadata already derived from the scan
+- [x] rerun targeted workload/filesystem/graph validation and lint on the fix
+
 ## Deep Review Cycle 97 - Workload Technology Stack Detection and Graph Inventory (2026-03-14)
 
 ### Review findings

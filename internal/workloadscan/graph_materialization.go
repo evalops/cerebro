@@ -316,13 +316,14 @@ func materializeOneRun(g *graph.Graph, target *graph.Node, run RunRecord, validT
 				SourceSystem:    graphMaterializationSourceSystem,
 			},
 		)
-		techNode := buildTechnologyNode(techAgg.record, target, techMeta)
+		techNode := buildTechnologyNode(techAgg.record)
 		g.AddNode(techNode)
 		result.TechnologyNodesUpserted++
 		techEdgeProperties := cloneWorkloadAnyMap(techMeta.PropertyMap())
 		techEdgeProperties["technology_name"] = techAgg.record.Name
 		techEdgeProperties["category"] = techAgg.record.Category
 		techEdgeProperties["version"] = strings.TrimSpace(techAgg.record.Version)
+		techEdgeProperties["file_path"] = strings.TrimSpace(techAgg.record.Path)
 		if addEdgeIfMissing(g, &graph.Edge{
 			ID:         edgeID(target.ID, techNode.ID, graph.EdgeKindRuns),
 			Source:     target.ID,
@@ -751,22 +752,17 @@ func buildPackageNode(pkg filesystemanalyzer.PackageRecord, target *graph.Node, 
 	}
 }
 
-func buildTechnologyNode(tech filesystemanalyzer.TechnologyRecord, target *graph.Node, metadata graph.WriteMetadata) *graph.Node {
+func buildTechnologyNode(tech filesystemanalyzer.TechnologyRecord) *graph.Node {
 	properties := map[string]any{
 		"technology_id":   technologyNodeID(tech),
 		"technology_name": strings.TrimSpace(tech.Name),
 		"category":        strings.TrimSpace(tech.Category),
 		"version":         strings.TrimSpace(tech.Version),
-		"file_path":       strings.TrimSpace(tech.Path),
 	}
-	metadata.ApplyTo(properties)
 	return &graph.Node{
 		ID:         technologyNodeID(tech),
 		Kind:       graph.NodeKindTechnology,
 		Name:       firstNonEmpty(strings.TrimSpace(tech.Name), technologyNodeID(tech)),
-		Provider:   target.Provider,
-		Account:    target.Account,
-		Region:     target.Region,
 		Risk:       graph.RiskNone,
 		Properties: properties,
 	}

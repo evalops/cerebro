@@ -1,6 +1,7 @@
 package workloadscan
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -492,6 +493,71 @@ func TestMaterializeRunsIntoGraphAddsTechnologyInventory(t *testing.T) {
 	}
 	if edge := findOutEdge(g, targetID, graph.EdgeKindRuns, nodejsID); edge == nil {
 		t.Fatalf("expected workload->technology runs edge, got %#v", g.GetOutEdges(targetID))
+	}
+}
+
+func TestMaterializeRunsIntoGraphKeepsTechnologyNodesCanonicalAcrossWorkloads(t *testing.T) {
+	now := time.Date(2026, 3, 14, 18, 0, 0, 0, time.UTC)
+	g := graph.New()
+	firstTargetID := "arn:aws:ec2:us-east-1:123456789012:instance/i-first"
+	secondTargetID := "arn:aws:ec2:us-east-1:123456789012:instance/i-second"
+	for _, id := range []string{firstTargetID, secondTargetID} {
+		g.AddNode(&graph.Node{
+			ID:       id,
+			Kind:     graph.NodeKindInstance,
+			Name:     strings.TrimPrefix(id[strings.LastIndex(id, "/")+1:], "/"),
+			Provider: "aws",
+			Account:  "123456789012",
+			Region:   "us-east-1",
+		})
+	}
+	g.BuildIndex()
+
+	buildRun := func(id, instanceID, path string, completedAt time.Time) RunRecord {
+		run := buildGraphMaterializationTestRun(id, completedAt, 0)
+		run.Target.InstanceID = instanceID
+		run.Volumes[0].Analysis.Catalog.Technologies = []filesystemanalyzer.TechnologyRecord{
+			{Name: "nodejs", Category: "runtime", Version: "20.11.1", Path: path},
+		}
+		return run
+	}
+
+	firstRun := buildRun("workload_scan:first-tech", "i-first", "srv/app/package.json", now.Add(-2*time.Hour))
+	secondRun := buildRun("workload_scan:second-tech", "i-second", "workspace/package.json", now.Add(-1*time.Hour))
+
+	summary := MaterializeRunsIntoGraph(g, []RunRecord{firstRun, secondRun}, now)
+	if summary.TechnologyNodesUpserted != 2 {
+		t.Fatalf("expected two technology upserts across workloads, got %#v", summary)
+	}
+
+	techID := technologyNodeID(filesystemanalyzer.TechnologyRecord{Name: "nodejs", Category: "runtime", Version: "20.11.1"})
+	techNode, ok := g.GetNode(techID)
+	if !ok {
+		t.Fatalf("expected technology node %q", techID)
+	}
+	if got := graphValueString(techNode.Properties["source_event_id"]); got != "" {
+		t.Fatalf("expected canonical technology node to omit source_event_id, got %#v", techNode.Properties)
+	}
+	if got := graphValueString(techNode.Properties["observed_at"]); got != "" {
+		t.Fatalf("expected canonical technology node to omit observed_at, got %#v", techNode.Properties)
+	}
+	if got := graphValueString(techNode.Properties["file_path"]); got != "" {
+		t.Fatalf("expected canonical technology node to omit workload file_path, got %#v", techNode.Properties)
+	}
+
+	firstEdge := findOutEdge(g, firstTargetID, graph.EdgeKindRuns, techID)
+	if firstEdge == nil {
+		t.Fatalf("expected first workload -> technology edge")
+	}
+	if got := graphValueString(firstEdge.Properties["file_path"]); got != "srv/app/package.json" {
+		t.Fatalf("expected first edge file_path, got %#v", firstEdge.Properties)
+	}
+	secondEdge := findOutEdge(g, secondTargetID, graph.EdgeKindRuns, techID)
+	if secondEdge == nil {
+		t.Fatalf("expected second workload -> technology edge")
+	}
+	if got := graphValueString(secondEdge.Properties["file_path"]); got != "workspace/package.json" {
+		t.Fatalf("expected second edge file_path, got %#v", secondEdge.Properties)
 	}
 }
 
