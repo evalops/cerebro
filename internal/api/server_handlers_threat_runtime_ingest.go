@@ -139,9 +139,10 @@ func (r *runtimeIngestSession) complete(ctx context.Context, checkpoint runtime.
 	if err != nil {
 		return fmt.Errorf("reload runtime ingest run: %w", err)
 	}
-	if updated != nil {
-		r.run = updated
+	if updated == nil {
+		return fmt.Errorf("reload runtime ingest run: missing run after checkpoint save")
 	}
+	r.run = updated
 	r.run.Status = runtime.IngestRunStatusCompleted
 	r.run.Stage = "completed"
 	r.run.CompletedAt = &completedAt

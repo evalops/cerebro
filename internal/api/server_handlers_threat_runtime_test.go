@@ -66,6 +66,43 @@ func (s *failingRuntimeIngestStore) LoadCheckpoint(context.Context, string) (*ru
 	return nil, nil
 }
 
+type nilReloadRuntimeIngestStore struct {
+	saveRunCalls        int
+	saveCheckpointCalls int
+}
+
+func (s *nilReloadRuntimeIngestStore) Close() error { return nil }
+
+func (s *nilReloadRuntimeIngestStore) SaveRun(context.Context, *runtime.IngestRunRecord) error {
+	s.saveRunCalls++
+	return nil
+}
+
+func (s *nilReloadRuntimeIngestStore) LoadRun(context.Context, string) (*runtime.IngestRunRecord, error) {
+	return nil, nil
+}
+
+func (s *nilReloadRuntimeIngestStore) ListRuns(context.Context, runtime.IngestRunListOptions) ([]runtime.IngestRunRecord, error) {
+	return nil, nil
+}
+
+func (s *nilReloadRuntimeIngestStore) AppendEvent(context.Context, string, runtime.IngestEvent) (runtime.IngestEvent, error) {
+	return runtime.IngestEvent{}, nil
+}
+
+func (s *nilReloadRuntimeIngestStore) LoadEvents(context.Context, string) ([]runtime.IngestEvent, error) {
+	return nil, nil
+}
+
+func (s *nilReloadRuntimeIngestStore) SaveCheckpoint(context.Context, string, runtime.IngestCheckpoint) (runtime.IngestCheckpoint, error) {
+	s.saveCheckpointCalls++
+	return runtime.IngestCheckpoint{}, nil
+}
+
+func (s *nilReloadRuntimeIngestStore) LoadCheckpoint(context.Context, string) (*runtime.IngestCheckpoint, error) {
+	return nil, nil
+}
+
 func TestIngestRuntimeEventPersistsIngestRun(t *testing.T) {
 	a := newTestApp(t)
 	s := NewServer(a)
@@ -288,6 +325,35 @@ func TestRuntimeIngestSessionRecordObservationUsesProcessingTimeForRunUpdates(t 
 	}
 	if got := events[1].Data["observed_at"]; got != historicalObservedAt.Format(time.RFC3339Nano) {
 		t.Fatalf("events[1].Data[observed_at] = %#v, want %q", got, historicalObservedAt.Format(time.RFC3339Nano))
+	}
+}
+
+func TestRuntimeIngestSessionCompleteFailsWhenReloadLosesCheckpointedRun(t *testing.T) {
+	store := &nilReloadRuntimeIngestStore{}
+	session := &runtimeIngestSession{
+		store: store,
+		run: &runtime.IngestRunRecord{
+			ID:          "run-1",
+			Source:      "runtime_event",
+			Status:      runtime.IngestRunStatusRunning,
+			Stage:       "detect",
+			SubmittedAt: time.Now().UTC(),
+			UpdatedAt:   time.Now().UTC(),
+		},
+	}
+
+	err := session.complete(context.Background(), runtime.IngestCheckpoint{Cursor: "evt-1"})
+	if err == nil {
+		t.Fatal("expected complete to fail when reloading checkpointed run returns nil")
+	}
+	if err.Error() != "reload runtime ingest run: missing run after checkpoint save" {
+		t.Fatalf("complete error = %q, want missing run reload error", err.Error())
+	}
+	if store.saveCheckpointCalls != 1 {
+		t.Fatalf("saveCheckpointCalls = %d, want 1", store.saveCheckpointCalls)
+	}
+	if store.saveRunCalls != 0 {
+		t.Fatalf("saveRunCalls = %d, want 0", store.saveRunCalls)
 	}
 }
 

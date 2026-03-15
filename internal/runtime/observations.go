@@ -5,6 +5,8 @@ import (
 	"time"
 )
 
+const runtimeObservationLegacyEventTypeKey = "legacy_event_type"
+
 type RuntimeObservationKind string
 
 const (
@@ -91,6 +93,12 @@ func ObservationFromEvent(event *RuntimeEvent) *RuntimeObservation {
 		File:         cloneFileEvent(event.File),
 		Container:    cloneContainerEvent(event.Container),
 		Metadata:     cloneRuntimeAnyMap(event.Metadata),
+	}
+	if strings.TrimSpace(event.EventType) != "" {
+		if observation.Metadata == nil {
+			observation.Metadata = make(map[string]any, 1)
+		}
+		observation.Metadata[runtimeObservationLegacyEventTypeKey] = strings.TrimSpace(event.EventType)
 	}
 
 	if event.Container != nil {
@@ -247,6 +255,11 @@ func observationKindFromEvent(event *RuntimeEvent) RuntimeObservationKind {
 }
 
 func legacyEventTypeFromObservation(observation *RuntimeObservation) string {
+	if observation != nil {
+		if eventType := stringMapValue(observation.Metadata, runtimeObservationLegacyEventTypeKey); eventType != "" {
+			return eventType
+		}
+	}
 	switch observation.Kind {
 	case ObservationKindProcessExec, ObservationKindProcessExit:
 		return "process"

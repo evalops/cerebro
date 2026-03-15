@@ -55,6 +55,48 @@ func TestObservationRoundTripPreservesDetectionFields(t *testing.T) {
 	}
 }
 
+func TestObservationRoundTripPreservesCustomEventType(t *testing.T) {
+	event := &RuntimeEvent{
+		ID:           "event-custom-1",
+		Timestamp:    time.Date(2026, 3, 15, 20, 1, 0, 0, time.UTC),
+		Source:       "custom-agent",
+		ResourceID:   "pod:prod/web",
+		ResourceType: "pod",
+		EventType:    "tracepoint",
+		Process: &ProcessEvent{
+			Name:    "xmrig",
+			Cmdline: "xmrig --url pool.example.com",
+		},
+	}
+
+	observation := ObservationFromEvent(event)
+	if observation == nil {
+		t.Fatal("expected observation")
+	}
+	if got := stringMapValue(observation.Metadata, runtimeObservationLegacyEventTypeKey); got != "tracepoint" {
+		t.Fatalf("legacy event type metadata = %q, want %q", got, "tracepoint")
+	}
+
+	roundTrip := observation.AsRuntimeEvent()
+	if roundTrip == nil {
+		t.Fatal("expected round-trip event")
+	}
+	if roundTrip.EventType != "tracepoint" {
+		t.Fatalf("round-trip event_type = %q, want %q", roundTrip.EventType, "tracepoint")
+	}
+
+	findings := NewDetectionEngine().ProcessObservation(context.Background(), observation)
+	if len(findings) != 1 {
+		t.Fatalf("len(findings) = %d, want 1", len(findings))
+	}
+	if findings[0].Event == nil {
+		t.Fatal("expected finding event")
+	}
+	if findings[0].Event.EventType != "tracepoint" {
+		t.Fatalf("finding event_type = %q, want %q", findings[0].Event.EventType, "tracepoint")
+	}
+}
+
 func TestObservationRoundTripDoesNotAliasMutableFields(t *testing.T) {
 	event := &RuntimeEvent{
 		ID:           "event-1",
