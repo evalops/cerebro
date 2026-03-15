@@ -19,6 +19,36 @@ Status: executed end-to-end via PR workflow
 - [x] Normalize CDC removal IDs through `cdcNodeID(table, payload, resourceID)` instead of trusting the raw event ID first.
 - [x] Keep the table-specific `entra_directory_roles` ID normalization in `cdcNodeID` so adds and removes use the same node contract.
 
+## Deep Review Cycle 95 - Azure Management Group Subscription Scope Hardening (2026-03-14)
+
+### Review findings
+- [x] Gap: issue `#279` was correctly trying to expand Azure discovery to org-scale management groups, but the enabled-subscription filter in `listManagementGroupSubscriptions` still compared subscription IDs case-sensitively.
+- [x] Gap: Azure APIs can return the same subscription ID with different casing across the subscription list and management-group tree, which could incorrectly drop valid subscriptions and surface a false `no enabled subscriptions found` error.
+- [x] Gap: management-group HTTP status checking happened after JSON decode, so non-2xx HTML/proxy responses were reported as decode failures instead of the real status error.
+- [x] Gap: API-layer Azure subscription normalization duplicated the sync-layer logic, which would let future fixes drift again.
+
+### Execution plan
+- [x] Add TDD coverage for:
+  - [x] case-insensitive enabled-subscription filtering for management-group expansion
+  - [x] HTTP status evaluation preceding JSON decode for management-group queries
+  - [x] sync API subscription normalization using the shared Azure helper contract
+- [x] Make management-group filtering compare normalized lowercase keys while preserving the discovered subscription ID value.
+- [x] Check management-group HTTP status before decoding the response body.
+- [x] Replace duplicate API subscription normalization with the shared sync-layer helper.
+
+## Deep Review Cycle 96 - GCP Asset Sync Contract Compatibility for Org Scope (2026-03-14)
+
+### Review findings
+- [x] Gap: issue `#279` was correctly trying to add organization-scoped GCP Asset sync, but the OpenAPI request schema silently removed the pre-existing required `projects` field.
+- [x] Gap: the API contract compatibility gate treated that as a breaking change for `POST /api/v1/sync/gcp-asset`, which would block push/merge and also break generated clients that rely on the existing schema contract.
+- [x] Gap: the internal API client also omitted `projects` entirely for organization-scoped requests, so the implementation and contract drifted in the same direction.
+
+### Execution plan
+- [x] Preserve the existing `projects` request-field contract in OpenAPI for `POST /api/v1/sync/gcp-asset`.
+- [x] Represent organization-scoped asset sync as `projects: []` plus `organization`, so new org-scope behavior works without removing the old field contract.
+- [x] Add/update client tests to lock the explicit-empty-projects payload for organization-scoped requests.
+- [x] Re-run the contract-compatibility and OpenAPI checks before push.
+
 ## Deep Review Cycle 93 - Azure Key Vault Key Lineage and Scope Cleanup Follow-through (2026-03-14)
 
 ### Review findings
