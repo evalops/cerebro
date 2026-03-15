@@ -255,6 +255,68 @@ func TestMaterializeRunsIntoGraphKeepsUsageHintsOffCanonicalPackageNodes(t *test
 	}
 }
 
+func TestMaterializeRunsIntoGraphIgnoresNonLibrarySBOMComponents(t *testing.T) {
+	now := time.Date(2026, 3, 12, 18, 0, 0, 0, time.UTC)
+	g := graph.New()
+	g.AddNode(&graph.Node{
+		ID:       "arn:aws:ec2:us-east-1:123456789012:instance/i-abc123",
+		Kind:     graph.NodeKindInstance,
+		Name:     "i-abc123",
+		Provider: "aws",
+		Account:  "123456789012",
+		Region:   "us-east-1",
+	})
+	g.BuildIndex()
+
+	component := filesystemanalyzer.SBOMComponent{
+		BOMRef:           "pkg:golang/github.com/google/uuid@v1.6.0",
+		Type:             "library",
+		Name:             "github.com/google/uuid",
+		Version:          "v1.6.0",
+		PURL:             "pkg:golang/github.com%2Fgoogle%2Fuuid@v1.6.0",
+		Ecosystem:        "golang",
+		Location:         "workspace/go.mod",
+		DirectDependency: true,
+		Reachable:        true,
+		DependencyDepth:  1,
+		ImportFileCount:  1,
+	}
+
+	pkg := packageFromSBOMComponent(component)
+	run := buildGraphMaterializationTestRun("workload_scan:run-go-app-sbom", now.Add(-2*time.Hour), 0)
+	run.Volumes[0].Analysis.Catalog.Packages = []filesystemanalyzer.PackageRecord{pkg}
+	run.Volumes[0].Analysis.Catalog.SBOM = filesystemanalyzer.SBOMDocument{
+		Format:      "cyclonedx-json",
+		SpecVersion: "1.5",
+		GeneratedAt: now.Add(-2 * time.Hour),
+		Components: []filesystemanalyzer.SBOMComponent{
+			{
+				BOMRef:    "app:golang/example.com/demo",
+				Type:      "application",
+				Name:      "example.com/demo",
+				Ecosystem: "golang",
+				Location:  "workspace/go.mod",
+			},
+			component,
+		},
+		Dependencies: []filesystemanalyzer.SBOMDependency{
+			{Ref: "app:golang/example.com/demo", DependsOn: []string{component.BOMRef}},
+		},
+	}
+
+	summary := MaterializeRunsIntoGraph(g, []RunRecord{run}, now)
+	if summary.PackageDependencyEdges != 0 {
+		t.Fatalf("expected non-library SBOM components to be ignored for package dependency edges, got %#v", summary)
+	}
+	appNodeID := packageNodeID(filesystemanalyzer.PackageRecord{Ecosystem: "golang", Name: "example.com/demo"})
+	if edge := findOutEdge(g, appNodeID, graph.EdgeKindDependsOn, packageNodeID(pkg)); edge != nil {
+		t.Fatalf("expected no package node/edge synthesized for application component, got %#v", edge)
+	}
+	if findOutEdge(g, run.ID, graph.EdgeKindContainsPkg, packageNodeID(pkg)) == nil {
+		t.Fatalf("expected library component package to remain materialized")
+	}
+}
+
 func TestMaterializeRunsIntoGraphCarriesPriorityAssessment(t *testing.T) {
 	now := time.Date(2026, 3, 12, 18, 0, 0, 0, time.UTC)
 	g := graph.New()

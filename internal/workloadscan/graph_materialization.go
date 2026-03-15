@@ -782,6 +782,9 @@ func mergePackageAggregate(existing, incoming filesystemanalyzer.PackageRecord) 
 }
 
 func packageFromSBOMComponent(component filesystemanalyzer.SBOMComponent) filesystemanalyzer.PackageRecord {
+	if componentType := strings.TrimSpace(component.Type); componentType != "" && !strings.EqualFold(componentType, "library") {
+		return filesystemanalyzer.PackageRecord{}
+	}
 	ecosystem := strings.TrimSpace(component.Ecosystem)
 	return filesystemanalyzer.PackageRecord{
 		Ecosystem:        ecosystem,

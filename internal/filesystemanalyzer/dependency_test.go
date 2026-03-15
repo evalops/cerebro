@@ -296,6 +296,24 @@ func main() {
 	if text.DirectDependency || text.DependencyDepth != 2 || text.Reachable || text.ImportFileCount != 0 {
 		t.Fatalf("expected x/text to be indirect depth=2 and not reachable, got %#v", *text)
 	}
+	if len(report.SBOM.Dependencies) != 1 {
+		t.Fatalf("expected one Go SBOM dependency entry, got %#v", report.SBOM.Dependencies)
+	}
+	appComponent := findSBOMComponent(report.SBOM.Components, "application", "example.com/demo", "")
+	if appComponent == nil {
+		t.Fatalf("expected Go application component in %#v", report.SBOM.Components)
+	}
+	dep := report.SBOM.Dependencies[0]
+	if dep.Ref != appComponent.BOMRef {
+		t.Fatalf("expected Go dependencies to hang from application component %q, got %#v", appComponent.BOMRef, dep)
+	}
+	uuidRef := sbomComponentRef(*uuid)
+	if len(dep.DependsOn) != 1 || dep.DependsOn[0] != uuidRef {
+		t.Fatalf("expected Go application to depend only on direct dependency %q, got %#v", uuidRef, dep)
+	}
+	if report.Summary.DependencyCount != 1 {
+		t.Fatalf("expected dependency_count=1, got %#v", report.Summary)
+	}
 }
 
 func TestAnalyzerMarksGoSubpackageImportsReachable(t *testing.T) {
@@ -529,4 +547,14 @@ func countPackageRecords(pkgs []PackageRecord, ecosystem, name, version string) 
 		}
 	}
 	return count
+}
+
+func findSBOMComponent(components []SBOMComponent, componentType, name, version string) *SBOMComponent {
+	for idx := range components {
+		component := &components[idx]
+		if component.Type == componentType && component.Name == name && component.Version == version {
+			return component
+		}
+	}
+	return nil
 }

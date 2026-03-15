@@ -1,9 +1,27 @@
 # Cerebro Intelligence Layer Execution TODO
 
-Last updated: 2026-03-14 (America/Los_Angeles)
+Last updated: 2026-03-15 (America/Los_Angeles)
 Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
+
+## Deep Review Cycle 107 - Go SBOM Root Dependencies + Non-Library Materialization Guard (2026-03-15)
+
+### Review findings
+- [x] Gap: Go module scans were inventorying packages and reachability, but emitted no CycloneDX dependency entries at all because `go.mod` parsing never contributed SBOM dependency relationships.
+- [x] Gap: that left `Summary.DependencyCount` at zero for Go-only projects and made the SBOM materially weaker than the npm path.
+- [x] Gap: the correct fix is not to invent package-to-package edges that `go.mod` cannot justify; the defensible relationship we do know is application/module -> direct requirements.
+- [x] Gap: once application components are present in SBOM output, workload graph materialization must ignore them so package nodes stay package-only.
+
+### Execution plan
+- [x] Add TDD coverage for:
+  - [x] Go SBOM application component plus direct dependency edges
+  - [x] `dependency_count` reflecting the new Go SBOM dependency entry
+  - [x] ignoring non-library SBOM components during workload package graph materialization
+- [x] Parse the Go module path from `go.mod`.
+- [x] Add Go application SBOM components and application -> direct dependency edges during inventory assembly.
+- [x] Keep npm/package dependency edges unchanged while merging both dependency sources into the final SBOM.
+- [x] Rerun focused filesystem/workload tests, lint, and full `go test ./...`.
 
 ## Deep Review Cycle 106 - Dependency Parser Cleanup After Review Pass (2026-03-14)
 

@@ -24,7 +24,9 @@ type npmDependencyGraph struct {
 type goDependencyGraph struct {
 	ManifestPath   string
 	BaseDir        string
+	ModulePath     string
 	Packages       []PackageRecord
+	DirectKeys     map[string]struct{}
 	ImportableKeys map[string]map[string]struct{}
 }
 
@@ -433,6 +435,7 @@ func parseGoDependencyGraph(filePath string, data []byte) *goDependencyGraph {
 	if len(requirements) == 0 {
 		return nil
 	}
+	modulePath := parseGoModModulePath(data)
 
 	baseDir := path.Dir(filePath)
 	if baseDir == "." {
@@ -440,6 +443,7 @@ func parseGoDependencyGraph(filePath string, data []byte) *goDependencyGraph {
 	}
 
 	packages := make(map[string]PackageRecord)
+	directKeys := make(map[string]struct{})
 	importableKeys := make(map[string]map[string]struct{})
 	for _, req := range requirements {
 		record := PackageRecord{
@@ -466,6 +470,9 @@ func parseGoDependencyGraph(filePath string, data []byte) *goDependencyGraph {
 		} else {
 			packages[key] = record
 		}
+		if record.DirectDependency {
+			directKeys[key] = struct{}{}
+		}
 		addImportablePackageKey(importableKeys, record.Name, key)
 	}
 
@@ -488,7 +495,9 @@ func parseGoDependencyGraph(filePath string, data []byte) *goDependencyGraph {
 	return &goDependencyGraph{
 		ManifestPath:   filePath,
 		BaseDir:        baseDir,
+		ModulePath:     modulePath,
 		Packages:       out,
+		DirectKeys:     directKeys,
 		ImportableKeys: importableKeys,
 	}
 }
@@ -529,6 +538,25 @@ func parseGoModRequirements(data []byte) []goModRequirement {
 		}
 	}
 	return requirements
+}
+
+func parseGoModModulePath(data []byte) string {
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "//") {
+			continue
+		}
+		if !strings.HasPrefix(line, "module ") {
+			continue
+		}
+		line = strings.TrimSpace(strings.TrimPrefix(line, "module "))
+		if idx := strings.Index(line, "//"); idx >= 0 {
+			line = strings.TrimSpace(line[:idx])
+		}
+		return strings.Trim(strings.TrimSpace(line), `"`)
+	}
+	return ""
 }
 
 func parseGoModRequirementLine(line string) (goModRequirement, bool) {

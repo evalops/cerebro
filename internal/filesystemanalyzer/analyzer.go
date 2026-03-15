@@ -327,7 +327,7 @@ func (a *Analyzer) Analyze(ctx context.Context, rootfsPath string) (*Report, err
 	report.IaCArtifacts = inv.iacArtifacts
 	report.Malware = inv.malware
 	report.Technologies = inv.sortedTechnologies()
-	report.SBOM = buildSBOM(report.GeneratedAt, report.Packages, inv.sortedSBOMDependencies())
+	report.SBOM = buildSBOM(report.GeneratedAt, inv.sortedSBOMComponents(report.Packages), inv.sortedSBOMDependencies())
 	report.Findings = dedupeFindings(append(report.Findings, inv.findings...))
 	report.Summary = Summary{
 		PackageCount:          len(report.Packages),
@@ -355,6 +355,8 @@ type inventory struct {
 	os             OSInfo
 	packages       map[string]PackageRecord
 	packageDeps    map[string]map[string]struct{}
+	sbomComponents map[string]SBOMComponent
+	sbomDeps       map[string]map[string]struct{}
 	iacArtifactIDs map[string]struct{}
 	secretKeys     map[string]struct{}
 	technologyKeys map[string]struct{}
@@ -378,6 +380,8 @@ func newInventory(now time.Time) *inventory {
 		generatedAt:    now,
 		packages:       make(map[string]PackageRecord),
 		packageDeps:    make(map[string]map[string]struct{}),
+		sbomComponents: make(map[string]SBOMComponent),
+		sbomDeps:       make(map[string]map[string]struct{}),
 		iacArtifactIDs: make(map[string]struct{}),
 		secretKeys:     make(map[string]struct{}),
 		technologyKeys: make(map[string]struct{}),
@@ -423,6 +427,28 @@ func (i *inventory) addNPMDependencyGraph(graph npmDependencyGraph) {
 func (i *inventory) addGoDependencyGraph(graph goDependencyGraph) {
 	if len(graph.Packages) > 0 {
 		i.addPackages(graph.Packages...)
+	}
+	if modulePath := strings.TrimSpace(graph.ModulePath); modulePath != "" {
+		root := SBOMComponent{
+			BOMRef:    sbomApplicationRef("golang", modulePath, graph.ManifestPath),
+			Type:      "application",
+			Name:      modulePath,
+			Ecosystem: "golang",
+			Location:  graph.ManifestPath,
+		}
+		i.sbomComponents[root.BOMRef] = root
+		if len(graph.DirectKeys) > 0 {
+			if _, ok := i.sbomDeps[root.BOMRef]; !ok {
+				i.sbomDeps[root.BOMRef] = make(map[string]struct{})
+			}
+			for key := range graph.DirectKeys {
+				pkg, ok := i.packages[key]
+				if !ok {
+					continue
+				}
+				i.sbomDeps[root.BOMRef][sbomComponentRef(pkg)] = struct{}{}
+			}
+		}
 	}
 	i.goGraphs = append(i.goGraphs, graph)
 }
@@ -545,30 +571,73 @@ func (i *inventory) sortedPackages() []PackageRecord {
 }
 
 func (i *inventory) sortedSBOMDependencies() []SBOMDependency {
-	out := make([]SBOMDependency, 0, len(i.packageDeps))
+	depsByRef := make(map[string]map[string]struct{}, len(i.packageDeps)+len(i.sbomDeps))
 	for parentKey, children := range i.packageDeps {
 		parent, ok := i.packages[parentKey]
 		if !ok {
 			continue
 		}
-		dep := SBOMDependency{Ref: sbomComponentRef(parent)}
+		parentRef := sbomComponentRef(parent)
+		if _, ok := depsByRef[parentRef]; !ok {
+			depsByRef[parentRef] = make(map[string]struct{})
+		}
 		for childKey := range children {
 			child, ok := i.packages[childKey]
 			if !ok {
 				continue
 			}
-			dep.DependsOn = append(dep.DependsOn, sbomComponentRef(child))
+			depsByRef[parentRef][sbomComponentRef(child)] = struct{}{}
+		}
+	}
+	for parentRef, children := range i.sbomDeps {
+		if _, ok := depsByRef[parentRef]; !ok {
+			depsByRef[parentRef] = make(map[string]struct{})
+		}
+		for childRef := range children {
+			depsByRef[parentRef][childRef] = struct{}{}
+		}
+	}
+	out := make([]SBOMDependency, 0, len(depsByRef))
+	for parentRef, children := range depsByRef {
+		dep := SBOMDependency{Ref: parentRef}
+		for childRef := range children {
+			dep.DependsOn = append(dep.DependsOn, childRef)
 		}
 		sort.Strings(dep.DependsOn)
-		if len(dep.DependsOn) == 0 {
-			continue
+		if len(dep.DependsOn) > 0 {
+			out = append(out, dep)
 		}
-		out = append(out, dep)
 	}
 	sort.Slice(out, func(a, b int) bool {
 		return out[a].Ref < out[b].Ref
 	})
 	return out
+}
+
+func (i *inventory) sortedSBOMComponents(packages []PackageRecord) []SBOMComponent {
+	components := make([]SBOMComponent, 0, len(packages)+len(i.sbomComponents))
+	for _, pkg := range packages {
+		components = append(components, SBOMComponent{
+			BOMRef:           sbomComponentRef(pkg),
+			Type:             "library",
+			Name:             pkg.Name,
+			Version:          pkg.Version,
+			PURL:             pkg.PURL,
+			Ecosystem:        pkg.Ecosystem,
+			Location:         pkg.Location,
+			DirectDependency: pkg.DirectDependency,
+			Reachable:        pkg.Reachable,
+			DependencyDepth:  pkg.DependencyDepth,
+			ImportFileCount:  pkg.ImportFileCount,
+		})
+	}
+	for _, component := range i.sbomComponents {
+		components = append(components, component)
+	}
+	sort.Slice(components, func(a, b int) bool {
+		return components[a].BOMRef < components[b].BOMRef
+	})
+	return components
 }
 
 func (i *inventory) sortedTechnologies() []TechnologyRecord {
@@ -2024,23 +2093,7 @@ func parseAzureStorageConnectionReference(raw string) (SecretReference, bool) {
 	}, true
 }
 
-func buildSBOM(generatedAt time.Time, packages []PackageRecord, dependencies []SBOMDependency) SBOMDocument {
-	components := make([]SBOMComponent, 0, len(packages))
-	for _, pkg := range packages {
-		components = append(components, SBOMComponent{
-			BOMRef:           sbomComponentRef(pkg),
-			Type:             "library",
-			Name:             pkg.Name,
-			Version:          pkg.Version,
-			PURL:             pkg.PURL,
-			Ecosystem:        pkg.Ecosystem,
-			Location:         pkg.Location,
-			DirectDependency: pkg.DirectDependency,
-			Reachable:        pkg.Reachable,
-			DependencyDepth:  pkg.DependencyDepth,
-			ImportFileCount:  pkg.ImportFileCount,
-		})
-	}
+func buildSBOM(generatedAt time.Time, components []SBOMComponent, dependencies []SBOMDependency) SBOMDocument {
 	return SBOMDocument{
 		Format:       "cyclonedx-json",
 		SpecVersion:  "1.5",
@@ -2052,6 +2105,14 @@ func buildSBOM(generatedAt time.Time, packages []PackageRecord, dependencies []S
 
 func sbomComponentRef(pkg PackageRecord) string {
 	return findingID("pkg", packageInventoryKey(pkg))
+}
+
+func sbomApplicationRef(ecosystem, name, location string) string {
+	return findingID("app", strings.Join([]string{
+		strings.TrimSpace(ecosystem),
+		strings.TrimSpace(name),
+		strings.TrimSpace(location),
+	}, "|"))
 }
 
 func packageInventoryKey(pkg PackageRecord) string {
