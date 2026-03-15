@@ -70,6 +70,14 @@ type vulnerabilityAggregate struct {
 	record scanner.ImageVulnerability
 }
 
+type vulnerabilityUsageContext struct {
+	bestPackage                filesystemanalyzer.PackageRecord
+	hasBestPackage             bool
+	affectedPackageKeys        map[string]struct{}
+	reachablePackageKeys       map[string]struct{}
+	directReachablePackageKeys map[string]struct{}
+}
+
 type configAggregate struct {
 	record filesystemanalyzer.ConfigFinding
 }
@@ -81,27 +89,32 @@ type packageVulnerabilityAggregate struct {
 }
 
 type scanSummary struct {
-	PackageCount               int
-	VulnerabilityCount         int
-	CriticalVulnerabilityCount int
-	HighVulnerabilityCount     int
-	MediumVulnerabilityCount   int
-	LowVulnerabilityCount      int
-	UnknownVulnerabilityCount  int
-	KnownExploitedCount        int
-	ExploitableCount           int
-	FixableCount               int
-	SecretCount                int
-	MisconfigurationCount      int
-	IaCArtifactCount           int
-	MalwareCount               int
-	TechnologyCount            int
-	FindingCount               int64
-	OSName                     string
-	OSVersion                  string
-	OSArchitecture             string
-	SBOMRef                    string
-	Risk                       graph.RiskLevel
+	PackageCount                        int
+	VulnerabilityCount                  int
+	CriticalVulnerabilityCount          int
+	HighVulnerabilityCount              int
+	MediumVulnerabilityCount            int
+	LowVulnerabilityCount               int
+	UnknownVulnerabilityCount           int
+	KnownExploitedCount                 int
+	ExploitableCount                    int
+	FixableCount                        int
+	ReachableVulnerabilityCount         int
+	ReachableCriticalVulnerabilityCount int
+	ReachableHighVulnerabilityCount     int
+	ReachableKnownExploitedCount        int
+	DirectReachableVulnerabilityCount   int
+	SecretCount                         int
+	MisconfigurationCount               int
+	IaCArtifactCount                    int
+	MalwareCount                        int
+	TechnologyCount                     int
+	FindingCount                        int64
+	OSName                              string
+	OSVersion                           string
+	OSArchitecture                      string
+	SBOMRef                             string
+	Risk                                graph.RiskLevel
 }
 
 // MaterializeRunsIntoGraph writes successful workload scan runs into the graph.
@@ -202,7 +215,7 @@ func materializeOneRun(g *graph.Graph, target *graph.Node, run RunRecord, validT
 		return result
 	}
 	validFrom := runValidFrom(run, seenAt)
-	summary, findings, secrets, malware, packages, packageDeps, technologies, vulns, relations := summarizeRun(run)
+	summary, findings, secrets, malware, packages, packageDeps, technologies, vulns, relations, vulnUsage := summarizeRun(run)
 	sourceEventID := fmt.Sprintf("workload_scan:%s", firstNonEmpty(strings.TrimSpace(run.ID), syntheticRunKey(run)))
 	writeMeta := graph.NormalizeWriteMetadata(
 		seenAt,
@@ -229,35 +242,40 @@ func materializeOneRun(g *graph.Graph, target *graph.Node, run RunRecord, validT
 		Region:   target.Region,
 		Risk:     summary.Risk,
 		Properties: map[string]any{
-			"scan_id":                         firstNonEmpty(strings.TrimSpace(run.ID), syntheticRunKey(run)),
-			"target_id":                       target.ID,
-			"target_kind":                     string(target.Kind),
-			"provider":                        string(run.Provider),
-			"status":                          string(run.Status),
-			"stage":                           string(run.Stage),
-			"submitted_at":                    formatTime(run.SubmittedAt),
-			"started_at":                      formatTimePtr(run.StartedAt),
-			"completed_at":                    formatTimePtr(run.CompletedAt),
-			"os_name":                         summary.OSName,
-			"os_version":                      summary.OSVersion,
-			"os_architecture":                 summary.OSArchitecture,
-			"package_count":                   summary.PackageCount,
-			"vulnerability_count":             summary.VulnerabilityCount,
-			"critical_vulnerability_count":    summary.CriticalVulnerabilityCount,
-			"high_vulnerability_count":        summary.HighVulnerabilityCount,
-			"medium_vulnerability_count":      summary.MediumVulnerabilityCount,
-			"low_vulnerability_count":         summary.LowVulnerabilityCount,
-			"unknown_vulnerability_count":     summary.UnknownVulnerabilityCount,
-			"known_exploited_count":           summary.KnownExploitedCount,
-			"exploitable_vulnerability_count": summary.ExploitableCount,
-			"fixable_vulnerability_count":     summary.FixableCount,
-			"secret_count":                    summary.SecretCount,
-			"misconfiguration_count":          summary.MisconfigurationCount,
-			"iac_artifact_count":              summary.IaCArtifactCount,
-			"malware_count":                   summary.MalwareCount,
-			"technology_count":                summary.TechnologyCount,
-			"finding_count":                   summary.FindingCount,
-			"sbom_ref":                        summary.SBOMRef,
+			"scan_id":                                firstNonEmpty(strings.TrimSpace(run.ID), syntheticRunKey(run)),
+			"target_id":                              target.ID,
+			"target_kind":                            string(target.Kind),
+			"provider":                               string(run.Provider),
+			"status":                                 string(run.Status),
+			"stage":                                  string(run.Stage),
+			"submitted_at":                           formatTime(run.SubmittedAt),
+			"started_at":                             formatTimePtr(run.StartedAt),
+			"completed_at":                           formatTimePtr(run.CompletedAt),
+			"os_name":                                summary.OSName,
+			"os_version":                             summary.OSVersion,
+			"os_architecture":                        summary.OSArchitecture,
+			"package_count":                          summary.PackageCount,
+			"vulnerability_count":                    summary.VulnerabilityCount,
+			"critical_vulnerability_count":           summary.CriticalVulnerabilityCount,
+			"high_vulnerability_count":               summary.HighVulnerabilityCount,
+			"medium_vulnerability_count":             summary.MediumVulnerabilityCount,
+			"low_vulnerability_count":                summary.LowVulnerabilityCount,
+			"unknown_vulnerability_count":            summary.UnknownVulnerabilityCount,
+			"reachable_vulnerability_count":          summary.ReachableVulnerabilityCount,
+			"reachable_critical_vulnerability_count": summary.ReachableCriticalVulnerabilityCount,
+			"reachable_high_vulnerability_count":     summary.ReachableHighVulnerabilityCount,
+			"reachable_known_exploited_count":        summary.ReachableKnownExploitedCount,
+			"direct_reachable_vulnerability_count":   summary.DirectReachableVulnerabilityCount,
+			"known_exploited_count":                  summary.KnownExploitedCount,
+			"exploitable_vulnerability_count":        summary.ExploitableCount,
+			"fixable_vulnerability_count":            summary.FixableCount,
+			"secret_count":                           summary.SecretCount,
+			"misconfiguration_count":                 summary.MisconfigurationCount,
+			"iac_artifact_count":                     summary.IaCArtifactCount,
+			"malware_count":                          summary.MalwareCount,
+			"technology_count":                       summary.TechnologyCount,
+			"finding_count":                          summary.FindingCount,
+			"sbom_ref":                               summary.SBOMRef,
 		},
 	}
 	applyPriorityProperties(scanNode.Properties, run.Priority)
@@ -401,7 +419,7 @@ func materializeOneRun(g *graph.Graph, target *graph.Node, run RunRecord, validT
 			Target:     vulnNode.ID,
 			Kind:       graph.EdgeKindFoundVuln,
 			Effect:     graph.EdgeEffectAllow,
-			Properties: cloneWorkloadAnyMap(writeMeta.PropertyMap()),
+			Properties: applyVulnerabilityUsageSummaryProperties(cloneWorkloadAnyMap(writeMeta.PropertyMap()), vulnUsage[vulnerabilityNodeID(vulnAgg.record)]),
 			Risk:       vulnNode.Risk,
 		}) {
 			result.ScanVulnEdges++
@@ -417,7 +435,7 @@ func materializeOneRun(g *graph.Graph, target *graph.Node, run RunRecord, validT
 			Target: vulnID,
 			Kind:   graph.EdgeKindAffectedBy,
 			Effect: graph.EdgeEffectAllow,
-			Properties: map[string]any{
+			Properties: applyPackageVulnerabilityPriorityProperties(map[string]any{
 				"package_name":      relation.pkg.Name,
 				"installed_version": relation.pkg.Version,
 				"fixed_version":     strings.TrimSpace(relation.vuln.FixedVersion),
@@ -429,7 +447,7 @@ func materializeOneRun(g *graph.Graph, target *graph.Node, run RunRecord, validT
 				"recorded_at":       seenAt.UTC().Format(time.RFC3339),
 				"transaction_from":  seenAt.UTC().Format(time.RFC3339),
 				"confidence":        1.0,
-			},
+			}, relation.pkg),
 			Risk: relation.risk,
 		}) {
 			result.PackageVulnEdges++
@@ -599,7 +617,7 @@ func resolveTargetNode(g *graph.Graph, run RunRecord) (*graph.Node, bool) {
 	return nil, false
 }
 
-func summarizeRun(run RunRecord) (scanSummary, map[string]configAggregate, map[string]secretAggregate, map[string]malwareAggregate, map[string]packageAggregate, map[string]packageDependencyAggregate, map[string]technologyAggregate, map[string]vulnerabilityAggregate, map[string]packageVulnerabilityAggregate) {
+func summarizeRun(run RunRecord) (scanSummary, map[string]configAggregate, map[string]secretAggregate, map[string]malwareAggregate, map[string]packageAggregate, map[string]packageDependencyAggregate, map[string]technologyAggregate, map[string]vulnerabilityAggregate, map[string]packageVulnerabilityAggregate, map[string]vulnerabilityUsageContext) {
 	summary := scanSummary{
 		FindingCount: run.Summary.Findings,
 		Risk:         graph.RiskNone,
@@ -612,6 +630,7 @@ func summarizeRun(run RunRecord) (scanSummary, map[string]configAggregate, map[s
 	technologies := make(map[string]technologyAggregate)
 	vulns := make(map[string]vulnerabilityAggregate)
 	relations := make(map[string]packageVulnerabilityAggregate)
+	vulnUsage := make(map[string]vulnerabilityUsageContext)
 	iacArtifacts := make(map[string]filesystemanalyzer.IaCArtifact)
 
 	for _, volume := range run.Volumes {
@@ -724,6 +743,9 @@ func summarizeRun(run RunRecord) (scanSummary, map[string]configAggregate, map[s
 				if !strings.EqualFold(strings.TrimSpace(pkg.Name), strings.TrimSpace(vuln.Package)) {
 					continue
 				}
+				ctx := vulnUsage[id]
+				ctx.observePackage(pkg)
+				vulnUsage[id] = ctx
 				key := packageVulnerabilityKey(pkg, vuln)
 				if _, exists := relations[key]; !exists {
 					relations[key] = packageVulnerabilityAggregate{
@@ -741,11 +763,18 @@ func summarizeRun(run RunRecord) (scanSummary, map[string]configAggregate, map[s
 	summary.TechnologyCount = len(technologies)
 	summary.VulnerabilityCount = len(vulns)
 	for _, vulnAgg := range vulns {
+		ctx := vulnUsage[vulnerabilityNodeID(vulnAgg.record)]
 		switch normalizeSeverity(vulnAgg.record.Severity) {
 		case "critical":
 			summary.CriticalVulnerabilityCount++
+			if ctx.hasBestPackage && ctx.bestPackage.Reachable {
+				summary.ReachableCriticalVulnerabilityCount++
+			}
 		case "high":
 			summary.HighVulnerabilityCount++
+			if ctx.hasBestPackage && ctx.bestPackage.Reachable {
+				summary.ReachableHighVulnerabilityCount++
+			}
 		case "medium":
 			summary.MediumVulnerabilityCount++
 		case "low":
@@ -755,6 +784,9 @@ func summarizeRun(run RunRecord) (scanSummary, map[string]configAggregate, map[s
 		}
 		if vulnAgg.record.InKEV {
 			summary.KnownExploitedCount++
+			if ctx.hasBestPackage && ctx.bestPackage.Reachable {
+				summary.ReachableKnownExploitedCount++
+			}
 		}
 		if vulnAgg.record.Exploitable {
 			summary.ExploitableCount++
@@ -762,9 +794,15 @@ func summarizeRun(run RunRecord) (scanSummary, map[string]configAggregate, map[s
 		if strings.TrimSpace(vulnAgg.record.FixedVersion) != "" {
 			summary.FixableCount++
 		}
+		if ctx.hasBestPackage && ctx.bestPackage.Reachable {
+			summary.ReachableVulnerabilityCount++
+			if ctx.bestPackage.DirectDependency {
+				summary.DirectReachableVulnerabilityCount++
+			}
+		}
 	}
 	summary.Risk = maxRiskLevel(summary.Risk, summaryRisk(summary))
-	return summary, findings, secrets, malware, packages, packageDeps, technologies, vulns, relations
+	return summary, findings, secrets, malware, packages, packageDeps, technologies, vulns, relations, vulnUsage
 }
 
 func packageFromSBOMComponent(component filesystemanalyzer.SBOMComponent) filesystemanalyzer.PackageRecord {
@@ -1203,19 +1241,113 @@ func severityToRisk(severity string, knownExploited bool) graph.RiskLevel {
 }
 
 func summaryRisk(summary scanSummary) graph.RiskLevel {
-	if summary.KnownExploitedCount > 0 || summary.CriticalVulnerabilityCount > 0 {
+	if summary.ReachableKnownExploitedCount > 0 || summary.ReachableCriticalVulnerabilityCount > 0 {
 		return graph.RiskCritical
 	}
-	if summary.HighVulnerabilityCount > 0 {
+	if summary.KnownExploitedCount > 0 || summary.CriticalVulnerabilityCount > 0 || summary.ReachableHighVulnerabilityCount > 0 {
 		return graph.RiskHigh
 	}
-	if summary.MediumVulnerabilityCount > 0 {
+	if summary.HighVulnerabilityCount > 0 || summary.MediumVulnerabilityCount > 0 || summary.ReachableVulnerabilityCount > 0 {
 		return graph.RiskMedium
 	}
-	if summary.LowVulnerabilityCount > 0 {
+	if summary.LowVulnerabilityCount > 0 || summary.VulnerabilityCount > 0 {
 		return graph.RiskLow
 	}
 	return graph.RiskNone
+}
+
+func (ctx *vulnerabilityUsageContext) observePackage(pkg filesystemanalyzer.PackageRecord) {
+	key := packageNodeID(pkg)
+	if key == "" {
+		return
+	}
+	if ctx.affectedPackageKeys == nil {
+		ctx.affectedPackageKeys = make(map[string]struct{})
+	}
+	if _, exists := ctx.affectedPackageKeys[key]; exists {
+		return
+	}
+	ctx.affectedPackageKeys[key] = struct{}{}
+	if !ctx.hasBestPackage || packageVulnerabilityPriorityBetter(pkg, ctx.bestPackage) {
+		ctx.bestPackage = pkg
+		ctx.hasBestPackage = true
+	}
+	if pkg.Reachable {
+		if ctx.reachablePackageKeys == nil {
+			ctx.reachablePackageKeys = make(map[string]struct{})
+		}
+		ctx.reachablePackageKeys[key] = struct{}{}
+		if pkg.DirectDependency {
+			if ctx.directReachablePackageKeys == nil {
+				ctx.directReachablePackageKeys = make(map[string]struct{})
+			}
+			ctx.directReachablePackageKeys[key] = struct{}{}
+		}
+	}
+}
+
+func packageVulnerabilityPriorityBetter(left, right filesystemanalyzer.PackageRecord) bool {
+	if left.Reachable != right.Reachable {
+		return left.Reachable
+	}
+	if left.DirectDependency != right.DirectDependency {
+		return left.DirectDependency
+	}
+	leftDepth := packageVulnerabilityPriorityDepth(left.DependencyDepth)
+	rightDepth := packageVulnerabilityPriorityDepth(right.DependencyDepth)
+	if leftDepth != rightDepth {
+		return leftDepth < rightDepth
+	}
+	if left.ImportFileCount != right.ImportFileCount {
+		return left.ImportFileCount > right.ImportFileCount
+	}
+	return packageNodeID(left) < packageNodeID(right)
+}
+
+func packageVulnerabilityPriorityDepth(depth int) int {
+	if depth <= 0 {
+		return int(^uint(0) >> 1)
+	}
+	return depth
+}
+
+func packageVulnerabilityPriorityHint(pkg filesystemanalyzer.PackageRecord) string {
+	switch {
+	case pkg.Reachable && pkg.DirectDependency:
+		return "reachable_direct"
+	case pkg.Reachable:
+		return "reachable_transitive"
+	case pkg.DirectDependency:
+		return "unreachable_direct"
+	default:
+		return "unreachable_transitive"
+	}
+}
+
+func applyPackageVulnerabilityPriorityProperties(properties map[string]any, pkg filesystemanalyzer.PackageRecord) map[string]any {
+	if properties == nil {
+		properties = make(map[string]any)
+	}
+	properties["direct_dependency"] = pkg.DirectDependency
+	properties["reachable"] = pkg.Reachable
+	properties["dependency_depth"] = pkg.DependencyDepth
+	properties["import_file_count"] = pkg.ImportFileCount
+	properties["priority_hint"] = packageVulnerabilityPriorityHint(pkg)
+	return properties
+}
+
+func applyVulnerabilityUsageSummaryProperties(properties map[string]any, ctx vulnerabilityUsageContext) map[string]any {
+	if properties == nil {
+		properties = make(map[string]any)
+	}
+	if !ctx.hasBestPackage {
+		return properties
+	}
+	properties = applyPackageVulnerabilityPriorityProperties(properties, ctx.bestPackage)
+	properties["affected_package_count"] = len(ctx.affectedPackageKeys)
+	properties["reachable_package_count"] = len(ctx.reachablePackageKeys)
+	properties["direct_reachable_package_count"] = len(ctx.directReachablePackageKeys)
+	return properties
 }
 
 func addEdgeIfMissing(g *graph.Graph, edge *graph.Edge) bool {

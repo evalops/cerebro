@@ -5,6 +5,23 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 111 - Vulnerability Reachability Prioritization on Workload Scans (2026-03-15)
+
+### Review findings
+- [x] Gap: `#234` added dependency depth and reachability to package usage, but vulnerability materialization still treated reachable and unreachable critical vulnerabilities the same way on scan nodes and workload-security facets.
+- [x] Gap: scan-to-vulnerability and package-to-vulnerability edges did not carry any package-context prioritization hints, so downstream ranking still had to infer urgency from flat severity alone.
+- [x] Gap: the right fix is to aggregate package context per vulnerability on the scan edge and summary counts, not to push workload-specific urgency onto canonical package or vulnerability nodes.
+
+### Execution plan
+- [x] Add TDD coverage for:
+  - [x] prioritized vulnerability edge properties derived from package reachability/directness
+  - [x] downranking unreachable critical vulnerabilities on workload scan risk
+  - [x] workload-security prioritization preferring reachable vulnerability counts
+- [x] Aggregate best package context per vulnerability during workload graph materialization.
+- [x] Emit reachability/directness hints on `workload_scan --found_vuln--> vulnerability` and `package --affected_by--> vulnerability` edges.
+- [x] Add scan-level reachable vulnerability summary counts and use them in workload-security prioritization.
+- [x] Rerun focused workload/graph tests, lint, and ontology doc generation.
+
 ## Deep Review Cycle 110 - Lockfile-Owned npm Package Deduplication (2026-03-15)
 
 ### Review findings

@@ -469,6 +469,186 @@ func TestMaterializeRunsIntoGraphDedupesVulnerabilitiesAcrossVolumes(t *testing.
 	}
 }
 
+func TestMaterializeRunsIntoGraphCarriesVulnerabilityReachabilityPriority(t *testing.T) {
+	now := time.Date(2026, 3, 12, 18, 0, 0, 0, time.UTC)
+	g := graph.New()
+	g.AddNode(&graph.Node{
+		ID:       "arn:aws:ec2:us-east-1:123456789012:instance/i-abc123",
+		Kind:     graph.NodeKindInstance,
+		Name:     "i-abc123",
+		Provider: "aws",
+		Account:  "123456789012",
+		Region:   "us-east-1",
+	})
+	g.BuildIndex()
+
+	reachableDirect := filesystemanalyzer.PackageRecord{
+		Ecosystem:        "npm",
+		Manager:          "npm",
+		Name:             "express",
+		Version:          "4.18.2",
+		PURL:             "pkg:npm/express@4.18.2",
+		Location:         "srv/app/package-lock.json",
+		DirectDependency: true,
+		Reachable:        true,
+		DependencyDepth:  1,
+		ImportFileCount:  2,
+	}
+	unreachableDirect := filesystemanalyzer.PackageRecord{
+		Ecosystem:        "npm",
+		Manager:          "npm",
+		Name:             "lodash",
+		Version:          "4.17.21",
+		PURL:             "pkg:npm/lodash@4.17.21",
+		Location:         "srv/app/package-lock.json",
+		DirectDependency: true,
+		Reachable:        false,
+		DependencyDepth:  1,
+		ImportFileCount:  0,
+	}
+	reachableVuln := scanner.ImageVulnerability{
+		CVE:              "CVE-2026-1000",
+		Severity:         "CRITICAL",
+		Package:          "express",
+		InstalledVersion: "4.18.2",
+		FixedVersion:     "4.18.3",
+		Exploitable:      true,
+		InKEV:            true,
+	}
+	unreachableVuln := scanner.ImageVulnerability{
+		CVE:              "CVE-2026-2000",
+		Severity:         "CRITICAL",
+		Package:          "lodash",
+		InstalledVersion: "4.17.21",
+		FixedVersion:     "4.17.22",
+	}
+
+	run := buildGraphMaterializationTestRun("workload_scan:run-vuln-priority", now.Add(-2*time.Hour), 0)
+	run.Volumes[0].Analysis.Catalog.Packages = []filesystemanalyzer.PackageRecord{reachableDirect, unreachableDirect}
+	run.Volumes[0].Analysis.Catalog.Vulnerabilities = []scanner.ImageVulnerability{reachableVuln, unreachableVuln}
+	run.Summary.Findings = 2
+	run.Volumes[0].Analysis.FindingCount = 2
+
+	MaterializeRunsIntoGraph(g, []RunRecord{run}, now)
+
+	scanNode, ok := g.GetNode(run.ID)
+	if !ok {
+		t.Fatalf("expected workload scan node %q", run.ID)
+	}
+	if got := graphValueInt(scanNode.Properties["reachable_vulnerability_count"]); got != 1 {
+		t.Fatalf("expected reachable_vulnerability_count=1, got %#v", scanNode.Properties)
+	}
+	if got := graphValueInt(scanNode.Properties["reachable_critical_vulnerability_count"]); got != 1 {
+		t.Fatalf("expected reachable_critical_vulnerability_count=1, got %#v", scanNode.Properties)
+	}
+	if got := graphValueInt(scanNode.Properties["reachable_known_exploited_count"]); got != 1 {
+		t.Fatalf("expected reachable_known_exploited_count=1, got %#v", scanNode.Properties)
+	}
+	if got := graphValueInt(scanNode.Properties["direct_reachable_vulnerability_count"]); got != 1 {
+		t.Fatalf("expected direct_reachable_vulnerability_count=1, got %#v", scanNode.Properties)
+	}
+
+	reachableScanEdge := findOutEdge(g, run.ID, graph.EdgeKindFoundVuln, vulnerabilityNodeID(reachableVuln))
+	if reachableScanEdge == nil {
+		t.Fatalf("expected scan -> reachable vulnerability edge")
+	}
+	if got := graphValueBool(reachableScanEdge.Properties["reachable"]); !got {
+		t.Fatalf("expected reachable scan vulnerability edge, got %#v", reachableScanEdge.Properties)
+	}
+	if got := graphValueBool(reachableScanEdge.Properties["direct_dependency"]); !got {
+		t.Fatalf("expected direct_dependency=true on reachable scan vulnerability edge, got %#v", reachableScanEdge.Properties)
+	}
+	if got := graphValueInt(reachableScanEdge.Properties["dependency_depth"]); got != 1 {
+		t.Fatalf("expected dependency_depth=1 on reachable scan vulnerability edge, got %#v", reachableScanEdge.Properties)
+	}
+	if got := graphValueInt(reachableScanEdge.Properties["import_file_count"]); got != 2 {
+		t.Fatalf("expected import_file_count=2 on reachable scan vulnerability edge, got %#v", reachableScanEdge.Properties)
+	}
+	if got := graphValueInt(reachableScanEdge.Properties["affected_package_count"]); got != 1 {
+		t.Fatalf("expected affected_package_count=1 on reachable scan vulnerability edge, got %#v", reachableScanEdge.Properties)
+	}
+	if got := graphValueInt(reachableScanEdge.Properties["reachable_package_count"]); got != 1 {
+		t.Fatalf("expected reachable_package_count=1 on reachable scan vulnerability edge, got %#v", reachableScanEdge.Properties)
+	}
+	if got := graphValueString(reachableScanEdge.Properties["priority_hint"]); got != "reachable_direct" {
+		t.Fatalf("expected reachable_direct priority_hint, got %#v", reachableScanEdge.Properties)
+	}
+
+	reachablePkgEdge := findOutEdge(g, packageNodeID(reachableDirect), graph.EdgeKindAffectedBy, vulnerabilityNodeID(reachableVuln))
+	if reachablePkgEdge == nil {
+		t.Fatalf("expected package -> reachable vulnerability edge")
+	}
+	if got := graphValueBool(reachablePkgEdge.Properties["reachable"]); !got {
+		t.Fatalf("expected reachable=true on package vulnerability edge, got %#v", reachablePkgEdge.Properties)
+	}
+	if got := graphValueBool(reachablePkgEdge.Properties["direct_dependency"]); !got {
+		t.Fatalf("expected direct_dependency=true on package vulnerability edge, got %#v", reachablePkgEdge.Properties)
+	}
+	if got := graphValueString(reachablePkgEdge.Properties["priority_hint"]); got != "reachable_direct" {
+		t.Fatalf("expected reachable_direct priority_hint on package vulnerability edge, got %#v", reachablePkgEdge.Properties)
+	}
+
+	unreachableScanEdge := findOutEdge(g, run.ID, graph.EdgeKindFoundVuln, vulnerabilityNodeID(unreachableVuln))
+	if unreachableScanEdge == nil {
+		t.Fatalf("expected scan -> unreachable vulnerability edge")
+	}
+	if got := graphValueBool(unreachableScanEdge.Properties["reachable"]); got {
+		t.Fatalf("expected unreachable scan vulnerability edge, got %#v", unreachableScanEdge.Properties)
+	}
+	if got := graphValueString(unreachableScanEdge.Properties["priority_hint"]); got != "unreachable_direct" {
+		t.Fatalf("expected unreachable_direct priority_hint, got %#v", unreachableScanEdge.Properties)
+	}
+}
+
+func TestMaterializeRunsIntoGraphDownranksUnreachableCriticalVulnerabilities(t *testing.T) {
+	now := time.Date(2026, 3, 12, 18, 0, 0, 0, time.UTC)
+	g := graph.New()
+	g.AddNode(&graph.Node{
+		ID:       "arn:aws:ec2:us-east-1:123456789012:instance/i-abc123",
+		Kind:     graph.NodeKindInstance,
+		Name:     "i-abc123",
+		Provider: "aws",
+		Account:  "123456789012",
+		Region:   "us-east-1",
+	})
+	g.BuildIndex()
+
+	run := buildGraphMaterializationTestRun("workload_scan:run-unreachable-critical", now.Add(-2*time.Hour), 0)
+	run.Volumes[0].Analysis.Catalog.Packages = []filesystemanalyzer.PackageRecord{{
+		Ecosystem:        "npm",
+		Manager:          "npm",
+		Name:             "lodash",
+		Version:          "4.17.21",
+		PURL:             "pkg:npm/lodash@4.17.21",
+		Location:         "srv/app/package-lock.json",
+		DirectDependency: true,
+		Reachable:        false,
+		DependencyDepth:  1,
+	}}
+	run.Volumes[0].Analysis.Catalog.Vulnerabilities = []scanner.ImageVulnerability{{
+		CVE:              "CVE-2026-3000",
+		Severity:         "CRITICAL",
+		Package:          "lodash",
+		InstalledVersion: "4.17.21",
+		FixedVersion:     "4.17.22",
+	}}
+	run.Summary.Findings = 1
+	run.Volumes[0].Analysis.FindingCount = 1
+
+	MaterializeRunsIntoGraph(g, []RunRecord{run}, now)
+
+	scanNode, ok := g.GetNode(run.ID)
+	if !ok {
+		t.Fatalf("expected workload scan node %q", run.ID)
+	}
+	if scanNode.Risk != graph.RiskHigh {
+		t.Fatalf("expected unreachable critical vulnerability to downrank scan risk to high, got %#v", scanNode)
+	}
+	if got := graphValueInt(scanNode.Properties["reachable_vulnerability_count"]); got != 0 {
+		t.Fatalf("expected reachable_vulnerability_count=0, got %#v", scanNode.Properties)
+	}
+}
+
 func TestMaterializeRunsIntoGraphAddsCredentialPivotEdges(t *testing.T) {
 	now := time.Date(2026, 3, 12, 18, 0, 0, 0, time.UTC)
 	g := graph.New()
