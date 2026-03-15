@@ -328,6 +328,37 @@ func TestRuntimeIngestSessionRecordObservationUsesProcessingTimeForRunUpdates(t 
 	}
 }
 
+func TestEnrichRuntimeObservationPreservesExistingClusterAndNodeMetadata(t *testing.T) {
+	observation := &runtime.RuntimeObservation{
+		Cluster:  "event-cluster",
+		NodeName: "event-node",
+		Metadata: map[string]any{
+			"cluster":   "event-cluster",
+			"node_name": "event-node",
+		},
+	}
+
+	enriched := enrichRuntimeObservation(observation, "payload-cluster", "payload-node", "1.4.2")
+	if enriched == nil {
+		t.Fatal("expected enriched observation")
+	}
+	if enriched.Cluster != "event-cluster" {
+		t.Fatalf("cluster = %q, want %q", enriched.Cluster, "event-cluster")
+	}
+	if enriched.NodeName != "event-node" {
+		t.Fatalf("node_name = %q, want %q", enriched.NodeName, "event-node")
+	}
+	if got := enriched.Metadata["cluster"]; got != "event-cluster" {
+		t.Fatalf("metadata cluster = %#v, want %q", got, "event-cluster")
+	}
+	if got := enriched.Metadata["node_name"]; got != "event-node" {
+		t.Fatalf("metadata node_name = %#v, want %q", got, "event-node")
+	}
+	if got := enriched.Metadata["agent_version"]; got != "1.4.2" {
+		t.Fatalf("metadata agent_version = %#v, want %q", got, "1.4.2")
+	}
+}
+
 func TestRuntimeIngestSessionCompleteFailsWhenReloadLosesCheckpointedRun(t *testing.T) {
 	store := &nilReloadRuntimeIngestStore{}
 	session := &runtimeIngestSession{

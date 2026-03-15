@@ -240,7 +240,7 @@ func TestObservationFromResponseExecution(t *testing.T) {
 		Output:    "blocked 203.0.113.10",
 	}
 
-	observation := ObservationFromResponseExecution(execution, action)
+	observation := observationFromResponseExecution(execution, action)
 	if observation == nil {
 		t.Fatal("expected observation")
 	}

@@ -223,11 +223,11 @@ func enrichRuntimeObservation(observation *runtime.RuntimeObservation, cluster, 
 	if observation.NodeName == "" && node != "" {
 		observation.NodeName = node
 	}
-	if cluster != "" {
-		observation.Metadata["cluster"] = cluster
+	if observation.Cluster != "" {
+		observation.Metadata["cluster"] = observation.Cluster
 	}
-	if node != "" {
-		observation.Metadata["node_name"] = node
+	if observation.NodeName != "" {
+		observation.Metadata["node_name"] = observation.NodeName
 	}
 	if agentVersion != "" {
 		observation.Metadata["agent_version"] = agentVersion

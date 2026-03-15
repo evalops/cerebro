@@ -187,7 +187,7 @@ func (o *RuntimeObservation) AsRuntimeEvent() *RuntimeEvent {
 	return event
 }
 
-func ObservationFromResponseExecution(execution *ResponseExecution, action *ActionExecution) *RuntimeObservation {
+func observationFromResponseExecution(execution *ResponseExecution, action *ActionExecution) *RuntimeObservation {
 	if execution == nil || action == nil {
 		return nil
 	}
