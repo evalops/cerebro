@@ -349,6 +349,51 @@ func main() {
 	}
 }
 
+func TestAnalyzerUsesLongestGoModulePrefixForReachability(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "workspace", "go.mod"), `module example.com/demo
+
+go 1.22
+
+require (
+	github.com/foo v1.0.0
+	github.com/foo/bar v1.2.3
+)
+`)
+	mustWriteFile(t, filepath.Join(root, "workspace", "go.sum"), `github.com/foo v1.0.0
+github.com/foo/bar v1.2.3
+`)
+	mustWriteFile(t, filepath.Join(root, "workspace", "main.go"), `package main
+
+import "github.com/foo/bar/baz"
+
+func main() {
+	_ = baz.Do
+}
+`)
+
+	report, err := New(Options{}).Analyze(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+
+	short := findPackageRecord(report.Packages, "golang", "github.com/foo", "v1.0.0")
+	if short == nil {
+		t.Fatalf("expected short-prefix module in %#v", report.Packages)
+	}
+	if short.Reachable || short.ImportFileCount != 0 {
+		t.Fatalf("expected shorter module prefix to remain unreachable, got %#v", *short)
+	}
+
+	long := findPackageRecord(report.Packages, "golang", "github.com/foo/bar", "v1.2.3")
+	if long == nil {
+		t.Fatalf("expected longest-prefix module in %#v", report.Packages)
+	}
+	if !long.Reachable || long.ImportFileCount != 1 {
+		t.Fatalf("expected longest-prefix module to be reachable, got %#v", *long)
+	}
+}
+
 func TestAnalyzerScopesNPMReachabilityToNearestManifest(t *testing.T) {
 	root := t.TempDir()
 	mustWriteFile(t, filepath.Join(root, "workspace", "package-lock.json"), `{

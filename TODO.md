@@ -36,6 +36,18 @@ Status: executed end-to-end via PR workflow
 - [x] Replace the redundant `maxInt` helpers with builtin `max`.
 - [x] Rerun focused tests/lint and keep the PR review loop on the updated head.
 
+## Deep Review Cycle 109 - Go Longest-Prefix Reachability Matching (2026-03-15)
+
+### Review findings
+- [x] Gap: Go import reachability was marking every matching module-path prefix reachable instead of only the longest module prefix.
+- [x] Gap: a repo that requires both `github.com/foo` and `github.com/foo/bar` would incorrectly mark both modules reachable for an import like `github.com/foo/bar/baz`.
+- [x] Gap: that overstates reachable vulnerable surface for the shorter-prefix module and weakens the prioritization signal added in `#234`.
+
+### Execution plan
+- [x] Add TDD coverage for overlapping Go module prefixes.
+- [x] Change Go import matching to keep only the longest matching module prefix while preserving multiple keys for the same exact module path.
+- [x] Rerun focused filesystem analyzer tests plus changed-package lint/test validation.
+
 ## Deep Review Cycle 106 - Dependency Parser Cleanup After Review Pass (2026-03-14)
 
 ### Review findings

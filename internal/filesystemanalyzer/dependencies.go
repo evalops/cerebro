@@ -585,12 +585,21 @@ func matchGoImportablePackageKeys(importableKeys map[string]map[string]struct{},
 	if importPath == "" {
 		return nil
 	}
+	longestPrefixLen := 0
 	matches := make(map[string]struct{})
 	for prefix, keys := range importableKeys {
 		if prefix == "" {
 			continue
 		}
 		if importPath != prefix && !strings.HasPrefix(importPath, prefix+"/") {
+			continue
+		}
+		prefixLen := len(prefix)
+		switch {
+		case prefixLen > longestPrefixLen:
+			clear(matches)
+			longestPrefixLen = prefixLen
+		case prefixLen < longestPrefixLen:
 			continue
 		}
 		for key := range keys {
