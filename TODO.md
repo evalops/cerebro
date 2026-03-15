@@ -5,6 +5,54 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 90 - Audit Mutation Batch Poison-Pill and Change-Type Normalization (2026-03-14)
+
+### Review findings
+- [x] Gap: issue `#276` still allowed a single semantically invalid audit mutation record inside a batch to fail `parseAuditMutationCloudEvent`, which bubbles back into the JetStream consumer and `Nak()`s the whole message.
+- [x] Gap: that creates a poison-pill loop for otherwise valid audit batches because the malformed record is retried forever and blocks the valid mutations that share the same message.
+- [x] Gap: the parser compared the raw `change_type` string against `"removed"` before normalization, so valid deletion aliases like `"deleted"` and `"delete"` could be rejected when `resource_id` was absent.
+- [x] Gap: the audit parser had no structured way to surface partial-drop behavior back to the handler for observability.
+
+### Execution plan
+- [x] Switch audit mutation parsing to best-effort batch handling:
+  - [x] skip malformed records instead of failing the whole message
+  - [x] preserve valid records from the same batch for CDC persistence
+- [x] Normalize audit mutation change types before `resource_id` validation so delete aliases map to `removed`.
+- [x] Return structured parse-drop metadata and log dropped-record counts/reasons from the audit handler.
+- [x] Add TDD coverage for:
+  - [x] mixed valid/invalid audit mutation batches persisting only the valid subset
+  - [x] delete-synonym normalization with missing `resource_id`
+
+## Deep Review Cycle 89 - Audit CDC Graph Ingestion Identity and Consumer Upgrade Correctness (2026-03-14)
+
+### Review findings
+- [x] Gap: issue `#276` was correctly trying to ingest cloud audit mutation events into CDC and then materialize them into the live graph, but the ID contract was not consistent end to end.
+- [x] Gap: audit mutation fallback `resource_id` selection did not match graph node ID selection for network assets, so persisted CDC removals could target a different identifier than the one used to create the node.
+- [x] Gap: the three network-asset CDC node cases bypassed the normal `event.ResourceID` path and built IDs directly from payload fields, which left add/remove behavior asymmetric when audit events carried a canonical top-level resource ID.
+- [x] Gap: Azure NSG public-ingress detection was still using string heuristics over serialized rule blobs, which is too fragile for structured rule arrays and misses plural-prefix wildcard cases.
+- [x] Gap: JetStream upgrade safety was incomplete for the new multi-subject audit ingestion path:
+  - [x] existing streams were not updated to include newly configured subjects
+  - [x] existing single-subject durable consumers could remain incompatible with multi-subject configs
+
+### Execution plan
+- [x] Unify audit CDC resource identity with graph identity:
+  - [x] export table-aware CDC resource-ID resolution from graph builders
+  - [x] route audit mutation fallback `resource_id` derivation through that shared resolver
+- [x] Make network-asset CDC node creation honor the resolved/event resource ID:
+  - [x] apply resolved IDs to AWS security-group CDC nodes
+  - [x] apply resolved IDs to GCP firewall CDC nodes
+  - [x] apply resolved IDs to Azure NSG CDC nodes
+- [x] Replace Azure NSG public-exposure string heuristics with structured rule parsing first, plus string fallback only for unstructured inputs.
+- [x] Harden JetStream consumer upgrade behavior for the new audit sources:
+  - [x] update existing streams to include missing configured subjects
+  - [x] delete/recreate incompatible durable consumers before multi-subject resubscribe
+  - [x] add end-to-end JetStream upgrade tests once `nats-server` is available locally
+- [x] Add TDD coverage for:
+  - [x] table-aware audit mutation resource IDs for AWS/GCP/Azure network assets
+  - [x] add/remove symmetry for network-asset CDC nodes
+  - [x] structured Azure NSG wildcard prefix lists
+  - [x] stream-subject and durable-consumer JetStream upgrade paths
+
 ## Deep Review Cycle 86 - Reuse Existing Terraform Subresource Addresses for Bucket Remediations (2026-03-14)
 
 ### Review findings
