@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/evalops/cerebro/internal/snowflake"
 	"github.com/evalops/cerebro/internal/warehouse"
 )
 
@@ -361,6 +362,75 @@ func TestAppendEntraOAuth2PermissionGrantRelationships(t *testing.T) {
 	}
 	if props["grant_type"] != "delegated_permission_consent" || props["client_id"] != "sp-client-1" {
 		t.Fatalf("unexpected consent relationship properties: %+v", props)
+	}
+}
+
+func TestExtractAzureRelationships_UsesStableOAuthGrantColumns(t *testing.T) {
+	t.Parallel()
+
+	origSchema := relationshipSchemaName
+	origBatch := relationshipQueryBatch
+	t.Cleanup(func() {
+		relationshipSchemaName = origSchema
+		relationshipQueryBatch = origBatch
+	})
+
+	relationshipSchemaName = func(_ warehouse.SyncWarehouse) string { return "RAW" }
+	relationshipQueryBatch = func(_ context.Context, _ warehouse.SyncWarehouse, _ string, _ ...interface{}) error {
+		return nil
+	}
+
+	var sawGrantQuery bool
+	sf := &warehouse.MemoryWarehouse{
+		SchemaValue: "RAW",
+		QueryFunc: func(_ context.Context, query string, args ...any) (*snowflake.QueryResult, error) {
+			if strings.Contains(query, "FROM INFORMATION_SCHEMA.COLUMNS") {
+				table := strings.ToUpper(args[0].(string))
+				if table != "ENTRA_OAUTH2_PERMISSION_GRANTS" {
+					return &snowflake.QueryResult{Rows: nil}, nil
+				}
+				return &snowflake.QueryResult{Rows: []map[string]any{
+					{"column_name": "ID"},
+					{"column_name": "CLIENT_ID"},
+					{"column_name": "CONSENT_TYPE"},
+					{"column_name": "PRINCIPAL_ID"},
+					{"column_name": "RESOURCE_ID"},
+					{"column_name": "SCOPE"},
+				}}, nil
+			}
+			if strings.Contains(query, "FROM ENTRA_OAUTH2_PERMISSION_GRANTS") {
+				sawGrantQuery = true
+				if strings.Contains(query, "START_TIME") || strings.Contains(query, "EXPIRY_TIME") {
+					t.Fatalf("expected stable OAuth grant query to avoid removed timestamp columns, got %q", query)
+				}
+				return &snowflake.QueryResult{Rows: []map[string]any{{
+					"id":           "grant-1",
+					"client_id":    "sp-client-1",
+					"consent_type": "Principal",
+					"principal_id": "user-1",
+					"resource_id":  "sp-resource-1",
+					"scope":        "Mail.Read",
+				}}}, nil
+			}
+			return &snowflake.QueryResult{Rows: nil}, nil
+		},
+	}
+
+	rex := &RelationshipExtractor{
+		sf:          sf,
+		logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+		runSyncTime: time.Date(2026, 3, 15, 17, 0, 0, 0, time.UTC),
+	}
+
+	total, err := rex.extractAzureRelationships(context.Background())
+	if err != nil {
+		t.Fatalf("extractAzureRelationships returned error: %v", err)
+	}
+	if !sawGrantQuery {
+		t.Fatal("expected delegated OAuth grant query to be executed")
+	}
+	if total != 2 {
+		t.Fatalf("expected principal grant to persist two relationships, got %d", total)
 	}
 }
 

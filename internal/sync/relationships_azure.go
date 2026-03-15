@@ -560,7 +560,7 @@ func (r *RelationshipExtractor) extractAzureRelationships(ctx context.Context) (
 		rels = appendEntraAppRoleAssignmentRelationships(rels, result.Rows)
 	}
 
-	query = `SELECT ID, CLIENT_ID, CONSENT_TYPE, PRINCIPAL_ID, RESOURCE_ID, SCOPE, START_TIME, EXPIRY_TIME
+	query = `SELECT ID, CLIENT_ID, CONSENT_TYPE, PRINCIPAL_ID, RESOURCE_ID, SCOPE
 	         FROM ENTRA_OAUTH2_PERMISSION_GRANTS
 	         WHERE CLIENT_ID IS NOT NULL AND RESOURCE_ID IS NOT NULL`
 	if result, ok, err := r.queryRowsForTable(ctx, "ENTRA_OAUTH2_PERMISSION_GRANTS", query); err != nil {
