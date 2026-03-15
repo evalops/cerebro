@@ -102,10 +102,7 @@ func (b *Builder) ApplyChanges(ctx context.Context, since time.Time) (GraphMutat
 
 		switch normalizeCDCChangeType(event.ChangeType) {
 		case "removed":
-			nodeID := strings.TrimSpace(event.ResourceID)
-			if nodeID == "" {
-				nodeID = cdcNodeID(table, event.Payload, "")
-			}
+			nodeID := cdcNodeID(table, event.Payload, event.ResourceID)
 			if nodeID == "" {
 				continue
 			}
@@ -1037,8 +1034,14 @@ func cdcNodeID(table string, payload map[string]any, fallback string) string {
 			return id
 		}
 		return azureNetworkSecurityGroupNodeID(payload)
+	case "entra_directory_roles":
+		rawID := firstNonEmpty(strings.TrimSpace(fallback), queryRowString(payload, "id"), queryRowString(payload, "name"))
+		if rawID == "" {
+			return ""
+		}
+		return azureDirectoryRoleNodeID(rawID)
 	case "azure_graph_service_principals", "entra_service_principals", "azure_ad_service_principals",
-		"entra_users", "azure_ad_users", "entra_groups", "entra_directory_roles",
+		"entra_users", "azure_ad_users", "entra_groups",
 		"azure_compute_virtual_machines", "azure_aks_clusters",
 		"azure_storage_accounts", "azure_storage_containers", "azure_storage_blobs",
 		"azure_sql_servers", "azure_sql_databases",

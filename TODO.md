@@ -5,6 +5,20 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 94 - Entra Directory Role CDC Removal Parity (2026-03-14)
+
+### Review findings
+- [x] Gap: issue `#275` created Entra directory role nodes with the prefixed `azure_directory_role:` ID, but CDC removals still preferred the raw `resource_id`.
+- [x] Gap: delete events for `entra_directory_roles` therefore left stale role nodes in the graph even after the source record was removed.
+- [x] Gap: adding an `entra_directory_roles` branch to `cdcNodeID` alone was insufficient because the removal path bypassed `cdcNodeID` whenever `resource_id` was present.
+
+### Execution plan
+- [x] Add TDD coverage for:
+  - [x] `cdcNodeID` returning the prefixed directory-role ID
+  - [x] incremental CDC removal actually soft-deleting the prefixed directory-role node
+- [x] Normalize CDC removal IDs through `cdcNodeID(table, payload, resourceID)` instead of trusting the raw event ID first.
+- [x] Keep the table-specific `entra_directory_roles` ID normalization in `cdcNodeID` so adds and removes use the same node contract.
+
 ## Deep Review Cycle 93 - Azure Key Vault Key Lineage and Scope Cleanup Follow-through (2026-03-14)
 
 ### Review findings

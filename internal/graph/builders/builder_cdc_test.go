@@ -732,3 +732,46 @@ func TestCDCEventToNode_AzureKeyVaultKeyAddsVaultID(t *testing.T) {
 		t.Fatalf("expected vault_id %q, got %q", wantVaultID, got)
 	}
 }
+
+func TestCDCNodeID_EntraDirectoryRolesUsePrefixedID(t *testing.T) {
+	t.Parallel()
+
+	rawID := "62e90394-69f5-4237-9190-012177145e10"
+	if got := cdcNodeID("entra_directory_roles", nil, rawID); got != azureDirectoryRoleNodeID(rawID) {
+		t.Fatalf("expected prefixed Entra directory role id, got %q", got)
+	}
+}
+
+func TestBuilderApplyChanges_RemovesEntraDirectoryRoleNodes(t *testing.T) {
+	t.Parallel()
+
+	source := newCDCRoutingSource()
+	builder := NewBuilder(source, nil)
+	rawID := "62e90394-69f5-4237-9190-012177145e10"
+	nodeID := azureDirectoryRoleNodeID(rawID)
+	builder.Graph().AddNode(&Node{ID: nodeID, Kind: NodeKindRole, Provider: "azure", Name: "Global Administrator"})
+
+	since := time.Now().UTC().Add(-2 * time.Minute)
+	source.events = []map[string]any{{
+		"event_id":    "evt-entra-role-1",
+		"table_name":  "entra_directory_roles",
+		"resource_id": rawID,
+		"change_type": "removed",
+		"provider":    "azure",
+		"event_time":  since.Add(5 * time.Second),
+	}}
+
+	summary, err := builder.ApplyChanges(context.Background(), since)
+	if err != nil {
+		t.Fatalf("ApplyChanges failed: %v", err)
+	}
+	if summary.NodesRemoved != 1 {
+		t.Fatalf("expected 1 node removed, got %+v", summary)
+	}
+	if _, ok := builder.Graph().GetNode(nodeID); ok {
+		t.Fatalf("expected node %q to be removed", nodeID)
+	}
+	if deleted, ok := builder.Graph().GetNodeIncludingDeleted(nodeID); !ok || deleted.DeletedAt == nil {
+		t.Fatalf("expected node %q to be soft-deleted", nodeID)
+	}
+}
