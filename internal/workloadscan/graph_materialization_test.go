@@ -469,6 +469,80 @@ func TestMaterializeRunsIntoGraphDedupesVulnerabilitiesAcrossVolumes(t *testing.
 	}
 }
 
+func TestMaterializeRunsIntoGraphMergesVulnerabilityAliasesIntoCanonicalNode(t *testing.T) {
+	now := time.Date(2026, 3, 12, 18, 0, 0, 0, time.UTC)
+	g := graph.New()
+	g.AddNode(&graph.Node{
+		ID:       "arn:aws:ec2:us-east-1:123456789012:instance/i-abc123",
+		Kind:     graph.NodeKindInstance,
+		Name:     "i-abc123",
+		Provider: "aws",
+		Account:  "123456789012",
+		Region:   "us-east-1",
+	})
+	g.BuildIndex()
+
+	run := buildGraphMaterializationTestRun("workload_scan:run-vuln-alias-merge", now.Add(-2*time.Hour), 0)
+	run.Volumes[0].Analysis.Catalog.Packages = []filesystemanalyzer.PackageRecord{{
+		Ecosystem:        "npm",
+		Manager:          "npm",
+		Name:             "express",
+		Version:          "4.18.2",
+		PURL:             "pkg:npm/express@4.18.2",
+		Location:         "srv/app/package-lock.json",
+		DirectDependency: true,
+		Reachable:        true,
+		DependencyDepth:  1,
+		ImportFileCount:  1,
+	}}
+	ghsaOnly := scanner.ImageVulnerability{
+		ID:               "GHSA-1234-5678-9012",
+		Severity:         "HIGH",
+		Package:          "express",
+		InstalledVersion: "4.18.2",
+	}
+	withCVE := scanner.ImageVulnerability{
+		ID:               "GHSA-1234-5678-9012",
+		CVE:              "CVE-2026-3300",
+		Severity:         "CRITICAL",
+		Package:          "express",
+		InstalledVersion: "4.18.2",
+		FixedVersion:     "4.18.3",
+	}
+	run.Volumes[0].Analysis.Catalog.Vulnerabilities = []scanner.ImageVulnerability{ghsaOnly, withCVE}
+
+	MaterializeRunsIntoGraph(g, []RunRecord{run}, now)
+
+	scanNode, ok := g.GetNode(run.ID)
+	if !ok {
+		t.Fatalf("expected workload scan node %q", run.ID)
+	}
+	if got := graphValueInt(scanNode.Properties["vulnerability_count"]); got != 1 {
+		t.Fatalf("expected aliased vulnerabilities to merge, got %#v", scanNode.Properties)
+	}
+	if got := graphValueInt(scanNode.Properties["critical_vulnerability_count"]); got != 1 {
+		t.Fatalf("expected merged vulnerability severity to keep the highest rank, got %#v", scanNode.Properties)
+	}
+
+	if _, ok := g.GetNode(vulnerabilityNodeID(ghsaOnly)); ok {
+		t.Fatalf("expected GHSA-only vulnerability node to collapse into canonical CVE node")
+	}
+	vulnNode, ok := g.GetNode(vulnerabilityNodeID(withCVE))
+	if !ok {
+		t.Fatalf("expected canonical CVE vulnerability node")
+	}
+	if got := graphValueString(vulnNode.Properties["cve_id"]); got != "CVE-2026-3300" {
+		t.Fatalf("expected merged vulnerability node to preserve CVE identifier, got %#v", vulnNode.Properties)
+	}
+	scanEdge := findOutEdge(g, run.ID, graph.EdgeKindFoundVuln, vulnerabilityNodeID(withCVE))
+	if scanEdge == nil {
+		t.Fatalf("expected scan -> merged vulnerability edge")
+	}
+	if got := graphValueBool(scanEdge.Properties["reachable"]); !got {
+		t.Fatalf("expected merged vulnerability edge to preserve reachable package context, got %#v", scanEdge.Properties)
+	}
+}
+
 func TestMaterializeRunsIntoGraphCarriesVulnerabilityReachabilityPriority(t *testing.T) {
 	now := time.Date(2026, 3, 12, 18, 0, 0, 0, time.UTC)
 	g := graph.New()

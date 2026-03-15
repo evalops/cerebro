@@ -890,7 +890,7 @@ func workloadSecurityPrioritizedRisk(scanNode *Node, internetExposed bool, admin
 	if reachableCount > 0 || readInt(scanNode.Properties, "vulnerability_count") > 0 {
 		return RiskLow
 	}
-	return RiskLow
+	return RiskNone
 }
 
 func materializeBucketPublicAccessFacet(g *Graph, node *Node, validAt, recordedAt time.Time, def EntityFacetDefinition, claimIndex map[string][]ClaimRecord) (EntityFacetRecord, bool) {

@@ -131,6 +131,23 @@ func TestWorkloadSecurityPrioritizedRiskPrefersReachableVulnerabilityCounts(t *t
 	if got := workloadSecurityPrioritizedRisk(reachableLow, false, 0, 0, false); got != RiskLow {
 		t.Fatalf("expected reachable low vulnerability to remain low, got %q", got)
 	}
+
+	zeroVulns := &Node{Properties: map[string]any{
+		"vulnerability_count":                    0,
+		"critical_vulnerability_count":           0,
+		"high_vulnerability_count":               0,
+		"medium_vulnerability_count":             0,
+		"low_vulnerability_count":                0,
+		"known_exploited_count":                  0,
+		"reachable_vulnerability_count":          0,
+		"reachable_critical_vulnerability_count": 0,
+		"reachable_high_vulnerability_count":     0,
+		"reachable_known_exploited_count":        0,
+		"direct_reachable_vulnerability_count":   0,
+	}}
+	if got := workloadSecurityPrioritizedRisk(zeroVulns, false, 0, 0, false); got != RiskNone {
+		t.Fatalf("expected zero-vulnerability scan to remain none, got %q", got)
+	}
 }
 
 func addWorkloadScanFixture(g *Graph, scanID, targetID string, completedAt time.Time, validTo *time.Time, vulnerabilityCount, criticalCount, kevCount int) {

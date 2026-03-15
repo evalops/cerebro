@@ -83,9 +83,8 @@ type configAggregate struct {
 }
 
 type packageVulnerabilityAggregate struct {
-	pkg  filesystemanalyzer.PackageRecord
-	vuln scanner.ImageVulnerability
-	risk graph.RiskLevel
+	pkg     filesystemanalyzer.PackageRecord
+	vulnKey string
 }
 
 type scanSummary struct {
@@ -395,7 +394,7 @@ func materializeOneRun(g *graph.Graph, target *graph.Node, run RunRecord, validT
 		}
 	}
 
-	for _, vulnAgg := range vulns {
+	for vulnKey, vulnAgg := range vulns {
 		vulnMeta := graph.NormalizeWriteMetadata(
 			seenAt,
 			validFrom,
@@ -413,7 +412,7 @@ func materializeOneRun(g *graph.Graph, target *graph.Node, run RunRecord, validT
 		vulnNode := buildVulnerabilityNode(vulnAgg.record, target, vulnMeta)
 		g.AddNode(vulnNode)
 		result.VulnNodesUpserted++
-		usage := vulnUsage[vulnerabilityNodeID(vulnAgg.record)]
+		usage := vulnUsage[vulnKey]
 		if addEdgeIfMissing(g, &graph.Edge{
 			ID:         edgeID(scanNode.ID, vulnNode.ID, graph.EdgeKindFoundVuln),
 			Source:     scanNode.ID,
@@ -428,8 +427,13 @@ func materializeOneRun(g *graph.Graph, target *graph.Node, run RunRecord, validT
 	}
 
 	for _, relation := range relations {
+		vulnAgg, ok := vulns[relation.vulnKey]
+		if !ok {
+			continue
+		}
+		vuln := vulnAgg.record
 		pkgID := packageNodeID(relation.pkg)
-		vulnID := vulnerabilityNodeID(relation.vuln)
+		vulnID := vulnerabilityNodeID(vuln)
 		if addEdgeIfMissing(g, &graph.Edge{
 			ID:     packageVulnerabilityEdgeID(pkgID, vulnID),
 			Source: pkgID,
@@ -439,17 +443,17 @@ func materializeOneRun(g *graph.Graph, target *graph.Node, run RunRecord, validT
 			Properties: applyPackageVulnerabilityPriorityProperties(map[string]any{
 				"package_name":      relation.pkg.Name,
 				"installed_version": relation.pkg.Version,
-				"fixed_version":     strings.TrimSpace(relation.vuln.FixedVersion),
-				"severity":          normalizeSeverity(relation.vuln.Severity),
+				"fixed_version":     strings.TrimSpace(vuln.FixedVersion),
+				"severity":          normalizeSeverity(vuln.Severity),
 				"source_system":     graphMaterializationSourceSystem,
-				"source_event_id":   fmt.Sprintf("%s:package_vulnerability:%s", sourceEventID, packageVulnerabilityKey(relation.pkg, relation.vuln)),
+				"source_event_id":   fmt.Sprintf("%s:package_vulnerability:%s", sourceEventID, packageVulnerabilityKey(relation.pkg, vuln)),
 				"observed_at":       seenAt.UTC().Format(time.RFC3339),
 				"valid_from":        validFrom.UTC().Format(time.RFC3339),
 				"recorded_at":       seenAt.UTC().Format(time.RFC3339),
 				"transaction_from":  seenAt.UTC().Format(time.RFC3339),
 				"confidence":        1.0,
 			}, relation.pkg),
-			Risk: relation.risk,
+			Risk: prioritizePackageVulnerabilityRisk(vuln, relation.pkg),
 		}) {
 			result.PackageVulnEdges++
 		}
@@ -632,6 +636,7 @@ func summarizeRun(run RunRecord) (scanSummary, map[string]configAggregate, map[s
 	vulns := make(map[string]vulnerabilityAggregate)
 	relations := make(map[string]packageVulnerabilityAggregate)
 	vulnUsage := make(map[string]vulnerabilityUsageContext)
+	vulnAliases := make(map[string]string)
 	iacArtifacts := make(map[string]filesystemanalyzer.IaCArtifact)
 
 	for _, volume := range run.Volumes {
@@ -731,28 +736,28 @@ func summarizeRun(run RunRecord) (scanSummary, map[string]configAggregate, map[s
 			}
 		}
 		for _, vuln := range catalog.Vulnerabilities {
-			id := vulnerabilityNodeID(vuln)
-			if id == "" {
+			vulnKey := vulnerabilityAggregateKey(vuln, vulnAliases)
+			if vulnKey == "" {
 				continue
 			}
-			if existing, exists := vulns[id]; exists {
-				vulns[id] = vulnerabilityAggregate{record: mergeVulnerabilityRecord(existing.record, vuln)}
-			} else {
-				vulns[id] = vulnerabilityAggregate{record: vuln}
+			merged := vuln
+			if existing, exists := vulns[vulnKey]; exists {
+				merged = mergeVulnerabilityRecord(existing.record, vuln)
 			}
+			vulns[vulnKey] = vulnerabilityAggregate{record: merged}
+			indexVulnerabilityAliases(vulnAliases, vulnKey, merged)
 			for _, pkg := range catalog.Packages {
 				if !strings.EqualFold(strings.TrimSpace(pkg.Name), strings.TrimSpace(vuln.Package)) {
 					continue
 				}
-				ctx := vulnUsage[id]
+				ctx := vulnUsage[vulnKey]
 				ctx.observePackage(pkg)
-				vulnUsage[id] = ctx
-				key := packageVulnerabilityKey(pkg, vuln)
+				vulnUsage[vulnKey] = ctx
+				key := packageVulnerabilityAggregateKey(pkg, vulnKey)
 				if _, exists := relations[key]; !exists {
 					relations[key] = packageVulnerabilityAggregate{
-						pkg:  pkg,
-						vuln: vuln,
-						risk: prioritizePackageVulnerabilityRisk(vuln, pkg),
+						pkg:     pkg,
+						vulnKey: vulnKey,
 					}
 				}
 			}
@@ -763,8 +768,8 @@ func summarizeRun(run RunRecord) (scanSummary, map[string]configAggregate, map[s
 	summary.PackageCount = len(packages)
 	summary.TechnologyCount = len(technologies)
 	summary.VulnerabilityCount = len(vulns)
-	for _, vulnAgg := range vulns {
-		ctx := vulnUsage[vulnerabilityNodeID(vulnAgg.record)]
+	for vulnKey, vulnAgg := range vulns {
+		ctx := vulnUsage[vulnKey]
 		switch normalizeSeverity(vulnAgg.record.Severity) {
 		case "critical":
 			summary.CriticalVulnerabilityCount++
@@ -1160,6 +1165,53 @@ func vulnerabilityKey(vuln scanner.ImageVulnerability) string {
 
 func packageVulnerabilityKey(pkg filesystemanalyzer.PackageRecord, vuln scanner.ImageVulnerability) string {
 	return slugify(fmt.Sprintf("%s|%s|%s", packageNodeID(pkg), vulnerabilityNodeID(vuln), firstNonEmpty(vuln.FixedVersion, "none")))
+}
+
+func packageVulnerabilityAggregateKey(pkg filesystemanalyzer.PackageRecord, vulnKey string) string {
+	return slugify(fmt.Sprintf("%s|%s", packageNodeID(pkg), strings.TrimSpace(vulnKey)))
+}
+
+func vulnerabilityAggregateKey(vuln scanner.ImageVulnerability, aliasIndex map[string]string) string {
+	for _, alias := range vulnerabilityAliases(vuln) {
+		if key, ok := aliasIndex[alias]; ok {
+			return key
+		}
+	}
+	aliases := vulnerabilityAliases(vuln)
+	if len(aliases) == 0 {
+		return ""
+	}
+	return aliases[0]
+}
+
+func indexVulnerabilityAliases(aliasIndex map[string]string, vulnKey string, vuln scanner.ImageVulnerability) {
+	for _, alias := range vulnerabilityAliases(vuln) {
+		aliasIndex[alias] = vulnKey
+	}
+}
+
+func vulnerabilityAliases(vuln scanner.ImageVulnerability) []string {
+	aliases := make([]string, 0, 3)
+	if alias := vulnerabilityAlias("id", vuln.ID); alias != "" {
+		aliases = append(aliases, alias)
+	}
+	if alias := vulnerabilityAlias("cve", vuln.CVE); alias != "" {
+		aliases = append(aliases, alias)
+	}
+	if len(aliases) == 0 {
+		if alias := vulnerabilityAlias("fallback", fmt.Sprintf("%s:%s", vuln.Package, vuln.FixedVersion)); alias != "" {
+			aliases = append(aliases, alias)
+		}
+	}
+	return aliases
+}
+
+func vulnerabilityAlias(kind, value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	return kind + ":" + slugify(value)
 }
 
 func packageDependencyKey(parent, child filesystemanalyzer.PackageRecord) string {
