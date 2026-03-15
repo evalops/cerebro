@@ -413,14 +413,15 @@ func materializeOneRun(g *graph.Graph, target *graph.Node, run RunRecord, validT
 		vulnNode := buildVulnerabilityNode(vulnAgg.record, target, vulnMeta)
 		g.AddNode(vulnNode)
 		result.VulnNodesUpserted++
+		usage := vulnUsage[vulnerabilityNodeID(vulnAgg.record)]
 		if addEdgeIfMissing(g, &graph.Edge{
 			ID:         edgeID(scanNode.ID, vulnNode.ID, graph.EdgeKindFoundVuln),
 			Source:     scanNode.ID,
 			Target:     vulnNode.ID,
 			Kind:       graph.EdgeKindFoundVuln,
 			Effect:     graph.EdgeEffectAllow,
-			Properties: applyVulnerabilityUsageSummaryProperties(cloneWorkloadAnyMap(writeMeta.PropertyMap()), vulnUsage[vulnerabilityNodeID(vulnAgg.record)]),
-			Risk:       vulnNode.Risk,
+			Properties: applyVulnerabilityUsageSummaryProperties(cloneWorkloadAnyMap(writeMeta.PropertyMap()), usage),
+			Risk:       prioritizeVulnerabilityUsageRisk(vulnAgg.record, usage),
 		}) {
 			result.ScanVulnEdges++
 		}
@@ -751,7 +752,7 @@ func summarizeRun(run RunRecord) (scanSummary, map[string]configAggregate, map[s
 					relations[key] = packageVulnerabilityAggregate{
 						pkg:  pkg,
 						vuln: vuln,
-						risk: severityToRisk(vuln.Severity, vuln.InKEV),
+						risk: prioritizePackageVulnerabilityRisk(vuln, pkg),
 					}
 				}
 			}
@@ -1254,6 +1255,30 @@ func summaryRisk(summary scanSummary) graph.RiskLevel {
 		return graph.RiskLow
 	}
 	return graph.RiskNone
+}
+
+func prioritizePackageVulnerabilityRisk(vuln scanner.ImageVulnerability, pkg filesystemanalyzer.PackageRecord) graph.RiskLevel {
+	risk := severityToRisk(vuln.Severity, vuln.InKEV)
+	if pkg.Reachable {
+		return risk
+	}
+	switch risk {
+	case graph.RiskCritical:
+		return graph.RiskHigh
+	case graph.RiskHigh:
+		return graph.RiskMedium
+	case graph.RiskMedium:
+		return graph.RiskLow
+	default:
+		return risk
+	}
+}
+
+func prioritizeVulnerabilityUsageRisk(vuln scanner.ImageVulnerability, ctx vulnerabilityUsageContext) graph.RiskLevel {
+	if !ctx.hasBestPackage {
+		return severityToRisk(vuln.Severity, vuln.InKEV)
+	}
+	return prioritizePackageVulnerabilityRisk(vuln, ctx.bestPackage)
 }
 
 func (ctx *vulnerabilityUsageContext) observePackage(pkg filesystemanalyzer.PackageRecord) {

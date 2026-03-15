@@ -573,6 +573,9 @@ func TestMaterializeRunsIntoGraphCarriesVulnerabilityReachabilityPriority(t *tes
 	if got := graphValueString(reachableScanEdge.Properties["priority_hint"]); got != "reachable_direct" {
 		t.Fatalf("expected reachable_direct priority_hint, got %#v", reachableScanEdge.Properties)
 	}
+	if reachableScanEdge.Risk != graph.RiskCritical {
+		t.Fatalf("expected reachable scan vulnerability edge risk critical, got %#v", reachableScanEdge)
+	}
 
 	reachablePkgEdge := findOutEdge(g, packageNodeID(reachableDirect), graph.EdgeKindAffectedBy, vulnerabilityNodeID(reachableVuln))
 	if reachablePkgEdge == nil {
@@ -587,6 +590,9 @@ func TestMaterializeRunsIntoGraphCarriesVulnerabilityReachabilityPriority(t *tes
 	if got := graphValueString(reachablePkgEdge.Properties["priority_hint"]); got != "reachable_direct" {
 		t.Fatalf("expected reachable_direct priority_hint on package vulnerability edge, got %#v", reachablePkgEdge.Properties)
 	}
+	if reachablePkgEdge.Risk != graph.RiskCritical {
+		t.Fatalf("expected reachable package vulnerability edge risk critical, got %#v", reachablePkgEdge)
+	}
 
 	unreachableScanEdge := findOutEdge(g, run.ID, graph.EdgeKindFoundVuln, vulnerabilityNodeID(unreachableVuln))
 	if unreachableScanEdge == nil {
@@ -597,6 +603,17 @@ func TestMaterializeRunsIntoGraphCarriesVulnerabilityReachabilityPriority(t *tes
 	}
 	if got := graphValueString(unreachableScanEdge.Properties["priority_hint"]); got != "unreachable_direct" {
 		t.Fatalf("expected unreachable_direct priority_hint, got %#v", unreachableScanEdge.Properties)
+	}
+	if unreachableScanEdge.Risk != graph.RiskHigh {
+		t.Fatalf("expected unreachable scan vulnerability edge risk high, got %#v", unreachableScanEdge)
+	}
+
+	unreachablePkgEdge := findOutEdge(g, packageNodeID(unreachableDirect), graph.EdgeKindAffectedBy, vulnerabilityNodeID(unreachableVuln))
+	if unreachablePkgEdge == nil {
+		t.Fatalf("expected package -> unreachable vulnerability edge")
+	}
+	if unreachablePkgEdge.Risk != graph.RiskHigh {
+		t.Fatalf("expected unreachable package vulnerability edge risk high, got %#v", unreachablePkgEdge)
 	}
 }
 
