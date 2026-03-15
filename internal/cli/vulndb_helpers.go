@@ -44,7 +44,7 @@ func buildFilesystemAnalyzer(cfg *app.Config, trivyBinary, gitleaksBinary, clama
 	}), closer, nil
 }
 
-func buildMalwareScanner(cfg *app.Config, clamavBinary string) *scanner.MalwareScanner {
+func buildMalwareScanner(cfg *app.Config, clamavBinary string) filesystemanalyzer.MalwareScanner {
 	malwareScanner := scanner.NewMalwareScanner()
 	configured := false
 	if strings.TrimSpace(clamavBinary) != "" {
