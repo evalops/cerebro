@@ -83,6 +83,16 @@ func TestAdapterNormalizeListPayload(t *testing.T) {
 	}
 }
 
+func TestAdapterNormalizeEmptyListPayload(t *testing.T) {
+	observations, err := (Adapter{}).Normalize(context.Background(), []byte(`{"items":[]}`))
+	if err != nil {
+		t.Fatalf("Normalize: %v", err)
+	}
+	if len(observations) != 0 {
+		t.Fatalf("len(observations) = %d, want 0", len(observations))
+	}
+}
+
 func TestAdapterNormalizeRejectsMalformedPayload(t *testing.T) {
 	if _, err := (Adapter{}).Normalize(context.Background(), []byte(`{`)); err == nil {
 		t.Fatal("expected error for malformed payload")

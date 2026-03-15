@@ -78,3 +78,48 @@ func TestAdapterNormalizeUnsupportedEvent(t *testing.T) {
 		t.Fatal("expected unsupported event error")
 	}
 }
+
+func TestAdapterNormalizeEmptyBinaryDoesNotEmitDotNames(t *testing.T) {
+	raw := []byte(`{
+		"process_exec": {
+			"process": {
+				"exec_id": "exec-2",
+				"pid": 100,
+				"uid": 0,
+				"binary": "",
+				"arguments": "",
+				"pod": {
+					"namespace": "default",
+					"name": "xwing",
+					"container": {
+						"id": "containerd://abc",
+						"name": "spaceship",
+						"image": {
+							"id": "sha256:deadbeef",
+							"name": "docker.io/tgraf/netperf:latest"
+						}
+					}
+				}
+			},
+			"parent": {
+				"binary": ""
+			}
+		},
+		"time": "2023-10-06T22:03:57.700326678Z"
+	}`)
+
+	observations, err := (Adapter{}).Normalize(context.Background(), raw)
+	if err != nil {
+		t.Fatalf("Normalize: %v", err)
+	}
+	observation := observations[0]
+	if observation.Process == nil {
+		t.Fatal("expected process context")
+	}
+	if observation.Process.Name != "" {
+		t.Fatalf("process name = %q, want empty", observation.Process.Name)
+	}
+	if observation.Process.ParentName != "" {
+		t.Fatalf("parent name = %q, want empty", observation.Process.ParentName)
+	}
+}

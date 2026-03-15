@@ -227,7 +227,7 @@ func (s *SQLiteIngestStore) SaveCheckpoint(ctx context.Context, runID string, ch
 	run.LastCheckpoint = &IngestCheckpoint{
 		Cursor:     checkpoint.Cursor,
 		RecordedAt: checkpoint.RecordedAt,
-		Metadata:   cloneStringMap(checkpoint.Metadata),
+		Metadata:   cloneRuntimeStringMap(checkpoint.Metadata),
 	}
 	run.UpdatedAt = checkpoint.RecordedAt
 	if err := s.SaveRun(ctx, run); err != nil {
@@ -238,7 +238,7 @@ func (s *SQLiteIngestStore) SaveCheckpoint(ctx context.Context, runID string, ch
 		RecordedAt: checkpoint.RecordedAt,
 		Data: map[string]any{
 			"cursor":   checkpoint.Cursor,
-			"metadata": cloneStringMap(checkpoint.Metadata),
+			"metadata": cloneRuntimeStringMap(checkpoint.Metadata),
 		},
 	})
 	if err != nil {

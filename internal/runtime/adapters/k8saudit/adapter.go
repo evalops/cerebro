@@ -65,8 +65,10 @@ func (Adapter) Normalize(_ context.Context, raw []byte) ([]*runtime.RuntimeObser
 
 func decode(raw []byte) ([]event, error) {
 	var list payload
-	if err := json.Unmarshal(raw, &list); err == nil && len(list.Items) > 0 {
-		return list.Items, nil
+	if err := json.Unmarshal(raw, &list); err == nil {
+		if list.Items != nil {
+			return list.Items, nil
+		}
 	}
 
 	var single event

@@ -90,7 +90,7 @@ func ObservationFromEvent(event *RuntimeEvent) *RuntimeObservation {
 		Network:      event.Network,
 		File:         event.File,
 		Container:    event.Container,
-		Metadata:     cloneAnyMap(event.Metadata),
+		Metadata:     cloneRuntimeAnyMap(event.Metadata),
 	}
 
 	if event.Container != nil {
@@ -102,16 +102,16 @@ func ObservationFromEvent(event *RuntimeEvent) *RuntimeObservation {
 
 	if observation.Metadata != nil {
 		observation.Cluster = stringMapValue(observation.Metadata, "cluster")
-		observation.NodeName = firstNonEmpty(stringMapValue(observation.Metadata, "node_name"), stringMapValue(observation.Metadata, "node"))
+		observation.NodeName = firstNonEmptyRuntime(stringMapValue(observation.Metadata, "node_name"), stringMapValue(observation.Metadata, "node"))
 		observation.WorkloadRef = stringMapValue(observation.Metadata, "workload_ref")
 		observation.WorkloadUID = stringMapValue(observation.Metadata, "workload_uid")
-		observation.PrincipalID = firstNonEmpty(
+		observation.PrincipalID = firstNonEmptyRuntime(
 			stringMapValue(observation.Metadata, "principal_id"),
 			stringMapValue(observation.Metadata, "credential_id"),
 			stringMapValue(observation.Metadata, "access_key_id"),
 		)
 		if observation.Namespace == "" {
-			observation.Namespace = firstNonEmpty(
+			observation.Namespace = firstNonEmptyRuntime(
 				stringMapValue(observation.Metadata, "namespace"),
 				stringMapValue(observation.Metadata, "kubernetes_namespace"),
 			)
@@ -130,14 +130,14 @@ func (o *RuntimeObservation) AsRuntimeEvent() *RuntimeEvent {
 		ID:           o.ID,
 		Timestamp:    o.ObservedAt,
 		Source:       o.Source,
-		ResourceID:   firstNonEmpty(o.ResourceID, o.WorkloadRef, o.ContainerID),
-		ResourceType: firstNonEmpty(o.ResourceType, observationResourceType(o)),
+		ResourceID:   firstNonEmptyRuntime(o.ResourceID, o.WorkloadRef, o.ContainerID),
+		ResourceType: firstNonEmptyRuntime(o.ResourceType, observationResourceType(o)),
 		EventType:    legacyEventTypeFromObservation(o),
 		Process:      o.Process,
 		Network:      o.Network,
 		File:         o.File,
 		Container:    o.Container,
-		Metadata:     cloneAnyMap(o.Metadata),
+		Metadata:     cloneRuntimeAnyMap(o.Metadata),
 	}
 
 	if event.Metadata == nil {
@@ -172,7 +172,7 @@ func (o *RuntimeObservation) AsRuntimeEvent() *RuntimeEvent {
 			event.Metadata["audit_source_ips"] = append([]string(nil), o.ControlPlane.SourceIPs...)
 		}
 		if len(o.ControlPlane.Annotations) > 0 {
-			event.Metadata["audit_annotations"] = cloneStringMap(o.ControlPlane.Annotations)
+			event.Metadata["audit_annotations"] = cloneRuntimeStringMap(o.ControlPlane.Annotations)
 		}
 	}
 
@@ -288,28 +288,6 @@ func addMetadataString(metadata map[string]any, key, value string) {
 	metadata[key] = value
 }
 
-func cloneAnyMap(input map[string]any) map[string]any {
-	if len(input) == 0 {
-		return nil
-	}
-	out := make(map[string]any, len(input))
-	for key, value := range input {
-		out[key] = value
-	}
-	return out
-}
-
-func cloneStringMap(input map[string]string) map[string]string {
-	if len(input) == 0 {
-		return nil
-	}
-	out := make(map[string]string, len(input))
-	for key, value := range input {
-		out[key] = value
-	}
-	return out
-}
-
 func stringMapValue(metadata map[string]any, key string) string {
 	if len(metadata) == 0 {
 		return ""
@@ -324,13 +302,4 @@ func stringMapValue(metadata map[string]any, key string) string {
 	default:
 		return ""
 	}
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
-	}
-	return ""
 }

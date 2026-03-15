@@ -82,8 +82,8 @@ func observationFromProcessExec(event payload) *runtime.RuntimeObservation {
 		observedAt = process.StartTime
 	}
 
-	processName := filepath.Base(process.Binary)
-	parentName := filepath.Base(parent.Binary)
+	processName := baseNameOrEmpty(process.Binary)
+	parentName := baseNameOrEmpty(parent.Binary)
 	cmdline := strings.TrimSpace(strings.Join([]string{process.Binary, process.Arguments}, " "))
 	resourceID := podResourceID(process.Pod.Namespace, process.Pod.Name)
 	metadata := map[string]any{
@@ -160,4 +160,12 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func baseNameOrEmpty(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	return filepath.Base(path)
 }
