@@ -24,12 +24,14 @@ type GraphMaterializationResult struct {
 	ObservationNodesUpserted int `json:"observation_nodes_upserted"`
 	SecretNodesUpserted      int `json:"secret_nodes_upserted"`
 	PackageNodesUpserted     int `json:"package_nodes_upserted"`
+	TechnologyNodesUpserted  int `json:"technology_nodes_upserted"`
 	VulnNodesUpserted        int `json:"vulnerability_nodes_upserted"`
 	ScanObservationEdges     int `json:"scan_observation_edges"`
 	ScanSecretEdges          int `json:"scan_secret_edges"`
 	SecretTargetEdges        int `json:"secret_target_edges"`
 	CredentialPivotEdges     int `json:"credential_pivot_edges"`
 	ScanPackageEdges         int `json:"scan_package_edges"`
+	WorkloadTechnologyEdges  int `json:"workload_technology_edges"`
 	ScanVulnEdges            int `json:"scan_vulnerability_edges"`
 	PackageVulnEdges         int `json:"package_vulnerability_edges"`
 	SkippedUnresolvedRuns    int `json:"skipped_unresolved_runs"`
@@ -44,6 +46,10 @@ type resolvedRun struct {
 
 type packageAggregate struct {
 	record filesystemanalyzer.PackageRecord
+}
+
+type technologyAggregate struct {
+	record filesystemanalyzer.TechnologyRecord
 }
 
 type secretAggregate struct {
@@ -83,6 +89,7 @@ type scanSummary struct {
 	MisconfigurationCount      int
 	IaCArtifactCount           int
 	MalwareCount               int
+	TechnologyCount            int
 	FindingCount               int64
 	OSName                     string
 	OSVersion                  string
@@ -151,12 +158,14 @@ func MaterializeRunsIntoGraph(g *graph.Graph, runs []RunRecord, now time.Time) G
 			result.ObservationNodesUpserted += batch.ObservationNodesUpserted
 			result.SecretNodesUpserted += batch.SecretNodesUpserted
 			result.PackageNodesUpserted += batch.PackageNodesUpserted
+			result.TechnologyNodesUpserted += batch.TechnologyNodesUpserted
 			result.VulnNodesUpserted += batch.VulnNodesUpserted
 			result.ScanObservationEdges += batch.ScanObservationEdges
 			result.ScanSecretEdges += batch.ScanSecretEdges
 			result.SecretTargetEdges += batch.SecretTargetEdges
 			result.CredentialPivotEdges += batch.CredentialPivotEdges
 			result.ScanPackageEdges += batch.ScanPackageEdges
+			result.WorkloadTechnologyEdges += batch.WorkloadTechnologyEdges
 			result.ScanVulnEdges += batch.ScanVulnEdges
 			result.PackageVulnEdges += batch.PackageVulnEdges
 		}
@@ -186,7 +195,7 @@ func materializeOneRun(g *graph.Graph, target *graph.Node, run RunRecord, validT
 		return result
 	}
 	validFrom := runValidFrom(run, seenAt)
-	summary, findings, secrets, malware, packages, vulns, relations := summarizeRun(run)
+	summary, findings, secrets, malware, packages, technologies, vulns, relations := summarizeRun(run)
 	sourceEventID := fmt.Sprintf("workload_scan:%s", firstNonEmpty(strings.TrimSpace(run.ID), syntheticRunKey(run)))
 	writeMeta := graph.NormalizeWriteMetadata(
 		seenAt,
@@ -239,6 +248,7 @@ func materializeOneRun(g *graph.Graph, target *graph.Node, run RunRecord, validT
 			"misconfiguration_count":          summary.MisconfigurationCount,
 			"iac_artifact_count":              summary.IaCArtifactCount,
 			"malware_count":                   summary.MalwareCount,
+			"technology_count":                summary.TechnologyCount,
 			"finding_count":                   summary.FindingCount,
 			"sbom_ref":                        summary.SBOMRef,
 		},
@@ -288,6 +298,41 @@ func materializeOneRun(g *graph.Graph, target *graph.Node, run RunRecord, validT
 			Risk:       graph.RiskLow,
 		}) {
 			result.ScanPackageEdges++
+		}
+	}
+
+	for _, techAgg := range technologies {
+		techMeta := graph.NormalizeWriteMetadata(
+			seenAt,
+			validFrom,
+			nil,
+			graphMaterializationSourceSystem,
+			fmt.Sprintf("%s:technology:%s", sourceEventID, technologyKey(techAgg.record)),
+			1.0,
+			graph.WriteMetadataDefaults{
+				Now:             now,
+				RecordedAt:      seenAt,
+				TransactionFrom: seenAt,
+				SourceSystem:    graphMaterializationSourceSystem,
+			},
+		)
+		techNode := buildTechnologyNode(techAgg.record, target, techMeta)
+		g.AddNode(techNode)
+		result.TechnologyNodesUpserted++
+		techEdgeProperties := cloneWorkloadAnyMap(techMeta.PropertyMap())
+		techEdgeProperties["technology_name"] = techAgg.record.Name
+		techEdgeProperties["category"] = techAgg.record.Category
+		techEdgeProperties["version"] = strings.TrimSpace(techAgg.record.Version)
+		if addEdgeIfMissing(g, &graph.Edge{
+			ID:         edgeID(target.ID, techNode.ID, graph.EdgeKindRuns),
+			Source:     target.ID,
+			Target:     techNode.ID,
+			Kind:       graph.EdgeKindRuns,
+			Effect:     graph.EdgeEffectAllow,
+			Properties: techEdgeProperties,
+			Risk:       graph.RiskNone,
+		}) {
+			result.WorkloadTechnologyEdges++
 		}
 	}
 
@@ -513,7 +558,7 @@ func resolveTargetNode(g *graph.Graph, run RunRecord) (*graph.Node, bool) {
 	return nil, false
 }
 
-func summarizeRun(run RunRecord) (scanSummary, map[string]configAggregate, map[string]secretAggregate, map[string]malwareAggregate, map[string]packageAggregate, map[string]vulnerabilityAggregate, map[string]packageVulnerabilityAggregate) {
+func summarizeRun(run RunRecord) (scanSummary, map[string]configAggregate, map[string]secretAggregate, map[string]malwareAggregate, map[string]packageAggregate, map[string]technologyAggregate, map[string]vulnerabilityAggregate, map[string]packageVulnerabilityAggregate) {
 	summary := scanSummary{
 		FindingCount: run.Summary.Findings,
 		Risk:         graph.RiskNone,
@@ -522,6 +567,7 @@ func summarizeRun(run RunRecord) (scanSummary, map[string]configAggregate, map[s
 	secrets := make(map[string]secretAggregate)
 	malware := make(map[string]malwareAggregate)
 	packages := make(map[string]packageAggregate)
+	technologies := make(map[string]technologyAggregate)
 	vulns := make(map[string]vulnerabilityAggregate)
 	relations := make(map[string]packageVulnerabilityAggregate)
 	iacArtifacts := make(map[string]filesystemanalyzer.IaCArtifact)
@@ -542,6 +588,15 @@ func summarizeRun(run RunRecord) (scanSummary, map[string]configAggregate, map[s
 		summary.SecretCount += len(catalog.Secrets)
 		summary.MisconfigurationCount += len(catalog.Misconfigurations)
 		summary.MalwareCount += len(catalog.Malware)
+		for _, tech := range catalog.Technologies {
+			id := technologyNodeID(tech)
+			if id == "" {
+				continue
+			}
+			if _, exists := technologies[id]; !exists {
+				technologies[id] = technologyAggregate{record: tech}
+			}
+		}
 		for _, artifact := range catalog.IaCArtifacts {
 			artifactID := strings.TrimSpace(artifact.ID)
 			if artifactID == "" {
@@ -615,6 +670,7 @@ func summarizeRun(run RunRecord) (scanSummary, map[string]configAggregate, map[s
 
 	summary.IaCArtifactCount = len(iacArtifacts)
 	summary.PackageCount = len(packages)
+	summary.TechnologyCount = len(technologies)
 	summary.VulnerabilityCount = len(vulns)
 	for _, vulnAgg := range vulns {
 		switch normalizeSeverity(vulnAgg.record.Severity) {
@@ -640,7 +696,7 @@ func summarizeRun(run RunRecord) (scanSummary, map[string]configAggregate, map[s
 		}
 	}
 	summary.Risk = maxRiskLevel(summary.Risk, summaryRisk(summary))
-	return summary, findings, secrets, malware, packages, vulns, relations
+	return summary, findings, secrets, malware, packages, technologies, vulns, relations
 }
 
 func mergeVulnerabilityRecord(existing, incoming scanner.ImageVulnerability) scanner.ImageVulnerability {
@@ -687,6 +743,27 @@ func buildPackageNode(pkg filesystemanalyzer.PackageRecord, target *graph.Node, 
 		ID:         packageNodeID(pkg),
 		Kind:       graph.NodeKindPackage,
 		Name:       firstNonEmpty(strings.TrimSpace(pkg.Name), packageNodeID(pkg)),
+		Provider:   target.Provider,
+		Account:    target.Account,
+		Region:     target.Region,
+		Risk:       graph.RiskNone,
+		Properties: properties,
+	}
+}
+
+func buildTechnologyNode(tech filesystemanalyzer.TechnologyRecord, target *graph.Node, metadata graph.WriteMetadata) *graph.Node {
+	properties := map[string]any{
+		"technology_id":   technologyNodeID(tech),
+		"technology_name": strings.TrimSpace(tech.Name),
+		"category":        strings.TrimSpace(tech.Category),
+		"version":         strings.TrimSpace(tech.Version),
+		"file_path":       strings.TrimSpace(tech.Path),
+	}
+	metadata.ApplyTo(properties)
+	return &graph.Node{
+		ID:         technologyNodeID(tech),
+		Kind:       graph.NodeKindTechnology,
+		Name:       firstNonEmpty(strings.TrimSpace(tech.Name), technologyNodeID(tech)),
 		Provider:   target.Provider,
 		Account:    target.Account,
 		Region:     target.Region,
@@ -801,6 +878,15 @@ func packageNodeID(pkg filesystemanalyzer.PackageRecord) string {
 	return fmt.Sprintf("package:%s:%s:%s", slugify(firstNonEmpty(pkg.Ecosystem, "unknown")), slugify(pkg.Name), slugify(firstNonEmpty(pkg.Version, "unknown")))
 }
 
+func technologyNodeID(tech filesystemanalyzer.TechnologyRecord) string {
+	name := strings.TrimSpace(tech.Name)
+	category := strings.TrimSpace(tech.Category)
+	if name == "" || category == "" {
+		return ""
+	}
+	return fmt.Sprintf("technology:%s:%s:%s", slugify(category), slugify(name), slugify(firstNonEmpty(strings.TrimSpace(tech.Version), "unknown")))
+}
+
 func vulnerabilityNodeID(vuln scanner.ImageVulnerability) string {
 	identifier := firstNonEmpty(strings.TrimSpace(vuln.CVE), strings.TrimSpace(vuln.ID))
 	if identifier == "" {
@@ -856,6 +942,10 @@ func packageVulnerabilityEdgeID(pkgID, vulnID string) string {
 
 func packageKey(pkg filesystemanalyzer.PackageRecord) string {
 	return slugify(firstNonEmpty(pkg.PURL, fmt.Sprintf("%s:%s:%s", pkg.Ecosystem, pkg.Name, pkg.Version)))
+}
+
+func technologyKey(tech filesystemanalyzer.TechnologyRecord) string {
+	return slugify(firstNonEmpty(technologyNodeID(tech), fmt.Sprintf("%s:%s:%s", tech.Category, tech.Name, firstNonEmpty(tech.Version, "unknown"))))
 }
 
 func vulnerabilityKey(vuln scanner.ImageVulnerability) string {

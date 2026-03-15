@@ -426,6 +426,75 @@ func TestMaterializeRunsIntoGraphAddsMalwareObservations(t *testing.T) {
 	}
 }
 
+func TestMaterializeRunsIntoGraphAddsTechnologyInventory(t *testing.T) {
+	now := time.Date(2026, 3, 12, 18, 0, 0, 0, time.UTC)
+	targetID := "arn:aws:ec2:us-east-1:123456789012:instance/i-abc123"
+	g := graph.New()
+	g.AddNode(&graph.Node{
+		ID:       targetID,
+		Kind:     graph.NodeKindInstance,
+		Name:     "i-abc123",
+		Provider: "aws",
+		Account:  "123456789012",
+		Region:   "us-east-1",
+	})
+	g.BuildIndex()
+
+	run := buildGraphMaterializationTestRun("workload_scan:run-tech", now.Add(-2*time.Hour), 0)
+	run.Volumes[0].Analysis.Catalog.Technologies = []filesystemanalyzer.TechnologyRecord{
+		{Name: "nginx", Category: "web_server", Path: "etc/nginx/nginx.conf"},
+		{Name: "nodejs", Category: "runtime", Version: "20.11.1", Path: "srv/app/package.json"},
+	}
+	startedAt := now.Add(-2*time.Hour - 15*time.Minute)
+	completedAt := now.Add(-2 * time.Hour)
+	run.Volumes = append(run.Volumes, VolumeScanRecord{
+		Source:      SourceVolume{ID: "vol-2"},
+		Status:      RunStatusSucceeded,
+		Stage:       RunStageCompleted,
+		StartedAt:   startedAt,
+		UpdatedAt:   completedAt,
+		CompletedAt: &completedAt,
+		Analysis: &AnalysisReport{
+			Catalog: &filesystemanalyzer.Report{
+				Technologies: []filesystemanalyzer.TechnologyRecord{
+					{Name: "nginx", Category: "web_server", Path: "usr/local/etc/nginx/nginx.conf"},
+					{Name: "postgresql", Category: "database", Version: "16", Path: "var/lib/postgresql/data/PG_VERSION"},
+				},
+			},
+		},
+	})
+	run.Summary.VolumeCount = 2
+	run.Summary.SucceededVolumes = 2
+
+	summary := MaterializeRunsIntoGraph(g, []RunRecord{run}, now)
+	if summary.TechnologyNodesUpserted != 3 {
+		t.Fatalf("expected 3 technology nodes, got %#v", summary)
+	}
+	if summary.WorkloadTechnologyEdges != 3 {
+		t.Fatalf("expected 3 workload technology edges, got %#v", summary)
+	}
+
+	scanNode, ok := g.GetNode(run.ID)
+	if !ok {
+		t.Fatalf("expected workload scan node %q", run.ID)
+	}
+	if got := graphValueInt(scanNode.Properties["technology_count"]); got != 3 {
+		t.Fatalf("expected technology_count=3, got %#v", scanNode.Properties)
+	}
+
+	nodejsID := technologyNodeID(filesystemanalyzer.TechnologyRecord{Name: "nodejs", Category: "runtime", Version: "20.11.1"})
+	nodejsNode, ok := g.GetNode(nodejsID)
+	if !ok {
+		t.Fatalf("expected technology node %q", nodejsID)
+	}
+	if nodejsNode.Kind != graph.NodeKindTechnology {
+		t.Fatalf("expected technology node kind, got %#v", nodejsNode)
+	}
+	if edge := findOutEdge(g, targetID, graph.EdgeKindRuns, nodejsID); edge == nil {
+		t.Fatalf("expected workload->technology runs edge, got %#v", g.GetOutEdges(targetID))
+	}
+}
+
 func TestMaterializeRunsIntoGraphCountsMalwareFindingsAcrossVolumes(t *testing.T) {
 	now := time.Date(2026, 3, 12, 18, 0, 0, 0, time.UTC)
 	g := graph.New()
