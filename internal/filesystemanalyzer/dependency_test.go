@@ -156,6 +156,52 @@ func TestAnalyzerBuildsNPMDependencyGraphFromV1Lockfile(t *testing.T) {
 	}
 }
 
+func TestAnalyzerResolvesHoistedAncestorNPMPackages(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "srv", "app", "package-lock.json"), `{
+  "name": "demo",
+  "lockfileVersion": 2,
+  "packages": {
+    "": {
+      "name": "demo",
+      "version": "1.0.0",
+      "dependencies": {
+        "a": "1.0.0"
+      }
+    },
+    "node_modules/a": {
+      "version": "1.0.0",
+      "dependencies": {
+        "b": "1.0.0"
+      }
+    },
+    "node_modules/a/node_modules/b": {
+      "version": "1.0.0",
+      "dependencies": {
+        "c": "1.0.0"
+      }
+    },
+    "node_modules/a/node_modules/c": {
+      "version": "1.0.0"
+    }
+  }
+}`)
+	mustWriteFile(t, filepath.Join(root, "srv", "app", "src", "index.js"), "import a from 'a'\nconsole.log(a)\n")
+
+	report, err := New(Options{}).Analyze(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+
+	cPkg := findPackageRecord(report.Packages, "npm", "c", "1.0.0")
+	if cPkg == nil {
+		t.Fatalf("expected hoisted ancestor package in %#v", report.Packages)
+	}
+	if cPkg.DependencyDepth != 3 || !cPkg.Reachable || cPkg.ImportFileCount != 1 {
+		t.Fatalf("expected hoisted ancestor package to resolve and become reachable, got %#v", *cPkg)
+	}
+}
+
 func TestAnalyzerBuildsGoDependencyReachabilityFromGoMod(t *testing.T) {
 	root := t.TempDir()
 	mustWriteFile(t, filepath.Join(root, "workspace", "go.mod"), `module example.com/demo

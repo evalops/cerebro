@@ -289,17 +289,41 @@ func resolveNPMLockPackage(packages map[string]npmLockPackage, parentPath, depNa
 	if depName == "" {
 		return "", npmLockPackage{}, false
 	}
-	candidates := make([]string, 0, 2)
-	if parentPath != "" {
-		candidates = append(candidates, path.Clean(parentPath+"/node_modules/"+depName))
-	}
-	candidates = append(candidates, "node_modules/"+depName)
-	for _, candidate := range candidates {
-		if dep, ok := packages[candidate]; ok {
-			return candidate, dep, true
+	seen := make(map[string]struct{}, 4)
+	currentPath := strings.TrimSpace(parentPath)
+	for currentPath != "" {
+		candidate := path.Clean(currentPath + "/node_modules/" + depName)
+		if _, ok := seen[candidate]; !ok {
+			seen[candidate] = struct{}{}
+			if dep, ok := packages[candidate]; ok {
+				return candidate, dep, true
+			}
 		}
+		currentPath = npmParentPackagePath(currentPath)
+	}
+	rootCandidate := path.Clean("node_modules/" + depName)
+	if dep, ok := packages[rootCandidate]; ok {
+		return rootCandidate, dep, true
 	}
 	return "", npmLockPackage{}, false
+}
+
+func npmParentPackagePath(packagePath string) string {
+	packagePath = strings.TrimSpace(packagePath)
+	if packagePath == "" {
+		return ""
+	}
+	parts := strings.Split(path.Clean(packagePath), "/")
+	lastNodeModules := -1
+	for idx, part := range parts {
+		if part == "node_modules" {
+			lastNodeModules = idx
+		}
+	}
+	if lastNodeModules <= 0 {
+		return ""
+	}
+	return strings.Join(parts[:lastNodeModules], "/")
 }
 
 func deriveNPMPackageName(packagePath string) string {

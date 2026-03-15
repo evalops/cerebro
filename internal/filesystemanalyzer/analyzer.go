@@ -220,12 +220,12 @@ func (a *Analyzer) Analyze(ctx context.Context, rootfsPath string) (*Report, err
 		}
 		if shouldParsePackageFile(filePath) {
 			if data, ok, err := readLimitedFile(root, filePath, a.maxFileBytes); err == nil && ok {
-				inv.addPackages(parsePackageRecords(filePath, data)...)
 				if graph := parseNPMDependencyGraph(filePath, data); graph != nil {
 					inv.addNPMDependencyGraph(*graph)
-				}
-				if graph := parseGoDependencyGraph(filePath, data); graph != nil {
+				} else if graph := parseGoDependencyGraph(filePath, data); graph != nil {
 					inv.addGoDependencyGraph(*graph)
+				} else {
+					inv.addPackages(parsePackageRecords(filePath, data)...)
 				}
 			} else if err != nil {
 				inv.metadataErrors = append(inv.metadataErrors, err.Error())

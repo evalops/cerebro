@@ -5,6 +5,23 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 104 - Dependency Graph Review Follow-through (2026-03-14)
+
+### Review findings
+- [x] Gap: npm dependency resolution still skipped intermediate hoisted `node_modules` ancestors, so nested dependencies could resolve to the wrong version or disappear entirely.
+- [x] Gap: package-lock and `go.mod` files were being parsed twice in the filesystem walk, which doubled work on the hottest new path for `#234`.
+- [x] Gap: `packageFromSBOMComponent` reconstructed Go packages with `Manager: "golang"` instead of `Manager: "go"`.
+- [x] Gap: canonical package nodes still carried workload-specific usage hints even though those belong on `workload_scan -> package` edges.
+
+### Execution plan
+- [x] Add TDD coverage for:
+  - [x] hoisted npm ancestor resolution
+  - [x] manager mapping from SBOM-derived Go packages
+  - [x] keeping `direct_dependency` / `reachable` / `dependency_depth` / `import_file_count` off canonical package nodes
+- [x] walk npm ancestor `node_modules` directories during dependency resolution instead of checking only the direct parent and root
+- [x] stop reparsing `package-lock.json` and `go.mod` after dependency-graph extraction already produced package records
+- [x] rerun focused filesystem/workload validation, lint, and full `go test ./...`
+
 ## Deep Review Cycle 103 - Nested Manifest Reachability Isolation (2026-03-14)
 
 ### Review findings

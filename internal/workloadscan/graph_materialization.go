@@ -782,9 +782,10 @@ func mergePackageAggregate(existing, incoming filesystemanalyzer.PackageRecord) 
 }
 
 func packageFromSBOMComponent(component filesystemanalyzer.SBOMComponent) filesystemanalyzer.PackageRecord {
+	ecosystem := strings.TrimSpace(component.Ecosystem)
 	return filesystemanalyzer.PackageRecord{
-		Ecosystem:        strings.TrimSpace(component.Ecosystem),
-		Manager:          strings.TrimSpace(component.Ecosystem),
+		Ecosystem:        ecosystem,
+		Manager:          defaultPackageManagerForEcosystem(ecosystem),
 		Name:             strings.TrimSpace(component.Name),
 		Version:          strings.TrimSpace(component.Version),
 		PURL:             strings.TrimSpace(component.PURL),
@@ -829,15 +830,11 @@ func mergeVulnerabilityRecord(existing, incoming scanner.ImageVulnerability) sca
 
 func buildPackageNode(pkg filesystemanalyzer.PackageRecord, target *graph.Node, metadata graph.WriteMetadata) *graph.Node {
 	properties := map[string]any{
-		"package_name":      pkg.Name,
-		"version":           pkg.Version,
-		"ecosystem":         firstNonEmpty(pkg.Ecosystem, "unknown"),
-		"manager":           strings.TrimSpace(pkg.Manager),
-		"purl":              strings.TrimSpace(pkg.PURL),
-		"direct_dependency": pkg.DirectDependency,
-		"reachable":         pkg.Reachable,
-		"dependency_depth":  pkg.DependencyDepth,
-		"import_file_count": pkg.ImportFileCount,
+		"package_name": pkg.Name,
+		"version":      pkg.Version,
+		"ecosystem":    firstNonEmpty(pkg.Ecosystem, "unknown"),
+		"manager":      firstNonEmpty(strings.TrimSpace(pkg.Manager), defaultPackageManagerForEcosystem(pkg.Ecosystem)),
+		"purl":         strings.TrimSpace(pkg.PURL),
 	}
 	metadata.ApplyTo(properties)
 	return &graph.Node{
@@ -849,6 +846,19 @@ func buildPackageNode(pkg filesystemanalyzer.PackageRecord, target *graph.Node, 
 		Region:     target.Region,
 		Risk:       graph.RiskNone,
 		Properties: properties,
+	}
+}
+
+func defaultPackageManagerForEcosystem(ecosystem string) string {
+	switch strings.TrimSpace(ecosystem) {
+	case "golang":
+		return "go"
+	case "pypi":
+		return "pip"
+	case "deb":
+		return "dpkg"
+	default:
+		return strings.TrimSpace(ecosystem)
 	}
 }
 

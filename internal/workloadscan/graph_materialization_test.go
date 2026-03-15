@@ -152,6 +152,109 @@ func TestMaterializeRunsIntoGraphAddsPackageDependencyEdgesAndUsageHints(t *test
 	}
 }
 
+func TestPackageFromSBOMComponentMapsManagerFromEcosystem(t *testing.T) {
+	component := filesystemanalyzer.SBOMComponent{
+		BOMRef:           "pkg:golang/github.com/google/uuid@v1.6.0",
+		Type:             "library",
+		Name:             "github.com/google/uuid",
+		Version:          "v1.6.0",
+		PURL:             "pkg:golang/github.com%2Fgoogle%2Fuuid@v1.6.0",
+		Ecosystem:        "golang",
+		Location:         "workspace/go.mod",
+		DirectDependency: true,
+		Reachable:        true,
+		DependencyDepth:  1,
+		ImportFileCount:  1,
+	}
+
+	pkg := packageFromSBOMComponent(component)
+	if pkg.Manager != "go" {
+		t.Fatalf("expected go manager, got %#v", pkg)
+	}
+}
+
+func TestMaterializeRunsIntoGraphKeepsUsageHintsOffCanonicalPackageNodes(t *testing.T) {
+	now := time.Date(2026, 3, 12, 18, 0, 0, 0, time.UTC)
+	g := graph.New()
+	g.AddNode(&graph.Node{
+		ID:       "arn:aws:ec2:us-east-1:123456789012:instance/i-abc123",
+		Kind:     graph.NodeKindInstance,
+		Name:     "i-abc123",
+		Provider: "aws",
+		Account:  "123456789012",
+		Region:   "us-east-1",
+	})
+	g.BuildIndex()
+
+	component := filesystemanalyzer.SBOMComponent{
+		BOMRef:           "pkg:golang/github.com/google/uuid@v1.6.0",
+		Type:             "library",
+		Name:             "github.com/google/uuid",
+		Version:          "v1.6.0",
+		PURL:             "pkg:golang/github.com%2Fgoogle%2Fuuid@v1.6.0",
+		Ecosystem:        "golang",
+		Location:         "workspace/go.mod",
+		DirectDependency: true,
+		Reachable:        true,
+		DependencyDepth:  1,
+		ImportFileCount:  1,
+	}
+
+	pkg := filesystemanalyzer.PackageRecord{
+		Ecosystem:        component.Ecosystem,
+		Manager:          "go",
+		Name:             component.Name,
+		Version:          component.Version,
+		PURL:             component.PURL,
+		Location:         component.Location,
+		DirectDependency: component.DirectDependency,
+		Reachable:        component.Reachable,
+		DependencyDepth:  component.DependencyDepth,
+		ImportFileCount:  component.ImportFileCount,
+	}
+
+	run := buildGraphMaterializationTestRun("workload_scan:run-go-sbom", now.Add(-2*time.Hour), 0)
+	run.Volumes[0].Analysis.Catalog.Packages = []filesystemanalyzer.PackageRecord{pkg}
+	run.Volumes[0].Analysis.Catalog.SBOM = filesystemanalyzer.SBOMDocument{
+		Format:      "cyclonedx-json",
+		SpecVersion: "1.5",
+		GeneratedAt: now.Add(-2 * time.Hour),
+		Components:  []filesystemanalyzer.SBOMComponent{component},
+	}
+
+	MaterializeRunsIntoGraph(g, []RunRecord{run}, now)
+
+	pkgNode, ok := g.GetNode(packageNodeID(pkg))
+	if !ok {
+		t.Fatalf("expected package node for %#v", pkg)
+	}
+	if got := graphValueString(pkgNode.Properties["manager"]); got != "go" {
+		t.Fatalf("expected manager=go, got %#v", pkgNode.Properties)
+	}
+	for _, key := range []string{"direct_dependency", "reachable", "dependency_depth", "import_file_count"} {
+		if _, exists := pkgNode.Properties[key]; exists {
+			t.Fatalf("expected canonical package node to omit %q, got %#v", key, pkgNode.Properties)
+		}
+	}
+
+	scanEdge := findOutEdge(g, run.ID, graph.EdgeKindContainsPkg, packageNodeID(pkg))
+	if scanEdge == nil {
+		t.Fatalf("expected workload scan contains_pkg edge")
+	}
+	if got := graphValueBool(scanEdge.Properties["direct_dependency"]); !got {
+		t.Fatalf("expected direct_dependency=true on usage edge, got %#v", scanEdge.Properties)
+	}
+	if got := graphValueBool(scanEdge.Properties["reachable"]); !got {
+		t.Fatalf("expected reachable=true on usage edge, got %#v", scanEdge.Properties)
+	}
+	if got := graphValueInt(scanEdge.Properties["dependency_depth"]); got != 1 {
+		t.Fatalf("expected dependency_depth=1 on usage edge, got %#v", scanEdge.Properties)
+	}
+	if got := graphValueInt(scanEdge.Properties["import_file_count"]); got != 1 {
+		t.Fatalf("expected import_file_count=1 on usage edge, got %#v", scanEdge.Properties)
+	}
+}
+
 func TestMaterializeRunsIntoGraphCarriesPriorityAssessment(t *testing.T) {
 	now := time.Date(2026, 3, 12, 18, 0, 0, 0, time.UTC)
 	g := graph.New()
