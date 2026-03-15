@@ -174,7 +174,7 @@ func (b *Builder) enrichGoogleWorkspaceApplicationActivity(ctx context.Context) 
 	for clientID, summary := range summaries {
 		node, ok := b.graph.GetNode(clientID)
 		if !ok || node == nil {
-			node = &Node{
+			b.graph.AddNode(&Node{
 				ID:       clientID,
 				Kind:     NodeKindApplication,
 				Name:     firstNonEmpty(summary.displayText, clientID),
@@ -183,8 +183,11 @@ func (b *Builder) enrichGoogleWorkspaceApplicationActivity(ctx context.Context) 
 					"client_id":    clientID,
 					"display_text": summary.displayText,
 				},
+			})
+			node, ok = b.graph.GetNode(clientID)
+			if !ok || node == nil {
+				continue
 			}
-			b.graph.AddNode(node)
 		}
 		if node.Provider != "google_workspace" || node.Kind != NodeKindApplication {
 			continue
