@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/evalops/cerebro/internal/runtime"
 )
@@ -217,6 +218,54 @@ func TestTelemetryIngestPersistsRunMetadataAndCheckpoint(t *testing.T) {
 	}
 	if got := events[1].Data["node_name"]; got != "worker-7" {
 		t.Fatalf("first observation node_name = %#v, want worker-7", got)
+	}
+}
+
+func TestRuntimeIngestSessionRecordObservationUsesProcessingTimeForRunUpdates(t *testing.T) {
+	a := newTestApp(t)
+	s := NewServer(a)
+
+	session, err := s.startRuntimeIngestSession(context.Background(), "telemetry", map[string]string{"cluster": "prod-west"})
+	if err != nil {
+		t.Fatalf("startRuntimeIngestSession: %v", err)
+	}
+	if session == nil || session.run == nil {
+		t.Fatal("expected runtime ingest session")
+	}
+
+	historicalObservedAt := time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)
+	beforeRecord := time.Now().UTC()
+	err = session.recordObservation(context.Background(), &runtime.RuntimeObservation{
+		ID:         "historic-1",
+		Kind:       runtime.ObservationKindProcessExec,
+		Source:     "tetragon",
+		ObservedAt: historicalObservedAt,
+		ResourceID: "pod:default/api-0",
+	}, 0, 0)
+	if err != nil {
+		t.Fatalf("recordObservation: %v", err)
+	}
+	afterRecord := time.Now().UTC()
+
+	if session.run.UpdatedAt.Before(beforeRecord) || session.run.UpdatedAt.After(afterRecord) {
+		t.Fatalf("run.UpdatedAt = %s, want processing time between %s and %s", session.run.UpdatedAt, beforeRecord, afterRecord)
+	}
+
+	events, err := a.RuntimeIngest.LoadEvents(context.Background(), session.run.ID)
+	if err != nil {
+		t.Fatalf("LoadEvents: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("len(events) = %d, want 2", len(events))
+	}
+	if events[1].Type != "observation_processed" {
+		t.Fatalf("events[1].Type = %q, want observation_processed", events[1].Type)
+	}
+	if events[1].RecordedAt.Before(beforeRecord) || events[1].RecordedAt.After(afterRecord) {
+		t.Fatalf("events[1].RecordedAt = %s, want processing time between %s and %s", events[1].RecordedAt, beforeRecord, afterRecord)
+	}
+	if got := events[1].Data["observed_at"]; got != historicalObservedAt.Format(time.RFC3339Nano) {
+		t.Fatalf("events[1].Data[observed_at] = %#v, want %q", got, historicalObservedAt.Format(time.RFC3339Nano))
 	}
 }
 

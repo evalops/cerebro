@@ -124,7 +124,7 @@ func observationFromEvent(evt event) *runtime.RuntimeObservation {
 			Name:             evt.ObjectRef.Name,
 			Subresource:      evt.ObjectRef.Subresource,
 			SourceIPs:        append([]string(nil), evt.SourceIPs...),
-			Annotations:      cloneStringMap(evt.Annotations),
+			Annotations:      runtime.CloneStringMap(evt.Annotations),
 		},
 		Tags: tags,
 		Metadata: map[string]any{
@@ -150,15 +150,4 @@ func objectRefID(ref objectRef) string {
 		parts = append(parts, ref.Subresource)
 	}
 	return strings.Join(parts, ":")
-}
-
-func cloneStringMap(input map[string]string) map[string]string {
-	if len(input) == 0 {
-		return nil
-	}
-	out := make(map[string]string, len(input))
-	for key, value := range input {
-		out[key] = value
-	}
-	return out
 }

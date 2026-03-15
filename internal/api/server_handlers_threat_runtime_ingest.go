@@ -68,20 +68,20 @@ func (r *runtimeIngestSession) recordObservation(ctx context.Context, observatio
 		return nil
 	}
 
-	recordedAt := time.Now().UTC()
-	if observation != nil && !observation.ObservedAt.IsZero() {
-		recordedAt = observation.ObservedAt.UTC()
-	}
+	processedAt := time.Now().UTC()
 
 	r.run.ObservationCount++
 	r.run.FindingCount += findings
-	r.run.UpdatedAt = recordedAt
+	r.run.UpdatedAt = processedAt
 
 	data := map[string]any{
 		"index":         index,
 		"finding_count": findings,
 	}
 	if observation != nil {
+		if !observation.ObservedAt.IsZero() {
+			data["observed_at"] = observation.ObservedAt.UTC().Format(time.RFC3339Nano)
+		}
 		if observation.ID != "" {
 			data["observation_id"] = observation.ID
 		}
@@ -110,7 +110,7 @@ func (r *runtimeIngestSession) recordObservation(ctx context.Context, observatio
 	}
 	if _, err := r.store.AppendEvent(ctx, r.run.ID, runtime.IngestEvent{
 		Type:       "observation_processed",
-		RecordedAt: recordedAt,
+		RecordedAt: processedAt,
 		Data:       data,
 	}); err != nil {
 		return fmt.Errorf("append runtime ingest observation event: %w", err)

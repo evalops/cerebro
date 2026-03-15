@@ -92,7 +92,7 @@ func observationFromProcessExec(event payload) *runtime.RuntimeObservation {
 		"cwd":            process.CWD,
 		"flags":          process.Flags,
 		"workload_name":  process.Pod.Workload,
-		"pod_labels":     cloneStringMap(process.Pod.Labels),
+		"pod_labels":     runtime.CloneStringMap(process.Pod.Labels),
 		"node_name":      event.NodeName,
 	}
 
@@ -111,7 +111,7 @@ func observationFromProcessExec(event payload) *runtime.RuntimeObservation {
 		Namespace:    process.Pod.Namespace,
 		NodeName:     event.NodeName,
 		WorkloadRef:  workloadRef,
-		ContainerID:  firstNonEmpty(process.Pod.Container.ID, process.Docker),
+		ContainerID:  runtime.FirstNonEmpty(process.Pod.Container.ID, process.Docker),
 		ImageRef:     process.Pod.Container.Image.Name,
 		ImageID:      process.Pod.Container.Image.ID,
 		Process: &runtime.ProcessEvent{
@@ -123,7 +123,7 @@ func observationFromProcessExec(event payload) *runtime.RuntimeObservation {
 			ParentName: parentName,
 		},
 		Container: &runtime.ContainerEvent{
-			ContainerID:   firstNonEmpty(process.Pod.Container.ID, process.Docker),
+			ContainerID:   runtime.FirstNonEmpty(process.Pod.Container.ID, process.Docker),
 			ContainerName: process.Pod.Container.Name,
 			Image:         process.Pod.Container.Image.Name,
 			ImageID:       process.Pod.Container.Image.ID,
@@ -140,26 +140,6 @@ func podResourceID(namespace, name string) string {
 		return ""
 	}
 	return "pod:" + namespace + "/" + name
-}
-
-func cloneStringMap(input map[string]string) map[string]string {
-	if len(input) == 0 {
-		return nil
-	}
-	out := make(map[string]string, len(input))
-	for key, value := range input {
-		out[key] = value
-	}
-	return out
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
-	}
-	return ""
 }
 
 func baseNameOrEmpty(path string) string {
