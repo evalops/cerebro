@@ -159,6 +159,38 @@ func TestSyncAzure_RejectsMixedManagementGroupAndSubscriptions(t *testing.T) {
 	}
 }
 
+func TestSyncAzure_NormalizesSubscriptionsCaseInsensitively(t *testing.T) {
+	s := newTestServer(t)
+	s.app.Snowflake = &snowflake.Client{}
+
+	originalRun := runAzureSyncWithOptions
+	t.Cleanup(func() { runAzureSyncWithOptions = originalRun })
+
+	runAzureSyncWithOptions = func(ctx context.Context, client *snowflake.Client, req azureSyncRequest) ([]nativesync.SyncResult, error) {
+		if client != s.app.Snowflake {
+			t.Fatalf("expected server snowflake client to be passed through")
+		}
+		want := []string{"SUB-A", "Sub-B"}
+		if len(req.Subscriptions) != len(want) {
+			t.Fatalf("expected %d normalized subscriptions, got %#v", len(want), req.Subscriptions)
+		}
+		for i := range want {
+			if req.Subscriptions[i] != want[i] {
+				t.Fatalf("expected subscriptions %v, got %v", want, req.Subscriptions)
+			}
+		}
+		return []nativesync.SyncResult{{Table: "azure_vm_instances", Synced: 1}}, nil
+	}
+
+	w := do(t, s, http.MethodPost, "/api/v1/sync/azure", map[string]interface{}{
+		"subscription":  " sub-b ",
+		"subscriptions": []string{"SUB-A", "sub-a", "Sub-B"},
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestSyncK8s_RequiresSnowflake(t *testing.T) {
 	s := newTestServer(t)
 

@@ -120,7 +120,7 @@ func (s *Server) syncAzure(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req.Subscription = strings.TrimSpace(req.Subscription)
-	req.Subscriptions = normalizeSyncSubscriptions(append(req.Subscriptions, req.Subscription))
+	req.Subscriptions = nativesync.NormalizeAzureSubscriptionIDs(append(req.Subscriptions, req.Subscription))
 	req.ManagementGroup = strings.TrimSpace(req.ManagementGroup)
 	req.Tables = normalizeSyncTables(req.Tables)
 	if req.ManagementGroup != "" && len(req.Subscriptions) > 0 {
@@ -843,31 +843,6 @@ func normalizeSyncProjects(raw []string) []string {
 		}
 		seen[key] = struct{}{}
 		normalized = append(normalized, name)
-	}
-	if len(normalized) == 0 {
-		return nil
-	}
-	return normalized
-}
-
-func normalizeSyncSubscriptions(raw []string) []string {
-	if len(raw) == 0 {
-		return nil
-	}
-
-	normalized := make([]string, 0, len(raw))
-	seen := make(map[string]struct{}, len(raw))
-	for _, subscriptionID := range raw {
-		id := strings.TrimSpace(subscriptionID)
-		if id == "" {
-			continue
-		}
-		key := strings.ToLower(id)
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		normalized = append(normalized, id)
 	}
 	if len(normalized) == 0 {
 		return nil

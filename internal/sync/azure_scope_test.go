@@ -39,7 +39,7 @@ func TestAzureScopeWhereClause(t *testing.T) {
 }
 
 func TestNormalizeAzureSubscriptionIDs(t *testing.T) {
-	got := normalizeAzureSubscriptionIDs([]string{" sub-b ", "SUB-A", "sub-a", "", "sub-c"})
+	got := NormalizeAzureSubscriptionIDs([]string{" sub-b ", "SUB-A", "sub-a", "", "sub-c"})
 	want := []string{"SUB-A", "sub-b", "sub-c"}
 	if len(got) != len(want) {
 		t.Fatalf("expected %d subscriptions, got %d (%v)", len(want), len(got), got)

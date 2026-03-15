@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	azpolicy "github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
@@ -43,6 +44,8 @@ type AzureSyncEngine struct {
 	rateLimiter             *rate.Limiter
 	retryOptions            retryOptions
 	httpClient              *http.Client
+	tokenCredential         azcore.TokenCredential
+	listEnabledFunc         func(context.Context) ([]string, error)
 }
 
 // AzureEngineOption configures the Azure sync engine
@@ -53,7 +56,7 @@ func WithAzureSubscription(subscriptionID string) AzureEngineOption {
 }
 
 func WithAzureSubscriptions(subscriptionIDs []string) AzureEngineOption {
-	return func(e *AzureSyncEngine) { e.subscriptionIDs = normalizeAzureSubscriptionIDs(subscriptionIDs) }
+	return func(e *AzureSyncEngine) { e.subscriptionIDs = NormalizeAzureSubscriptionIDs(subscriptionIDs) }
 }
 
 func WithAzureManagementGroup(managementGroupID string) AzureEngineOption {
@@ -85,6 +88,7 @@ func NewAzureSyncEngine(sf warehouse.SyncWarehouse, logger *slog.Logger, opts ..
 		subscriptionConcurrency: 4,
 		credential:              cred,
 		httpClient:              http.DefaultClient,
+		tokenCredential:         cred,
 	}
 	for _, opt := range opts {
 		opt(e)
@@ -194,7 +198,7 @@ func (e *AzureSyncEngine) ValidateTables(ctx context.Context) ([]SyncResult, err
 }
 
 func (e *AzureSyncEngine) resolveSubscriptionIDs(ctx context.Context) ([]string, error) {
-	explicit := normalizeAzureSubscriptionIDs(append(append([]string{}, e.subscriptionIDs...), e.subscriptionID))
+	explicit := NormalizeAzureSubscriptionIDs(append(append([]string{}, e.subscriptionIDs...), e.subscriptionID))
 	if len(explicit) > 0 {
 		return explicit, nil
 	}
@@ -205,6 +209,10 @@ func (e *AzureSyncEngine) resolveSubscriptionIDs(ctx context.Context) ([]string,
 }
 
 func (e *AzureSyncEngine) listEnabledSubscriptions(ctx context.Context) ([]string, error) {
+	if e.listEnabledFunc != nil {
+		return e.listEnabledFunc(ctx)
+	}
+
 	client, err := armsubscriptions.NewClient(e.credential, nil)
 	if err != nil {
 		return nil, err
@@ -223,7 +231,7 @@ func (e *AzureSyncEngine) listEnabledSubscriptions(ctx context.Context) ([]strin
 			}
 		}
 	}
-	subscriptionIDs = normalizeAzureSubscriptionIDs(subscriptionIDs)
+	subscriptionIDs = NormalizeAzureSubscriptionIDs(subscriptionIDs)
 	if len(subscriptionIDs) == 0 {
 		return nil, fmt.Errorf("no enabled subscriptions found")
 	}
@@ -236,7 +244,15 @@ func (e *AzureSyncEngine) listManagementGroupSubscriptions(ctx context.Context, 
 		return nil, err
 	}
 
-	token, err := e.credential.GetToken(ctx, azpolicy.TokenRequestOptions{Scopes: []string{"https://management.azure.com/.default"}})
+	credential := e.tokenCredential
+	if credential == nil {
+		credential = e.credential
+	}
+	if credential == nil {
+		return nil, fmt.Errorf("azure token credential not configured")
+	}
+
+	token, err := credential.GetToken(ctx, azpolicy.TokenRequestOptions{Scopes: []string{"https://management.azure.com/.default"}})
 	if err != nil {
 		return nil, fmt.Errorf("acquire Azure management token: %w", err)
 	}
@@ -258,12 +274,13 @@ func (e *AzureSyncEngine) listManagementGroupSubscriptions(ctx context.Context, 
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	if resp.StatusCode/100 != 2 {
+		return nil, fmt.Errorf("azure management group query failed for %s: status %d", strings.TrimSpace(managementGroupID), resp.StatusCode)
+	}
+
 	var payload map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		return nil, fmt.Errorf("decode Azure management group response: %w", err)
-	}
-	if resp.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("azure management group query failed for %s: status %d", strings.TrimSpace(managementGroupID), resp.StatusCode)
 	}
 
 	subscriptionIDs := extractAzureManagementGroupSubscriptionIDs(payload)
@@ -273,16 +290,16 @@ func (e *AzureSyncEngine) listManagementGroupSubscriptions(ctx context.Context, 
 
 	enabledSet := make(map[string]struct{}, len(enabledSubscriptions))
 	for _, subscriptionID := range enabledSubscriptions {
-		enabledSet[subscriptionID] = struct{}{}
+		enabledSet[strings.ToLower(subscriptionID)] = struct{}{}
 	}
 
 	filtered := make([]string, 0, len(subscriptionIDs))
 	for _, subscriptionID := range subscriptionIDs {
-		if _, ok := enabledSet[subscriptionID]; ok {
+		if _, ok := enabledSet[strings.ToLower(subscriptionID)]; ok {
 			filtered = append(filtered, subscriptionID)
 		}
 	}
-	filtered = normalizeAzureSubscriptionIDs(filtered)
+	filtered = NormalizeAzureSubscriptionIDs(filtered)
 	if len(filtered) == 0 {
 		return nil, fmt.Errorf("no enabled subscriptions found under management group %s", strings.TrimSpace(managementGroupID))
 	}
@@ -377,7 +394,9 @@ func azureManagementGroupSubscriptionID(node map[string]any) string {
 	return ""
 }
 
-func normalizeAzureSubscriptionIDs(values []string) []string {
+// NormalizeAzureSubscriptionIDs trims, de-duplicates case-insensitively, and
+// sorts Azure subscription IDs for stable downstream execution.
+func NormalizeAzureSubscriptionIDs(values []string) []string {
 	if len(values) == 0 {
 		return nil
 	}
