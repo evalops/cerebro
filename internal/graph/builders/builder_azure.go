@@ -1087,13 +1087,15 @@ func parseAzureServicePrincipalNodes(rows []map[string]any) []*Node {
 		}
 		servicePrincipalType := firstNonEmpty(queryRowString(sp, "service_principal_type"), queryRowString(sp, "type"))
 		properties := map[string]any{
-			"app_id":              queryRow(sp, "app_id"),
-			"type":                servicePrincipalType,
-			"account_enabled":     queryRow(sp, "account_enabled"),
-			"tags":                queryRow(sp, "tags"),
-			"publisher_name":      queryRow(sp, "publisher_name"),
-			"created_datetime":    firstNonEmpty(queryRowString(sp, "created_datetime"), queryRowString(sp, "created_date_time")),
-			"azure_resource_type": "service_principal",
+			"app_id":                       queryRow(sp, "app_id"),
+			"type":                         servicePrincipalType,
+			"account_enabled":              queryRow(sp, "account_enabled"),
+			"app_owner_organization_id":    queryRow(sp, "app_owner_organization_id"),
+			"app_role_assignment_required": queryRow(sp, "app_role_assignment_required"),
+			"tags":                         queryRow(sp, "tags"),
+			"publisher_name":               queryRow(sp, "publisher_name"),
+			"created_datetime":             firstNonEmpty(queryRowString(sp, "created_datetime"), queryRowString(sp, "created_date_time")),
+			"azure_resource_type":          "service_principal",
 		}
 		if strings.Contains(strings.ToLower(servicePrincipalType), "managed") {
 			properties["identity_type"] = servicePrincipalType

@@ -5,6 +5,20 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 112 - Explicit Vendor Ontology + Identity Integration Projection (2026-03-15)
+
+### Review findings
+- [x] Gap: issue `#255` still depended on overloaded `company` semantics even though the world-model architecture already called out `vendor` as a first-class ontology module.
+- [x] Gap: identity-provider integrations with real access semantics existed in the graph, but there was no derived vendor inventory node to aggregate them.
+- [x] Gap: incremental CDC rebuilds would leave any derived vendor inventory stale unless the projection was wired into both full-build and incremental rebuild paths.
+
+### Execution plan
+- [x] Add TDD coverage for builtin `vendor` registration and business-category behavior.
+- [x] Add builder coverage for projecting vendor nodes from Okta applications and Entra service principals while excluding Azure managed identities.
+- [x] Rebuild derived vendor nodes during both full graph builds and CDC edge rebuilds.
+- [x] Aggregate initial vendor risk signals from managed integration nodes onto the vendor node itself.
+- [x] Regenerate ontology docs and rerun graph/builders validation plus lint.
+
 ## Deep Review Cycle 111 - Vulnerability Reachability Prioritization on Workload Scans (2026-03-15)
 
 ### Review findings
