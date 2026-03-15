@@ -5,6 +5,22 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 103 - Nested Manifest Reachability Isolation (2026-03-14)
+
+### Review findings
+- [x] Gap: `#234` still scoped import reachability by simple path-prefix membership under each manifest directory.
+- [x] Gap: nested `package-lock.json` and nested `go.mod` projects therefore leaked import evidence upward into ancestor manifests, marking the wrong package records reachable.
+- [x] Gap: the upstream MIT patterns already pointed at the correct fix:
+  - [x] `github/dependency-submission-toolkit` groups dependencies by manifest/build target ownership.
+  - [x] `advanced-security/github-sbom-toolkit` keeps per-manifest SBOM context intact instead of flattening all package evidence together.
+
+### Execution plan
+- [x] Add TDD coverage for:
+  - [x] nested npm manifests with the same package imported only from the child project
+  - [x] nested Go modules with the same module imported only from the child module
+- [x] assign import evidence to the nearest containing manifest base instead of every ancestor prefix match
+- [x] rerun focused filesystem/workload/graph validation plus full `go test ./...`
+
 ## Deep Review Cycle 102 - Go Module Reachability and Directness Signals (2026-03-14)
 
 ### Review findings

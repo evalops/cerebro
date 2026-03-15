@@ -238,10 +238,127 @@ func main() {
 	}
 }
 
+func TestAnalyzerScopesNPMReachabilityToNearestManifest(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "workspace", "package-lock.json"), `{
+  "name": "root",
+  "lockfileVersion": 2,
+  "packages": {
+    "": {
+      "name": "root",
+      "version": "1.0.0",
+      "dependencies": {
+        "lodash": "4.17.21"
+      }
+    },
+    "node_modules/lodash": {
+      "version": "4.17.21"
+    }
+  }
+}`)
+	mustWriteFile(t, filepath.Join(root, "workspace", "service", "package-lock.json"), `{
+  "name": "service",
+  "lockfileVersion": 2,
+  "packages": {
+    "": {
+      "name": "service",
+      "version": "1.0.0",
+      "dependencies": {
+        "lodash": "4.17.21"
+      }
+    },
+    "node_modules/lodash": {
+      "version": "4.17.21"
+    }
+  }
+}`)
+	mustWriteFile(t, filepath.Join(root, "workspace", "service", "src", "index.js"), "import _ from 'lodash'\nconsole.log(_.camelCase('x'))\n")
+
+	report, err := New(Options{}).Analyze(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+
+	rootPkg := findPackageRecordByLocation(report.Packages, "npm", "lodash", "4.17.21", "workspace/package-lock.json")
+	if rootPkg == nil {
+		t.Fatalf("expected root lodash package in %#v", report.Packages)
+	}
+	if rootPkg.Reachable || rootPkg.ImportFileCount != 0 {
+		t.Fatalf("expected root manifest package to stay unreachable, got %#v", *rootPkg)
+	}
+
+	servicePkg := findPackageRecordByLocation(report.Packages, "npm", "lodash", "4.17.21", "workspace/service/package-lock.json")
+	if servicePkg == nil {
+		t.Fatalf("expected service lodash package in %#v", report.Packages)
+	}
+	if !servicePkg.Reachable || servicePkg.ImportFileCount != 1 {
+		t.Fatalf("expected nested manifest package to be reachable, got %#v", *servicePkg)
+	}
+}
+
+func TestAnalyzerScopesGoReachabilityToNearestManifest(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "workspace", "go.mod"), `module example.com/root
+
+go 1.22
+
+require golang.org/x/text v0.14.0
+`)
+	mustWriteFile(t, filepath.Join(root, "workspace", "go.sum"), `golang.org/x/text v0.14.0
+`)
+	mustWriteFile(t, filepath.Join(root, "workspace", "tools", "go.mod"), `module example.com/root/tools
+
+go 1.22
+
+require golang.org/x/text v0.14.0
+`)
+	mustWriteFile(t, filepath.Join(root, "workspace", "tools", "go.sum"), `golang.org/x/text v0.14.0
+`)
+	mustWriteFile(t, filepath.Join(root, "workspace", "tools", "main.go"), `package main
+
+import "golang.org/x/text/cases"
+
+func main() {
+	_ = cases.Title
+}
+`)
+
+	report, err := New(Options{}).Analyze(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+
+	rootPkg := findPackageRecordByLocation(report.Packages, "golang", "golang.org/x/text", "v0.14.0", "workspace/go.mod")
+	if rootPkg == nil {
+		t.Fatalf("expected root Go package in %#v", report.Packages)
+	}
+	if rootPkg.Reachable || rootPkg.ImportFileCount != 0 {
+		t.Fatalf("expected root module package to stay unreachable, got %#v", *rootPkg)
+	}
+
+	toolPkg := findPackageRecordByLocation(report.Packages, "golang", "golang.org/x/text", "v0.14.0", "workspace/tools/go.mod")
+	if toolPkg == nil {
+		t.Fatalf("expected nested Go package in %#v", report.Packages)
+	}
+	if !toolPkg.Reachable || toolPkg.ImportFileCount != 1 {
+		t.Fatalf("expected nested Go module package to be reachable, got %#v", *toolPkg)
+	}
+}
+
 func findPackageRecord(pkgs []PackageRecord, ecosystem, name, version string) *PackageRecord {
 	for i := range pkgs {
 		pkg := &pkgs[i]
 		if pkg.Ecosystem == ecosystem && pkg.Name == name && pkg.Version == version {
+			return pkg
+		}
+	}
+	return nil
+}
+
+func findPackageRecordByLocation(pkgs []PackageRecord, ecosystem, name, version, location string) *PackageRecord {
+	for i := range pkgs {
+		pkg := &pkgs[i]
+		if pkg.Ecosystem == ecosystem && pkg.Name == name && pkg.Version == version && pkg.Location == location {
 			return pkg
 		}
 	}

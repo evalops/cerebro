@@ -28,6 +28,14 @@ type goDependencyGraph struct {
 	ImportableKeys map[string]map[string]struct{}
 }
 
+func (g npmDependencyGraph) manifestBaseDir() string {
+	return g.BaseDir
+}
+
+func (g goDependencyGraph) manifestBaseDir() string {
+	return g.BaseDir
+}
+
 type npmLockPackage struct {
 	Name         string            `json:"name"`
 	Version      string            `json:"version"`

@@ -592,10 +592,11 @@ func (i *inventory) sortedTechnologies() []TechnologyRecord {
 }
 
 func (i *inventory) applyDependencyReachability() {
+	npmBaseDirs := collectManifestBaseDirs(i.npmGraphs)
 	for _, graph := range i.npmGraphs {
 		reachable := make(map[string]map[string]struct{})
 		for filePath, imports := range i.jsImports {
-			if graph.BaseDir != "" && !strings.HasPrefix(filePath, graph.BaseDir+"/") && filePath != graph.BaseDir {
+			if !manifestOwnsFile(filePath, graph.BaseDir, npmBaseDirs) {
 				continue
 			}
 			for _, imp := range imports {
@@ -638,10 +639,11 @@ func (i *inventory) applyDependencyReachability() {
 			}
 		}
 	}
+	goBaseDirs := collectManifestBaseDirs(i.goGraphs)
 	for _, graph := range i.goGraphs {
 		reachable := make(map[string]map[string]struct{})
 		for filePath, imports := range i.goImports {
-			if graph.BaseDir != "" && !strings.HasPrefix(filePath, graph.BaseDir+"/") && filePath != graph.BaseDir {
+			if !manifestOwnsFile(filePath, graph.BaseDir, goBaseDirs) {
 				continue
 			}
 			for _, imp := range imports {
@@ -663,6 +665,68 @@ func (i *inventory) applyDependencyReachability() {
 			i.packages[key] = pkg
 		}
 	}
+}
+
+func collectManifestBaseDirs[T interface{ manifestBaseDir() string }](graphs []T) []string {
+	seen := make(map[string]struct{}, len(graphs))
+	out := make([]string, 0, len(graphs))
+	for _, graph := range graphs {
+		baseDir := normalizeManifestBaseDir(graph.manifestBaseDir())
+		if _, ok := seen[baseDir]; ok {
+			continue
+		}
+		seen[baseDir] = struct{}{}
+		out = append(out, baseDir)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return len(out[i]) > len(out[j])
+	})
+	return out
+}
+
+func manifestOwnsFile(filePath, baseDir string, manifestBaseDirs []string) bool {
+	baseDir = normalizeManifestBaseDir(baseDir)
+	filePath = strings.TrimSpace(filePath)
+	if filePath == "" {
+		return false
+	}
+	if !pathWithinManifestBase(filePath, baseDir) {
+		return false
+	}
+	return nearestManifestBaseDir(filePath, manifestBaseDirs) == baseDir
+}
+
+func nearestManifestBaseDir(filePath string, manifestBaseDirs []string) string {
+	filePath = strings.TrimSpace(filePath)
+	if filePath == "" {
+		return ""
+	}
+	for _, baseDir := range manifestBaseDirs {
+		if pathWithinManifestBase(filePath, baseDir) {
+			return baseDir
+		}
+	}
+	return ""
+}
+
+func pathWithinManifestBase(filePath, baseDir string) bool {
+	baseDir = normalizeManifestBaseDir(baseDir)
+	filePath = strings.TrimSpace(filePath)
+	if filePath == "" {
+		return false
+	}
+	if baseDir == "" {
+		return true
+	}
+	return filePath == baseDir || strings.HasPrefix(filePath, baseDir+"/")
+}
+
+func normalizeManifestBaseDir(baseDir string) string {
+	baseDir = strings.TrimSpace(baseDir)
+	if baseDir == "." {
+		return ""
+	}
+	return baseDir
 }
 
 func readLimitedFile(root *os.Root, filePath string, limit int64) ([]byte, bool, error) {
