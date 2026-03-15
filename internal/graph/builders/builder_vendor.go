@@ -94,6 +94,9 @@ func (b *Builder) buildVendorNodes() {
 			continue
 		}
 		vendor := b.ensureVendorNode(projection)
+		if vendor == nil {
+			continue
+		}
 		for managedNodeID := range projection.managedNodeIDs {
 			b.addEdgeIfMissing(&Edge{
 				Source: managedNodeID,
@@ -451,6 +454,9 @@ func (b *Builder) ensureVendorNode(projection *vendorProjection) *Node {
 	}
 	b.graph.AddNode(vendor)
 	resolved, _ := b.graph.GetNode(projection.id)
+	if resolved == nil {
+		return nil
+	}
 	return resolved
 }
 
