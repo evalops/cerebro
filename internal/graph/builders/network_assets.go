@@ -120,10 +120,120 @@ func gcpFirewallAllowsInternet(record map[string]any) bool {
 }
 
 func azureNetworkSecurityGroupAllowsInternet(record map[string]any) bool {
-	rules := strings.ToLower(toString(queryRow(record, "security_rules")))
-	if rules == "" {
-		rules = strings.ToLower(toString(queryRow(record, "default_security_rules")))
+	return azureRulesAllowInternet(queryRow(record, "security_rules")) ||
+		azureRulesAllowInternet(queryRow(record, "default_security_rules"))
+}
+
+func containsInternetCIDR(value string) bool {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return false
 	}
+	return strings.Contains(value, "0.0.0.0/0") || strings.Contains(value, "::/0")
+}
+
+func azureRulesAllowInternet(value any) bool {
+	value = normalizeStructuredValue(value)
+	switch typed := value.(type) {
+	case []map[string]any:
+		for _, rule := range typed {
+			if azureRuleAllowsInternet(rule) {
+				return true
+			}
+		}
+		return false
+	case []any:
+		for _, item := range typed {
+			if azureRuleAllowsInternet(asAnyMap(item)) {
+				return true
+			}
+		}
+		return false
+	case map[string]any:
+		return azureRuleAllowsInternet(typed)
+	default:
+		return azureRulesAllowInternetFromString(strings.ToLower(toString(value)))
+	}
+}
+
+func azureRuleAllowsInternet(rule map[string]any) bool {
+	if len(rule) == 0 {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(azureRuleString(rule, "access", "Access")), "allow") {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(azureRuleString(rule, "direction", "Direction")), "inbound") {
+		return false
+	}
+	for _, prefix := range azureRuleSourcePrefixes(rule) {
+		if azureSourcePrefixAllowsInternet(prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func azureRuleSourcePrefixes(rule map[string]any) []string {
+	out := make([]string, 0, 4)
+	for _, key := range []string{
+		"source_address_prefix",
+		"SourceAddressPrefix",
+		"sourceAddressPrefix",
+		"source_address_prefixes",
+		"SourceAddressPrefixes",
+		"sourceAddressPrefixes",
+	} {
+		if value, ok := queryRowValue(rule, key); ok {
+			out = appendStringValues(out, value)
+		}
+	}
+	return out
+}
+
+func appendStringValues(dst []string, value any) []string {
+	value = normalizeStructuredValue(value)
+	switch typed := value.(type) {
+	case []string:
+		for _, item := range typed {
+			if item = strings.TrimSpace(item); item != "" {
+				dst = append(dst, item)
+			}
+		}
+	case []any:
+		for _, item := range typed {
+			if itemStr := strings.TrimSpace(toString(item)); itemStr != "" {
+				dst = append(dst, itemStr)
+			}
+		}
+	default:
+		if item := strings.TrimSpace(toString(typed)); item != "" {
+			dst = append(dst, item)
+		}
+	}
+	return dst
+}
+
+func azureRuleString(rule map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if value, ok := queryRowValue(rule, key); ok {
+			if text := strings.TrimSpace(toString(value)); text != "" {
+				return text
+			}
+		}
+	}
+	return ""
+}
+
+func azureSourcePrefixAllowsInternet(prefix string) bool {
+	prefix = strings.ToLower(strings.TrimSpace(prefix))
+	if prefix == "" {
+		return false
+	}
+	return prefix == "*" || prefix == "internet" || prefix == "any" || containsInternetCIDR(prefix)
+}
+
+func azureRulesAllowInternetFromString(rules string) bool {
 	if rules == "" {
 		return false
 	}
@@ -134,13 +244,14 @@ func azureNetworkSecurityGroupAllowsInternet(record map[string]any) bool {
 		strings.Contains(rules, "internet") ||
 		strings.Contains(rules, "\"*\"") ||
 		strings.Contains(rules, "sourceaddressprefix:*") ||
-		strings.Contains(rules, "source_address_prefix:*")
+		strings.Contains(rules, "source_address_prefix:*") ||
+		strings.Contains(rules, "sourceaddressprefixes:[*]") ||
+		strings.Contains(rules, "source_address_prefixes:[*]")
 }
 
-func containsInternetCIDR(value string) bool {
-	value = strings.ToLower(strings.TrimSpace(value))
-	if value == "" {
-		return false
+func asAnyMap(value any) map[string]any {
+	if typed, ok := value.(map[string]any); ok {
+		return typed
 	}
-	return strings.Contains(value, "0.0.0.0/0") || strings.Contains(value, "::/0")
+	return nil
 }

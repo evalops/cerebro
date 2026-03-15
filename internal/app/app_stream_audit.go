@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/evalops/cerebro/internal/events"
+	"github.com/evalops/cerebro/internal/graph/builders"
 	"github.com/evalops/cerebro/internal/snowflake"
 )
 
@@ -154,7 +155,7 @@ func parseAuditMutationCloudEvent(evt events.CloudEvent) ([]auditMutationRecord,
 
 		resourceID := strings.TrimSpace(anyToString(firstPresent(raw, "resource_id", "id", "arn", "self_link")))
 		if resourceID == "" {
-			resourceID = cdcResourceIDFromPayload(payload)
+			resourceID = cdcResourceIDFromPayload(tableName, payload)
 		}
 		if resourceID == "" && changeType != "removed" {
 			return nil, fmt.Errorf("audit mutation event %q requires resource_id for table %s", eventType, tableName)
@@ -262,17 +263,8 @@ func auditProviderForTable(tableName string) string {
 	}
 }
 
-func cdcResourceIDFromPayload(payload map[string]any) string {
-	return strings.TrimSpace(anyToString(firstPresent(
-		payload,
-		"_cq_id",
-		"arn",
-		"id",
-		"self_link",
-		"unique_id",
-		"name",
-		"group_id",
-	)))
+func cdcResourceIDFromPayload(tableName string, payload map[string]any) string {
+	return builders.CDCResourceIDForTable(tableName, payload)
 }
 
 func deriveAuditMutationPayload(raw map[string]any) map[string]any {

@@ -381,7 +381,10 @@ func cdcEventToNode(table string, event cdcEvent) *Node {
 			Risk:     RiskHigh,
 		}
 	case "aws_ec2_security_groups":
-		return awsSecurityGroupNodeFromRecord(payload, firstNonEmpty(provider, "aws"), account, region)
+		return nodeWithResolvedID(
+			awsSecurityGroupNodeFromRecord(payload, firstNonEmpty(provider, "aws"), account, region),
+			cdcNodeID(table, payload, event.ResourceID),
+		)
 
 	case "gcp_iam_service_accounts":
 		id := cdcNodeID(table, payload, event.ResourceID)
@@ -496,7 +499,10 @@ func cdcEventToNode(table string, event cdcEvent) *Node {
 			},
 		}
 	case "gcp_compute_firewalls":
-		return gcpFirewallNodeFromRecord(payload, firstNonEmpty(provider, "gcp"), account, region)
+		return nodeWithResolvedID(
+			gcpFirewallNodeFromRecord(payload, firstNonEmpty(provider, "gcp"), account, region),
+			cdcNodeID(table, payload, event.ResourceID),
+		)
 
 	case "azure_ad_service_principals":
 		id := cdcNodeID(table, payload, event.ResourceID)
@@ -603,7 +609,10 @@ func cdcEventToNode(table string, event cdcEvent) *Node {
 			},
 		}
 	case "azure_network_security_groups":
-		return azureNetworkSecurityGroupNodeFromRecord(payload, firstNonEmpty(provider, "azure"), account, region)
+		return nodeWithResolvedID(
+			azureNetworkSecurityGroupNodeFromRecord(payload, firstNonEmpty(provider, "azure"), account, region),
+			cdcNodeID(table, payload, event.ResourceID),
+		)
 
 	case "okta_users":
 		id := cdcNodeID(table, payload, event.ResourceID)
@@ -747,6 +756,26 @@ func cdcNodeID(table string, payload map[string]any, fallback string) string {
 		}
 		return firstNonEmpty(queryRowString(payload, "arn"), queryRowString(payload, "id"), queryRowString(payload, "unique_id"), queryRowString(payload, "name"))
 	}
+}
+
+func CDCResourceIDForTable(table string, payload map[string]any) string {
+	return cdcNodeID(table, payload, "")
+}
+
+func nodeWithResolvedID(node *Node, resolvedID string) *Node {
+	if node == nil {
+		return nil
+	}
+	resolvedID = strings.TrimSpace(resolvedID)
+	if resolvedID == "" || node.ID == resolvedID {
+		return node
+	}
+	previousID := node.ID
+	node.ID = resolvedID
+	if strings.TrimSpace(node.Name) == "" || node.Name == previousID {
+		node.Name = resolvedID
+	}
+	return node
 }
 
 func normalizeCDCChangeType(changeType string) string {

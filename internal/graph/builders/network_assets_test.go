@@ -66,6 +66,21 @@ func TestAzureNetworkSecurityGroupNodeFromRecordMarksPublicIngress(t *testing.T)
 	}
 }
 
+func TestAzureNetworkSecurityGroupAllowsInternetSupportsStructuredPrefixLists(t *testing.T) {
+	record := map[string]any{
+		"security_rules": []map[string]any{{
+			"direction":               "Inbound",
+			"access":                  "Allow",
+			"source_address_prefixes": []string{"*"},
+			"destination_port_ranges": []string{"22"},
+		}},
+	}
+
+	if !azureNetworkSecurityGroupAllowsInternet(record) {
+		t.Fatalf("expected structured source_address_prefixes to be treated as public ingress, got %#v", record)
+	}
+}
+
 func TestNetworkAssetNodeIDsMatchCDCRemovalFallback(t *testing.T) {
 	tests := []struct {
 		name    string
