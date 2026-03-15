@@ -51,7 +51,7 @@ Status: executed end-to-end via PR workflow
 - [x] 016. Add malformed Kubernetes audit payload tests.
 - [x] 017. Add a Tetragon adapter package.
 - [x] 018. Normalize Tetragon process exec events.
-- [ ] 019. Normalize Tetragon process exit events.
+- [x] 019. Normalize Tetragon process exit events.
 - [ ] 020. Normalize Tetragon file events.
 - [ ] 021. Normalize Tetragon network events.
 - [ ] 022. Normalize Tetragon DNS events.

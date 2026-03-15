@@ -72,8 +72,78 @@ func TestAdapterNormalizeProcessExec(t *testing.T) {
 	}
 }
 
+func TestAdapterNormalizeProcessExit(t *testing.T) {
+	raw := []byte(`{
+		"process_exit": {
+			"process": {
+				"exec_id": "exec-exit-1",
+				"pid": 51583,
+				"uid": 0,
+				"cwd": "/",
+				"binary": "/usr/bin/whoami",
+				"arguments": "--version",
+				"flags": "execve rootcwd clone",
+				"start_time": "2022-05-11T12:54:45.615Z",
+				"pod": {
+					"namespace": "default",
+					"name": "xwing",
+					"workload": "xwing",
+					"container": {
+						"id": "containerd://1fb931d2f6e5",
+						"name": "spaceship",
+						"image": {
+							"id": "docker.io/tgraf/netperf@sha256:deadbeef",
+							"name": "docker.io/tgraf/netperf:latest"
+						}
+					},
+					"pod_labels": {
+						"app.kubernetes.io/name": "xwing"
+					}
+				},
+				"docker": "1fb931d2f6e5",
+				"parent_exec_id": "parent-exit-1"
+			},
+			"parent": {
+				"binary": "/bin/bash",
+				"arguments": "-c whoami --version"
+			},
+			"signal": "SIGTERM",
+			"status": 143
+		},
+		"node_name": "worker-2",
+		"time": "2022-05-11T12:54:46.000Z"
+	}`)
+
+	observations, err := (Adapter{}).Normalize(context.Background(), raw)
+	if err != nil {
+		t.Fatalf("Normalize: %v", err)
+	}
+	if len(observations) != 1 {
+		t.Fatalf("len(observations) = %d, want 1", len(observations))
+	}
+	observation := observations[0]
+	if observation.Kind != runtime.ObservationKindProcessExit {
+		t.Fatalf("kind = %s, want %s", observation.Kind, runtime.ObservationKindProcessExit)
+	}
+	if observation.Process == nil || observation.Process.Name != "whoami" {
+		t.Fatalf("process = %#v, want whoami", observation.Process)
+	}
+	if observation.Process.ParentName != "bash" {
+		t.Fatalf("parent_name = %q, want bash", observation.Process.ParentName)
+	}
+	if got := observation.Metadata["exit_signal"]; got != "SIGTERM" {
+		t.Fatalf("exit_signal = %#v, want SIGTERM", got)
+	}
+	if got := observation.Metadata["exit_status"]; got != float64(143) && got != uint32(143) && got != 143 {
+		t.Fatalf("exit_status = %#v, want 143", got)
+	}
+	if len(observation.Tags) != 2 || observation.Tags[1] != "process_exit" {
+		t.Fatalf("tags = %#v, want process_exit tag", observation.Tags)
+	}
+}
+
 func TestAdapterNormalizeUnsupportedEvent(t *testing.T) {
-	raw := []byte(`{"process_exit":{"process":{"exec_id":"exec-1"}}}`)
+	raw := []byte(`{"process_kprobe":{"process":{"exec_id":"exec-1"}}}`)
 	if _, err := (Adapter{}).Normalize(context.Background(), raw); err == nil {
 		t.Fatal("expected unsupported event error")
 	}

@@ -20,6 +20,7 @@ var _ adapters.Adapter = Adapter{}
 
 type payload struct {
 	ProcessExec *processExecEnvelope `json:"process_exec,omitempty"`
+	ProcessExit *processExitEnvelope `json:"process_exit,omitempty"`
 	NodeName    string               `json:"node_name"`
 	Time        time.Time            `json:"time"`
 }
@@ -27,6 +28,13 @@ type payload struct {
 type processExecEnvelope struct {
 	Process processInfo `json:"process"`
 	Parent  processInfo `json:"parent"`
+}
+
+type processExitEnvelope struct {
+	Process processInfo `json:"process"`
+	Parent  processInfo `json:"parent"`
+	Signal  string      `json:"signal"`
+	Status  uint32      `json:"status"`
 }
 
 type processInfo struct {
@@ -71,10 +79,14 @@ func (Adapter) Normalize(_ context.Context, raw []byte) ([]*runtime.RuntimeObser
 	if err := json.Unmarshal(raw, &event); err != nil {
 		return nil, fmt.Errorf("decode tetragon payload: %w", err)
 	}
-	if event.ProcessExec == nil {
+	switch {
+	case event.ProcessExec != nil:
+		return []*runtime.RuntimeObservation{observationFromProcessExec(event)}, nil
+	case event.ProcessExit != nil:
+		return []*runtime.RuntimeObservation{observationFromProcessExit(event)}, nil
+	default:
 		return nil, fmt.Errorf("decode tetragon payload: unsupported event")
 	}
-	return []*runtime.RuntimeObservation{observationFromProcessExec(event)}, nil
 }
 
 func observationFromProcessExec(event payload) *runtime.RuntimeObservation {
@@ -135,6 +147,69 @@ func observationFromProcessExec(event payload) *runtime.RuntimeObservation {
 		},
 		Metadata: metadata,
 		Tags:     []string{"tetragon", "process_exec"},
+	}
+}
+
+func observationFromProcessExit(event payload) *runtime.RuntimeObservation {
+	process := event.ProcessExit.Process
+	parent := event.ProcessExit.Parent
+	observedAt := event.Time
+	if observedAt.IsZero() {
+		observedAt = process.StartTime
+	}
+
+	processName := baseNameOrEmpty(process.Binary)
+	parentName := baseNameOrEmpty(parent.Binary)
+	cmdline := strings.TrimSpace(strings.Join([]string{process.Binary, process.Arguments}, " "))
+	resourceID := podResourceID(process.Pod.Namespace, process.Pod.Name)
+	metadata := map[string]any{
+		"exec_id":        process.ExecID,
+		"parent_exec_id": process.ParentExecID,
+		"cwd":            process.CWD,
+		"flags":          process.Flags,
+		"workload_name":  process.Pod.Workload,
+		"pod_labels":     cloneStringMap(process.Pod.Labels),
+		"node_name":      event.NodeName,
+		"exit_signal":    strings.TrimSpace(event.ProcessExit.Signal),
+		"exit_status":    event.ProcessExit.Status,
+	}
+
+	workloadRef := ""
+	if process.Pod.Namespace != "" && process.Pod.Workload != "" {
+		workloadRef = "workload:" + process.Pod.Namespace + "/" + process.Pod.Workload
+	}
+
+	return &runtime.RuntimeObservation{
+		ID:           process.ExecID,
+		Kind:         runtime.ObservationKindProcessExit,
+		Source:       sourceName,
+		ObservedAt:   observedAt,
+		ResourceID:   resourceID,
+		ResourceType: "pod",
+		Namespace:    process.Pod.Namespace,
+		NodeName:     event.NodeName,
+		WorkloadRef:  workloadRef,
+		ContainerID:  firstNonEmpty(process.Pod.Container.ID, process.Docker),
+		ImageRef:     process.Pod.Container.Image.Name,
+		ImageID:      process.Pod.Container.Image.ID,
+		Process: &runtime.ProcessEvent{
+			PID:        process.PID,
+			Name:       processName,
+			Path:       process.Binary,
+			Cmdline:    cmdline,
+			UID:        process.UID,
+			ParentName: parentName,
+		},
+		Container: &runtime.ContainerEvent{
+			ContainerID:   firstNonEmpty(process.Pod.Container.ID, process.Docker),
+			ContainerName: process.Pod.Container.Name,
+			Image:         process.Pod.Container.Image.Name,
+			ImageID:       process.Pod.Container.Image.ID,
+			Namespace:     process.Pod.Namespace,
+			PodName:       process.Pod.Name,
+		},
+		Metadata: metadata,
+		Tags:     []string{"tetragon", "process_exit"},
 	}
 }
 
