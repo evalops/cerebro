@@ -884,8 +884,11 @@ func workloadSecurityPrioritizedRisk(scanNode *Node, internetExposed bool, admin
 	if kevCount > 0 || criticalCount > 0 {
 		return RiskHigh
 	}
-	if reachableHighCount > 0 || highCount > 0 || reachableCount > 0 || readInt(scanNode.Properties, "vulnerability_count") > 0 {
+	if reachableHighCount > 0 || highCount > 0 || readInt(scanNode.Properties, "medium_vulnerability_count") > 0 {
 		return RiskMedium
+	}
+	if reachableCount > 0 || readInt(scanNode.Properties, "vulnerability_count") > 0 {
+		return RiskLow
 	}
 	return RiskLow
 }

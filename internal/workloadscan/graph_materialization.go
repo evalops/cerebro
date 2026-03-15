@@ -1248,7 +1248,7 @@ func summaryRisk(summary scanSummary) graph.RiskLevel {
 	if summary.KnownExploitedCount > 0 || summary.CriticalVulnerabilityCount > 0 || summary.ReachableHighVulnerabilityCount > 0 {
 		return graph.RiskHigh
 	}
-	if summary.HighVulnerabilityCount > 0 || summary.MediumVulnerabilityCount > 0 || summary.ReachableVulnerabilityCount > 0 {
+	if summary.HighVulnerabilityCount > 0 || summary.MediumVulnerabilityCount > 0 {
 		return graph.RiskMedium
 	}
 	if summary.LowVulnerabilityCount > 0 || summary.VulnerabilityCount > 0 {
@@ -1288,9 +1288,6 @@ func (ctx *vulnerabilityUsageContext) observePackage(pkg filesystemanalyzer.Pack
 	}
 	if ctx.affectedPackageKeys == nil {
 		ctx.affectedPackageKeys = make(map[string]struct{})
-	}
-	if _, exists := ctx.affectedPackageKeys[key]; exists {
-		return
 	}
 	ctx.affectedPackageKeys[key] = struct{}{}
 	if !ctx.hasBestPackage || packageVulnerabilityPriorityBetter(pkg, ctx.bestPackage) {

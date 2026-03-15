@@ -666,6 +666,133 @@ func TestMaterializeRunsIntoGraphDownranksUnreachableCriticalVulnerabilities(t *
 	}
 }
 
+func TestMaterializeRunsIntoGraphKeepsReachableLowVulnerabilitiesLowRisk(t *testing.T) {
+	now := time.Date(2026, 3, 12, 18, 0, 0, 0, time.UTC)
+	g := graph.New()
+	g.AddNode(&graph.Node{
+		ID:       "arn:aws:ec2:us-east-1:123456789012:instance/i-abc123",
+		Kind:     graph.NodeKindInstance,
+		Name:     "i-abc123",
+		Provider: "aws",
+		Account:  "123456789012",
+		Region:   "us-east-1",
+	})
+	g.BuildIndex()
+
+	run := buildGraphMaterializationTestRun("workload_scan:run-reachable-low", now.Add(-2*time.Hour), 0)
+	run.Volumes[0].Analysis.Catalog.Packages = []filesystemanalyzer.PackageRecord{{
+		Ecosystem:        "npm",
+		Manager:          "npm",
+		Name:             "lodash",
+		Version:          "4.17.21",
+		PURL:             "pkg:npm/lodash@4.17.21",
+		Location:         "srv/app/package-lock.json",
+		DirectDependency: true,
+		Reachable:        true,
+		DependencyDepth:  1,
+		ImportFileCount:  1,
+	}}
+	run.Volumes[0].Analysis.Catalog.Vulnerabilities = []scanner.ImageVulnerability{{
+		CVE:              "CVE-2026-3100",
+		Severity:         "LOW",
+		Package:          "lodash",
+		InstalledVersion: "4.17.21",
+		FixedVersion:     "4.17.22",
+	}}
+
+	MaterializeRunsIntoGraph(g, []RunRecord{run}, now)
+
+	scanNode, ok := g.GetNode(run.ID)
+	if !ok {
+		t.Fatalf("expected workload scan node %q", run.ID)
+	}
+	if scanNode.Risk != graph.RiskLow {
+		t.Fatalf("expected reachable low vulnerability to keep scan risk low, got %#v", scanNode)
+	}
+}
+
+func TestMaterializeRunsIntoGraphPrefersReachableDuplicatePackageContext(t *testing.T) {
+	now := time.Date(2026, 3, 12, 18, 0, 0, 0, time.UTC)
+	g := graph.New()
+	g.AddNode(&graph.Node{
+		ID:       "arn:aws:ec2:us-east-1:123456789012:instance/i-abc123",
+		Kind:     graph.NodeKindInstance,
+		Name:     "i-abc123",
+		Provider: "aws",
+		Account:  "123456789012",
+		Region:   "us-east-1",
+	})
+	g.BuildIndex()
+
+	run := buildGraphMaterializationTestRun("workload_scan:run-duplicate-package-priority", now.Add(-2*time.Hour), 0)
+	reachablePkg := filesystemanalyzer.PackageRecord{
+		Ecosystem:        "npm",
+		Manager:          "npm",
+		Name:             "express",
+		Version:          "4.18.2",
+		PURL:             "pkg:npm/express@4.18.2",
+		Location:         "srv/app/package-lock.json",
+		DirectDependency: true,
+		Reachable:        true,
+		DependencyDepth:  1,
+		ImportFileCount:  2,
+	}
+	unreachablePkg := reachablePkg
+	unreachablePkg.Reachable = false
+	unreachablePkg.ImportFileCount = 0
+	run.Volumes[0].Analysis.Catalog.Packages = []filesystemanalyzer.PackageRecord{unreachablePkg}
+	startedAt := now.Add(-2*time.Hour - 15*time.Minute)
+	completedAt := now.Add(-2 * time.Hour)
+	run.Summary.VolumeCount = 2
+	run.Summary.SucceededVolumes = 2
+	run.Volumes = append(run.Volumes, VolumeScanRecord{
+		Source:      SourceVolume{ID: "vol-2"},
+		Status:      RunStatusSucceeded,
+		Stage:       RunStageCompleted,
+		StartedAt:   startedAt,
+		UpdatedAt:   completedAt,
+		CompletedAt: &completedAt,
+		Analysis: &AnalysisReport{
+			FindingCount: 1,
+			SBOMRef:      "embedded:cyclonedx",
+			Catalog: &filesystemanalyzer.Report{
+				Packages: []filesystemanalyzer.PackageRecord{reachablePkg},
+				Vulnerabilities: []scanner.ImageVulnerability{{
+					CVE:              "CVE-2026-3200",
+					Severity:         "CRITICAL",
+					Package:          "express",
+					InstalledVersion: "4.18.2",
+					FixedVersion:     "4.18.3",
+				}},
+			},
+		},
+	})
+	run.Volumes[0].Analysis.Catalog.Vulnerabilities = []scanner.ImageVulnerability{{
+		CVE:              "CVE-2026-3200",
+		Severity:         "CRITICAL",
+		Package:          "express",
+		InstalledVersion: "4.18.2",
+		FixedVersion:     "4.18.3",
+	}}
+
+	MaterializeRunsIntoGraph(g, []RunRecord{run}, now)
+
+	vuln := scanner.ImageVulnerability{CVE: "CVE-2026-3200"}
+	scanEdge := findOutEdge(g, run.ID, graph.EdgeKindFoundVuln, vulnerabilityNodeID(vuln))
+	if scanEdge == nil {
+		t.Fatalf("expected scan -> vulnerability edge")
+	}
+	if got := graphValueBool(scanEdge.Properties["reachable"]); !got {
+		t.Fatalf("expected reachable duplicate package context to win, got %#v", scanEdge.Properties)
+	}
+	if got := graphValueString(scanEdge.Properties["priority_hint"]); got != "reachable_direct" {
+		t.Fatalf("expected reachable_direct priority_hint, got %#v", scanEdge.Properties)
+	}
+	if got := graphValueInt(scanEdge.Properties["import_file_count"]); got != 2 {
+		t.Fatalf("expected reachable duplicate package import_file_count=2, got %#v", scanEdge.Properties)
+	}
+}
+
 func TestMaterializeRunsIntoGraphAddsCredentialPivotEdges(t *testing.T) {
 	now := time.Date(2026, 3, 12, 18, 0, 0, 0, time.UTC)
 	g := graph.New()
