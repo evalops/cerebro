@@ -25,7 +25,7 @@ func TestBuilder_ProjectsVendorNodesFromIdentityIntegrations(t *testing.T) {
 			"sign_on_mode": "SAML_2_0",
 		}},
 	})
-	source.setResult(`SELECT id, display_name, app_id, service_principal_type, account_enabled, app_owner_organization_id, publisher_name, created_date_time, tags, subscription_id FROM azure_graph_service_principals`, &DataQueryResult{
+	source.setResult(`SELECT id, display_name, app_id, service_principal_type, account_enabled, app_owner_organization_id, app_role_assignment_required, publisher_name, created_date_time, tags, subscription_id FROM azure_graph_service_principals`, &DataQueryResult{
 		Rows: []map[string]any{
 			{
 				"id":                        "sp-slack",

@@ -603,12 +603,12 @@ func (b *Builder) buildAzureIdentityNodes(ctx context.Context) {
 	b.loadAzurePreferredIdentityNodes(ctx, []nodeQuery{
 		{
 			table: "azure_graph_service_principals",
-			query: `SELECT id, display_name, app_id, service_principal_type, account_enabled, app_owner_organization_id, publisher_name, created_date_time, tags, subscription_id FROM azure_graph_service_principals`,
+			query: `SELECT id, display_name, app_id, service_principal_type, account_enabled, app_owner_organization_id, app_role_assignment_required, publisher_name, created_date_time, tags, subscription_id FROM azure_graph_service_principals`,
 			parse: parseAzureServicePrincipalNodes,
 		},
 		{
 			table: "entra_service_principals",
-			query: `SELECT id, display_name, app_id, service_principal_type, account_enabled, app_role_assignment_required, created_datetime, tags FROM entra_service_principals`,
+			query: `SELECT id, display_name, app_id, service_principal_type, account_enabled, app_owner_organization_id, app_role_assignment_required, publisher_name, created_datetime, tags FROM entra_service_principals`,
 			parse: parseAzureServicePrincipalNodes,
 		},
 		{
