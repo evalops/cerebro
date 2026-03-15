@@ -65,6 +65,39 @@ Status: executed end-to-end via PR workflow
 - [x] Persist verified/unverified integration counts plus verification status on vendor nodes.
 - [x] Add TDD coverage for verified-publisher preservation and verified-publisher-based vendor projection merge behavior.
 
+## Deep Review Cycle 117 - Entra Delegated OAuth Grants for Vendor Access Modeling (2026-03-15)
+
+- [x] Gap: Entra app-role assignments only model app-only grants, but issue `#255` explicitly called out OAuth app authorizations and vendor access from identity providers.
+- [x] Gap: Cerebro was not ingesting `oauth2PermissionGrant`, so delegated OAuth consents had no first-class graph representation and vendor dependency breadth missed user-consented SaaS apps entirely.
+- [x] Gap: the right seam is the existing Entra provider + Azure relationship extractor, not a one-off vendor-specific path, so delegated grants become reusable graph substrate.
+
+- [x] Add an `entra_oauth2_permission_grants` provider table for `client_id`, `consent_type`, `principal_id`, `resource_id`, `scope`, `start_time`, and `expiry_time`.
+- [x] Sync delegated OAuth grants from Microsoft Graph with the official `oauth2PermissionGrants` endpoint.
+- [x] Project delegated grant relationships into `resource_relationships` for both client-app-to-resource access and principal-to-client consent edges where applicable.
+- [x] Add TDD coverage for delegated grant relationship extraction and vendor signal aggregation from delegated OAuth consents.
+- [x] Rerun focused and broad graph/provider/sync validation plus lint.
+
+## Deep Review Cycle 118 - Vendor Risk Signals for Delegated Admin Consent (2026-03-15)
+
+- [x] Gap: delegated OAuth grants were now in the graph, but vendor nodes still collapsed tenant-wide admin consent into the same generic access summary as per-user delegated consent.
+- [x] Gap: the graph builder stores raw relationship payloads under nested edge properties, and vendor aggregation was ignoring those nested grant fields entirely.
+- [x] Gap: that left `AllPrincipals` delegated grants under-scored even though they materially widen vendor blast radius without requiring per-user assignment edges.
+
+- [x] Add TDD coverage for tenant-wide delegated grants and principal-scoped delegated consent on vendor nodes.
+- [x] Decode nested relationship grant payloads during vendor aggregation instead of relying on flattened edge fields that do not exist.
+- [x] Persist delegated-grant counts, admin-consent counts, principal-consent counts, and unique delegated scopes on vendor nodes.
+- [x] Lift vendor risk scoring when tenant-wide delegated admin consent and broad delegated scope sets are present.
+
+## Deep Review Cycle 119 - Entra OAuth Grant v1.0 API Contract Fix (2026-03-15)
+
+- [x] Gap: the new delegated-grant sync was requesting `startTime` and `expiryTime` from the Microsoft Graph v1.0 `oauth2PermissionGrants` endpoint even though those fields are beta-only.
+- [x] Gap: leaving those fields in the stable v1.0 request would make delegated-grant ingestion fail at runtime with a `400`, which would invalidate the whole vendor OAuth modeling cut.
+- [x] Gap: relationship payloads and schema metadata also needed to match the stable v1.0 contract instead of preserving unsupported columns that will never populate.
+
+- [x] Add a provider regression test that asserts the v1.0 delegated-grant sync query only requests supported fields.
+- [x] Remove beta-only grant timestamps from the Entra provider schema, request path, and relationship payload projection.
+- [x] Rerun provider, sync, builder, lint, and full-repo validation on the corrected v1.0 contract.
+
 ## Deep Review Cycle 111 - Vulnerability Reachability Prioritization on Workload Scans (2026-03-15)
 
 ### Review findings
