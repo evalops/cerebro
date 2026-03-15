@@ -77,6 +77,17 @@ Status: executed end-to-end via PR workflow
 - [x] Add TDD coverage for delegated grant relationship extraction and vendor signal aggregation from delegated OAuth consents.
 - [x] Rerun focused and broad graph/provider/sync validation plus lint.
 
+## Deep Review Cycle 118 - Vendor Risk Signals for Delegated Admin Consent (2026-03-15)
+
+- [x] Gap: delegated OAuth grants were now in the graph, but vendor nodes still collapsed tenant-wide admin consent into the same generic access summary as per-user delegated consent.
+- [x] Gap: the graph builder stores raw relationship payloads under nested edge properties, and vendor aggregation was ignoring those nested grant fields entirely.
+- [x] Gap: that left `AllPrincipals` delegated grants under-scored even though they materially widen vendor blast radius without requiring per-user assignment edges.
+
+- [x] Add TDD coverage for tenant-wide delegated grants and principal-scoped delegated consent on vendor nodes.
+- [x] Decode nested relationship grant payloads during vendor aggregation instead of relying on flattened edge fields that do not exist.
+- [x] Persist delegated-grant counts, admin-consent counts, principal-consent counts, and unique delegated scopes on vendor nodes.
+- [x] Lift vendor risk scoring when tenant-wide delegated admin consent and broad delegated scope sets are present.
+
 ## Deep Review Cycle 111 - Vulnerability Reachability Prioritization on Workload Scans (2026-03-15)
 
 ### Review findings
