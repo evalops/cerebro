@@ -335,6 +335,73 @@ func TestBuilder_AzureRBACResourceScopeDoesNotOvergrantResourceGroup(t *testing.
 	assertEdgeAbsent(t, g, "sp-managed", vmID, EdgeKindCanAdmin)
 }
 
+func TestBuilder_AzureKeyVaultAccessPoliciesLinkKeysByVaultID(t *testing.T) {
+	t.Parallel()
+
+	source := newMockDataSource()
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	vaultID := "/subscriptions/sub-1/resourceGroups/rg-app/providers/Microsoft.KeyVault/vaults/vault-1"
+	keyID := vaultID + "/keys/key-1"
+
+	source.setResult(`SELECT id, name, subscription_id, resource_group, location, tenant_id, vault_uri, access_policies, enable_purge_protection, enable_soft_delete FROM azure_keyvault_vaults`, &DataQueryResult{
+		Rows: []map[string]any{{
+			"id":              vaultID,
+			"name":            "vault-1",
+			"subscription_id": "sub-1",
+			"resource_group":  "rg-app",
+			"location":        "eastus",
+			"vault_uri":       "https://vault-1.vault.azure.net/",
+			"access_policies": []any{
+				map[string]any{
+					"object_id": "sp-managed",
+					"permissions": map[string]any{
+						"keys": []any{"get"},
+					},
+				},
+			},
+		}},
+	})
+	source.setResult(`SELECT id, name, subscription_id, vault_uri, managed, attributes FROM azure_keyvault_keys`, &DataQueryResult{
+		Rows: []map[string]any{{
+			"id":              keyID,
+			"name":            "key-1",
+			"subscription_id": "sub-1",
+			"vault_uri":       "",
+		}},
+	})
+	source.setResult(`SELECT id, principal_id, principal_type, role_definition_id, scope, condition, can_delegate, delegated_managed_identity_id, description, subscription_id FROM azure_rbac_role_assignments`, &DataQueryResult{Rows: []map[string]any{}})
+	source.setResult(`SELECT id, scope, subscription_id FROM azure_policy_assignments`, &DataQueryResult{Rows: []map[string]any{}})
+	source.setResult(`SELECT id, vault_uri, access_policies FROM azure_keyvault_vaults`, &DataQueryResult{
+		Rows: []map[string]any{{
+			"id":        vaultID,
+			"vault_uri": "https://vault-1.vault.azure.net/",
+			"access_policies": []any{
+				map[string]any{
+					"object_id": "sp-managed",
+					"permissions": map[string]any{
+						"keys": []any{"get"},
+					},
+				},
+			},
+		}},
+	})
+
+	builder := NewBuilder(source, logger)
+	if err := builder.Build(context.Background()); err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+
+	g := builder.Graph()
+	keyNode, ok := g.GetNode(keyID)
+	if !ok {
+		t.Fatalf("expected key node %q to exist", keyID)
+	}
+	if got := queryRowString(keyNode.Properties, "vault_id"); got != vaultID {
+		t.Fatalf("expected key node vault_id %q, got %q", vaultID, got)
+	}
+	assertEdgeExists(t, g, "sp-managed", keyID, EdgeKindCanRead)
+}
+
 func TestBuilder_LoadAzurePreferredIdentityNodesContinuesAfterEmptyDiscoveredTable(t *testing.T) {
 	t.Parallel()
 
@@ -462,6 +529,36 @@ func TestAzureNodeWithinScope(t *testing.T) {
 				t.Fatalf("azureNodeWithinScope(%q, %q) = %v, want %v", tc.node.ID, tc.scope, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestAzurePermissionsToEdgeKindUsesHighestPermissionScore(t *testing.T) {
+	t.Parallel()
+
+	if got := azurePermissionsToEdgeKind(map[string]any{
+		"keys": []any{"get", "backup"},
+	}); got != EdgeKindCanAdmin {
+		t.Fatalf("expected admin edge kind, got %s", got)
+	}
+
+	if got := azurePermissionsToEdgeKind(map[string]any{
+		"secrets": []any{"get", "set"},
+	}); got != EdgeKindCanWrite {
+		t.Fatalf("expected write edge kind, got %s", got)
+	}
+}
+
+func TestAzureVaultResourceIDFromKeyID(t *testing.T) {
+	t.Parallel()
+
+	keyID := "/subscriptions/sub-1/resourceGroups/rg-app/providers/Microsoft.KeyVault/vaults/vault-1/keys/key-1"
+	want := "/subscriptions/sub-1/resourceGroups/rg-app/providers/Microsoft.KeyVault/vaults/vault-1"
+	if got := azureVaultResourceIDFromKeyID(keyID); got != want {
+		t.Fatalf("azureVaultResourceIDFromKeyID(%q) = %q, want %q", keyID, got, want)
+	}
+
+	if got := azureVaultResourceIDFromKeyID("/subscriptions/sub-1/resourceGroups/rg-app/providers/Microsoft.KeyVault/vaults/vault-1"); got != "" {
+		t.Fatalf("expected empty vault id for non-key resource, got %q", got)
 	}
 }
 

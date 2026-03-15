@@ -708,3 +708,27 @@ func TestCDCNodeID_KubernetesPrefersTypedIDOverLegacyFallback(t *testing.T) {
 		t.Fatalf("expected typed kubernetes id, got %q", got)
 	}
 }
+
+func TestCDCEventToNode_AzureKeyVaultKeyAddsVaultID(t *testing.T) {
+	t.Parallel()
+
+	keyID := "/subscriptions/sub-1/resourceGroups/rg-app/providers/Microsoft.KeyVault/vaults/vault-1/keys/key-1"
+	node := cdcEventToNode("azure_keyvault_keys", cdcEvent{
+		ResourceID: keyID,
+		Provider:   "azure",
+		AccountID:  "sub-1",
+		Payload: map[string]any{
+			"id":              keyID,
+			"name":            "key-1",
+			"subscription_id": "sub-1",
+		},
+	})
+	if node == nil {
+		t.Fatal("expected key node")
+	}
+
+	wantVaultID := "/subscriptions/sub-1/resourceGroups/rg-app/providers/Microsoft.KeyVault/vaults/vault-1"
+	if got := queryRowString(node.Properties, "vault_id"); got != wantVaultID {
+		t.Fatalf("expected vault_id %q, got %q", wantVaultID, got)
+	}
+}

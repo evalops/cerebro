@@ -5,6 +5,22 @@ Owner: @haasonsaas
 Mode: implement in full, keep CI green
 Status: executed end-to-end via PR workflow
 
+## Deep Review Cycle 93 - Azure Key Vault Key Lineage and Scope Cleanup Follow-through (2026-03-14)
+
+### Review findings
+- [x] Gap: issue `#275` was already fixing Azure RBAC scope correctness, but Azure Key Vault key nodes still did not persist a `vault_id`, even though `azureKeyNodesForVault` advertised that as a matching path.
+- [x] Gap: full-build and CDC Azure Key Vault key nodes therefore relied only on `vault_uri`, which is weaker and can be absent in partial datasets.
+- [x] Gap: `azurePermissionsToEdgeKind` still used a redundant score switch that duplicated `azurePermissionScore` instead of directly taking the highest score.
+
+### Execution plan
+- [x] Add TDD coverage for:
+  - [x] Key Vault access-policy edges still linking keys when only the key resource ID is available
+  - [x] CDC Azure Key Vault key nodes deriving and storing `vault_id`
+  - [x] Azure permission scoring still honoring the highest observed permission
+- [x] Derive `vault_id` from Azure Key Vault key resource IDs in both full-build and CDC paths.
+- [x] Keep key-to-vault matching working through either explicit `vault_id` or normalized `vault_uri`.
+- [x] Replace the redundant Azure permission-score switch with direct max-of-score aggregation.
+
 ## Deep Review Cycle 92 - Azure RBAC Scope Boundaries and Fallback Table Correctness (2026-03-14)
 
 ### Review findings

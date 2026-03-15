@@ -313,6 +313,7 @@ func (b *Builder) buildAzureNodes(ctx context.Context) {
 						Account:  queryRowString(key, "subscription_id"),
 						Risk:     RiskHigh,
 						Properties: map[string]any{
+							"vault_id":            azureVaultResourceIDFromKeyID(id),
 							"vault_uri":           queryRow(key, "vault_uri"),
 							"managed":             queryRow(key, "managed"),
 							"attributes":          queryRow(key, "attributes"),
@@ -1655,16 +1656,7 @@ func azurePermissionsToEdgeKind(value any) EdgeKind {
 	score := 0
 	for _, key := range []string{"keys", "secrets", "certificates", "storage"} {
 		for _, permission := range azureStringSlice(queryRow(permissions, key)) {
-			switch azurePermissionScore(permission) {
-			case 4:
-				score = maxInt(score, 4)
-			case 3:
-				score = maxInt(score, 3)
-			case 2:
-				score = maxInt(score, 2)
-			default:
-				score = maxInt(score, 1)
-			}
+			score = max(score, azurePermissionScore(permission))
 		}
 	}
 
@@ -1733,6 +1725,26 @@ func azureInternetCIDR(value string) bool {
 func normalizeAzureVaultURI(uri string) string {
 	uri = strings.TrimSpace(strings.ToLower(uri))
 	return strings.TrimRight(uri, "/")
+}
+
+func azureVaultResourceIDFromKeyID(id string) string {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return ""
+	}
+
+	lower := strings.ToLower(id)
+	const needle = "/keys/"
+	idx := strings.Index(lower, needle)
+	if idx == -1 {
+		return ""
+	}
+
+	vaultID := strings.TrimRight(id[:idx], "/")
+	if !strings.Contains(strings.ToLower(vaultID), "/providers/microsoft.keyvault/vaults/") {
+		return ""
+	}
+	return vaultID
 }
 
 func azureNestedReferenceID(value any, keys ...string) string {
@@ -1820,11 +1832,4 @@ func azureStringSlice(value any) []string {
 		}
 	}
 	return nil
-}
-
-func maxInt(left, right int) int {
-	if right > left {
-		return right
-	}
-	return left
 }

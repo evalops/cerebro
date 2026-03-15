@@ -762,6 +762,7 @@ func cdcEventToNode(table string, event cdcEvent) *Node {
 			Account:  firstNonEmpty(queryRowString(payload, "subscription_id"), account),
 			Risk:     RiskHigh,
 			Properties: map[string]any{
+				"vault_id":            azureVaultResourceIDFromKeyID(id),
 				"vault_uri":           queryRow(payload, "vault_uri"),
 				"managed":             queryRow(payload, "managed"),
 				"attributes":          queryRow(payload, "attributes"),
