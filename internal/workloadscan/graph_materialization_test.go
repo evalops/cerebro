@@ -67,6 +67,7 @@ func TestMaterializeRunsIntoGraphAddsPackageDependencyEdgesAndUsageHints(t *test
 		DirectDependency: true,
 		Reachable:        true,
 		DependencyDepth:  1,
+		ImportFileCount:  1,
 	}
 	bodyParser := filesystemanalyzer.PackageRecord{
 		Ecosystem:        "npm",
@@ -78,6 +79,7 @@ func TestMaterializeRunsIntoGraphAddsPackageDependencyEdgesAndUsageHints(t *test
 		DirectDependency: false,
 		Reachable:        true,
 		DependencyDepth:  2,
+		ImportFileCount:  1,
 	}
 	lodash := filesystemanalyzer.PackageRecord{
 		Ecosystem:        "npm",
@@ -89,6 +91,7 @@ func TestMaterializeRunsIntoGraphAddsPackageDependencyEdgesAndUsageHints(t *test
 		DirectDependency: true,
 		Reachable:        false,
 		DependencyDepth:  1,
+		ImportFileCount:  0,
 	}
 
 	run := buildGraphMaterializationTestRun("workload_scan:run-dependency-graph", now.Add(-2*time.Hour), 0)
@@ -125,6 +128,9 @@ func TestMaterializeRunsIntoGraphAddsPackageDependencyEdgesAndUsageHints(t *test
 	if got := graphValueInt(scanToExpress.Properties["dependency_depth"]); got != 1 {
 		t.Fatalf("expected dependency_depth=1, got %#v", scanToExpress.Properties)
 	}
+	if got := graphValueInt(scanToExpress.Properties["import_file_count"]); got != 1 {
+		t.Fatalf("expected import_file_count=1, got %#v", scanToExpress.Properties)
+	}
 
 	scanToBodyParser := findOutEdge(g, run.ID, graph.EdgeKindContainsPkg, packageNodeID(bodyParser))
 	if scanToBodyParser == nil {
@@ -135,6 +141,9 @@ func TestMaterializeRunsIntoGraphAddsPackageDependencyEdgesAndUsageHints(t *test
 	}
 	if got := graphValueInt(scanToBodyParser.Properties["dependency_depth"]); got != 2 {
 		t.Fatalf("expected dependency_depth=2, got %#v", scanToBodyParser.Properties)
+	}
+	if got := graphValueInt(scanToBodyParser.Properties["import_file_count"]); got != 1 {
+		t.Fatalf("expected import_file_count=1, got %#v", scanToBodyParser.Properties)
 	}
 
 	depEdge := findOutEdge(g, packageNodeID(express), graph.EdgeKindDependsOn, packageNodeID(bodyParser))

@@ -50,13 +50,13 @@ func TestAnalyzerBuildsNPMDependencyGraphAndReachability(t *testing.T) {
 		t.Fatalf("expected 3 npm packages from package-lock, got %#v", report.Packages)
 	}
 
-	if got := pkgs["npm|express|4.18.2"]; !got.DirectDependency || got.DependencyDepth != 1 || !got.Reachable {
+	if got := pkgs["npm|express|4.18.2"]; !got.DirectDependency || got.DependencyDepth != 1 || !got.Reachable || got.ImportFileCount != 1 {
 		t.Fatalf("expected express to be direct depth=1 reachable, got %#v", got)
 	}
-	if got := pkgs["npm|body-parser|1.20.2"]; got.DirectDependency || got.DependencyDepth != 2 || !got.Reachable {
+	if got := pkgs["npm|body-parser|1.20.2"]; got.DirectDependency || got.DependencyDepth != 2 || !got.Reachable || got.ImportFileCount != 1 {
 		t.Fatalf("expected body-parser to be transitive depth=2 reachable, got %#v", got)
 	}
-	if got := pkgs["npm|lodash|4.17.21"]; !got.DirectDependency || got.DependencyDepth != 1 || got.Reachable {
+	if got := pkgs["npm|lodash|4.17.21"]; !got.DirectDependency || got.DependencyDepth != 1 || got.Reachable || got.ImportFileCount != 0 {
 		t.Fatalf("expected lodash to be direct depth=1 and not reachable, got %#v", got)
 	}
 
@@ -69,4 +69,99 @@ func TestAnalyzerBuildsNPMDependencyGraphAndReachability(t *testing.T) {
 	if dep.Ref != expressRef || len(dep.DependsOn) != 1 || dep.DependsOn[0] != bodyParserRef {
 		t.Fatalf("expected express -> body-parser dependency, got %#v", dep)
 	}
+}
+
+func TestAnalyzerMarksDirectlyImportedTransitiveNPMPackageReachable(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "srv", "app", "package-lock.json"), `{
+  "name": "demo",
+  "lockfileVersion": 2,
+  "packages": {
+    "": {
+      "name": "demo",
+      "version": "1.0.0",
+      "dependencies": {
+        "express": "4.18.2"
+      }
+    },
+    "node_modules/express": {
+      "version": "4.18.2",
+      "dependencies": {
+        "body-parser": "1.20.2"
+      }
+    },
+    "node_modules/body-parser": {
+      "version": "1.20.2"
+    }
+  }
+}`)
+	mustWriteFile(t, filepath.Join(root, "srv", "app", "src", "index.js"), "const bodyParser = require('body-parser')\napp.use(bodyParser.json())\n")
+
+	report, err := New(Options{}).Analyze(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+
+	pkg := findPackageRecord(report.Packages, "npm", "body-parser", "1.20.2")
+	if pkg == nil {
+		t.Fatalf("expected body-parser package in %#v", report.Packages)
+	}
+	if !pkg.Reachable || pkg.ImportFileCount != 1 {
+		t.Fatalf("expected directly imported transitive package to be reachable, got %#v", *pkg)
+	}
+}
+
+func TestAnalyzerBuildsNPMDependencyGraphFromV1Lockfile(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "srv", "app", "package-lock.json"), `{
+  "name": "demo",
+  "lockfileVersion": 1,
+  "dependencies": {
+    "express": {
+      "version": "4.18.2",
+      "requires": {
+        "body-parser": "1.20.2"
+      },
+      "dependencies": {
+        "body-parser": {
+          "version": "1.20.2"
+        }
+      }
+    }
+  }
+}`)
+	mustWriteFile(t, filepath.Join(root, "srv", "app", "src", "index.js"), "import express from 'express'\n")
+
+	report, err := New(Options{}).Analyze(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+
+	express := findPackageRecord(report.Packages, "npm", "express", "4.18.2")
+	if express == nil {
+		t.Fatalf("expected express package in %#v", report.Packages)
+	}
+	if !express.DirectDependency || express.DependencyDepth != 1 || !express.Reachable || express.ImportFileCount != 1 {
+		t.Fatalf("expected express to be direct depth=1 reachable, got %#v", *express)
+	}
+	bodyParser := findPackageRecord(report.Packages, "npm", "body-parser", "1.20.2")
+	if bodyParser == nil {
+		t.Fatalf("expected body-parser package in %#v", report.Packages)
+	}
+	if bodyParser.DirectDependency || bodyParser.DependencyDepth != 2 || !bodyParser.Reachable || bodyParser.ImportFileCount != 1 {
+		t.Fatalf("expected body-parser to be transitive depth=2 reachable, got %#v", *bodyParser)
+	}
+	if len(report.SBOM.Dependencies) != 1 {
+		t.Fatalf("expected one dependency edge, got %#v", report.SBOM.Dependencies)
+	}
+}
+
+func findPackageRecord(pkgs []PackageRecord, ecosystem, name, version string) *PackageRecord {
+	for i := range pkgs {
+		pkg := &pkgs[i]
+		if pkg.Ecosystem == ecosystem && pkg.Name == name && pkg.Version == version {
+			return pkg
+		}
+	}
+	return nil
 }
