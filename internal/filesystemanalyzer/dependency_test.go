@@ -156,6 +156,88 @@ func TestAnalyzerBuildsNPMDependencyGraphFromV1Lockfile(t *testing.T) {
 	}
 }
 
+func TestAnalyzerBuildsGoDependencyReachabilityFromGoMod(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "workspace", "go.mod"), `module example.com/demo
+
+go 1.22
+
+require (
+	github.com/google/uuid v1.6.0
+	golang.org/x/text v0.14.0 // indirect
+)
+`)
+	mustWriteFile(t, filepath.Join(root, "workspace", "go.sum"), `github.com/google/uuid v1.6.0
+golang.org/x/text v0.14.0
+`)
+	mustWriteFile(t, filepath.Join(root, "workspace", "main.go"), `package main
+
+import (
+	"fmt"
+
+	"github.com/google/uuid"
+)
+
+func main() {
+	fmt.Println(uuid.NewString())
+}
+`)
+
+	report, err := New(Options{}).Analyze(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+
+	uuid := findPackageRecord(report.Packages, "golang", "github.com/google/uuid", "v1.6.0")
+	if uuid == nil {
+		t.Fatalf("expected uuid package in %#v", report.Packages)
+	}
+	if !uuid.DirectDependency || uuid.DependencyDepth != 1 || !uuid.Reachable || uuid.ImportFileCount != 1 {
+		t.Fatalf("expected uuid to be direct depth=1 reachable, got %#v", *uuid)
+	}
+
+	text := findPackageRecord(report.Packages, "golang", "golang.org/x/text", "v0.14.0")
+	if text == nil {
+		t.Fatalf("expected x/text package in %#v", report.Packages)
+	}
+	if text.DirectDependency || text.DependencyDepth != 2 || text.Reachable || text.ImportFileCount != 0 {
+		t.Fatalf("expected x/text to be indirect depth=2 and not reachable, got %#v", *text)
+	}
+}
+
+func TestAnalyzerMarksGoSubpackageImportsReachable(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "workspace", "go.mod"), `module example.com/demo
+
+go 1.22
+
+require golang.org/x/text v0.14.0
+`)
+	mustWriteFile(t, filepath.Join(root, "workspace", "go.sum"), `golang.org/x/text v0.14.0
+`)
+	mustWriteFile(t, filepath.Join(root, "workspace", "main.go"), `package main
+
+import "golang.org/x/text/cases"
+
+func main() {
+	_ = cases.Title
+}
+`)
+
+	report, err := New(Options{}).Analyze(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+
+	text := findPackageRecord(report.Packages, "golang", "golang.org/x/text", "v0.14.0")
+	if text == nil {
+		t.Fatalf("expected x/text package in %#v", report.Packages)
+	}
+	if !text.Reachable || text.ImportFileCount != 1 {
+		t.Fatalf("expected subpackage import to mark module reachable, got %#v", *text)
+	}
+}
+
 func findPackageRecord(pkgs []PackageRecord, ecosystem, name, version string) *PackageRecord {
 	for i := range pkgs {
 		pkg := &pkgs[i]

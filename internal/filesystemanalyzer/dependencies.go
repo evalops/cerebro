@@ -1,10 +1,15 @@
 package filesystemanalyzer
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
+	"go/parser"
+	"go/token"
 	"path"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -13,6 +18,13 @@ type npmDependencyGraph struct {
 	BaseDir        string
 	Packages       []PackageRecord
 	DependencyKeys map[string]map[string]struct{}
+	ImportableKeys map[string]map[string]struct{}
+}
+
+type goDependencyGraph struct {
+	ManifestPath   string
+	BaseDir        string
+	Packages       []PackageRecord
 	ImportableKeys map[string]map[string]struct{}
 }
 
@@ -44,6 +56,14 @@ var (
 
 func parseNPMLockPackages(filePath string, data []byte) []PackageRecord {
 	graph := parseNPMDependencyGraph(filePath, data)
+	if graph == nil {
+		return nil
+	}
+	return graph.Packages
+}
+
+func parseGoModPackages(filePath string, data []byte) []PackageRecord {
+	graph := parseGoDependencyGraph(filePath, data)
 	if graph == nil {
 		return nil
 	}
@@ -317,6 +337,32 @@ func scanJSImportSpecifiers(data []byte) []string {
 	return dedupeStrings(matches)
 }
 
+func scanGoImportSpecifiers(filePath string, data []byte) []string {
+	if len(data) == 0 {
+		return nil
+	}
+	file, err := parser.ParseFile(token.NewFileSet(), filePath, data, parser.ImportsOnly)
+	if err != nil || file == nil {
+		return nil
+	}
+	imports := make([]string, 0, len(file.Imports))
+	for _, imp := range file.Imports {
+		if imp == nil {
+			continue
+		}
+		value, err := strconv.Unquote(strings.TrimSpace(imp.Path.Value))
+		if err != nil {
+			continue
+		}
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		imports = append(imports, value)
+	}
+	return dedupeStrings(imports)
+}
+
 func normalizeJSImportPackage(specifier string) string {
 	specifier = strings.TrimSpace(specifier)
 	if specifier == "" || strings.HasPrefix(specifier, ".") || strings.HasPrefix(specifier, "/") {
@@ -354,4 +400,156 @@ func isRootImportableNPMPackagePath(packagePath, packageName string) bool {
 		return false
 	}
 	return path.Clean(packagePath) == path.Clean("node_modules/"+packageName)
+}
+
+func parseGoDependencyGraph(filePath string, data []byte) *goDependencyGraph {
+	requirements := parseGoModRequirements(data)
+	if len(requirements) == 0 {
+		return nil
+	}
+
+	baseDir := path.Dir(filePath)
+	if baseDir == "." {
+		baseDir = ""
+	}
+
+	packages := make(map[string]PackageRecord)
+	importableKeys := make(map[string]map[string]struct{})
+	for _, req := range requirements {
+		record := PackageRecord{
+			Ecosystem:        "golang",
+			Manager:          "go",
+			Name:             strings.TrimSpace(req.Path),
+			Version:          strings.TrimSpace(req.Version),
+			Location:         filePath,
+			DirectDependency: !req.Indirect,
+		}
+		switch {
+		case req.Indirect:
+			record.DependencyDepth = 2
+		default:
+			record.DependencyDepth = 1
+		}
+		if record.Name == "" || record.Version == "" {
+			continue
+		}
+		record.PURL = buildPURL(record)
+		key := packageInventoryKey(record)
+		if existing, ok := packages[key]; ok {
+			packages[key] = mergePackageRecord(existing, record)
+		} else {
+			packages[key] = record
+		}
+		addImportablePackageKey(importableKeys, record.Name, key)
+	}
+
+	if len(packages) == 0 {
+		return nil
+	}
+	out := make([]PackageRecord, 0, len(packages))
+	for _, pkg := range packages {
+		out = append(out, pkg)
+	}
+	sort.Slice(out, func(a, b int) bool {
+		if out[a].DependencyDepth != out[b].DependencyDepth {
+			return out[a].DependencyDepth < out[b].DependencyDepth
+		}
+		if out[a].Name != out[b].Name {
+			return out[a].Name < out[b].Name
+		}
+		return out[a].Version < out[b].Version
+	})
+	return &goDependencyGraph{
+		ManifestPath:   filePath,
+		BaseDir:        baseDir,
+		Packages:       out,
+		ImportableKeys: importableKeys,
+	}
+}
+
+type goModRequirement struct {
+	Path     string
+	Version  string
+	Indirect bool
+}
+
+func parseGoModRequirements(data []byte) []goModRequirement {
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	requirements := make([]goModRequirement, 0)
+	inRequireBlock := false
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "//") {
+			continue
+		}
+		switch {
+		case line == ")" && inRequireBlock:
+			inRequireBlock = false
+			continue
+		case strings.HasPrefix(line, "require ("):
+			inRequireBlock = true
+			continue
+		case strings.HasPrefix(line, "require "):
+			requirement, ok := parseGoModRequirementLine(strings.TrimSpace(strings.TrimPrefix(line, "require ")))
+			if ok {
+				requirements = append(requirements, requirement)
+			}
+			continue
+		case inRequireBlock:
+			requirement, ok := parseGoModRequirementLine(line)
+			if ok {
+				requirements = append(requirements, requirement)
+			}
+		}
+	}
+	return requirements
+}
+
+func parseGoModRequirementLine(line string) (goModRequirement, bool) {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return goModRequirement{}, false
+	}
+	comment := ""
+	if idx := strings.Index(line, "//"); idx >= 0 {
+		comment = strings.TrimSpace(line[idx+2:])
+		line = strings.TrimSpace(line[:idx])
+	}
+	fields := strings.Fields(line)
+	if len(fields) < 2 {
+		return goModRequirement{}, false
+	}
+	return goModRequirement{
+		Path:     strings.TrimSpace(fields[0]),
+		Version:  strings.TrimSpace(fields[1]),
+		Indirect: strings.Contains(comment, "indirect"),
+	}, true
+}
+
+func matchGoImportablePackageKeys(importableKeys map[string]map[string]struct{}, importPath string) []string {
+	importPath = strings.TrimSpace(importPath)
+	if importPath == "" {
+		return nil
+	}
+	matches := make(map[string]struct{})
+	for prefix, keys := range importableKeys {
+		if prefix == "" {
+			continue
+		}
+		if importPath != prefix && !strings.HasPrefix(importPath, prefix+"/") {
+			continue
+		}
+		for key := range keys {
+			matches[key] = struct{}{}
+		}
+	}
+	if len(matches) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(matches))
+	for key := range matches {
+		out = append(out, key)
+	}
+	sort.Strings(out)
+	return out
 }
