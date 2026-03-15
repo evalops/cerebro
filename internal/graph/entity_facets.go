@@ -153,7 +153,7 @@ var defaultEntityFacetDefinitions = []EntityFacetDefinition{
 	},
 	{
 		ID:          "workload_security",
-		Version:     "1.0.0",
+		Version:     "1.1.0",
 		Title:       "Workload Security",
 		Description: "Latest workload scan posture with vulnerability depth and attack-path context.",
 		SchemaName:  "PlatformWorkloadSecurityFacet",
