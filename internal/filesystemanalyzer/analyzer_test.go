@@ -478,7 +478,6 @@ func TestAnalyzerDetectsJDBCSQLServerReferenceWhenLaterSecretFieldEmpty(t *testi
 	}
 	t.Fatalf("expected sqlserver database connection finding, got %#v", report.Secrets)
 }
-
 func TestInlineSecretValueHandlesQuotedValuesWithSemicolons(t *testing.T) {
 	value, key := inlineSecretValue(`PASSWORD='secret;value';`)
 	if key != "PASSWORD" {
