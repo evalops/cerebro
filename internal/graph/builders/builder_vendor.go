@@ -29,6 +29,15 @@ var vendorLegalSuffixTokens = map[string]struct{}{
 	"srl":          {},
 }
 
+var vendorCorporateSuffixPhrases = [][]string{
+	{"video", "communications"},
+	{"communications"},
+	{"technology"},
+	{"technologies"},
+	{"software"},
+	{"systems"},
+}
+
 type vendorIdentity struct {
 	rawName         string
 	aliasKey        string
@@ -182,24 +191,7 @@ func matchVendorProjection(projections []*vendorProjection, identity vendorIdent
 }
 
 func vendorAliasKeysMatch(left, right string) bool {
-	leftTokens := strings.Fields(strings.TrimSpace(left))
-	rightTokens := strings.Fields(strings.TrimSpace(right))
-	if len(leftTokens) == 0 || len(rightTokens) == 0 {
-		return false
-	}
-	if strings.EqualFold(left, right) {
-		return true
-	}
-	shorter, longer := leftTokens, rightTokens
-	if len(shorter) > len(longer) {
-		shorter, longer = longer, shorter
-	}
-	for idx := range shorter {
-		if shorter[idx] != longer[idx] {
-			return false
-		}
-	}
-	return true
+	return strings.EqualFold(strings.TrimSpace(left), strings.TrimSpace(right))
 }
 
 func vendorAliasSetFromRawNames(rawNames map[string]struct{}) map[string]struct{} {
@@ -260,16 +252,52 @@ func chooseCanonicalVendorDisplayName(rawNames map[string]struct{}, canonicalAli
 
 func vendorAliasKey(value string) string {
 	tokens := vendorNameTokens(value)
+	tokens = trimVendorAliasSuffixTokens(tokens)
+	if len(tokens) == 0 {
+		return ""
+	}
+	return strings.Join(tokens, " ")
+}
+
+func trimVendorAliasSuffixTokens(tokens []string) []string {
+	tokens = trimVendorLegalSuffixTokens(tokens)
+	for {
+		trimmed := trimVendorCorporateSuffixPhrase(tokens)
+		if len(trimmed) == len(tokens) {
+			return tokens
+		}
+		tokens = trimVendorLegalSuffixTokens(trimmed)
+	}
+}
+
+func trimVendorLegalSuffixTokens(tokens []string) []string {
 	for len(tokens) > 0 {
 		if _, ok := vendorLegalSuffixTokens[tokens[len(tokens)-1]]; !ok {
 			break
 		}
 		tokens = tokens[:len(tokens)-1]
 	}
-	if len(tokens) == 0 {
-		return ""
+	return tokens
+}
+
+func trimVendorCorporateSuffixPhrase(tokens []string) []string {
+	for _, phrase := range vendorCorporateSuffixPhrases {
+		if len(tokens) <= len(phrase) {
+			continue
+		}
+		offset := len(tokens) - len(phrase)
+		match := true
+		for i := range phrase {
+			if tokens[offset+i] != phrase[i] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return tokens[:offset]
+		}
 	}
-	return strings.Join(tokens, " ")
+	return tokens
 }
 
 func vendorNameTokens(value string) []string {

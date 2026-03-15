@@ -221,6 +221,64 @@ func TestBuilder_CanonicalizesVendorAliasesAndAggregatesProvenance(t *testing.T)
 	assertEdgeExists(t, g, "sp-zoom", "vendor:zoom", EdgeKindManagedBy)
 }
 
+func TestBuilder_KeepsDistinctVendorProductAliasesSeparate(t *testing.T) {
+	t.Parallel()
+
+	source := newMockDataSource()
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+
+	source.setResult(`SELECT id, label, name, status, sign_on_mode FROM okta_applications`, &DataQueryResult{
+		Rows: []map[string]any{
+			{
+				"id":           "okta-app-google",
+				"label":        "Google",
+				"name":         "google",
+				"status":       "ACTIVE",
+				"sign_on_mode": "SAML_2_0",
+			},
+			{
+				"id":           "okta-app-google-analytics",
+				"label":        "Google Analytics",
+				"name":         "google_analytics",
+				"status":       "ACTIVE",
+				"sign_on_mode": "SAML_2_0",
+			},
+		},
+	})
+
+	builder := NewBuilder(source, logger)
+	if err := builder.Build(context.Background()); err != nil {
+		t.Fatalf("build failed: %v", err)
+	}
+
+	g := builder.Graph()
+	assertEdgeExists(t, g, "okta-app-google", "vendor:google", EdgeKindManagedBy)
+	assertEdgeExists(t, g, "okta-app-google-analytics", "vendor:google-analytics", EdgeKindManagedBy)
+	if _, ok := g.GetNode("vendor:google"); !ok {
+		t.Fatal("expected vendor node for Google")
+	}
+	if _, ok := g.GetNode("vendor:google-analytics"); !ok {
+		t.Fatal("expected separate vendor node for Google Analytics")
+	}
+}
+
+func TestVendorAliasKey_TrimsCorporateSuffixesConservatively(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]string{
+		"Zoom Video Communications, Inc.": "zoom",
+		"Slack Technologies, LLC":         "slack",
+		"Google Analytics":                "google analytics",
+		"Palo Alto Networks, Inc.":        "palo alto networks",
+	}
+
+	for input, want := range cases {
+		if got := vendorAliasKey(input); got != want {
+			t.Fatalf("vendorAliasKey(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
 func TestBuilder_ApplyChangesReprojectsDerivedVendorNodes(t *testing.T) {
 	t.Parallel()
 
