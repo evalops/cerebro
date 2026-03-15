@@ -9,11 +9,14 @@ import (
 	"time"
 
 	"github.com/evalops/cerebro/internal/runtime"
+	"github.com/evalops/cerebro/internal/runtime/adapters"
 )
 
 const sourceName = "kubernetes_audit"
 
 type Adapter struct{}
+
+var _ adapters.Adapter = Adapter{}
 
 type payload struct {
 	Items json.RawMessage `json:"items"`
