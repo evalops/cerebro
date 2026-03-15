@@ -134,11 +134,13 @@ func filterCandidatesForOS(candidates []candidateRecord, osInfo filesystemanalyz
 		return candidates
 	}
 	filtered := make([]candidateRecord, 0, len(candidates))
+	unscoped := make([]candidateRecord, 0, len(candidates))
 	hasScopedCandidates := false
+	matchedScopedVulns := make(map[string]struct{})
 	for _, candidate := range candidates {
 		affectedDistribution := normalizeDistributionName(candidate.Affected.Distribution)
 		if affectedDistribution == "" {
-			filtered = append(filtered, candidate)
+			unscoped = append(unscoped, candidate)
 			continue
 		}
 		hasScopedCandidates = true
@@ -148,10 +150,17 @@ func filterCandidatesForOS(candidates []candidateRecord, osInfo filesystemanalyz
 		if !distributionVersionMatches(version, candidate.Affected.DistributionVersion) {
 			continue
 		}
+		matchedScopedVulns[primaryVulnerabilityID(candidate.Vulnerability)] = struct{}{}
 		filtered = append(filtered, candidate)
 	}
 	if len(filtered) == 0 && hasScopedCandidates {
-		return nil
+		return unscoped
+	}
+	for _, candidate := range unscoped {
+		if _, ok := matchedScopedVulns[primaryVulnerabilityID(candidate.Vulnerability)]; ok {
+			continue
+		}
+		filtered = append(filtered, candidate)
 	}
 	return filtered
 }
@@ -186,7 +195,7 @@ func distributionVersionMatches(installed, affected string) bool {
 	}
 	installed = strings.TrimSpace(installed)
 	if installed == "" {
-		return false
+		return true
 	}
 	if installed == affected || strings.HasPrefix(installed, affected+".") || strings.HasPrefix(affected, installed+".") {
 		return true
