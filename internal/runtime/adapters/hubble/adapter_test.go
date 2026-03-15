@@ -203,8 +203,39 @@ func TestAdapterNormalizeRejectsDNSFlowsForDedicatedSlice(t *testing.T) {
 		}
 	}`)
 
-	if _, err := (Adapter{}).Normalize(context.Background(), raw); err == nil || !strings.Contains(err.Error(), "dns flow requires dedicated normalization") {
-		t.Fatalf("Normalize error = %v, want dedicated dns normalization error", err)
+	if _, err := (Adapter{}).Normalize(context.Background(), raw); err == nil || !strings.Contains(err.Error(), "unsupported l7 flow") {
+		t.Fatalf("Normalize error = %v, want unsupported l7 flow", err)
+	}
+}
+
+func TestAdapterNormalizeRejectsHTTPFlowsForDedicatedSlice(t *testing.T) {
+	raw := []byte(`{
+		"flow": {
+			"time": "2024-07-09T18:01:00Z",
+			"verdict": "FORWARDED",
+			"IP": {
+				"source": "10.244.0.10",
+				"destination": "10.96.0.10",
+				"ipVersion": "IPv4"
+			},
+			"l4": {
+				"TCP": {
+					"source_port": 53000,
+					"destination_port": 443
+				}
+			},
+			"l7": {
+				"type": "REQUEST",
+				"http": {
+					"method": "GET",
+					"url": "https://api.github.com/"
+				}
+			}
+		}
+	}`)
+
+	if _, err := (Adapter{}).Normalize(context.Background(), raw); err == nil || !strings.Contains(err.Error(), "unsupported l7 flow") {
+		t.Fatalf("Normalize error = %v, want unsupported l7 flow", err)
 	}
 }
 
@@ -217,5 +248,91 @@ func TestAdapterNormalizeRejectsUnsupportedWrapperEvents(t *testing.T) {
 
 	if _, err := (Adapter{}).Normalize(context.Background(), raw); err == nil || !strings.Contains(err.Error(), "unsupported event") {
 		t.Fatalf("Normalize error = %v, want unsupported event", err)
+	}
+}
+
+func TestAdapterNormalizePrefersFlowTimeOverWrapperTime(t *testing.T) {
+	raw := []byte(`{
+		"flow": {
+			"time": "2024-07-09T18:01:00Z",
+			"verdict": "FORWARDED",
+			"IP": {
+				"source": "10.244.0.10",
+				"destination": "10.96.0.10",
+				"ipVersion": "IPv4"
+			},
+			"l4": {
+				"TCP": {
+					"source_port": 53000,
+					"destination_port": 443
+				}
+			}
+		},
+		"time": "2024-07-09T18:05:00Z"
+	}`)
+
+	observations, err := (Adapter{}).Normalize(context.Background(), raw)
+	if err != nil {
+		t.Fatalf("Normalize: %v", err)
+	}
+	got := observations[0].ObservedAt.UTC().Format("2006-01-02T15:04:05Z")
+	if got != "2024-07-09T18:01:00Z" {
+		t.Fatalf("observed_at = %q, want 2024-07-09T18:01:00Z", got)
+	}
+}
+
+func TestAdapterNormalizeFallbackIDIncludesPorts(t *testing.T) {
+	rawA := []byte(`{
+		"flow": {
+			"time": "2024-07-09T18:01:00Z",
+			"verdict": "FORWARDED",
+			"IP": {
+				"source": "10.244.0.10",
+				"destination": "10.96.0.10",
+				"ipVersion": "IPv4"
+			},
+			"l4": {
+				"TCP": {
+					"source_port": 53000,
+					"destination_port": 443
+				}
+			}
+		}
+	}`)
+	rawB := []byte(`{
+		"flow": {
+			"time": "2024-07-09T18:01:00Z",
+			"verdict": "FORWARDED",
+			"IP": {
+				"source": "10.244.0.10",
+				"destination": "10.96.0.10",
+				"ipVersion": "IPv4"
+			},
+			"l4": {
+				"TCP": {
+					"source_port": 53001,
+					"destination_port": 443
+				}
+			}
+		}
+	}`)
+
+	observationsA, err := (Adapter{}).Normalize(context.Background(), rawA)
+	if err != nil {
+		t.Fatalf("Normalize A: %v", err)
+	}
+	observationsB, err := (Adapter{}).Normalize(context.Background(), rawB)
+	if err != nil {
+		t.Fatalf("Normalize B: %v", err)
+	}
+
+	if observationsA[0].ID == observationsB[0].ID {
+		t.Fatalf("ids should differ when ports differ: %q", observationsA[0].ID)
+	}
+	if !strings.Contains(observationsA[0].ID, ":53000:443:") {
+		t.Fatalf("id = %q, want source/destination ports embedded", observationsA[0].ID)
+	}
+	if !strings.Contains(observationsB[0].ID, ":53001:443:") {
+		t.Fatalf("id = %q, want source/destination ports embedded", observationsB[0].ID)
 	}
 }

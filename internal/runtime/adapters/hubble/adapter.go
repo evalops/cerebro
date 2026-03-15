@@ -101,12 +101,20 @@ type serviceEnvelope struct {
 }
 
 type layer7Envelope struct {
-	Type string       `json:"type,omitempty"`
-	DNS  *dnsEnvelope `json:"dns,omitempty"`
+	Type string        `json:"type,omitempty"`
+	DNS  *dnsEnvelope  `json:"dns,omitempty"`
+	HTTP *httpEnvelope `json:"http,omitempty"`
 }
 
 type dnsEnvelope struct {
 	Query string `json:"query,omitempty"`
+}
+
+type httpEnvelope struct {
+	Code     uint32 `json:"code,omitempty"`
+	Method   string `json:"method,omitempty"`
+	URL      string `json:"url,omitempty"`
+	Protocol string `json:"protocol,omitempty"`
 }
 
 func (Adapter) Source() string {
@@ -133,8 +141,8 @@ func observationFromFlow(event payload) (*runtime.RuntimeObservation, error) {
 	if flow.IP == nil {
 		return nil, fmt.Errorf("decode hubble payload: missing IP context")
 	}
-	if flow.L7 != nil && flow.L7.DNS != nil {
-		return nil, fmt.Errorf("decode hubble payload: dns flow requires dedicated normalization")
+	if flow.L7 != nil {
+		return nil, fmt.Errorf("decode hubble payload: unsupported l7 flow")
 	}
 
 	protocol, srcPort, dstPort := protocolFromL4(flow.L4)
@@ -142,7 +150,7 @@ func observationFromFlow(event payload) (*runtime.RuntimeObservation, error) {
 		return nil, fmt.Errorf("decode hubble payload: missing supported L4 context")
 	}
 
-	observedAt := firstNonZeroTime(event.Time, flow.Time)
+	observedAt := firstNonZeroTime(flow.Time, event.Time)
 	nodeName := firstNonEmpty(event.NodeName, flow.NodeName)
 	direction, primary, peer := primaryEndpoints(flow)
 
@@ -199,7 +207,7 @@ func observationFromFlow(event payload) (*runtime.RuntimeObservation, error) {
 			DstPort:   dstPort,
 		},
 		Metadata: metadata,
-		Tags: compactTags(
+		Tags: adapters.CompactTags(
 			"hubble",
 			"network_flow",
 			strings.ToLower(strings.TrimSpace(flow.Verdict)),
@@ -271,6 +279,9 @@ func hubbleObservationID(flow *flowEnvelope, protocol string, observedAt time.Ti
 		strings.TrimSpace(flow.IP.Source),
 		strings.TrimSpace(flow.IP.Destination),
 		strings.TrimSpace(flow.Verdict),
+	}
+	if _, srcPort, dstPort := protocolFromL4(flow.L4); srcPort != 0 || dstPort != 0 {
+		parts = append(parts, fmt.Sprintf("%d", srcPort), fmt.Sprintf("%d", dstPort))
 	}
 	if observedAt.IsZero() {
 		return strings.Join(parts, ":")
@@ -382,21 +393,4 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func compactTags(values ...string) []string {
-	tags := make([]string, 0, len(values))
-	seen := make(map[string]struct{}, len(values))
-	for _, value := range values {
-		trimmed := strings.TrimSpace(value)
-		if trimmed == "" {
-			continue
-		}
-		if _, exists := seen[trimmed]; exists {
-			continue
-		}
-		seen[trimmed] = struct{}{}
-		tags = append(tags, trimmed)
-	}
-	return tags
 }
